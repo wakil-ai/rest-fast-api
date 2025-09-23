@@ -107,7 +107,7 @@ class Settings(BaseSettings):
 
     # TEMPERATURE
     TEMPERATURE_GPT: float = 0.1
-    TEMPERATURE_GEMMA: float = 0.5
+    TEMPERATURE_GEMMA: float = 0.1
 
     CHAT_HISTORY_LIMIT: int = 5
 
