@@ -75,7 +75,7 @@ class ChatChain:
             )
             chat_history_text = await self._format_chat_history(chat_history)
 
-            logger.info(f"[ChatChain] Retrieved context: {context}")
+            logger.debug(f"[ChatChain] Retrieved context: {context}")
 
             llm_map = {"gpt": self.gpt, "gemma": self.gemma} 
             llm = llm_map.get(llm_type)
@@ -131,7 +131,7 @@ class ChatChain:
                 yield char
             full_response += buffer
 
-        logger.info(f"[ChatChain] Full LLM Response: {full_response}")
+        logger.debug(f"[ChatChain] Full LLM Response: {full_response}")
 
     async def _error_stream(self, message: str) -> AsyncGenerator[str, None]:
         """Yield error message as stream."""
