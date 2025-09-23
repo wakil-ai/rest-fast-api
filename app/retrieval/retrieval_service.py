@@ -116,7 +116,10 @@ class RetrievalService:
             entry.append(f"Source URL: {metadata.get('url', '')}")
         if metadata.get("hierarchy_path"):
             hierarchy_path = metadata.get("hierarchy_path", "").replace("/", " ")
-            hierarchy_path = hierarchy_path.capitalize()
-            entry.append(f"Citation: {hierarchy_path}")
+            words = hierarchy_path.split()
+            capitalized_words = [w.capitalize() for w in words]
+            formatted_path = " ".join(capitalized_words)
+            
+            entry.append(f"Citation: {formatted_path}")
 
         return "\n".join(entry)
