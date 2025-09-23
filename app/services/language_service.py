@@ -8,30 +8,25 @@ class LanguageConfigs(Enum):
         "__label__uz_cyr", "Uzbek Cyrillic", "uz",
         "INSTRUCTION: The assistant MUST reply strictly in the Uzbek Cyrillic script. "
         "Do NOT use any Latin characters or mix alphabets.",
-        'metadata["language"] in ["Uzbek Cyrillic", "uz"]'
     )
     UZBEK_LATIN = (
         "__label__uz_lat", "Uzbek Latin", "uz",
         "INSTRUCTION: The assistant MUST reply strictly in the Uzbek Latin script. "
         "Do NOT use any Cyrillic characters or mix alphabets.",
-        'metadata["language"] in ["Uzbek Latin", "uz"]'
     )
     RUSSIAN = (
         "__label__rus", "Russian", "ru",
         "INSTRUCTION: The assistant MUST reply strictly in the Russian language. "
         "Do NOT use any other languages or mix alphabets.",
-        'metadata["language"] in ["Russian", "ru"]'
     )
     ENGLISH = (
         "__label__eng", "English", "en",
         "INSTRUCTION: The assistant MUST reply strictly in the English language. "
         "Do NOT use any Cyrillic characters or mix alphabets.",
-        None  # No filter
     )
     OTHER = (
         "__label__other", "Other", "",
         "INSTRUCTION: The assistant MUST respond in language that user gave.",
-        None  # No filter
     )
 
     @property
@@ -52,21 +47,6 @@ class LanguageDetector:
         self.label_map = {lang.label: lang for lang in LanguageConfigs if lang != LanguageConfigs.OTHER}
         self.display_map = {lang.display: lang for lang in LanguageConfigs}
         self.converter = UzTransliterator.UzTransliterator()
-    
-    def correct_language(self, text: str, language: str) -> str:
-        if language == 'Uzbek Cyrillic':
-            return self.convert_to_cyrillic(text)
-        elif language == 'Uzbek Latin':
-            return self.convert_to_latin(text)
-        elif language == 'Other':
-            return self.convert_to_latin(text) # default to latin
-        return text
-    
-    def convert_to_latin(self, text: str) -> str:
-        return self.converter.transliterate(text, from_="cyr", to="lat")
-    
-    def convert_to_cyrillic(self, text: str) -> str:
-        return self.converter.transliterate(text, from_="lat", to="cyr")
     
     def detect_language(self, text: str) -> str:
         label, _ = self.model.predict(text)
