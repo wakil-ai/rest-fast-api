@@ -91,7 +91,7 @@ def create_app() -> FastAPI:
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"])
     async def health_check():
-        return {"status": "ok", "message": "HB LexAI API is running 🚀"}
+        return {"status": "ok", "message": "WakilAI API is running 🚀"}
     
     # Documentation endpoints (Basic Auth protected)
     @app.get("/docs")
@@ -113,7 +113,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_event():
         port = 8080  # This should match the port in the Dockerfile
-        logger.info(f"HB LexAI API running at http://localhost:{port} and http://0.0.0.0:{port}")
+        logger.info(f"WakilAI API running at http://localhost:{port} and http://0.0.0.0:{port}")
         logger.info(f"API documentation available at http://localhost:{port}/docs")
 
     return app

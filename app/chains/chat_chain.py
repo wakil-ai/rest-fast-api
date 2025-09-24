@@ -61,27 +61,58 @@ class ChatChain:
 
             logger.debug(f"[ChatChain] Retrieved context: {context}")
 
-            # Try primary LLM first
-            try:
-                response = await self.llm.generate_response(
-                    query=query,
-                    context=context,
-                    chat_history_text=chat_history_text,
-                    language_instruction=instruction
-                )
-            except Exception as llm_error:
-                # Fallback to ChatGPT on failure
-                logger.warning(f"[ChatChain] Primary LLM failed, falling back to ChatGPT: {llm_error}", exc_info=True)
-                response = await self.llm_fallback.generate_response(
-                    query=query,
-                    context=context,
-                    chat_history_text=chat_history_text,
-                    language_instruction=instruction
-                )
-
             if settings.STREAM:
-                return self._stream_response(response, language)
+                async def stream_generator() -> AsyncGenerator[str, None]:
+                    try:
+                        # Attempt primary LLM
+                        response_generator = await self.llm.generate_response(
+                            query=query,
+                            context=context,
+                            chat_history_text=chat_history_text,
+                            language_instruction=instruction
+                        )
+                        async for chunk in self._stream_response(response_generator, language):
+                            yield chunk
+                    except Exception as llm_error:
+                        logger.warning(f"[ChatChain] Primary LLM streaming failed, falling back to ChatGPT.", exc_info=True)
+                        try:
+                            # Attempt fallback LLM
+                            fallback_generator = await self.llm_fallback.generate_response(
+                                query=query,
+                                context=context,
+                                chat_history_text=chat_history_text,
+                                language_instruction=instruction
+                            )
+                            async for chunk in self._stream_response(fallback_generator, language):
+                                yield chunk
+                        except Exception as fallback_error:
+                            logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
+                            error_msg = "Sorry, I couldn't generate an answer at the moment."
+                            async for chunk in self._error_stream(error_msg):
+                                yield chunk
+                return stream_generator()
             else:
+                # Non-streaming fallback logic
+                try:
+                    response = await self.llm.generate_response(
+                        query=query,
+                        context=context,
+                        chat_history_text=chat_history_text,
+                        language_instruction=instruction
+                    )
+                except Exception as llm_error:
+                    logger.warning(f"[ChatChain] Primary LLM failed, falling back to ChatGPT.", exc_info=True)
+                    try:
+                        response = await self.llm_fallback.generate_response(
+                            query=query,
+                            context=context,
+                            chat_history_text=chat_history_text,
+                            language_instruction=instruction
+                        )
+                    except Exception as fallback_error:
+                        logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
+                        raise fallback_error # Re-raise to be caught by the outer handler
+
                 logger.info(f"[DEBUG] LLM full response: {response}")
                 return response
 
