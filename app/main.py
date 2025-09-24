@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
-from app.api import chat, retrieval
+from app.api import chat, retrieval, chat_history
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -83,7 +83,12 @@ def create_app() -> FastAPI:
         dependencies=[Depends(verify_api_key)]
     )
     app.include_router(
-        retrieval.router, 
+        retrieval.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        chat_history.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
     )
