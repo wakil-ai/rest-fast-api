@@ -53,6 +53,7 @@ class ChatGPT(LLM):
                 {"role": "user", "content": query}
             ],
             temperature=settings.TEMPERATURE,
+            max_tokens=settings.OUTPUT_MAX_TOKENS,
         )
         
         return response.choices[0].message.content.strip()
@@ -67,6 +68,7 @@ class ChatGPT(LLM):
             ],
             temperature=settings.TEMPERATURE,
             stream=True,
+            max_tokens=settings.OUTPUT_MAX_TOKENS,
         )
         
         async for chunk in response:

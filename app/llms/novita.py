@@ -64,7 +64,7 @@ class Novita(LLM):
                     }
                 ],
                 stream=True,
-                max_tokens=8192,
+                max_tokens=settings.OUTPUT_MAX_TOKENS,
                 temperature=temperature
             )
             
@@ -92,7 +92,7 @@ class Novita(LLM):
                     }
                 ],
                 stream=False,
-                max_tokens=8192,
+                max_tokens=settings.OUTPUT_MAX_TOKENS,
                 temperature=temperature
             )
             

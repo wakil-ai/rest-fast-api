@@ -18,7 +18,7 @@ class LocalVLLM(LLM):
             api_key=settings.LOCAL_VLLM_API_KEY
         )
         self.model = settings.LOCAL_VLLM_MODEL
-        self.max_tokens = settings.LOCAL_VLLM_MAX_TOKENS
+        self.max_tokens = settings.OUTPUT_MAX_TOKENS
 
     async def generate_response(
         self,

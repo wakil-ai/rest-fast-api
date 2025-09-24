@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
-    LOCAL_VLLM_MAX_TOKENS: int = 2048
+    OUTPUT_MAX_TOKENS: int = 8192
     
     # EMBEDDING DIM
     @property
