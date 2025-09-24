@@ -135,13 +135,24 @@ class ChatChain:
 
     async def _stream_response(self, response_generator: AsyncGenerator[str, None], language: str) -> AsyncGenerator[str, None]:
         """Handle streaming response and save conversation when complete."""
-        full_response = ""
+        full_response, buffer = "", ""
+        
+        logger.debug(f"[ChatChain] {language}")
         
         async for chunk in response_generator:
-            # Yield characters one by one and accumulate the full response
-            for char in chunk:
+            buffer += chunk
+            if buffer.endswith('\n'):
+                buffer = self.language_detector.correct_language(buffer, language)
+                for char in buffer:
+                    yield char
+                full_response += buffer
+                buffer = ""
+                
+        if buffer:
+            buffer = self.language_detector.correct_language(buffer, language)
+            for char in buffer:
                 yield char
-                full_response += char
+            full_response += buffer
 
         logger.debug(f"[ChatChain] Full LLM Response: {full_response}")
 
