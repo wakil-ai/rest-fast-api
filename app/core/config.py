@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # MongoDB
     MONGODB_URI: Optional[str] = None  # Make optional
     MONGODB_DB_NAME: Optional[str] = None  # Make optional
+    MONGO_CONVERSATIONS_COLLECTION: str = "chat_conversations"
+    MONGO_FEEDBACK_COLLECTION: str = "chat_feedback"
     COLLECTION_NAME: str = "itemdocs"
 
     # Milvus

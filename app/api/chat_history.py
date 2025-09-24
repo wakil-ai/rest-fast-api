@@ -15,7 +15,7 @@ from app.services.chat_history_service import ChatHistoryService
 from app.services.location_service import LocationService
 from app.core.logger import logger
 
-router = APIRouter(prefix="/chat", tags=["Chat History"])
+router = APIRouter(prefix="/history", tags=["Chat History"])
 chat_history_service = ChatHistoryService()
 
 

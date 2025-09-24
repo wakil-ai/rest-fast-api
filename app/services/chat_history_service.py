@@ -16,13 +16,14 @@ from app.models.chat_history import (
 )
 from app.services.location_service import LocationService
 from app.core.logger import logger
+from app.core.config import settings
 
 
 class ChatHistoryService:
     def __init__(self):
         self.db_manager = DBManager()
-        self.conversations_collection = "chat_conversations"
-        self.feedback_collection = "chat_feedback"
+        self.conversations_collection = settings.MONGO_CONVERSATIONS_COLLECTION
+        self.feedback_collection = settings.MONGO_FEEDBACK_COLLECTION
 
     @staticmethod
     def generate_chat_id() -> str:
