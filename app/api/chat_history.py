@@ -8,11 +8,9 @@ from app.models.chat_history import (
     ConversationResponse,
     ConversationListResponse,
     FeedbackResponse,
-    ChatFeedback,
-    LocationData
+    ChatFeedback
 )
 from app.services.chat_history_service import ChatHistoryService
-from app.services.location_service import LocationService
 from app.core.logger import logger
 
 router = APIRouter(prefix="/history", tags=["Chat History"])
@@ -80,15 +78,12 @@ async def get_conversation(chat_id: str):
 
 
 @router.put("/conversations/{chat_id}", response_model=dict)
-async def add_message(chat_id: str, request: AddMessageRequest, http_request: Request, session_id: str):
+async def add_message(chat_id: str, request: AddMessageRequest, session_id: str):
     try:
-        ip_address = LocationService.get_client_ip(http_request)
-
-        success = await chat_history_service.add_message_with_location(
+        success = chat_history_service.add_message(
             chat_id,
             session_id,
-            request.message,
-            ip_address
+            request.message
         )
 
         if not success:
@@ -178,27 +173,4 @@ async def get_conversation_feedback(chat_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve feedback"
-        )
-
-
-@router.get("/location/detect", response_model=LocationData)
-async def detect_location(request: Request):
-    try:
-        location = await LocationService.detect_location_from_request(request)
-
-        if not location:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Location could not be detected"
-            )
-
-        return location
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error detecting location: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to detect location"
         )

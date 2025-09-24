@@ -14,7 +14,6 @@ from app.models.chat_history import (
     ConversationListItem,
     FeedbackResponse
 )
-from app.services.location_service import LocationService
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -132,19 +131,6 @@ class ChatHistoryService:
             logger.error(f"Error listing conversations for session {session_id}: {str(e)}")
             raise
 
-    async def add_message_with_location(self, chat_id: str, session_id: str, message: ChatMessage, ip_address: str = None) -> bool:
-        try:
-            if message.type == "question" and not message.location and ip_address:
-                location = await LocationService.detect_location_from_ip(ip_address)
-                if location:
-                    message.location = location
-                    logger.info(f"Added location to message: {location.city}, {location.country}")
-
-            return self.add_message(chat_id, session_id, message)
-
-        except Exception as e:
-            logger.error(f"Error adding message with location: {str(e)}")
-            return self.add_message(chat_id, session_id, message)
 
     def add_message(self, chat_id: str, session_id: str, message: ChatMessage) -> bool:
         try:

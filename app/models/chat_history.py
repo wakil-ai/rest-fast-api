@@ -20,15 +20,6 @@ class PyObjectId(ObjectId):
         return {'type': 'string'}
 
 
-class LocationData(BaseModel):
-    type: str
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    accuracy: Optional[float] = None
-    country: Optional[str] = None
-    city: Optional[str] = None
-    region: Optional[str] = None
-    ip_address: Optional[str] = None
 
 
 class MessageMetadata(BaseModel):
@@ -41,7 +32,6 @@ class ChatMessage(BaseModel):
     timestamp: str
     message_id: str
     metadata: Optional[MessageMetadata] = None
-    location: Optional[LocationData] = None
 
 
 class ChatConversation(BaseModel):
