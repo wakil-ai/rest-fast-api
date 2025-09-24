@@ -15,12 +15,9 @@ async def format_streaming_response(response_generator: AsyncGenerator[str, None
     """
     try:
         async for chunk in response_generator:
-            # Send text chunk
+            # Send text chunk immediately without delay
             chunk_data = {"type": "chunk", "chunk": chunk}
             yield f"data: {json.dumps(chunk_data)}\n\n"
-            
-            # Small delay to ensure immediate transmission
-            await asyncio.sleep(0.01)
         
         # Send completion signal
         end_signal = {"type": "end"}
