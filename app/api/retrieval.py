@@ -20,7 +20,7 @@ async def mongo_fulltext_search(request: MongoFullTextRequest):
 @router.post("/mongo-metadata", summary="Metadata search in MongoDB")
 async def mongo_metadata_search(request: MongoMetadataRequest):
     results = retrieval_service.search_mongo_metadata(
-        collection=request.collection,
+        collection=settings.COLLECTION_NAME,
         filters=request.filters
     )
     return {"results": results}
@@ -30,7 +30,6 @@ async def vector_db_hybrid_search(request: VectorDBRequest):
     results = retrieval_service.search_hybrid(
         query_text=request.query_text,
         top_k=request.top_k,
-        alpha=request.alpha,
     )
     return {"results": results}
 

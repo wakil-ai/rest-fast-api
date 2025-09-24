@@ -39,7 +39,7 @@ class Novita(LLM):
         context: str, 
         chat_history_text: str,
         language_instruction: str = None,
-        temperature: float = settings.TEMPERATURE_GEMMA,
+        temperature: float = settings.TEMPERATURE,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate response using Novita AI model.
@@ -63,7 +63,7 @@ class Novita(LLM):
             logger.error(f"[NovitaHandler] Generation Error: {str(e)}")
             raise e
     
-    async def _generate_streaming(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE_GEMMA) -> AsyncGenerator[str, None]:
+    async def _generate_streaming(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE) -> AsyncGenerator[str, None]:
         """Generate streaming response."""
         try:
             response = await self.client.chat.completions.create(
@@ -91,7 +91,7 @@ class Novita(LLM):
             logger.error(f"[NovitaHandler] Streaming Error: {str(e)}")
             raise e
     
-    async def _generate_complete(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE_GEMMA) -> str:
+    async def _generate_complete(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE) -> str:
         """Generate complete response."""
         try:
             response = await self.client.chat.completions.create(

@@ -2,7 +2,7 @@
 from typing import AsyncGenerator, Union
 from openai import AsyncOpenAI
 from app.core.config import settings
-from app.chains.prompts import SYSTEM_PROMPT_OPENAI
+from app.chains.prompts import PROMPT
 from app.llms.base import LLM
 
 from app.core.logger import logger
@@ -20,14 +20,14 @@ class ChatGPT(LLM):
         context: str, 
         chat_history_text: str,
         language_instruction: str = None,
-        temperature: float = settings.TEMPERATURE_GPT,
+        temperature: float = settings.TEMPERATURE,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate response using GPT model.
         Returns streaming response if STREAM=True, otherwise complete response.
         """
         try:
-            system_prompt = SYSTEM_PROMPT_OPENAI.format(
+            system_prompt = PROMPT.format(
                 context=context,
                 chat_history=chat_history_text,
                 language_instruction=language_instruction if language_instruction else ""
@@ -44,7 +44,7 @@ class ChatGPT(LLM):
             logger.error(f"[GPTHandler] Generation Error: {str(e)}")
             raise e
     
-    async def _generate_complete(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE_GPT) -> str:
+    async def _generate_complete(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE) -> str:
         """Generate complete response."""
         response = await self.client.chat.completions.create(
             model=self.model,
@@ -57,7 +57,7 @@ class ChatGPT(LLM):
         
         return response.choices[0].message.content.strip()
     
-    async def _generate_streaming(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE_GPT) -> AsyncGenerator[str, None]:
+    async def _generate_streaming(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE) -> AsyncGenerator[str, None]:
         """Generate streaming response."""
         response = await self.client.chat.completions.create(
             model=self.model,

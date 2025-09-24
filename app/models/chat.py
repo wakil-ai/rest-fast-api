@@ -15,9 +15,7 @@ class ChatRequest(BaseModel):
     """
     Request body for chat questions.
     """
-    llm_type: str = Field(..., example="gemma", description="Type of model (gpt or gemma)")
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
-    top_k: int = Field(default=settings.TOP_K, example=5)
     chat_history: Optional[List[MessagePair]] = Field(default=None, description="Previous question-answer pairs")
 
 class ChatResponse(BaseModel):
@@ -30,7 +28,9 @@ class ModelInfoResponse(BaseModel):
     """
     Model configuration information.
     """
-    available_models: List[str] = Field(..., example=["gpt", "gemma"], description="Available models (gpt or gemma)")
+    top_k: int = Field(..., example=5, description="Number of top documents retrieved")
+    alpha: float = Field(..., example=0.8, description="Alpha value for relevance scoring")
+    temperature: float = Field(..., example=0.1, description="Temperature setting for the LLM")
     service_provider: str = Field(..., example="novita", description="Service provider (novita or deepinfra)")
     embedding_model: str = Field(..., example="qwen", description="Embedding model (qwen or openai)")
     stream: bool = Field(..., example=False, description="Whether streaming responses are enabled")

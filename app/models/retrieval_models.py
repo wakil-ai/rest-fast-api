@@ -12,5 +12,4 @@ class MongoMetadataRequest(BaseModel):
 
 class VectorDBRequest(BaseModel):
     query_text: str
-    alpha: Optional[float] = settings.ALPHA 
     top_k: Optional[int] = settings.TOP_K 

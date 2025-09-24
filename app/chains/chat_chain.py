@@ -19,25 +19,17 @@ class ChatChain:
 
     def __init__(self):
         self.retrieval_service = RetrievalService()
-        self.gpt = ChatGPT()
-        self.gemma = self._get_gemma_model()
+        self.llm = self._get_llm_provider()
+        self.llm_fallback = ChatGPT() # Fallback to OpenAI GPT if needed
         self.language_detector = LanguageDetector()
 
-    def _get_gemma_model(self) -> LLM:
+    def _get_llm_provider(self) -> LLM:
         """Factory method to select and load the Gemma model based on settings."""
         providers = {
             "novita": Novita,
             "local": LocalVLLM,
         }
-
-        provider = settings.GEMMA_PROVIDER
-
-        logger.info(f"[ChatChain] Selected Gemma provider: {provider}")
-
-        if provider not in providers:
-            raise ValueError(f"[ChatChain] Unsupported Gemma provider: {provider}")
-
-        return providers[provider]()
+        return providers.get(settings.LLM_PROVIDER, Novita)()
 
     async def _format_chat_history(self, chat_history: Optional[List]) -> str:
         """Format chat history for use in prompt context."""
@@ -54,44 +46,38 @@ class ChatChain:
 
     async def generate_answer(
         self,
-        llm_type: str,
         query: str,
-        top_k: int = settings.TOP_K,
         chat_history: Optional[List] = None,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response to the user's query using RAG approach.
-
-        Returns:
-            - str: Final answer if streaming is disabled
-            - AsyncGenerator: Streaming response if enabled
+        Falls back to ChatGPT if the primary LLM fails.
         """
         try:
             language = self.language_detector.detect_language(query)
             instruction = self.language_detector.get_instruction(language)
-
-            context = await self.retrieval_service.retrieve_context(
-                query=query, top_k=top_k
-            )
+            context = await self.retrieval_service.retrieve_context(query=query)
             chat_history_text = await self._format_chat_history(chat_history)
 
             logger.debug(f"[ChatChain] Retrieved context: {context}")
 
-            llm_map = {"gpt": self.gpt, "gemma": self.gemma} 
-            llm = llm_map.get(llm_type)
-
-            if llm is None:
-                error_msg = "Invalid LLM selected. Please choose 'gpt' or 'gemma'."
-                logger.warning(f"[ChatChain] {error_msg}")
-                return await self._stream_or_return_error(error_msg)
-
-            logger.info(f"[ChatChain] Sending query to {llm_type}: {query}")
-            response = await llm.generate_response(
-                query=query,
-                context=context,
-                chat_history_text=chat_history_text,
-                language_instruction=instruction
-            )
+            # Try primary LLM first
+            try:
+                response = await self.llm.generate_response(
+                    query=query,
+                    context=context,
+                    chat_history_text=chat_history_text,
+                    language_instruction=instruction
+                )
+            except Exception as llm_error:
+                # Fallback to ChatGPT on failure
+                logger.warning(f"[ChatChain] Primary LLM failed, falling back to ChatGPT: {llm_error}", exc_info=True)
+                response = await self.llm_fallback.generate_response(
+                    query=query,
+                    context=context,
+                    chat_history_text=chat_history_text,
+                    language_instruction=instruction
+                )
 
             if settings.STREAM:
                 return self._stream_response(response, language)
