@@ -2,7 +2,7 @@ from typing import List, Dict, Any
 from app.core.config import settings
 from app.core.logger import logger
 from app.db.db_manager import DBManager
-from app.ingest.embedding_manager import EmbeddingManager
+from app.retrieval.embedding_manager import EmbeddingManager
 
 
 class RetrievalService:
