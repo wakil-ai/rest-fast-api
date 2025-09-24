@@ -49,10 +49,16 @@ class LanguageDetector:
         self.converter = UzTransliterator.UzTransliterator()
     
     def detect_language(self, text: str) -> str:
-        label, _ = self.model.predict(text)
-        lang = self.label_map.get(label[0], LanguageConfigs.OTHER)
-        return lang.display
+        try:
+            label, _ = self.model.predict(text)
+            lang = self.label_map.get(label[0], LanguageConfigs.OTHER)
+            return lang.display
+        except Exception as e:
+            return LanguageConfigs.OTHER.display
 
     def get_instruction(self, language: str) -> str:
-        lang = self.display_map.get(language, LanguageConfigs.OTHER)
-        return lang.instruction
+        try:
+            lang = self.display_map.get(language, LanguageConfigs.OTHER)
+            return lang.instruction
+        except Exception as e:
+            return LanguageConfigs.OTHER.instruction

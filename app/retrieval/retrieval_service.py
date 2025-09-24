@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from app.core.config import settings
+from app.core.logger import logger
 from app.db.db_manager import DBManager
 from app.ingest.embedding_manager import EmbeddingManager
 
@@ -19,11 +20,15 @@ class RetrievalService:
     ) -> str:
         """Retrieve and format top documents by combining hybrid search and metadata reranking results."""
         # Perform hybrid search using Milvus
-        search_results = self.search_hybrid(
-            query_text=query, top_k=top_k, alpha=alpha
-        )
-        
-        return self._format_results(search_results)
+        try:
+            search_results = self.search_hybrid(
+                query_text=query, top_k=top_k, alpha=alpha
+            )
+            
+            return self._format_results(search_results)
+        except Exception as e:
+            logger.error(f"[RetrievalService] Retrieval failed: {e}", exc_info=True)
+            return "No relevant documents found."
 
     def search_sparse(
         self,

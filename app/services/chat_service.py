@@ -15,9 +15,7 @@ class ChatService:
 
     async def ask_question(
         self, 
-        llm_type: str,
         query: str, 
-        top_k: int = settings.TOP_K, 
         chat_history: Optional[List[MessagePair]] = None,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
@@ -33,9 +31,7 @@ class ChatService:
             - AsyncGenerator[str, None]: Streaming answer if streaming is enabled
         """
         answer = await self.chat_chain.generate_answer(
-            llm_type=llm_type,
             query=query,
-            top_k=top_k,
             chat_history=chat_history,
         )
         return answer
