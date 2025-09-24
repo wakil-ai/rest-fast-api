@@ -3,6 +3,7 @@ from app.core.config import settings
 from app.core.logger import logger
 from app.db.db_manager import DBManager
 from app.retrieval.embedding_manager import EmbeddingManager
+from app.utils.text_cleaning import remove_braces
 
 
 class RetrievalService:
@@ -108,23 +109,32 @@ class RetrievalService:
                 formatted_entries.append(entry)
 
         return "\n".join(formatted_entries)
-
+    
+    def _format_citation(self, metadata: Dict[str, Any]) -> str:
+        """Formats metadata into a citation string."""
+        components = [
+            remove_braces(metadata.get(key, "")).strip()
+            for key in ["form", "title", "header", "clause"]
+            if remove_braces(metadata.get(key, "")).strip()
+        ]
+        if "form" in metadata:
+            components[0] = components[0].upper()
+        if "title" in metadata:
+            components[1] = " ".join(word.capitalize() for word in components[1].split())
+        return " ".join(components).strip()    
+        
     def _build_document_entry(self, metadata: Dict[str, Any]) -> str:
         """Build a formatted entry for a single document."""
         text = metadata.get('text', '')
         entry = [f"{'-'*50}", f"Document Content: {text}"]
-        if metadata.get("date"):
-            entry.append(f"Date: {metadata.get('date', '')}")
-        if metadata.get("document_number"):
-            entry.append(f"Document Number: {metadata.get('document_number', '')}")
-        if metadata.get("url"):
-            entry.append(f"Source URL: {metadata.get('url', '')}")
-        if metadata.get("hierarchy_path"):
-            hierarchy_path = metadata.get("hierarchy_path", "").replace("/", " ")
-            words = hierarchy_path.split()
-            capitalized_words = [w.capitalize() for w in words]
-            formatted_path = " ".join(capitalized_words)
+        
+        if date := metadata.get("date"):
+            entry.append(f"Date: {date}")
+        if document_number := metadata.get("document_number"):
+            entry.append(f"Document Number: {document_number}")
+        if url := metadata.get("url"):
+            entry.append(f"Source URL: {url}")
+        if formatted_citation := self._format_citation(metadata):
+            entry.append(f"Citation: {formatted_citation}")
             
-            entry.append(f"Citation: {formatted_path}")
-
         return "\n".join(entry)
