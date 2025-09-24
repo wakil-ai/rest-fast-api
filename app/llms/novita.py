@@ -18,21 +18,6 @@ class Novita(LLM):
         )
         self.model = settings.NOVITA_MODEL
     
-    def _format_prompt(self, query: str, context: str, chat_history_text: str, language_instruction: str = None) -> str:
-        """Format the complete user prompt."""
-        user_prompt = f"""Context:
-        {context}
-
-        Chat History:
-        {chat_history_text}
-
-        Question: {query}"""
-        
-        if language_instruction:
-            user_prompt += f"\n\n{language_instruction}"
-            
-        return user_prompt
-    
     async def generate_response(
         self, 
         query: str, 
