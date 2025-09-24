@@ -38,6 +38,7 @@ class LocalVLLM(LLM):
         context: str,
         chat_history_text: str,
         language_instruction: str = None,
+        stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate response using local vLLM server.
@@ -47,7 +48,7 @@ class LocalVLLM(LLM):
             system_prompt = self._format_prompt(query, context, chat_history_text, language_instruction)
             logger.debug(f"[LocalVLLMHandler] Generating response with model: {self.model}")
 
-            if settings.STREAM:
+            if stream:
                 return self._generate_streaming(query, system_prompt)
             else:
                 return await self._generate_complete(query, system_prompt)

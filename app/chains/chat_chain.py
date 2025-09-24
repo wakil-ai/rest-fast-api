@@ -48,6 +48,7 @@ class ChatChain:
         self,
         query: str,
         chat_history: Optional[List] = None,
+        stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response to the user's query using RAG approach.
@@ -61,7 +62,7 @@ class ChatChain:
 
             logger.debug(f"[ChatChain] Retrieved context: {context}")
 
-            if settings.STREAM:
+            if stream:
                 async def stream_generator() -> AsyncGenerator[str, None]:
                     try:
                         # Attempt primary LLM
@@ -69,7 +70,8 @@ class ChatChain:
                             query=query,
                             context=context,
                             chat_history_text=chat_history_text,
-                            language_instruction=instruction
+                            language_instruction=instruction,
+                            stream=stream
                         )
                         async for chunk in self._stream_response(response_generator, language):
                             yield chunk
@@ -81,7 +83,8 @@ class ChatChain:
                                 query=query,
                                 context=context,
                                 chat_history_text=chat_history_text,
-                                language_instruction=instruction
+                                language_instruction=instruction,
+                                stream=stream
                             )
                             async for chunk in self._stream_response(fallback_generator, language):
                                 yield chunk
@@ -98,7 +101,8 @@ class ChatChain:
                         query=query,
                         context=context,
                         chat_history_text=chat_history_text,
-                        language_instruction=instruction
+                        language_instruction=instruction, 
+                        stream=stream
                     )
                 except Exception as llm_error:
                     logger.warning(f"[ChatChain] Primary LLM failed, falling back to ChatGPT.", exc_info=True)
@@ -107,7 +111,8 @@ class ChatChain:
                             query=query,
                             context=context,
                             chat_history_text=chat_history_text,
-                            language_instruction=instruction
+                            language_instruction=instruction,
+                            stream=stream
                         )
                     except Exception as fallback_error:
                         logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)

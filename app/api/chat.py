@@ -26,9 +26,10 @@ async def ask_question(request: ChatRequest):
         response = await chat_service.ask_question(
             query=request.query,
             chat_history=request.chat_history,
+            stream=request.stream
         )
         
-        if settings.STREAM:
+        if request.stream:
             # Return streaming response
             return StreamingResponse(
                 format_streaming_response(response),

@@ -17,6 +17,7 @@ class ChatService:
         self, 
         query: str, 
         chat_history: Optional[List[MessagePair]] = None,
+        stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Handle the question by retrieving context and generating an answer.
@@ -33,5 +34,6 @@ class ChatService:
         answer = await self.chat_chain.generate_answer(
             query=query,
             chat_history=chat_history,
+            stream=stream
         )
         return answer

@@ -20,7 +20,7 @@ class ChatGPT(LLM):
         context: str, 
         chat_history_text: str,
         language_instruction: str = None,
-        temperature: float = settings.TEMPERATURE,
+        stream: bool = settings.STREAM,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate response using GPT model.
@@ -33,18 +33,18 @@ class ChatGPT(LLM):
                 language_instruction=language_instruction if language_instruction else ""
             )
             
-            if settings.STREAM:
+            if stream:
                 # Return streaming response
-                return self._generate_streaming(system_prompt, query, temperature)
+                return self._generate_streaming(system_prompt, query)
             else:
                 # Return complete response
-                return await self._generate_complete(system_prompt, query, temperature)
+                return await self._generate_complete(system_prompt, query)
                 
         except Exception as e:
             logger.error(f"[GPTHandler] Generation Error: {str(e)}")
             raise e
     
-    async def _generate_complete(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE) -> str:
+    async def _generate_complete(self, system_prompt: str, query: str) -> str:
         """Generate complete response."""
         response = await self.client.chat.completions.create(
             model=self.model,
@@ -52,12 +52,12 @@ class ChatGPT(LLM):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query}
             ],
-            temperature=temperature,
+            temperature=settings.TEMPERATURE,
         )
         
         return response.choices[0].message.content.strip()
     
-    async def _generate_streaming(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE) -> AsyncGenerator[str, None]:
+    async def _generate_streaming(self, system_prompt: str, query: str) -> AsyncGenerator[str, None]:
         """Generate streaming response."""
         response = await self.client.chat.completions.create(
             model=self.model,
@@ -65,7 +65,7 @@ class ChatGPT(LLM):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query}
             ],
-            temperature=temperature,
+            temperature=settings.TEMPERATURE,
             stream=True,
         )
         

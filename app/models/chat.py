@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     """
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
     chat_history: Optional[List[MessagePair]] = Field(default=None, description="Previous question-answer pairs")
+    stream: Optional[bool] = Field(default=settings.STREAM, description="Whether to stream the response")
 
 class ChatResponse(BaseModel):
     """

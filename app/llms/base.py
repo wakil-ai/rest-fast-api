@@ -14,6 +14,7 @@ class LLM(ABC):
         context: str, 
         chat_history_text: str,
         language_instruction: str = None,
+        stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response using the specific model.
