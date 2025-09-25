@@ -52,7 +52,7 @@ class LocationService:
 
                 # Check if we got valid data
                 if data.get("error"):
-                    logger.warning(f"IP API error for {ip_address}: {data.get('reason')}")
+                    # logger.warning(f"IP API error for {ip_address}: {data.get('reason')}")
                     return None
 
                 location = LocationData(
