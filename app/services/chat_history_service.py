@@ -175,9 +175,10 @@ class ChatHistoryService:
             )
 
             query = {"chat_id": chat_id, "message_id": message_id}
+            feedback_dict = feedback.dict(by_alias=True, exclude={"id"})
             update = {
-                "$set": feedback.dict(by_alias=True, exclude={"id"}),
-                "$setOnInsert": {"timestamp": datetime.utcnow()}
+                "$set": feedback_dict,
+                "$setOnInsert": {}
             }
 
             result = self.db_manager.update_documents(
