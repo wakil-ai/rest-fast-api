@@ -53,7 +53,7 @@ class ChatConversation(BaseModel):
 
 class ChatFeedback(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    session_id: str
+    chat_id: str
     message_id: str
     feedback_type: str
     comment: Optional[str] = None

@@ -168,23 +168,32 @@ class ChatHistoryService:
     def submit_feedback(self, chat_id: str, message_id: str, feedback_type: str, comment: str = None) -> FeedbackResponse:
         try:
             feedback = ChatFeedback(
-                session_id=chat_id,
+                chat_id=chat_id,
                 message_id=message_id,
                 feedback_type=feedback_type,
                 comment=comment
             )
 
-            feedback_dict = feedback.dict(by_alias=True, exclude={"id"})
-            result_ids = self.db_manager.insert_documents(
+            query = {"chat_id": chat_id, "message_id": message_id}
+            update = {
+                "$set": feedback.dict(by_alias=True, exclude={"id"}),
+                "$setOnInsert": {"timestamp": datetime.utcnow()}
+            }
+
+            result = self.db_manager.update_documents(
                 collection_name=self.feedback_collection,
-                documents=[feedback_dict]
+                query=query,
+                update=update,
+                upsert=True
             )
 
-            if result_ids and len(result_ids) > 0:
-                logger.info(f"Feedback submitted for message {message_id}")
-                return FeedbackResponse(feedback_id=result_ids[0])
-            else:
-                raise Exception("Failed to submit feedback")
+            action = "updated" if result.modified_count > 0 else "created"
+            logger.info(f"Feedback {action} for message {message_id}: {feedback_type}")
+
+            return FeedbackResponse(
+                feedback_id=str(result.upserted_id) if result.upserted_id else "updated",
+                message=f"Feedback {action} successfully"
+            )
 
         except Exception as e:
             logger.error(f"Error submitting feedback: {str(e)}")
@@ -192,7 +201,7 @@ class ChatHistoryService:
 
     def get_conversation_feedback(self, chat_id: str) -> List[ChatFeedback]:
         try:
-            query = {"session_id": chat_id}
+            query = {"chat_id": chat_id}
             feedback_docs = self.db_manager.find_documents(
                 collection_name=self.feedback_collection,
                 query=query
@@ -203,6 +212,22 @@ class ChatHistoryService:
         except Exception as e:
             logger.error(f"Error getting feedback for conversation {chat_id}: {str(e)}")
             raise
+
+    def get_message_feedback(self, message_id: str) -> Optional[ChatFeedback]:
+        try:
+            query = {"message_id": message_id}
+            feedback_doc = self.db_manager.find_documents(
+                collection_name=self.feedback_collection,
+                query=query
+            )
+
+            if feedback_doc and len(feedback_doc) > 0:
+                return ChatFeedback(**feedback_doc[0])
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting feedback for message {message_id}: {str(e)}")
+            return None
 
     def archive_conversation(self, chat_id: str) -> bool:
         try:
