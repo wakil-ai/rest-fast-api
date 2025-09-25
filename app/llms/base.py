@@ -14,7 +14,7 @@ class LLM(ABC):
         context: str, 
         chat_history_text: str,
         language_instruction: str = None,
-        temperature: float = settings.TEMPERATURE_GEMMA,
+        stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response using the specific model.

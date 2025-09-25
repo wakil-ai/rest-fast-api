@@ -18,28 +18,13 @@ class Novita(LLM):
         )
         self.model = settings.NOVITA_MODEL
     
-    def _format_prompt(self, query: str, context: str, chat_history_text: str, language_instruction: str = None) -> str:
-        """Format the complete user prompt."""
-        user_prompt = f"""Context:
-        {context}
-
-        Chat History:
-        {chat_history_text}
-
-        Question: {query}"""
-        
-        if language_instruction:
-            user_prompt += f"\n\n{language_instruction}"
-            
-        return user_prompt
-    
     async def generate_response(
         self, 
         query: str, 
         context: str, 
         chat_history_text: str,
         language_instruction: str = None,
-        temperature: float = settings.TEMPERATURE_GEMMA,
+        stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate response using Novita AI model.
@@ -52,18 +37,18 @@ class Novita(LLM):
                 language_instruction=language_instruction
             )
             
-            if settings.STREAM:
+            if stream:
                 # Return streaming response
-                return self._generate_streaming(system_prompt, query, temperature)
+                return self._generate_streaming(system_prompt, query)
             else:
                 # Return complete response
-                return await self._generate_complete(system_prompt, query, temperature)
+                return await self._generate_complete(system_prompt, query)
                 
         except Exception as e:
             logger.error(f"[NovitaHandler] Generation Error: {str(e)}")
             raise e
     
-    async def _generate_streaming(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE_GEMMA) -> AsyncGenerator[str, None]:
+    async def _generate_streaming(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE) -> AsyncGenerator[str, None]:
         """Generate streaming response."""
         try:
             response = await self.client.chat.completions.create(
@@ -79,7 +64,7 @@ class Novita(LLM):
                     }
                 ],
                 stream=True,
-                max_tokens=8192,
+                max_tokens=settings.OUTPUT_MAX_TOKENS,
                 temperature=temperature
             )
             
@@ -91,7 +76,7 @@ class Novita(LLM):
             logger.error(f"[NovitaHandler] Streaming Error: {str(e)}")
             raise e
     
-    async def _generate_complete(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE_GEMMA) -> str:
+    async def _generate_complete(self, system_prompt: str, query: str, temperature: float = settings.TEMPERATURE) -> str:
         """Generate complete response."""
         try:
             response = await self.client.chat.completions.create(
@@ -107,7 +92,7 @@ class Novita(LLM):
                     }
                 ],
                 stream=False,
-                max_tokens=8192,
+                max_tokens=settings.OUTPUT_MAX_TOKENS,
                 temperature=temperature
             )
             

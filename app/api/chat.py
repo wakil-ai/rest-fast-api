@@ -21,18 +21,15 @@ async def ask_question(request: ChatRequest):
     Retrieves context from vector DB and generates an answer.
     
     Response format automatically adapts based on STREAM config:
-    - If STREAM=False: Returns JSON with complete answer
-    - If STREAM=True: Returns Server-Sent Events stream
     """
     try:
         response = await chat_service.ask_question(
-            llm_type=request.llm_type,
             query=request.query,
-            top_k=request.top_k,
             chat_history=request.chat_history,
+            stream=request.stream
         )
         
-        if settings.STREAM:
+        if request.stream:
             # Return streaming response
             return StreamingResponse(
                 format_streaming_response(response),
@@ -56,8 +53,10 @@ async def get_model_info():
     Returns information about the current model configuration.
     """
     return ModelInfoResponse(
-        available_models=["gpt", "gemma"],
-        service_provider=settings.GEMMA_PROVIDER,
+        service_provider=settings.LLM_PROVIDER,
         embedding_model=settings.EMBEDDING_MODEL,
-        stream=settings.STREAM
+        stream=settings.STREAM,
+        top_k=settings.TOP_K,
+        alpha=settings.ALPHA,
+        temperature=settings.TEMPERATURE,
     )

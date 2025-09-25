@@ -50,8 +50,13 @@ class DBManager:
         return self.mongo_handler.find_documents(collection_name, query)
 
     def insert_documents(self, collection_name: str, documents: List[Dict[str, Any]]) -> list:
-        """Insert documents into MongoDB collection and return inserted IDs."""    
+        """Insert documents into MongoDB collection and return inserted IDs."""
         return self.mongo_handler.insert_documents(collection_name, documents)
+
+    def update_documents(self, collection_name: str, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False) -> Any:
+        """Update documents in MongoDB collection."""
+        collection = self.mongo_handler.db[collection_name]
+        return collection.update_one(query, update, upsert=upsert)
 
     # Vector database operations (Pinecone, or Milvus)
     def upsert_vectors(self, documents: List[Dict[str, Any]], partition_name: str = None) -> None:

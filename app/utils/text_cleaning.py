@@ -130,3 +130,10 @@ def replace_numbers_with_uzbek_words(text: str) -> str:
 def extract_integers(text: str) -> List[int]:
         """Grab all integer numbers from text (e.g., '115, 114' → [115, 114])."""
         return [int(m) for m in re.findall(r'\b\d+\b', text)]
+
+def remove_braces(text: str) -> str:
+    """
+    Remove everything inside curly braces `{}` including the braces themselves,
+    no matter how many times it appears in the text.
+    """
+    return re.sub(r'\{[^}]*\}', '', text)

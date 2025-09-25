@@ -14,23 +14,20 @@ class VectorDBType(str, Enum):
     pinecone = "pinecone"
     milvus = "milvus"
 
-class GemmaProvider(str, Enum):
+class LLMProvider(str, Enum):
     novita = "novita"
     local = "local"
     
-
 class EmbeddingModel(str, Enum):
     qwen = "qwen"
     openai = "openai"
     novita_qwen = "novita_qwen"
     deepinfra = "deepinfra"
-    infinity = "infinity"
-    gemma = "gemma"
 
 class Settings(BaseSettings):
     # General
     # App settings
-    APP_NAME: str = "Lex Humblebee CB Chatbot"
+    APP_NAME: str = "WakilAI Chatbot"
     API_PREFIX: str = "/api"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
@@ -42,6 +39,8 @@ class Settings(BaseSettings):
     # MongoDB
     MONGODB_URI: Optional[str] = None  # Make optional
     MONGODB_DB_NAME: Optional[str] = None  # Make optional
+    MONGO_CONVERSATIONS_COLLECTION: str = "chat_conversations"
+    MONGO_FEEDBACK_COLLECTION: str = "chat_feedback"
     COLLECTION_NAME: str = "itemdocs"
 
     # Milvus
@@ -55,14 +54,10 @@ class Settings(BaseSettings):
     PINECONE_ENVIRONMENT: Optional[str] = None
     PINECONE_INDEX_NAME: Optional[str] = None
     NAMESPACE_NAME: str = "lexuz"
-
-    # MySQL
-    MYSQL_ENABLED: bool = False  # Whether to use MySQL or not
-    DATABASE_URL: Optional[str] = None  # MySQL connection URL 
-
+    
     # LLM
     # Model Selection
-    GEMMA_PROVIDER: GemmaProvider = GemmaProvider.novita
+    LLM_PROVIDER: LLMProvider = LLMProvider.novita
 
     # OpenAI GPT
     OPENAI_API_KEY: Optional[str] = None
@@ -106,15 +101,13 @@ class Settings(BaseSettings):
     ALPHA: float = 0.8
 
     # TEMPERATURE
-    TEMPERATURE_GPT: float = 0.1
-    TEMPERATURE_GEMMA: float = 0.1
-
+    TEMPERATURE: float = 0.1
     CHAT_HISTORY_LIMIT: int = 5
 
     LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
-    LOCAL_VLLM_MAX_TOKENS: int = 2048
+    OUTPUT_MAX_TOKENS: int = 8192
     
     # EMBEDDING DIM
     @property

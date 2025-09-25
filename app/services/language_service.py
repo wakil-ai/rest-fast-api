@@ -47,12 +47,38 @@ class LanguageDetector:
         self.label_map = {lang.label: lang for lang in LanguageConfigs if lang != LanguageConfigs.OTHER}
         self.display_map = {lang.display: lang for lang in LanguageConfigs}
         self.converter = UzTransliterator.UzTransliterator()
+        
+    def correct_language(self, text: str, language: str) -> str:
+        if language == 'Uzbek Cyrillic':
+            return self.convert_to_cyrillic(text)
+        elif language == 'Uzbek Latin':
+            return self.convert_to_latin(text)
+        elif language == 'Russian':
+            return self.convert_to_cyrillic(text)
+        elif language == 'English':
+            return self.convert_to_latin(text)
+        elif language == 'Other':
+            return self.convert_to_latin(text) # default to latin
+        
+        return text
+    
+    def convert_to_latin(self, text: str) -> str:
+        return self.converter.transliterate(text, from_="cyr", to="lat")
+    
+    def convert_to_cyrillic(self, text: str) -> str:
+        return self.converter.transliterate(text, from_="lat", to="cyr")
     
     def detect_language(self, text: str) -> str:
-        label, _ = self.model.predict(text)
-        lang = self.label_map.get(label[0], LanguageConfigs.OTHER)
-        return lang.display
+        try:
+            label, _ = self.model.predict(text)
+            lang = self.label_map.get(label[0], LanguageConfigs.OTHER)
+            return lang.display
+        except Exception as e:
+            return LanguageConfigs.OTHER.display
 
     def get_instruction(self, language: str) -> str:
-        lang = self.display_map.get(language, LanguageConfigs.OTHER)
-        return lang.instruction
+        try:
+            lang = self.display_map.get(language, LanguageConfigs.OTHER)
+            return lang.instruction
+        except Exception as e:
+            return LanguageConfigs.OTHER.instruction

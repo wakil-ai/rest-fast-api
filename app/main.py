@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
-from app.api import chat, retrieval
+from app.api import chat, retrieval, chat_history
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -83,7 +83,12 @@ def create_app() -> FastAPI:
         dependencies=[Depends(verify_api_key)]
     )
     app.include_router(
-        retrieval.router, 
+        retrieval.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        chat_history.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
     )
@@ -91,7 +96,7 @@ def create_app() -> FastAPI:
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"])
     async def health_check():
-        return {"status": "ok", "message": "HB LexAI API is running 🚀"}
+        return {"status": "ok", "message": "WakilAI API is running 🚀"}
     
     # Documentation endpoints (Basic Auth protected)
     @app.get("/docs")
@@ -113,7 +118,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_event():
         port = 8080  # This should match the port in the Dockerfile
-        logger.info(f"HB LexAI API running at http://localhost:{port} and http://0.0.0.0:{port}")
+        logger.info(f"WakilAI API running at http://localhost:{port} and http://0.0.0.0:{port}")
         logger.info(f"API documentation available at http://localhost:{port}/docs")
 
     return app
