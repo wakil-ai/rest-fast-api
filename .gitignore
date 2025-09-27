@@ -9,3 +9,7 @@ myenv/
 venv/
 
 .env
+
+.vscode/
+data/
+ingest.py
