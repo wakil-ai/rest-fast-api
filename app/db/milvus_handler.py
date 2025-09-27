@@ -69,20 +69,21 @@ class MilvusHandler(VectorDBHandler):
                 continue
 
             # Get text from metadata or direct text field
-            text = doc.get("metadata", {}).get("text", "") or doc.get("text", "")
+            metadata = doc.get("metadata", {})
+            text = metadata.get("text", "") or doc.get("text", "")
             if not text:
                 logger.warning(f"Missing text for document ID: {doc.get('id')}")
                 continue
 
             # Get hierarchy path from metadata
-            hierarchy_path = doc.get("metadata", {}).get("hierarchy_path", "")
+            hierarchy_path = metadata.get("hierarchy_path", "")
 
             entry = {
                 "id": doc["id"],
                 "text": text,
                 "text_dense": doc["embedding"],
                 "hierarchy_path": hierarchy_path,
-                "metadata": doc.get("metadata", {})
+                "metadata": metadata
             }
             milvus_data.append(entry)
 

@@ -16,12 +16,12 @@ ingestion_service = IngestionService()
 @router.post("/markdown", summary="Ingest a markdown document")
 async def ingest_markdown(file: UploadFile, 
                           doc_id: int = Form(...),
-                          metadata: Optional[str] = Form(None),
+                          partition_name: Optional[str] = Form("without-modda"),
                           background_tasks: BackgroundTasks = None):
     """
     Ingest a markdown document by splitting it into chunks and storing in vector DB.
     Also stores the full document in MongoDB with metadata.
     """
     content = (await file.read()).decode('utf-8')
-    background_tasks.add_task(ingestion_service.ingest_markdown, content, doc_id, metadata)
+    background_tasks.add_task(ingestion_service.ingest_markdown, content, doc_id, partition_name)
     return {"status": "Ingestion started in background"}

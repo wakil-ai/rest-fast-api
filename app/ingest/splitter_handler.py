@@ -6,8 +6,9 @@ from langchain_text_splitters import (
     TokenTextSplitter,
 )
 from app.core.logger import logger
+import tiktoken
+from app.utils.text_cleaning import remove_braces
 import re
-
 
 class TextSplitter:
     def __init__(
@@ -21,6 +22,17 @@ class TextSplitter:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.fixed_base_headers = fixed_base_headers or {}
+        
+        headers_to_split_on = [
+            ("###", "header"),
+            ("####", "clause"),
+        ]
+        
+        self.enc = tiktoken.get_encoding("cl100k_base")
+        self.md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
+        self.rec_splitter = RecursiveCharacterTextSplitter(chunk_size=self.chunk_size,
+                                                           chunk_overlap=self.chunk_overlap, 
+                                                           length_function=lambda x: len(self.enc.encode(x)))
 
         # Strategy pattern
         self.splitters: Dict[str, Callable[[str], List[Any]]] = {
@@ -83,120 +95,87 @@ class TextSplitter:
         )
         return splitter.split_text(text)
 
-    # Helpers
-    @staticmethod
-    def _clean_hdr_name(name: str) -> str:
-        """Remove trailing {-id ... -id} blocks from header names."""
-        return re.sub(r"\s*\{\s*(?:-\d+\s*)+\}\s*$", "", name).strip()
+    def _lex_markdown_split(self, content: str) -> List[Dict]:
+        """
+        Split markdown content into chunks with metadata, respecting token limits.
+        """
+        default_header_block = self._build_header_block(content)
+        markdown_chunks = self.md_splitter.split_text(content)
+        processed_chunks = []
 
-    def _parse_header_ids(self, text: str) -> Dict[Tuple[str, str], str]:
-        """Extract header IDs from markdown text."""
-        pattern = re.compile(
-            r"^(#{1,4})\s+(.+?)\s*\{\s*((?:-\d+\s*)+)\}\s*$", re.MULTILINE
-        )
-        header_map: Dict[Tuple[str, str], str] = {}
+        for index, chunk in enumerate(markdown_chunks, 1):
+            content_text = remove_braces(chunk.page_content)
+            header = chunk.metadata.get("header", "")
+            clause = chunk.metadata.get("clause", "")
+            
+            anchor_id = self._extract_anchor_id(clause or header)
+            
+            headers = ""
+            if index != 1:
+                headers += default_header_block + "\n" if index != 1 else ""
+            if header:
+                headers += f"### {header}\n"
+            if clause:
+                headers += f"#### {clause}\n"
 
-        for match in pattern.finditer(text):
-            level, raw_title, id_blob = match.groups()
-            ids = re.findall(r"-\d+", id_blob)
-            chosen_id = ids[-1] if ids else None
-            if chosen_id:
-                clean_title = self._clean_hdr_name(raw_title)
-                header_map[(level, clean_title)] = chosen_id
-        return header_map
+            headers = remove_braces(headers).strip()
+            full_text = (headers + content_text).strip()
+            hierarchy_path = headers.replace("#", "").replace("\n", " > ").strip(" > ")
+            token_count = self._count_tokens(full_text)
 
-    def _resolve_roots(
-        self, splits: List[Any], base_headers: Optional[Dict[str, str]]
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """Resolve root headers from provided base_headers, fixed defaults, or content."""
-        root_h1 = (base_headers or {}).get("h1") or self.fixed_base_headers.get("h1")
-        root_h2 = (base_headers or {}).get("h2") or self.fixed_base_headers.get("h2")
-
-        if root_h1 and root_h2:
-            return root_h1.strip(), root_h2.strip()
-
-        for s in splits:
-            meta = getattr(s, "metadata", {}) or {}
-            if not root_h1 and meta.get("form"):
-                root_h1 = self._clean_hdr_name(meta["form"])
-            if not root_h2 and meta.get("title"):
-                root_h2 = self._clean_hdr_name(meta["title"])
-            if root_h1 and root_h2:
-                break
-
-        return root_h1, root_h2
-
-    def _lex_markdown_split(
-        self, text: str, character_limit: int = 2000, base_headers: Optional[Dict[str, str]] = None
-    ) -> List[Dict[str, Any]]:
-        headers_to_split_on = [
-            ("#", "form"),
-            ("##", "title"),
-            ("###", "header"),
-            ("####", "clause"),
-        ]
-
-        md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-        rec_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap, length_function=len
-        )
-
-        header_id_map = self._parse_header_ids(text)
-        splits = md_splitter.split_text(text)
-        root_h1, root_h2 = self._resolve_roots(splits, base_headers)
-
-        final_chunks: List[Dict[str, Any]] = []
-
-        def emit(chunk_text: str, meta: Dict[str, Any], headers: Dict[str, str], anchor: str):
-            header_lines = [
-                f"# {headers['h1']}" if headers["h1"] else "",
-                f"## {headers['h2']}" if headers["h2"] else "",
-                f"### {headers['h3']}" if headers["h3"] else "",
-                f"#### {headers['h4']}" if headers["h4"] else "",
-            ]
-            header_block = "\n".join(filter(None, header_lines))
-
-            hierarchy_path = " / ".join(
-                filter(None, [headers["h1"], headers["h2"], headers["h3"], headers["h4"]])
-            )
-
-            full_text = f"{header_block}\n\n{chunk_text}".strip() if header_block else chunk_text.strip()
-            final_chunks.append(
-                {
+            if token_count > self.chunk_size:
+                sub_chunks = self.rec_splitter.split_text(full_text)
+                for sub_chunk in sub_chunks:
+                    processed_chunks.append({
+                        "text": sub_chunk,
+                        "metadata": {
+                            "default_header_block": default_header_block,
+                            "header": header,
+                            "clause": clause,
+                            "anchor_id": anchor_id,
+                            "chunk_index": index,
+                            "hierarchy_path": hierarchy_path,
+                            "article_number": self._extract_article_number(clause) if clause else None,
+                        }
+                    })
+            else:
+                processed_chunks.append({
                     "text": full_text,
                     "metadata": {
-                        **meta,
-                        "root_h1": headers["h1"],
-                        "root_h2": headers["h2"],
-                        "root_h3": headers["h3"],
-                        "root_h4": headers["h4"],
+                        "default_header_block": default_header_block,
+                        "header": header,
+                        "clause": clause,
+                        "anchor_id": anchor_id,
+                        "chunk_index": index,
                         "hierarchy_path": hierarchy_path,
-                        "anchor_id": anchor,
-                    },
-                }
-            )
+                        "article_number": self._extract_article_number(clause) if clause else None,
+                    }
+                })
 
-        for s in splits:
-            content, meta = s.page_content, s.metadata or {}
-            headers = {
-                "h1": self._clean_hdr_name(meta.get("form", "")) or root_h1 or "",
-                "h2": self._clean_hdr_name(meta.get("title", "")) or root_h2 or "",
-                "h3": self._clean_hdr_name(meta.get("header", "")),
-                "h4": self._clean_hdr_name(meta.get("clause", "")),
-            }
+        return processed_chunks
+    
+    # Helpers
+    def _extract_anchor_id(self, text: str) -> str | None:
+        """Extract anchor ID from text like '1-modda {-5664677}' or return None."""
+        match = re.search(r'\{-?(\d+)\}', text)
+        return match.group(1) if match else None
 
-            # Anchor ID selection by depth
-            anchor = ""
-            for lvl in ("####", "###", "##", "#"):
-                title = headers.get({"#": "h1", "##": "h2", "###": "h3", "####": "h4"}[lvl])
-                if title and (lvl, title) in header_id_map:
-                    anchor = header_id_map[(lvl, title)]
-                    break
+    def _extract_article_number(self, clause: str) -> int | None:
+        """Extract article number from clause like '93-modda. {-6445785}' or return None."""
+        match = re.search(r'\d+', clause)
+        return int(match.group()) if match else None
 
-            if len(content) > character_limit:
-                for chunk in rec_splitter.split_text(content):
-                    emit(chunk, meta, headers, anchor)
-            else:
-                emit(content, meta, headers, anchor)
+    def _build_header_block(self, text: str) -> str:
+        pattern = re.compile(r'^(#{1,2})\s+.*', re.MULTILINE)
 
-        return final_chunks
+        blocks = []
+        for match in pattern.finditer(text):
+            line = match.group(0).strip()  # full header line (# ... or ## ...)
+            line = remove_braces(line).strip()  # Clean {-id ...} parts
+            blocks.append(line)
+
+        return "\n".join(blocks)
+    
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens in text using tiktoken."""
+        return len(self.enc.encode(text))
