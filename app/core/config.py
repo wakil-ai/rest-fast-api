@@ -108,6 +108,13 @@ class Settings(BaseSettings):
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
     OUTPUT_MAX_TOKENS: int = 8192
+
+    # TIMEOUT
+    TIMEOUT: int = 15  # HTTP request timeout in seconds    
+
+    # RSS Reader
+    RSS_URL: str = "https://lex.uz/uz/rss"
+    UPDATE_INTERVAL: int = 24 * 60 * 60  # 24 hours
     
     # EMBEDDING DIM
     @property

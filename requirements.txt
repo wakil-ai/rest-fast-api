@@ -24,3 +24,8 @@ fasttext==0.9.3
 UzTransliterator==0.0.36
 loguru==0.7.3
 requests==2.31.0
+lxml==5.2.2
+openpyxl==3.1.5
+aiofiles==24.1.0
+slugify==0.0.1
+markdownfy==1.2.0

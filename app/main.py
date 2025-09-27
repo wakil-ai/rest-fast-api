@@ -1,4 +1,4 @@
-# app/main.py
+import asyncio
 import secrets
 
 # FastAPI imports
@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
-from app.api import chat, retrieval, chat_history
+from app.api import chat, retrieval, chat_history, convert, lex_dowload, act_warnings, rss_reader
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -92,7 +92,27 @@ def create_app() -> FastAPI:
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
     )
-    
+    app.include_router(
+        convert.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        lex_dowload.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        act_warnings.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        rss_reader.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"])
     async def health_check():
@@ -117,6 +137,7 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup_event():
+        asyncio.create_task(rss_reader.run_rss_updater())
         port = 8080  # This should match the port in the Dockerfile
         logger.info(f"WakilAI API running at http://localhost:{port} and http://0.0.0.0:{port}")
         logger.info(f"API documentation available at http://localhost:{port}/docs")
