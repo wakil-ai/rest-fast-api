@@ -43,7 +43,19 @@ class DBManager:
             return pinecone_handler
         else:
             raise ValueError(f"[DBManager] Invalid vector database type: {settings.VECTOR_DB_TYPE}. Please choose from {VectorDBType.values()}")
-
+        
+    def get_all_data(self, collection_name: str = settings.COLLECTION_NAME) -> str:
+        """
+        Retrieve all data from MongoDB collection.
+        
+        Args:
+            collection_name (str): Name of the MongoDB collection. Defaults to settings.COLLECTION_NAME.
+        
+        Returns:
+            List of documents with metadata.
+        """
+        return self.mongo_handler.get_all_data(collection_name)
+    
     # MongoDB operations - synchronous
     def find_documents(self, collection_name: str, query: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Find documents in MongoDB based on query."""
@@ -82,6 +94,34 @@ class DBManager:
         else:
             # Return empty list
             return []
+
+    def delete_data_by_urls(self, urls: List[str]) -> Dict[str, int]:
+        """
+        Delete data from MongoDB and the vector database by a list of URLs.
+        """
+        # Find documents in MongoDB by URLs
+        documents = self.mongo_handler.find_documents_by_urls(settings.COLLECTION_NAME, urls)
+        if not documents:
+            return {"mongo_deleted_count": 0, "vector_db_deleted_count": 0}
+
+        # Get the IDs of the documents
+        document_ids = [str(doc["_id"]) for doc in documents]
+
+        # Delete documents from MongoDB
+        mongo_deleted_count = self.mongo_handler.delete_documents_by_ids(settings.COLLECTION_NAME, document_ids)
+
+        # Delete vectors from the vector database
+        try:
+            if settings.VECTOR_DB_TYPE == VectorDBType.milvus:
+                self.vector_handler.delete_vectors(document_ids)
+            # Add logic for other vector databases if needed
+        except Exception as e:
+            logger.error(f"[DBManager] Error deleting vectors: {str(e)}")
+            # If vector DB deletion fails, we should ideally handle this case.
+            # For now, we'll just log the error and return the count of deleted mongo documents.
+            return {"mongo_deleted_count": mongo_deleted_count, "vector_db_deleted_count": 0}
+
+        return {"mongo_deleted_count": mongo_deleted_count, "vector_db_deleted_count": len(document_ids)}
 
     def close_all_connections(self):
         """Close all database connections."""

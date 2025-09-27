@@ -4,7 +4,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from typing import List, Dict, Any
 from app.core.config import settings
-
+from bson import ObjectId
 from app.core.logger import logger
 
 class MongoHandler:
@@ -39,6 +39,31 @@ class MongoHandler:
         cursor = collection.find(query)
         return list(cursor)
 
+    def find_documents_by_urls(self, collection_name: str, urls: List[str]) -> List[Dict[str, Any]]:
+        """
+        Find documents matching a list of URLs.
+        """
+        try:
+            collection = self.db[collection_name]
+            cursor = collection.find({"metadata.url": {"$in": urls}})
+            return list(cursor)
+        except Exception as e:
+            logger.error(f"[MongoHandler] Error finding documents by URLs: {str(e)}")
+            return []
+
+    def delete_documents_by_ids(self, collection_name: str, document_ids: List[str]) -> int:
+        """
+        Delete multiple documents by their _id.
+        """
+        try:
+            collection = self.db[collection_name]
+            result = collection.delete_many({"_id": {"$in": [ObjectId(doc_id) for doc_id in document_ids]}})
+            logger.info(f"[MongoHandler] Deleted {result.deleted_count} documents.")
+            return result.deleted_count
+        except Exception as e:
+            logger.error(f"[MongoHandler] Error deleting documents by IDs: {str(e)}")
+            return 0
+
     def close_connection(self):
         self.client.close
         logger.info("[MongoHandler] MongoDB connection closed.")
@@ -61,3 +86,17 @@ class MongoHandler:
             logger.info(f"[MongoHandler] Cleaned {result.deleted_count} documents from '{collection_name}' collection.")
         except Exception as e:
             logger.error(f"[MongoHandler] Error cleaning collection {collection_name}: {str(e)}")
+
+    def get_all_data(self, collection_name: str = settings.COLLECTION_NAME) -> List[str]:
+        """
+        Retrieve all documents from a specified collection and return a list of URLs.
+        """
+        collection = self.db[collection_name]
+        cursor = collection.find()
+        urls = []
+        for document in cursor:
+            metadata = document.get("metadata", {})
+            url = metadata.get("url")
+            if url:
+                urls.append(url)
+        return urls

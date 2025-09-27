@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
-from app.api import chat, retrieval, chat_history, convert, lex_dowload, act_warnings, rss_reader
+from app.api import chat, retrieval, chat_history, convert, lex_dowload, act_warnings, rss_reader, data
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -109,6 +109,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         rss_reader.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        data.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
     )

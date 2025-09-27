@@ -276,6 +276,17 @@ class MilvusHandler(VectorDBHandler):
 
         return formatted_results
 
+    def delete_vectors(self, ids: List[str]) -> None:
+        """
+        Delete vectors from the collection by their IDs.
+        """
+        try:
+            self.client.delete(self.collection_name, ids)
+            logger.info(f"Deleted {len(ids)} vectors from Milvus collection {self.collection_name}")
+        except Exception as e:
+            logger.error(f"Error deleting vectors from Milvus: {str(e)}")
+            raise
+
     def delete_collection(self, collection_name: str = settings.MILVUS_COLLECTION_NAME) -> None:
         if self.client.has_collection(collection_name):
             self.client.drop_collection(collection_name)
