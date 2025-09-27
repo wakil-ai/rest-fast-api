@@ -7,7 +7,8 @@ env/
 .venv/
 myenv/
 venv/
-
 .env
-data/
 logs/
+.vscode/
+data/
+ingest.py

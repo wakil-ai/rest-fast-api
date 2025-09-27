@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
-from app.api import chat, retrieval, chat_history, convert, lex_dowload, act_warnings, rss_reader, data
+from app.api import chat, retrieval, chat_history, convert, lex_dowload, act_warnings, rss_reader, data, ingest
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -117,11 +117,15 @@ def create_app() -> FastAPI:
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
     )
-
+=======
+        ingest.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"])
     async def health_check():
-        return {"status": "ok", "message": "WakilAI API is running 🚀"}
+        return {"status": "ok", "message": "Wakil AI API is running 🚀"}
     
     # Documentation endpoints (Basic Auth protected)
     @app.get("/docs")
