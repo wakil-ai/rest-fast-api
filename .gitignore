@@ -9,3 +9,4 @@ myenv/
 venv/
 
 .env
+data/
