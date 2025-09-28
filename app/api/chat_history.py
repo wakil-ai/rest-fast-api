@@ -4,6 +4,7 @@ from typing import List
 from app.models.chat_history import (
     CreateConversationRequest,
     AddMessageRequest,
+    UpdateConversationRequest,
     CreateFeedbackRequest,
     ConversationResponse,
     ConversationListResponse,
@@ -105,6 +106,36 @@ async def add_message(chat_id: str, request: AddMessageRequest, session_id: str)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to add message"
+        )
+
+
+@router.patch("/conversations/{chat_id}", response_model=dict)
+async def update_conversation(chat_id: str, request: UpdateConversationRequest):
+    try:
+        success = chat_history_service.update_conversation(
+            chat_id,
+            request.title
+        )
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found or could not be updated"
+            )
+
+        return {
+            "message": "Conversation updated successfully",
+            "chat_id": chat_id,
+            "title": request.title
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ChatHistory] Error updating conversation {chat_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update conversation"
         )
 
 

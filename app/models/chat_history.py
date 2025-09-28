@@ -74,6 +74,10 @@ class AddMessageRequest(BaseModel):
     message: ChatMessage
 
 
+class UpdateConversationRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200, description="New conversation title")
+
+
 class CreateFeedbackRequest(BaseModel):
     chat_id: str
     message_id: str
