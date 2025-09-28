@@ -230,6 +230,34 @@ class ChatHistoryService:
             logger.error(f"Error getting feedback for message {message_id}: {str(e)}")
             return None
 
+    def update_conversation(self, chat_id: str, title: str) -> bool:
+        try:
+            query = {"chat_id": chat_id, "status": "active"}
+            update = {
+                "$set": {
+                    "title": title,
+                    "updated_at": datetime.utcnow()
+                }
+            }
+
+            result = self.db_manager.update_documents(
+                collection_name=self.conversations_collection,
+                query=query,
+                update=update
+            )
+
+            success = result.modified_count > 0
+            if success:
+                logger.info(f"Successfully updated conversation {chat_id} with new title: {title}")
+            else:
+                logger.warning(f"No conversation found or updated for chat_id: {chat_id}")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error updating conversation {chat_id}: {str(e)}")
+            return False
+
     def archive_conversation(self, chat_id: str) -> bool:
         try:
             query = {"chat_id": chat_id}
