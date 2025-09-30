@@ -94,8 +94,7 @@ class ChatChain:
                 language_instruction=instruction
             )
                 
-            logger.debug(f"[ChatChain] Chat History text: {chat_history_text}")
-            logger.debug(f"[ChatChain] Retrieved context: {context}")
+            logger.debug(f"[ChatChain] System Prompt: {system_prompt}")
 
             if stream:
                 async def stream_generator() -> AsyncGenerator[str, None]:
