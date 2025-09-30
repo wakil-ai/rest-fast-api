@@ -133,10 +133,6 @@ class ChatChain:
                         raise fallback_error # Re-raise to be caught by the outer handler
 
                 logger.info(f"[DEBUG] LLM full response: {response}")
-                
-                # For non-streaming, save interaction directly
-                await self.mem_service._save_interaction_to_memory(user_id, query, response)
-                
                 return response
 
         except Exception as e:
@@ -173,8 +169,7 @@ class ChatChain:
             full_response += buffer
 
         logger.debug(f"[ChatChain] Full LLM Response: {full_response}")
-        await self.mem_service._save_interaction_to_memory(user_id, query, full_response)
-
+        
     async def _error_stream(self, message: str) -> AsyncGenerator[str, None]:
         """Yield error message as stream."""
         for char in message:

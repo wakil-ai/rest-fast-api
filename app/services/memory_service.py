@@ -10,14 +10,10 @@ class ChatMemoryService:
     async def search_memory(self, user_id: str, query: str):
         """Searches for memories for a given user."""
         try:
-            logger.debug(f"[ChatMemoryService] Searching memories for user_id: {user_id}")
             filters = {"user_id": user_id}
             results = await self.client.search(query=query, filters=filters, version="v2", output_format="v1.1")
-            logger.debug(f"[ChatMemoryService] Found memories: {results}")
             results = results.get("results", [])
-            
             return await self._format_memories(results)
-            
         except Exception as e:
             logger.error(f"[ChatMemoryService] Could not retrieve memories from mem0: {e}")
             return []
@@ -25,16 +21,20 @@ class ChatMemoryService:
     async def add_memory(self, user_id: str, messages: list):
         """Adds a list of messages to the memory for a given user."""
         try:
-            await self.client.add(messages, user_id=user_id, version="v2", output_format="v1.1")
+            results = await self.client.add(messages, user_id=user_id, version="v2", output_format="v1.1")
+            memories = []
+            ids = []
+            for res in results.get("results", []):
+                memories.append(res['memory'])
+                ids.append(res['id'])
+            return {"memories": memories, "memory_ids": ids}
         except Exception as e:
             logger.error(f"Could not add memories to mem0: {e}")
 
     async def get_memory(self, memory_id: str):
         """Retrieves a single memory by its ID."""
         try:
-            logger.debug(f"[ChatMemoryService] Getting memory with id: {memory_id}")
             memory = await self.client.get(memory_id)
-            logger.debug(f"[ChatMemoryService] Found memory: {memory}")
             return memory
         except Exception as e:
             logger.error(f"[ChatMemoryService] Could not retrieve memory from mem0: {e}")
@@ -43,19 +43,30 @@ class ChatMemoryService:
     async def get_all_memories(self, user_id: str):
         """Retrieves all memories for a given user."""
         try:
-            logger.debug(f"[ChatMemoryService] Getting all memories for user_id: {user_id}")
             memories = await self.client.get_all(user_id=user_id)
-            logger.debug(f"[ChatMemoryService] Found memories: {memories}")
-            return memories
+            mems, cats, mem_ids = [], [], []
+            for mem in memories:
+                memory = mem.get("memory", "")
+                if categories := mem.get("categories"):
+                    if categories and isinstance(categories, list):
+                        categories = ", ".join(categories)
+                    else:
+                        categories = " "
+                ids = mem.get("id", " ")
+                
+                mems.append(memory)
+                cats.append(categories)
+                mem_ids.append(ids)
+                
+            return {"memories": mems, "categories": cats, "memory_ids": mem_ids}
         except Exception as e:
             logger.error(f"[ChatMemoryService] Could not retrieve memories from mem0: {e}")
             return []
 
-    async def update_memory(self, memory_id: str, data: dict):
+    async def update_memory(self, memory_id: str, text: str):
         """Updates a memory with new data."""
         try:
-            logger.debug(f"[ChatMemoryService] Updating memory with id: {memory_id}")
-            updated_memory = await self.client.update(memory_id=memory_id, data=data)
+            updated_memory = await self.client.update(memory_id=memory_id, text=text)
             logger.debug(f"[ChatMemoryService] Updated memory: {updated_memory}")
             return updated_memory
         except Exception as e:
@@ -105,7 +116,6 @@ class ChatMemoryService:
                 {"role": "user", "content": query},
                 {"role": "assistant", "content": answer},
             ]
-            await self.add_memory(user_id, messages)
-            logger.debug(f"[ChatService] Saved interaction to memory for user_id: {user_id}")
+            return await self.add_memory(user_id, messages)
         except Exception as e:
             logger.error(f"[ChatService] Error saving memory: {e}")
