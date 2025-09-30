@@ -10,6 +10,7 @@ from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
 from app.llms.local_vllm import LocalVLLM
 from app.services.memory_service import ChatMemoryService
+from app.chains.prompts import PROMPT
 
 class ChatChain:
     """
@@ -46,11 +47,24 @@ class ChatChain:
             formatted += f"{idx}. User: {pair.question}\n   Assistant: {pair.answer}\n"
 
         return formatted + "Use the above conversation to maintain context."
+    
+    async def make_system_prompt(self, context: str, 
+                                   chat_history_text: str, 
+                                   is_lawyer: bool, 
+                                   language_instruction: Optional[str]) -> str:
+        """Create the system prompt using the provided context and chat history."""
+        return PROMPT.format(
+            context=context,
+            chat_history=chat_history_text,
+            user_type="lawyer" if is_lawyer else "citizen",
+            language_instruction=language_instruction if language_instruction else ""
+        )
 
     async def generate_answer(
         self,
         user_id: str,
         query: str,
+        is_lawyer: bool = False,
         chat_history: Optional[List] = None,
         stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
@@ -73,6 +87,13 @@ class ChatChain:
             elif memory_text:
                 chat_history_text += memory_text
                 
+            system_prompt = await self.make_system_prompt(
+                context=context,
+                chat_history_text=chat_history_text,
+                is_lawyer=is_lawyer,
+                language_instruction=instruction
+            )
+                
             logger.debug(f"[ChatChain] Chat History text: {chat_history_text}")
             logger.debug(f"[ChatChain] Retrieved context: {context}")
 
@@ -81,10 +102,8 @@ class ChatChain:
                     try:
                         # Attempt primary LLM
                         response_generator = await self.llm.generate_response(
-                            query=query,
-                            context=context,
-                            chat_history_text=chat_history_text,
-                            language_instruction=instruction,
+                            user_prompt=query,
+                            system_prompt=system_prompt,
                             stream=stream
                         )
                         async for chunk in self._stream_response(response_generator, language, query, user_id):
@@ -94,10 +113,8 @@ class ChatChain:
                         try:
                             # Attempt fallback LLM
                             fallback_generator = await self.llm_fallback.generate_response(
-                                query=query,
-                                context=context,
-                                chat_history_text=chat_history_text,
-                                language_instruction=instruction,
+                                user_prompt=query,
+                                system_prompt=system_prompt,
                                 stream=stream
                             )
                             async for chunk in self._stream_response(fallback_generator, language, query, user_id):
@@ -112,20 +129,16 @@ class ChatChain:
                 # Non-streaming fallback logic
                 try:
                     response = await self.llm.generate_response(
-                        query=query,
-                        context=context,
-                        chat_history_text=chat_history_text,
-                        language_instruction=instruction, 
+                        user_prompt=query,
+                        system_prompt=system_prompt,
                         stream=stream
                     )
                 except Exception as llm_error:
                     logger.warning(f"[ChatChain] Primary LLM failed, falling back to ChatGPT.", exc_info=True)
                     try:
                         response = await self.llm_fallback.generate_response(
-                            query=query,
-                            context=context,
-                            chat_history_text=chat_history_text,
-                            language_instruction=instruction,
+                            user_prompt=query,
+                            system_prompt=system_prompt,
                             stream=stream
                         )
                     except Exception as fallback_error:

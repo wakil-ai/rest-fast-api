@@ -26,6 +26,7 @@ async def ask_question(request: ChatRequest):
         response = await chat_service.ask_question(
             user_id=request.user_id,
             query=request.query,
+            is_lawyer=request.is_lawyer,
             chat_history=request.chat_history,
             stream=request.stream
         )

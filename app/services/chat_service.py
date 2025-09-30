@@ -17,6 +17,7 @@ class ChatService:
         self,
         user_id: str,
         query: str, 
+        is_lawyer: bool = False,
         chat_history: Optional[List[MessagePair]] = None,
         stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
@@ -35,6 +36,7 @@ class ChatService:
         answer = await self.chat_chain.generate_answer(
             user_id=user_id,
             query=query,
+            is_lawyer=is_lawyer,
             chat_history=chat_history,
             stream=stream
         )
