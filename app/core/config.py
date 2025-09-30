@@ -116,16 +116,12 @@ class Settings(BaseSettings):
     # EMBEDDING DIM
     @property
     def EMBEDDING_DIM(self) -> int:
-        if self.EMBEDDING_MODEL == EmbeddingModel.qwen or self.EMBEDDING_MODEL == EmbeddingModel.deepinfra:
+        if self.EMBEDDING_MODEL == EmbeddingModel.qwen or self.EMBEDDING_MODEL == EmbeddingModel.deepinfra: # Qwen3-Embedding-4B
             return 2560
-        elif self.EMBEDDING_MODEL == EmbeddingModel.openai:
+        elif self.EMBEDDING_MODEL == EmbeddingModel.openai: # Text-Embedding-Ada-002
             return 1536
-        elif self.EMBEDDING_MODEL == EmbeddingModel.novita_qwen:
+        elif self.EMBEDDING_MODEL == EmbeddingModel.novita_qwen: # Qwen3-Embedding-8B
             return 4096
-        elif self.EMBEDDING_MODEL == EmbeddingModel.infinity:
-            return 1024 # multilingual-e5-large-instruct
-        elif self.EMBEDDING_MODEL == EmbeddingModel.gemma:
-            return 768 # gemma embedding dimension
         else:
             raise ValueError(f"Unknown embedding model: {self.EMBEDDING_MODEL}")
        
