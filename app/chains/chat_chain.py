@@ -1,4 +1,4 @@
-from typing import Union, AsyncGenerator, Optional, List
+from typing import Union, AsyncGenerator, Optional, List, Any
 from app.retrieval.retrieval_service import RetrievalService
 from app.core.config import settings
 from app.llms.base import LLM
@@ -9,6 +9,7 @@ from app.core.logger import logger
 from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
 from app.llms.local_vllm import LocalVLLM
+from app.services.memory_service import ChatMemoryService
 
 class ChatChain:
     """
@@ -20,8 +21,10 @@ class ChatChain:
     def __init__(self):
         self.retrieval_service = RetrievalService()
         self.llm = self._get_llm_provider()
+        self.mem_service = ChatMemoryService()
         self.llm_fallback = ChatGPT() # Fallback to OpenAI GPT if needed
         self.language_detector = LanguageDetector()
+        
 
     def _get_llm_provider(self) -> LLM:
         """Factory method to select and load the Gemma model based on settings."""
@@ -46,6 +49,7 @@ class ChatChain:
 
     async def generate_answer(
         self,
+        user_id: str,
         query: str,
         chat_history: Optional[List] = None,
         stream: bool = settings.STREAM
@@ -58,8 +62,18 @@ class ChatChain:
             language = self.language_detector.detect_language(query)
             instruction = self.language_detector.get_instruction(language)
             context = await self.retrieval_service.retrieve_context(query=query)
+            
+            memory_text = await self.mem_service.search_memory(user_id, query)
+            
             chat_history_text = await self._format_chat_history(chat_history)
-
+            
+            # Merge Chat History and Memory
+            if chat_history_text and memory_text:
+                chat_history_text += memory_text
+            elif memory_text:
+                chat_history_text += memory_text
+                
+            logger.debug(f"[ChatChain] Chat History text: {chat_history_text}")
             logger.debug(f"[ChatChain] Retrieved context: {context}")
 
             if stream:
@@ -73,7 +87,7 @@ class ChatChain:
                             language_instruction=instruction,
                             stream=stream
                         )
-                        async for chunk in self._stream_response(response_generator, language):
+                        async for chunk in self._stream_response(response_generator, language, query, user_id):
                             yield chunk
                     except Exception as llm_error:
                         logger.warning(f"[ChatChain] Primary LLM streaming failed, falling back to ChatGPT.", exc_info=True)
@@ -86,7 +100,7 @@ class ChatChain:
                                 language_instruction=instruction,
                                 stream=stream
                             )
-                            async for chunk in self._stream_response(fallback_generator, language):
+                            async for chunk in self._stream_response(fallback_generator, language, query, user_id):
                                 yield chunk
                         except Exception as fallback_error:
                             logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
@@ -119,6 +133,10 @@ class ChatChain:
                         raise fallback_error # Re-raise to be caught by the outer handler
 
                 logger.info(f"[DEBUG] LLM full response: {response}")
+                
+                # For non-streaming, save interaction directly
+                await self.mem_service._save_interaction_to_memory(user_id, query, response)
+                
                 return response
 
         except Exception as e:
@@ -133,7 +151,7 @@ class ChatChain:
         else:
             return message
 
-    async def _stream_response(self, response_generator: AsyncGenerator[str, None], language: str) -> AsyncGenerator[str, None]:
+    async def _stream_response(self, response_generator: AsyncGenerator[str, None], language: str, query: str, user_id: str) -> AsyncGenerator[str, None]:
         """Handle streaming response and save conversation when complete."""
         full_response, buffer = "", ""
         
@@ -155,6 +173,7 @@ class ChatChain:
             full_response += buffer
 
         logger.debug(f"[ChatChain] Full LLM Response: {full_response}")
+        await self.mem_service._save_interaction_to_memory(user_id, query, full_response)
 
     async def _error_stream(self, message: str) -> AsyncGenerator[str, None]:
         """Yield error message as stream."""

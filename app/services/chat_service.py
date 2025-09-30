@@ -14,7 +14,8 @@ class ChatService:
         self.chat_chain = ChatChain()
 
     async def ask_question(
-        self, 
+        self,
+        user_id: str,
         query: str, 
         chat_history: Optional[List[MessagePair]] = None,
         stream: bool = settings.STREAM
@@ -32,6 +33,7 @@ class ChatService:
             - AsyncGenerator[str, None]: Streaming answer if streaming is enabled
         """
         answer = await self.chat_chain.generate_answer(
+            user_id=user_id,
             query=query,
             chat_history=chat_history,
             stream=stream

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
+    
+    # Memory Service API Key
+    MEM0_API_KEY: str  # Mem
 
     # VECTOR DBs
     # Vector Database Configuration

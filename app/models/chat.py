@@ -15,6 +15,7 @@ class ChatRequest(BaseModel):
     """
     Request body for chat questions.
     """
+    user_id: str = Field(..., example="user_12345", description="Unique identifier for the user")
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
     chat_history: Optional[List[MessagePair]] = Field(default=None, description="Previous question-answer pairs")
     stream: Optional[bool] = Field(default=settings.STREAM, description="Whether to stream the response")
