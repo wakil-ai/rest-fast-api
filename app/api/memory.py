@@ -2,30 +2,14 @@ from fastapi import APIRouter, HTTPException
 from app.services.memory_service import ChatMemoryService
 from pydantic import BaseModel
 from app.core.logger import logger
+from app.models.memory import GetAllMemoriesResponse, SaveInteractionRequest, SaveInteractionResponse, UpdateMemoryRequest, UpdateMemoryResponse
 
 router = APIRouter(prefix="/memory", tags=["Memory"])
 
 
 memory_service = ChatMemoryService()
 
-class GetAllMemoriesResponse(BaseModel):
-    user_id: str
-    memories: list
-    categories: list
-    memory_ids: list
-    
-class SaveInteractionRequest(BaseModel):
-    user_id: str
-    query: str
-    answer: str
-    
-    
-class SaveInteractionResponse(BaseModel):
-    message: str
-    memories: list
-    memory_ids: list
-
-@router.get("/user/{user_id}/", summary="Get all user memories")
+@router.get("/user/{user_id}/", summary="Get all user memories", response_model=GetAllMemoriesResponse)
 async def get_user_memories(user_id: str) -> GetAllMemoriesResponse:
     """
     Retrieve past interactions for a user.
@@ -37,7 +21,7 @@ async def get_user_memories(user_id: str) -> GetAllMemoriesResponse:
         logger.error(f"Error retrieving memories for user {user_id}: {e}")
         return {"user_id": user_id, "memories": [], "categories": [], "memory_ids": []}
     
-@router.delete("/user/{user_id}/", summary="Delete all user memories")
+@router.delete("/user/{user_id}/", summary="Delete all user memories", response_model=dict)
 async def delete_user_memories(user_id: str) -> dict:
     """
     Delete all past interactions for a user.
@@ -51,8 +35,8 @@ async def delete_user_memories(user_id: str) -> dict:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/save/", summary="Save interaction to memory")
-async def save_interaction(request: SaveInteractionRequest) -> dict:
+@router.post("/save/", summary="Save interaction to memory", response_model=SaveInteractionResponse)
+async def save_interaction(request: SaveInteractionRequest) -> SaveInteractionResponse:
     """
     Save a user interaction (query and answer) to memory.
     """
@@ -63,7 +47,7 @@ async def save_interaction(request: SaveInteractionRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
     
 
-@router.delete("/{memory_id}/", summary="Delete a specific memory by ID")
+@router.delete("/{memory_id}/", summary="Delete a specific memory by ID", response_model=dict)
 async def delete_memory(memory_id: str):
     """
     Delete a specific memory by its ID.
@@ -77,14 +61,8 @@ async def delete_memory(memory_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-class UpdateMemoryRequest(BaseModel):
-    text: str    
 
-class UpdateMemoryResponse(BaseModel):
-    message: str
-    memory: dict
-
-@router.put("/update/{memory_id}", summary="Update a specific memory by ID")
+@router.put("/update/{memory_id}", summary="Update a specific memory by ID", response_model=UpdateMemoryResponse)
 async def update_memory(request: UpdateMemoryRequest, memory_id: str) -> UpdateMemoryResponse:
     """
     Update a specific memory by its ID.

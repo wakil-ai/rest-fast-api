@@ -67,7 +67,6 @@ class ChatMemoryService:
         """Updates a memory with new data."""
         try:
             updated_memory = await self.client.update(memory_id=memory_id, text=text)
-            logger.debug(f"[ChatMemoryService] Updated memory: {updated_memory}")
             return updated_memory
         except Exception as e:
             logger.error(f"[ChatMemoryService] Could not update memory in mem0: {e}")
@@ -76,7 +75,6 @@ class ChatMemoryService:
     async def delete_memory(self, memory_id: str):
         """Deletes a single memory by its ID."""
         try:
-            logger.debug(f"[ChatMemoryService] Deleting memory with id: {memory_id}")
             await self.client.delete(memory_id=memory_id)
             logger.debug(f"[ChatMemoryService] Deleted memory with id: {memory_id}")
             return True
@@ -87,7 +85,6 @@ class ChatMemoryService:
     async def delete_all_user_memories(self, user_id: str):
         """Deletes all memories for a given user."""
         try:
-            logger.debug(f"[ChatMemoryService] Deleting all memories for user_id: {user_id}")
             await self.client.delete_all(user_id=user_id)
             logger.debug(f"[ChatMemoryService] Deleted all memories for user_id: {user_id}")
             return True
