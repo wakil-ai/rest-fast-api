@@ -1,6 +1,7 @@
 # app/core/config.py
 
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import Optional
 import os
 from dotenv import load_dotenv
@@ -128,9 +129,10 @@ class Settings(BaseSettings):
         else:
             raise ValueError(f"Unknown embedding model: {self.EMBEDDING_MODEL}")
        
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "allow"  # Allow extra fields in the environment
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="allow"  # Allow extra fields in the environment
+    )
 
 settings = Settings()
