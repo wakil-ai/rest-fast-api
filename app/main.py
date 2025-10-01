@@ -114,9 +114,10 @@ def create_app() -> FastAPI:
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
     )
+    # Auth router without API prefix (Telegram needs direct access)
     app.include_router(
         auth.router,
-        prefix=settings.API_PREFIX
+        # dependencies=[Depends(verify_api_key)]
     )
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"])
