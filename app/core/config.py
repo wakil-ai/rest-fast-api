@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
     OUTPUT_MAX_TOKENS: int = 8192
     
+    # Auth (For Telegram Login)
+    TELEGRAM_BOT_TOKEN: str
+    TELEGRAM_BOT_LOGIN: str  # e.g., 'your_bot_username'
+    
     # EMBEDDING DIM
     @property
     def EMBEDDING_DIM(self) -> int:
