@@ -11,6 +11,12 @@ from enum import Enum
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", ".env"))
 load_dotenv(dotenv_path=env_path, override=True)
 
+class TelegramLoginSize(Enum):
+    """Button Size variants"""
+    LARGE: str = 'large'
+    MEDIUM: str = 'medium'
+    SMALL: str = 'small'
+
 class VectorDBType(str, Enum):
     pinecone = "pinecone"
     milvus = "milvus"
@@ -115,7 +121,9 @@ class Settings(BaseSettings):
     
     # Auth (For Telegram Login)
     TELEGRAM_BOT_TOKEN: str
-    TELEGRAM_BOT_LOGIN: str  # e.g., 'your_bot_username'
+    TELEGRAM_BOT_LOGIN: str
+    TELEGRAM_LOGIN_SIZE: TelegramLoginSize = TelegramLoginSize.LARGE
+    TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3 # 3 day in seconds
     
     # EMBEDDING DIM
     @property

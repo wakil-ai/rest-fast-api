@@ -3,8 +3,7 @@ from fastapi import Depends
 from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.templating import Jinja2Templates
 import os
-
-from app.models.auth import TelegramAuth, AppConfig, load_config, Size
+from app.models.auth import TelegramAuth
 from app.services.auth_service import validate_telegram_data, TelegramLoginWidget
 from app.core.config import settings
 
@@ -13,17 +12,6 @@ router = APIRouter(prefix="/auth", tags=["Telegram Auth"])
 
 templates = Jinja2Templates(directory=os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "templates"))
-
-
-def create_jwt_token():
-    # here your code
-    pass
-
-
-def set_cookies():
-    # here your code
-    pass
-
 
 @router.get("/", name='index')
 async def index(request: Request):
@@ -35,8 +23,7 @@ async def index(request: Request):
 
 @router.get("/login", name='login')
 async def login(request: Request,
-                query_params: TelegramAuth = Depends(TelegramAuth),
-                config: AppConfig = Depends(load_config)):
+                query_params: TelegramAuth = Depends(TelegramAuth)):
     """
     Endpoint for authorization through Telegram API.
 
@@ -51,7 +38,7 @@ async def login(request: Request,
     telegram_login = settings.TELEGRAM_BOT_LOGIN
     
     login_widget = TelegramLoginWidget(telegram_login=telegram_login,
-                                       size=Size.LARGE,
+                                       size=settings.TELEGRAM_LOGIN_SIZE,
                                        user_photo=False,
                                        corner_radius=0)
     
@@ -72,8 +59,6 @@ async def login(request: Request,
         validated_data = validate_telegram_data(telegram_token, query_params)
 
         if validated_data:
-            create_jwt_token()
-            set_cookies()
             return templates.TemplateResponse('profile.html',
                                               context={'request': request,
                                                        **validated_data})
