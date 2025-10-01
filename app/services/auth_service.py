@@ -1,9 +1,9 @@
-from app.models.auth import TelegramAuth, Size
+from app.models.auth import TelegramAuth
 from app.models.auth import TelegramDataError, TelegramDataIsOutdated
 import hashlib
 import hmac
 import time
-
+from app.core.config import TelegramLoginSize as Size
 
 def validate_telegram_data(telegram_bot_token: str,
                            data: TelegramAuth) -> dict:
