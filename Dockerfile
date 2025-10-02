@@ -10,6 +10,7 @@ COPY requirements.txt .
 # # Install system dependencies needed for cryptography and database drivers
 RUN apt-get update && apt-get install -y \
     build-essential \
+    ffmpeg \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
