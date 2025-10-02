@@ -12,7 +12,6 @@ router = APIRouter(prefix="/speech-to-text", tags=["Speech-to-Text"])
 def transcribe_audio(
     file: UploadFile = File(...),
     language: str = Form(...),
-    hints: Optional[str] = Form(None)
 ):
     """
     Transcribes audio to text using the configured speech-to-text provider.
@@ -23,8 +22,8 @@ def transcribe_audio(
     """
     try:
         speech_to_text_service = get_speech_to_text_service()
-        hint_list = hints.split(',') if hints else None
-        text = speech_to_text_service.transcribe_audio(file.file, language, hints=hint_list)
+
+        text = speech_to_text_service.transcribe_audio(file.file, language)
         return TranscriptionResponse(text=text)
     except Exception as e:
         logger.error(f"[SpeechToTextAPI] Error: {str(e)}")
