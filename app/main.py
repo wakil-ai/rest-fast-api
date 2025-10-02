@@ -108,16 +108,20 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         speech_to_text.router,
-
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
         count.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
     )
     app.include_router(
         ws_stt.router,
-        prefix=settings.API_PREFIX,  
+        prefix=settings.API_PREFIX, 
     )
     
+    app.include_router(
         memory.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
