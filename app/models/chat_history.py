@@ -84,6 +84,12 @@ class MessageCreateRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class MessageCreateResponse(BaseModel):
+    """Standardized response for message creation"""
+    info: MessageResponse
+    message: str = Field(default="Message added successfully")
+
+
 class MessagesFetchRequest(BaseModel):
     """Fetch messages request model"""
     user_id: str

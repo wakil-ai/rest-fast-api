@@ -7,6 +7,7 @@ from app.models.chat_history import (
     SessionResponse,
     MessageCreateRequest,
     MessageResponse,
+    MessageCreateResponse,
     FeedbackCreateRequest,
     FeedbackCreateResponse,
     FeedbackResponse
@@ -55,9 +56,9 @@ def get_sessions(user_id: str, limit: int = 50) -> List[SessionResponse]:
     sessions = chat_history_service.get_sessions(user_id=user_id, limit=limit)
     return [serialize_mongo_id(session) for session in sessions]
 
-@router.post("/add/message/", status_code=status.HTTP_201_CREATED, response_model=MessageResponse)
+@router.post("/add/message/", status_code=status.HTTP_201_CREATED, response_model=MessageCreateResponse)
 @handle_service_error
-def add_message(request: MessageCreateRequest) -> MessageResponse:
+def add_message(request: MessageCreateRequest) -> MessageCreateResponse:
     """Add a message to a user session."""
     message_info = chat_history_service.add_message(
         user_id=request.user_id,
