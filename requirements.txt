@@ -29,3 +29,4 @@ azure-cognitiveservices-speech==1.38.0
 mem0ai==0.1.118
 uvicorn[standard]==0.34.2
 protobuf>=5.29.0,<6.0.0
+python-multipart==0.0.20
