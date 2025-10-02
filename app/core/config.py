@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     USERS_COLLECTION: str = "users"
     SESSIONS_COLLECTION: str = "sessions"
     MESSAGES_COLLECTION: str = "messages"
+    FEEDBACK_COLLECTION: str = "feedbacks"
 
     # Milvus
     MILVUS_COLLECTION_NAME: str = "lexuz" # Do not name it with -

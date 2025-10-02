@@ -15,11 +15,12 @@ class ChatHistoryService:
         self.users_collection = settings.USERS_COLLECTION
         self.sessions_collection = settings.SESSIONS_COLLECTION
         self.messages_collection = settings.MESSAGES_COLLECTION
+        self.feedback_collection = settings.FEEDBACK_COLLECTION
         self._init_collections()
 
     def _init_collections(self):
         """Initialize necessary database collections."""
-        for collection in [self.users_collection, self.sessions_collection, self.messages_collection]:
+        for collection in [self.users_collection, self.sessions_collection, self.messages_collection, self.feedback_collection]:
             self.db_manager.create_collection(collection)
 
     def _validate_user_id(self, user_id: str) -> None:
@@ -34,7 +35,7 @@ class ChatHistoryService:
 
     def create_user(self, user_id: str, username: Optional[str] = None, 
                     first_name: Optional[str] = None, last_name: Optional[str] = None, 
-                    picture: Optional[str] = None) -> dict:
+                    picture: Optional[str] = None, is_lawyer: Optional[bool] = False) -> dict:
         """Create or retrieve an existing user."""
         self._validate_user_id(user_id)
         existing_user = self.db_manager.find_documents(self.users_collection, {"user_id": user_id})
@@ -49,6 +50,7 @@ class ChatHistoryService:
             "first_name": first_name,
             "last_name": last_name,
             "picture": picture,
+            "is_lawyer": is_lawyer,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
@@ -146,8 +148,56 @@ class ChatHistoryService:
         """Retrieve all messages for a session."""
         self._validate_user_id(user_id)
         self._validate_session_id(session_id)
+        # Filter to only get actual messages (not feedback) by ensuring content field exists
+        query = {
+            "user_id": user_id, 
+            "session_id": session_id,
+            "content": {"$exists": True}
+        }
         messages = self.db_manager.find_documents(
-            self.messages_collection, {"user_id": user_id, "session_id": session_id}, limit=limit
+            self.messages_collection, query, limit=limit
         )
         logger.info(f"Retrieved {len(messages)} messages from session {session_id} for user {user_id}")
         return messages
+    
+    def submit_feedback(self, user_id: str, session_id: str, message_id: str,
+                        feedback_type: str, comments: Optional[str] = None) -> dict:
+        """Submit feedback for a message."""
+        self._validate_user_id(user_id)
+        self._validate_session_id(session_id)
+        
+        if not message_id or not message_id.strip():
+            raise ValueError("Message ID cannot be empty")
+
+        feedback = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "message_id": message_id,
+            "feedback_type": feedback_type,
+            "comments": comments or "",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+
+        result_ids = self.db_manager.insert_documents(self.feedback_collection, [feedback])
+        if not result_ids:
+            raise ValueError("Failed to submit feedback")
+
+        feedback["_id"] = ObjectId(result_ids[0])
+        logger.info(f"Submitted feedback for message_id: {message_id} in session {session_id} for user {user_id}")
+        return feedback
+    
+    def get_feedback(self, user_id: str, session_id: str, message_id: str) -> List[dict]:
+        """Retrieve feedback for a specific message."""
+        self._validate_user_id(user_id)
+        self._validate_session_id(session_id)
+        
+        if not message_id or not message_id.strip():
+            raise ValueError("Message ID cannot be empty")
+
+        feedbacks = self.db_manager.find_documents(
+            self.feedback_collection, 
+            {"user_id": user_id, "session_id": session_id, "message_id": message_id}
+        )
+        logger.info(f"Retrieved {len(feedbacks)} feedback entries for message_id: {message_id} in session {session_id} for user {user_id}")
+        return feedbacks
