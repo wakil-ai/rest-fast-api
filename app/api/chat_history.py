@@ -7,7 +7,6 @@ from app.models.chat_history import (
     AddMessageRequest,
 )
 from app.services.chat_history_service import ChatHistoryService
-from pydantic import BaseModel
 from app.core.logger import logger
 
 router = APIRouter(prefix="/history", tags=["Chat History"])
