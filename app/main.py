@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
-from app.api import chat, retrieval, chat_history
+from app.api import chat, retrieval, chat_history, speech_to_text, ws_stt
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -91,6 +91,15 @@ def create_app() -> FastAPI:
         chat_history.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        speech_to_text.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        ws_stt.router,
+        prefix=settings.API_PREFIX,  
     )
     
     # Health Check Route (no authentication required)

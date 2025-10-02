@@ -24,3 +24,6 @@ fasttext==0.9.3
 UzTransliterator==0.0.36
 loguru==0.7.3
 requests==2.31.0
+google-cloud-speech==2.25.0
+pydub==0.25.1
+azure-cognitiveservices-speech==1.38.0

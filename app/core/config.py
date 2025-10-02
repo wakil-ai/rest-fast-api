@@ -78,6 +78,15 @@ class Settings(BaseSettings):
 
     # EMBEDDING MODEL
     EMBEDDING_MODEL: EmbeddingModel = EmbeddingModel.qwen
+
+    # SPEECH TO TEXT
+    class SpeechToTextProvider(str, Enum):
+        google = "google"
+        azure = "azure"
+
+    SPEECH_TO_TEXT_PROVIDER: SpeechToTextProvider = SpeechToTextProvider.azure
+    AZURE_SPEECH_KEY: Optional[str] = None
+    AZURE_SPEECH_REGION: Optional[str] = None
     
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
