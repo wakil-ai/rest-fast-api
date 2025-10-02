@@ -43,10 +43,11 @@ class Settings(BaseSettings):
 
     # MongoDB
     MONGODB_URI: Optional[str] = None  # Make optional
+    COLLECTION_NAME: Optional[str] = None  # Make optional
     MONGODB_DB_NAME: Optional[str] = None  # Make optional
-    MONGO_CONVERSATIONS_COLLECTION: str = "chat_conversations"
-    MONGO_FEEDBACK_COLLECTION: str = "chat_feedback"
-    COLLECTION_NAME: str = "itemdocs"
+    USERS_COLLECTION: str = "users"
+    SESSIONS_COLLECTION: str = "sessions"
+    MESSAGES_COLLECTION: str = "messages"
 
     # Milvus
     MILVUS_COLLECTION_NAME: str = "lexuz" # Do not name it with -

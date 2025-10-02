@@ -29,6 +29,18 @@ class DBManager:
         self._initialized = True
         self.vector_handler = self._initialize_vector_db()
         self.mongo_handler = MongoHandler() # For automatic ingestions
+        
+    def create_collection(self, collection_name: str) -> None:
+        """Create a MongoDB collection if it doesn't exist."""
+        # List existing collections first
+        existing_collections = self.mongo_handler.db.list_collection_names()
+        
+        if collection_name in existing_collections:
+            logger.info(f"[DBManager] Collection {collection_name} already exists in MongoDB.")
+            return
+        
+        self.mongo_handler.db.create_collection(collection_name)
+        logger.info(f"[DBManager] Created MongoDB collection: {collection_name}")
     
     # Initialize vector database handler
     def _initialize_vector_db(self) -> VectorDBHandler:
@@ -85,5 +97,4 @@ class DBManager:
 
     def close_all_connections(self):
         """Close all database connections."""
-        self.mysql_handler.close()
         self.mongo_handler.close_connection() 

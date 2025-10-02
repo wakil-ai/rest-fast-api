@@ -2,206 +2,100 @@ from fastapi import APIRouter, HTTPException, status, Request
 from typing import List
 
 from app.models.chat_history import (
-    CreateConversationRequest,
+    CreateUserRequest,
+    AddSessionRequest,
     AddMessageRequest,
-    UpdateConversationRequest,
-    CreateFeedbackRequest,
-    ConversationResponse,
-    ConversationListResponse,
-    FeedbackResponse,
-    ChatFeedback
 )
 from app.services.chat_history_service import ChatHistoryService
+from pydantic import BaseModel
 from app.core.logger import logger
 
 router = APIRouter(prefix="/history", tags=["Chat History"])
 chat_history_service = ChatHistoryService()
 
-
-@router.post("/conversations", response_model=dict)
-async def create_conversation(request: CreateConversationRequest):
+@router.post("/create/user/", status_code=status.HTTP_201_CREATED)
+def create_user(request: CreateUserRequest) -> dict:
+    """Create a new user."""
     try:
-        conversation = chat_history_service.create_conversation(
+        user_information = chat_history_service.create_user(
+            user_id=request.user_id,
+            username=request.username,
+            first_name=request.first_name,
+            last_name=request.last_name,
+            picture=request.picture
+        )
+        # sanitize for JSON response
+        if "_id" in user_information:
+            user_information["_id"] = str(user_information["_id"])
+        return {
+            "info": user_information,
+            "message": "User created successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+@router.post("/create/session/", status_code=status.HTTP_201_CREATED)
+def create_session(request: AddSessionRequest) -> dict:
+    """Create a new user session."""
+    try:
+        session_information = chat_history_service.create_session(
+            user_id=request.user_id,
+            sessions_id=request.session_id,
+            title=request.title,
+            tags=request.tags
+        )
+        if "_id" in session_information:
+            session_information["_id"] = str(session_information["_id"])
+        return {"info": session_information, "message": "Session created successfully"}
+    except Exception as e:
+        logger.error(f"Error creating session: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+@router.get("/sessions/{user_id}", response_model=List[dict])
+def get_sessions(user_id: str) -> List[dict]:
+    """Retrieve user sessions."""
+    try:
+        sessions = chat_history_service.get_sessions(user_id=user_id)
+        
+        for session in sessions:
+            if "_id" in session:
+                session["_id"] = str(session["_id"])
+        
+        return sessions
+    except Exception as e:
+        logger.error(f"Error retrieving sessions: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+@router.post("/add/message/", status_code=status.HTTP_201_CREATED)
+def add_message(request: AddMessageRequest) -> dict:
+    """Add a message to a user session."""
+    try:
+        message_information = chat_history_service.add_message(
+            user_id=request.user_id,
             session_id=request.session_id,
-            title=request.title or "New Chat"
+            message_id=request.message_id,
+            content=request.content,
+            metadata=request.metadata
         )
-        return {
-            "message": "Conversation created successfully",
-            "chat_id": conversation.chat_id,
-            "session_id": conversation.session_id,
-            "title": conversation.title,
-            "created_at": conversation.created_at
-        }
-
+        if "_id" in message_information:
+            message_information["_id"] = str(message_information["_id"])
+        return {"info": message_information, "message": "Message added successfully"}
     except Exception as e:
-        logger.error(f"[ChatHistory] Error creating conversation: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create conversation"
-        )
-
-
-@router.get("/conversations", response_model=ConversationListResponse)
-async def list_conversations(session_id: str, limit: int = 50):
+        logger.error(f"Error adding message: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+@router.get("/messages/{user_id}/{session_id}", response_model=List[dict])
+def get_messages(user_id: str, session_id: str) -> List[dict]:
+    """Retrieve messages from a user session."""
     try:
-        conversations = chat_history_service.list_conversations(session_id, limit)
-        return conversations
-
+        messages = chat_history_service.get_messages(user_id=user_id, session_id=session_id)
+        
+        for message in messages:
+            if "_id" in message:
+                message["_id"] = str(message["_id"])
+                
+        return messages
     except Exception as e:
-        logger.error(f"[ChatHistory] Error listing conversations: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to list conversations"
-        )
-
-
-@router.get("/conversations/{chat_id}", response_model=ConversationResponse)
-async def get_conversation(chat_id: str):
-    try:
-        conversation = chat_history_service.get_conversation(chat_id)
-
-        if not conversation:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found"
-            )
-
-        return conversation
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error getting conversation {chat_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve conversation"
-        )
-
-
-@router.put("/conversations/{chat_id}", response_model=dict)
-async def add_message(chat_id: str, request: AddMessageRequest, session_id: str):
-    try:
-        success = chat_history_service.add_message(
-            chat_id,
-            session_id,
-            request.message
-        )
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to add message"
-            )
-
-        return {
-            "message": "Message added successfully",
-            "chat_id": chat_id,
-            "message_id": request.message.message_id
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error adding message to {chat_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to add message"
-        )
-
-
-@router.patch("/conversations/{chat_id}", response_model=dict)
-async def update_conversation(chat_id: str, request: UpdateConversationRequest):
-    try:
-        success = chat_history_service.update_conversation(
-            chat_id,
-            request.title
-        )
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found or could not be updated"
-            )
-
-        return {
-            "message": "Conversation updated successfully",
-            "chat_id": chat_id,
-            "title": request.title
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error updating conversation {chat_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update conversation"
-        )
-
-
-@router.delete("/conversations/{chat_id}", response_model=dict)
-async def archive_conversation(chat_id: str):
-    try:
-        success = chat_history_service.archive_conversation(chat_id)
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found or already archived"
-            )
-
-        return {
-            "message": "Conversation archived successfully",
-            "chat_id": chat_id
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error archiving conversation {chat_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to archive conversation"
-        )
-
-
-@router.post("/feedback", response_model=FeedbackResponse)
-async def submit_feedback(request: CreateFeedbackRequest):
-    try:
-        if request.feedback_type not in ["positive", "negative"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Feedback type must be 'positive' or 'negative'"
-            )
-
-        feedback_response = chat_history_service.submit_feedback(
-            request.chat_id,
-            request.message_id,
-            request.feedback_type,
-            request.comment
-        )
-
-        return feedback_response
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error submitting feedback: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to submit feedback"
-        )
-
-
-@router.get("/feedback/{chat_id}", response_model=List[ChatFeedback])
-async def get_conversation_feedback(chat_id: str):
-    try:
-        feedback_list = chat_history_service.get_conversation_feedback(chat_id)
-        return feedback_list
-
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error getting feedback for {chat_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve feedback"
-        )
+        logger.error(f"Error retrieving messages: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
