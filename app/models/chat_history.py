@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from enum import Enum
 
 # USER MODELS
-class CreateUserRequest(BaseModel):
+class UserCreateRequest(BaseModel):
     user_id: str = Field(..., description="Telegram ID (as string)")
     username: Optional[str] = None
     first_name: Optional[str] = None
@@ -13,7 +13,7 @@ class CreateUserRequest(BaseModel):
     picture: Optional[str] = None
 
 
-class UserInfoResponse(BaseModel):
+class UserResponse(BaseModel):
     """Response model for user creation/update"""
     mongo_id: str = Field(..., description="MongoDB ObjectId")
     user_id: str = Field(..., description="Telegram user ID")
@@ -26,14 +26,14 @@ class UserInfoResponse(BaseModel):
     updated_at: datetime
 
 
-class CreateUserResponse(BaseModel):
+class UserCreateResponse(BaseModel):
     """Standardized response for user creation"""
-    info: UserInfoResponse
+    info: UserResponse
     message: str = Field(default="User created successfully")
 
 
 # SESSION MODELS
-class SessionInfoResponse(BaseModel):
+class SessionResponse(BaseModel):
     """Response model for session data"""
     mongo_id: str = Field(..., description="MongoDB ObjectId")
     user_id: str = Field(..., description="User ID")
@@ -44,13 +44,13 @@ class SessionInfoResponse(BaseModel):
     updated_at: datetime
 
 
-class CreateSessionResponse(BaseModel):
+class SessionCreateResponse(BaseModel):
     """Standardized response for session creation"""
-    info: SessionInfoResponse
+    info: SessionResponse
     message: str = Field(default="Session created successfully")
 
 
-class AddSessionRequest(BaseModel):
+class SessionCreateRequest(BaseModel):
     user_id: str
     session_id: Optional[str] = None
     title: Optional[str] = "New chat"
@@ -58,39 +58,34 @@ class AddSessionRequest(BaseModel):
 
 
 # MESSAGE MODELS
-class MessageContentResponse(BaseModel):
+class MessageContent(BaseModel):
     """Message content structure"""
     query: Optional[str] = None
     response: Optional[str] = None
 
 
-class MessageInfoResponse(BaseModel):
+class MessageResponse(BaseModel):
     """Response model for message data"""
     mongo_id: str = Field(..., description="MongoDB ObjectId")
     user_id: str = Field(..., description="User ID")
     session_id: str = Field(..., description="Session ID")
     message_id: str = Field(..., description="Message UUID")
-    content: MessageContentResponse
+    content: MessageContent
     metadata: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
 
 
-class AddMessageContent(BaseModel):
-    query: Optional[str] = None
-    response: Optional[str] = None
-
-
-class AddMessageRequest(BaseModel):
+class MessageCreateRequest(BaseModel):
     user_id: str
     session_id: str
     message_id: str
-    content: AddMessageContent
+    content: MessageContent
     metadata: Optional[Dict[str, Any]] = None
 
 
-class GetMessagesRequest(BaseModel):
-    """Get messages request model"""
+class MessagesFetchRequest(BaseModel):
+    """Fetch messages request model"""
     user_id: str
     session_id: str
     limit: int = Field(100, ge=1, le=500)
@@ -103,7 +98,7 @@ class FeedbackType(str, Enum):
     DISLIKE = "dislike"
 
 
-class FeedbackInfoResponse(BaseModel):
+class FeedbackResponse(BaseModel):
     """Response model for feedback data"""
     mongo_id: str = Field(..., description="MongoDB ObjectId")
     user_id: str = Field(..., description="User ID")
@@ -115,23 +110,23 @@ class FeedbackInfoResponse(BaseModel):
     updated_at: datetime
 
 
-class SubmitFeedbackRequest(BaseModel):
+class FeedbackCreateRequest(BaseModel):
     """Request model for submitting message feedback"""
     user_id: str = Field(..., description="User ID who is giving feedback")
     session_id: str = Field(..., description="Session ID containing the message")
     message_id: str = Field(..., description="Message ID being rated")
-    feedback_type: FeedbackType = Field(..., description="Type of feedback: like or dislike")
+    feedback_type: FeedbackType = Field(..., description="Type of feedback: positive or negative")
     comment: Optional[str] = Field(None, max_length=500, description="Optional feedback comment")
 
 
-class SubmitFeedbackResponse(BaseModel):
+class FeedbackCreateResponse(BaseModel):
     """Standardized response for feedback submission"""
-    info: FeedbackInfoResponse
+    info: FeedbackResponse
     message: str = Field(default="Feedback submitted successfully")
 
 
-class GetFeedbackRequest(BaseModel):
-    """Request model for getting feedback for a message"""
+class FeedbackFetchRequest(BaseModel):
+    """Request model for fetching feedback for a message"""
     user_id: str
     session_id: str
     message_id: str

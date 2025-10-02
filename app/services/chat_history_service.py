@@ -2,7 +2,6 @@ from typing import List, Optional
 from datetime import datetime
 from bson import ObjectId
 import uuid
-import re
 from pydantic import BaseModel
 
 from app.db.db_manager import DBManager
