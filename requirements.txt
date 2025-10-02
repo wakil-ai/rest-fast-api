@@ -27,3 +27,4 @@ requests==2.31.0
 google-cloud-speech==2.25.0
 pydub==0.25.1
 azure-cognitiveservices-speech==1.38.0
+mem0ai==0.1.118

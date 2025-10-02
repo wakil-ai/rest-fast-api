@@ -22,10 +22,8 @@ class LocalVLLM(LLM):
 
     async def generate_response(
         self,
-        query: str,
-        context: str,
-        chat_history_text: str,
-        language_instruction: str = None,
+        user_prompt: str,
+        system_prompt: str,
         stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
@@ -33,18 +31,11 @@ class LocalVLLM(LLM):
         Returns streaming response if STREAM=True, otherwise complete response.
         """
         try:
-            system_prompt = PROMPT.format(
-            context=context,
-            chat_history=chat_history_text,
-            language_instruction=language_instruction if language_instruction else ""
-            )
-
             logger.debug(f"[LocalVLLMHandler] Generating response with model: {self.model}")
-
             if stream:
-                return self._generate_streaming(query, system_prompt)
+                return self._generate_streaming(user_prompt, system_prompt)
             else:
-                return await self._generate_complete(query, system_prompt)
+                return await self._generate_complete(user_prompt, system_prompt)
 
         except Exception as e:
             logger.error(f"[LocalVLLMHandler] Generation Error: {str(e)}")

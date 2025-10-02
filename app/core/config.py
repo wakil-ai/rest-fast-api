@@ -1,6 +1,7 @@
 # app/core/config.py
 
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import Optional
 import os
 from dotenv import load_dotenv
@@ -9,6 +10,7 @@ from enum import Enum
 # Manually load the .env file from the root project directory
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", ".env"))
 load_dotenv(dotenv_path=env_path, override=True)
+
 
 class VectorDBType(str, Enum):
     pinecone = "pinecone"
@@ -31,6 +33,9 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
+    
+    # Memory Service API Key
+    MEM0_API_KEY: str  # Mem
 
     # VECTOR DBs
     # Vector Database Configuration
@@ -38,10 +43,12 @@ class Settings(BaseSettings):
 
     # MongoDB
     MONGODB_URI: Optional[str] = None  # Make optional
+    COLLECTION_NAME: Optional[str] = None  # Make optional
     MONGODB_DB_NAME: Optional[str] = None  # Make optional
-    MONGO_CONVERSATIONS_COLLECTION: str = "chat_conversations"
-    MONGO_FEEDBACK_COLLECTION: str = "chat_feedback"
-    COLLECTION_NAME: str = "itemdocs"
+    USERS_COLLECTION: str = "users"
+    SESSIONS_COLLECTION: str = "sessions"
+    MESSAGES_COLLECTION: str = "messages"
+    FEEDBACK_COLLECTION: str = "feedbacks"
 
     # Milvus
     MILVUS_COLLECTION_NAME: str = "lexuz" # Do not name it with -
@@ -118,25 +125,27 @@ class Settings(BaseSettings):
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
     OUTPUT_MAX_TOKENS: int = 8192
     
+    # Auth (For Telegram Login)
+    TELEGRAM_BOT_TOKEN: str
+    TELEGRAM_BOT_LOGIN: str
+    TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3 # 3 day in seconds
+    
     # EMBEDDING DIM
     @property
     def EMBEDDING_DIM(self) -> int:
-        if self.EMBEDDING_MODEL == EmbeddingModel.qwen or self.EMBEDDING_MODEL == EmbeddingModel.deepinfra:
+        if self.EMBEDDING_MODEL == EmbeddingModel.qwen or self.EMBEDDING_MODEL == EmbeddingModel.deepinfra: # Qwen3-Embedding-4B
             return 2560
-        elif self.EMBEDDING_MODEL == EmbeddingModel.openai:
+        elif self.EMBEDDING_MODEL == EmbeddingModel.openai: # Text-Embedding-Ada-002
             return 1536
-        elif self.EMBEDDING_MODEL == EmbeddingModel.novita_qwen:
+        elif self.EMBEDDING_MODEL == EmbeddingModel.novita_qwen: # Qwen3-Embedding-8B
             return 4096
-        elif self.EMBEDDING_MODEL == EmbeddingModel.infinity:
-            return 1024 # multilingual-e5-large-instruct
-        elif self.EMBEDDING_MODEL == EmbeddingModel.gemma:
-            return 768 # gemma embedding dimension
         else:
             raise ValueError(f"Unknown embedding model: {self.EMBEDDING_MODEL}")
        
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "allow"  # Allow extra fields in the environment
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="allow"  # Allow extra fields in the environment
+    )
 
 settings = Settings()

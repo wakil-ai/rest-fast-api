@@ -2,6 +2,7 @@
 import secrets
 
 # FastAPI imports
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, status, Depends, Security
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +10,9 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
+
 from app.api import chat, retrieval, chat_history, speech_to_text, ws_stt
+from app.api import chat, retrieval, chat_history, count, memory, auth
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -57,6 +60,16 @@ def verify_api_key(api_key: str = Security(api_key_header)):
     
     return True
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    port = 8080  # This should match the port in the Dockerfile
+    logger.info(f"WakilAI API running at http://localhost:{port} and http://0.0.0.0:{port}")
+    logger.info(f"API documentation available at http://localhost:{port}/docs")
+    yield
+    # Shutdown (if needed)
+    pass
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
@@ -65,6 +78,7 @@ def create_app() -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
     # Add CORS middleware first
@@ -94,6 +108,8 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         speech_to_text.router,
+
+        count.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
     )
@@ -102,6 +118,15 @@ def create_app() -> FastAPI:
         prefix=settings.API_PREFIX,  
     )
     
+        memory.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
+    )
+    # Auth router without API prefix (Telegram needs direct access)
+    app.include_router(
+        auth.router,
+        # dependencies=[Depends(verify_api_key)]
+    )
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"])
     async def health_check():
@@ -123,12 +148,6 @@ def create_app() -> FastAPI:
     @app.get("/openapi.json")
     async def openapi(username: str = Depends(get_current_username)):
         return get_openapi(title = "FastAPI", version="0.1.0", routes=app.routes)
-
-    @app.on_event("startup")
-    async def startup_event():
-        port = 8080  # This should match the port in the Dockerfile
-        logger.info(f"WakilAI API running at http://localhost:{port} and http://0.0.0.0:{port}")
-        logger.info(f"API documentation available at http://localhost:{port}/docs")
 
     return app
 

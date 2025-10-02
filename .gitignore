@@ -12,3 +12,5 @@ venv/
 data/
 security/
 file_stream_ws.py
+.vscode/
+*.json
