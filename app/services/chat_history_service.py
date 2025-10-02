@@ -3,196 +3,151 @@ from datetime import datetime
 from bson import ObjectId
 import uuid
 import re
+from pydantic import BaseModel
 
 from app.db.db_manager import DBManager
 from app.core.logger import logger
 from app.core.config import settings
-
 
 class ChatHistoryService:
     def __init__(self):
         self.db_manager = DBManager()
         self.users_collection = settings.USERS_COLLECTION
         self.sessions_collection = settings.SESSIONS_COLLECTION
-        self.messages_collections = settings.MESSAGES_COLLECTION
-        self.init_collections()
-        
-    def init_collections(self):
-        # Initialize necessary collections
-        
-        self.db_manager.create_collection(self.users_collection)
-        self.db_manager.create_collection(self.sessions_collection)
-        self.db_manager.create_collection(self.messages_collections)
+        self.messages_collection = settings.MESSAGES_COLLECTION
+        self._init_collections()
 
-    @staticmethod
-    def generate_title_from_message(message: str) -> str:
-        if not message or len(message.strip()) == 0:
-            return "New Chat"
+    def _init_collections(self):
+        """Initialize necessary database collections."""
+        for collection in [self.users_collection, self.sessions_collection, self.messages_collection]:
+            self.db_manager.create_collection(collection)
 
-        clean_message = re.sub(r'[^\w\s\u0400-\u04FF]', '', message.strip())
+    def _validate_user_id(self, user_id: str) -> None:
+        """Validate user ID."""
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
 
-        if len(clean_message) > 50:
-            title = clean_message[:47] + "..."
-        else:
-            title = clean_message
+    def _validate_session_id(self, session_id: str) -> None:
+        """Validate session ID."""
+        if not session_id or not session_id.strip():
+            raise ValueError("Session ID cannot be empty")
 
-        return title if title.strip() else "New Chat"
-    
-    def create_user(self, user_id: str, 
-                          username: Optional[str] = None, 
-                          first_name: Optional[str] = None, 
-                          last_name: Optional[str] = None, 
-                          picture: Optional[str] = None) -> dict:
-        try:
-            existing_user = self.db_manager.find_documents(
-                collection_name=self.users_collection,
-                query={"user_id": user_id}
-            )
+    def create_user(self, user_id: str, username: Optional[str] = None, 
+                    first_name: Optional[str] = None, last_name: Optional[str] = None, 
+                    picture: Optional[str] = None) -> dict:
+        """Create or retrieve an existing user."""
+        self._validate_user_id(user_id)
+        existing_user = self.db_manager.find_documents(self.users_collection, {"user_id": user_id})
 
-            if existing_user and len(existing_user) > 0:
-                logger.info(f"User with user_id {user_id} already exists.")
-                return existing_user[0]
+        if existing_user:
+            logger.info(f"User with user_id {user_id} already exists.")
+            return existing_user[0]
 
-            user = {
-                "user_id": user_id,
-                "username": username,
-                "first_name": first_name,
-                "last_name": last_name,
-                "picture": picture,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
-            }
+        user = {
+            "user_id": user_id,
+            "username": username,
+            "first_name": first_name,
+            "last_name": last_name,
+            "picture": picture,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
 
-            result_ids = self.db_manager.insert_documents(
-                collection_name=self.users_collection,
-                documents=[user]
-            )
+        result_ids = self.db_manager.insert_documents(self.users_collection, [user])
+        if not result_ids:
+            raise ValueError("Failed to create user")
 
-            if result_ids and len(result_ids) > 0:
-                user["_id"] = ObjectId(result_ids[0])
-                logger.info(f"Created new user with user_id: {user_id}")
-                return user
-            else:
-                raise Exception("Failed to create user")
-        except Exception as e:
-            logger.error(f"Error creating user {user_id}: {str(e)}")
-            raise
+        user["_id"] = ObjectId(result_ids[0])
+        logger.info(f"Created new user with user_id: {user_id}")
+        return user
 
-    def create_session(self, user_id: str, sessions_id: str, 
-                             title: Optional[str] = "New chat", 
-                             tags: Optional[List[str]] = None) -> dict:
-        try:
-            if not sessions_id:
-                sessions_id = str(uuid.uuid4())
+    def create_session(self, user_id: str, session_id: Optional[str] = None, 
+                      title: Optional[str] = None, tags: Optional[List[str]] = None) -> dict:
+        """Create or retrieve an existing session."""
+        self._validate_user_id(user_id)
+        session_id = session_id or str(uuid.uuid4())
+        self._validate_session_id(session_id)
 
-            existing_session = self.db_manager.find_documents(
-                collection_name=self.sessions_collection,
-                query={"user_id": user_id, "session_id": sessions_id}
-            )
+        existing_session = self.db_manager.find_documents(
+            self.sessions_collection, {"user_id": user_id, "session_id": session_id}
+        )
 
-            if existing_session and len(existing_session) > 0:
-                logger.info(f"Session with session_id {sessions_id} already exists for user {user_id}.")
-                return existing_session[0]
+        if existing_session:
+            logger.info(f"Session with session_id {session_id} already exists for user {user_id}.")
+            return existing_session[0]
 
-            session = {
-                "user_id": user_id,
-                "session_id": sessions_id,
-                "title": title or "New chat",
-                "tags": tags or [],
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
-            }
+        session = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "title": title or "New Chat",
+            "tags": tags or [],
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
 
-            result_ids = self.db_manager.insert_documents(
-                collection_name=self.sessions_collection,
-                documents=[session]
-            )
+        result_ids = self.db_manager.insert_documents(self.sessions_collection, [session])
+        if not result_ids:
+            raise ValueError("Failed to create session")
 
-            if result_ids and len(result_ids) > 0:
-                session["_id"] = ObjectId(result_ids[0])
-                logger.info(f"Created new session with session_id: {sessions_id} for user {user_id}")
-                return session
-            else:
-                raise Exception("Failed to create session")
-        except Exception as e:
-            logger.error(f"Error creating session {sessions_id} for user {user_id}: {str(e)}")
-            raise
-        
+        session["_id"] = ObjectId(result_ids[0])
+        logger.info(f"Created new session with session_id: {session_id} for user {user_id}")
+        return session
+
     def get_sessions(self, user_id: str, limit: int = 50) -> List[dict]:
-        try:
-            sessions = self.db_manager.find_documents(
-                collection_name=self.sessions_collection,
-                query={"user_id": user_id},
-            )
-            logger.info(f"Retrieved {len(sessions)} sessions for user {user_id}")
-            
-            
-            
-            return sessions
-        except Exception as e:
-            logger.error(f"Error retrieving sessions for user {user_id}: {str(e)}")
-            raise
-    
-    def add_message(self, user_id: str, session_id: str, 
-                          message_id: str, content: dict, 
-                          metadata: Optional[dict] = None) -> dict:
-        try:
-            existing_message = self.db_manager.find_documents(
-                collection_name=self.messages_collections,
-                query={"user_id": user_id, "session_id": session_id, "message_id": message_id}
-            )
+        """Retrieve all sessions for a user."""
+        self._validate_user_id(user_id)
+        sessions = self.db_manager.find_documents(self.sessions_collection, {"user_id": user_id}, limit=limit)
+        logger.info(f"Retrieved {len(sessions)} sessions for user {user_id}")
+        return sessions
 
-            if existing_message and len(existing_message) > 0:
-                logger.info(f"Message with message_id {message_id} already exists in session {session_id} for user {user_id}.")
-                return existing_message[0]
+    def add_message(self, user_id: str, session_id: str, message_id: str, 
+                    content: dict, metadata: Optional[dict] = None) -> dict:
+        """Add a message to a session."""
+        self._validate_user_id(user_id)
+        self._validate_session_id(session_id)
+        if not message_id or not message_id.strip():
+            raise ValueError("Message ID cannot be empty")
 
-            # Turn content into a dict because it is a pydantic model
-            if not isinstance(content, dict):
-                content = content.model_dump()
-            
-            message = {
-                "user_id": user_id,
-                "session_id": session_id,
-                "message_id": message_id,
-                "content": content,
-                "metadata": metadata or {},
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
-            }
+        existing_message = self.db_manager.find_documents(
+            self.messages_collection, {"user_id": user_id, "session_id": session_id, "message_id": message_id}
+        )
 
-            result_ids = self.db_manager.insert_documents(
-                collection_name=self.messages_collections,
-                documents=[message]
-            )
+        if existing_message:
+            logger.info(f"Message with message_id {message_id} already exists in session {session_id} for user {user_id}.")
+            return existing_message[0]
 
-            if result_ids and len(result_ids) > 0:
-                message["_id"] = ObjectId(result_ids[0])
-                
-                # Update session's updated_at timestamp
-                self.db_manager.update_documents(
-                    collection_name=self.sessions_collection,
-                    query={"user_id": user_id, "session_id": session_id},
-                    update={"$set": {"updated_at": datetime.utcnow()}}
-                )
-                
-                logger.info(f"Added new message with message_id: {message_id} to session {session_id} for user {user_id}")
-                return message
-            else:
-                raise Exception("Failed to add message")
-        except Exception as e:
-            logger.error(f"Error adding message {message_id} to session {session_id} for user {user_id}: {str(e)}")
-            raise
-        
-    
+        if isinstance(content, BaseModel):
+            content = content.model_dump()
+
+        message = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "message_id": message_id,
+            "content": content,
+            "metadata": metadata or {},
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+
+        result_ids = self.db_manager.insert_documents(self.messages_collection, [message])
+        if not result_ids:
+            raise ValueError("Failed to add message")
+
+        message["_id"] = ObjectId(result_ids[0])
+        self.db_manager.update_documents(
+            self.sessions_collection,
+            {"user_id": user_id, "session_id": session_id},
+            {"$set": {"updated_at": datetime.utcnow()}}
+        )
+        logger.info(f"Added new message with message_id: {message_id} to session {session_id} for user {user_id}")
+        return message
+
     def get_messages(self, user_id: str, session_id: str, limit: int = 100) -> List[dict]:
-        try:
-            messages = self.db_manager.find_documents(
-                collection_name=self.messages_collections,
-                query={"user_id": user_id, "session_id": session_id},
-            )
-            logger.info(f"Retrieved {len(messages)} messages from session {session_id} for user {user_id}")
-            return messages
-        except Exception as e:
-            logger.error(f"Error retrieving messages from session {session_id} for user {user_id}: {str(e)}")
-            raise
-    
+        """Retrieve all messages for a session."""
+        self._validate_user_id(user_id)
+        self._validate_session_id(session_id)
+        messages = self.db_manager.find_documents(
+            self.messages_collection, {"user_id": user_id, "session_id": session_id}, limit=limit
+        )
+        logger.info(f"Retrieved {len(messages)} messages from session {session_id} for user {user_id}")
+        return messages

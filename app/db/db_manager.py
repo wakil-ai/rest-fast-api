@@ -57,9 +57,9 @@ class DBManager:
             raise ValueError(f"[DBManager] Invalid vector database type: {settings.VECTOR_DB_TYPE}. Please choose from {VectorDBType.values()}")
 
     # MongoDB operations - synchronous
-    def find_documents(self, collection_name: str, query: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def find_documents(self, collection_name: str, query: Dict[str, Any], limit: int = 50) -> List[Dict[str, Any]]:
         """Find documents in MongoDB based on query."""
-        return self.mongo_handler.find_documents(collection_name, query)
+        return self.mongo_handler.find_documents(collection_name, query, limit)
 
     def insert_documents(self, collection_name: str, documents: List[Dict[str, Any]]) -> list:
         """Insert documents into MongoDB collection and return inserted IDs."""
