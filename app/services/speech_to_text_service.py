@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 import io
+import os
+import requests
 
 from pydub import AudioSegment
 
@@ -120,13 +122,91 @@ class AzureSpeechToTextService(SpeechToTextService):
             raise Exception(f"Speech recognition canceled: {cancellation_details.reason} - {cancellation_details.error_details}")
         return ""
 
+class AzureRESTSpeechToTextService(SpeechToTextService):
+    """
+    Speech-to-text service using Azure Cognitive Services REST API.
+    This implementation works reliably in Docker containers.
+    """
+    def __init__(self):
+        self.subscription_key = settings.AZURE_SPEECH_KEY
+        self.region = settings.AZURE_SPEECH_REGION
+        self.base_url = f"https://{self.region}.stt.speech.microsoft.com"
+
+    def transcribe_audio(
+        self,
+        file,
+        language: str,
+        hints: Optional[List[str]] = None
+    ) -> str:
+        try:
+            # Convert audio to the required format
+            audio_segment = AudioSegment.from_file(file).set_frame_rate(16000).set_sample_width(2).set_channels(1)
+            buffer = io.BytesIO()
+            audio_segment.export(buffer, format="wav")
+            audio_data = buffer.getvalue()
+
+            # Prepare headers
+            headers = {
+                'Ocp-Apim-Subscription-Key': self.subscription_key,
+                'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
+                'Accept': 'application/json',
+            }
+
+            # Build URL with parameters
+            url = f"{self.base_url}/speech/recognition/conversation/cognitiveservices/v1"
+            params = {
+                'language': language,
+                'format': 'detailed'
+            }
+
+            # Make the request
+            response = requests.post(
+                url,
+                headers=headers,
+                params=params,
+                data=audio_data,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('RecognitionStatus') == 'Success':
+                    # Get the best result
+                    nbest = result.get('NBest', [])
+                    if nbest:
+                        return nbest[0].get('Display', '').strip()
+                    elif result.get('DisplayText'):
+                        return result.get('DisplayText').strip()
+                return ""
+            else:
+                raise Exception(f"Azure Speech API error: {response.status_code} - {response.text}")
+
+        except Exception as e:
+            raise Exception(f"Azure REST Speech-to-Text failed: {str(e)}")
+
+def _is_running_in_docker() -> bool:
+    """
+    Detect if the application is running inside a Docker container.
+    """
+    # Check for Docker-specific files/environment
+    return (
+        os.path.exists('/.dockerenv') or
+        os.path.exists('/proc/1/cgroup') and 'docker' in open('/proc/1/cgroup').read() or
+        os.environ.get('PYTHONPATH') == '/app'
+    )
+
 def get_speech_to_text_service() -> SpeechToTextService:
     """
     Factory function to get the speech-to-text service based on the provider setting.
+    Automatically uses REST API for Azure when running in Docker.
     """
     if settings.SPEECH_TO_TEXT_PROVIDER == 'google':
         return GoogleSpeechToTextService()
     elif settings.SPEECH_TO_TEXT_PROVIDER == 'azure':
-        return AzureSpeechToTextService()
+        # Use REST API implementation in Docker, SDK implementation locally
+        if _is_running_in_docker():
+            return AzureRESTSpeechToTextService()
+        else:
+            return AzureSpeechToTextService()
     else:
         raise ValueError(f"Unknown speech-to-text provider: {settings.SPEECH_TO_TEXT_PROVIDER}")
