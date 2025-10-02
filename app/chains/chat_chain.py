@@ -26,6 +26,15 @@ class ChatChain:
         self.llm_fallback = ChatGPT() # Fallback to OpenAI GPT if needed
         self.language_detector = LanguageDetector()
         
+    def replace_punctuation(self, text: str) -> str:
+        """Replace special punctuation characters with standard ones."""
+        replacements = {
+            '【': '[',
+            '】': ']',
+        }
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        return text
 
     def _get_llm_provider(self) -> LLM:
         """Factory method to select and load the Gemma model based on settings."""
@@ -144,6 +153,9 @@ class ChatChain:
                         logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
                         raise fallback_error # Re-raise to be caught by the outer handler
 
+                response = self.language_detector.correct_language(response, language)
+                response = self.replace_punctuation(response)
+                
                 logger.info(f"[DEBUG] LLM full response: {response}")
                 return response
 
@@ -169,6 +181,8 @@ class ChatChain:
             buffer += chunk
             if buffer.endswith('\n'):
                 buffer = self.language_detector.correct_language(buffer, language)
+                buffer = self.replace_punctuation(buffer)
+                
                 for char in buffer:
                     yield char
                 full_response += buffer

@@ -4,6 +4,7 @@ from app.core.logger import logger
 from app.db.db_manager import DBManager
 from app.retrieval.embedding_manager import EmbeddingManager
 from app.utils.text_cleaning import remove_braces
+import re
 
 
 class RetrievalService:
@@ -110,31 +111,42 @@ class RetrievalService:
 
         return "\n".join(formatted_entries)
     
-    def _format_citation(self, metadata: Dict[str, Any]) -> str:
-        """Formats metadata into a citation string."""
-        components = [
-            remove_braces(metadata.get(key, "")).strip()
-            for key in ["form", "title", "header", "clause"]
-            if remove_braces(metadata.get(key, "")).strip()
-        ]
-        if "form" in metadata:
-            components[0] = components[0].upper()
-        if "title" in metadata:
-            components[1] = " ".join(word.capitalize() for word in components[1].split())
-        return " ".join(components).strip()    
+    def remove_header_lines(self, text: str) -> str:
+        """
+        Removes entire markdown header lines (#, ##, ###, ####).
+        """
+        cleaned_lines = []
+        for line in text.splitlines():
+            if not re.match(r'^\s*#{1,6}\s*', line):  # skip header lines
+                cleaned_lines.append(line)
+        return "\n".join(cleaned_lines).strip()
+
         
     def _build_document_entry(self, metadata: Dict[str, Any]) -> str:
         """Build a formatted entry for a single document."""
         text = metadata.get('text', '')
-        entry = [f"{'-'*50}", f"Document Content: {text}"]
+        entry = [f"{'-'*50}", f"Document Content: {self.remove_header_lines(text)}\n"]
+        
+        # Add citation 
+        if hierarchy := metadata.get("hierarchy_path"):
+            parts = [p.strip() for p in hierarchy.split(">")]
+            seen = set()
+            ordered_unique = []
+            for p in parts:
+                if p and p not in seen:
+                    seen.add(p)
+                    ordered_unique.append(p)
+            citation = ". ".join(ordered_unique)
+            entry.append(f"Citation: {citation}\n")     
         
         if date := metadata.get("date"):
-            entry.append(f"Date: {date}")
+            entry.append(f"Date: {date}\n")
         if document_number := metadata.get("document_number"):
-            entry.append(f"Document Number: {document_number}")
-        if url := metadata.get("url"):
-            entry.append(f"Source URL: {url}")
-        if formatted_citation := self._format_citation(metadata):
-            entry.append(f"Citation: {formatted_citation}")
+            entry.append(f"Document Number: {document_number}\n")
+        if url := metadata.get("chunk_url"):
+            entry.append(f"Source URL: {url}\n")
+        else:
+            if url := metadata.get("url"):
+                entry.append(f"Source URL: {url}\n")
             
         return "\n".join(entry)
