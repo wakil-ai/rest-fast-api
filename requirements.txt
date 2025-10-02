@@ -6,7 +6,7 @@ langchain-openai==0.3.17
 langchain-pinecone==0.2.5
 langgraph==0.4.5
 pinecone==6.0.2
-openai==1.79.0
+openai>=1.90,<2.0.0
 tqdm==4.65.0
 python-dotenv==1.0.1
 httptools==0.6.4
@@ -23,8 +23,9 @@ fasttext==0.9.3
 UzTransliterator==0.0.36
 loguru==0.7.3
 requests==2.31.0
-google-cloud-speech==2.25.0
+google-cloud-speech>=2.26.0
 pydub==0.25.1
 azure-cognitiveservices-speech==1.38.0
 mem0ai==0.1.118
 uvicorn[standard]==0.34.2
+protobuf>=5.29.0,<6.0.0
