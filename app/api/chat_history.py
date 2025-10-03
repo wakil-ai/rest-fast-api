@@ -1,176 +1,97 @@
-from fastapi import APIRouter, HTTPException, status, Request
-from typing import List
-
+from fastapi import APIRouter, status
 from app.models.chat_history import (
-    CreateConversationRequest,
-    AddMessageRequest,
-    CreateFeedbackRequest,
-    ConversationResponse,
-    ConversationListResponse,
-    FeedbackResponse,
-    ChatFeedback
+    UserCreateRequest,
+    UserCreateResponse,
+    SessionCreateResponse,
+    SessionCreateRequest,
+    SessionResponse,
+    MessageCreateRequest,
+    MessageResponse,
+    MessageCreateResponse,
+    FeedbackCreateRequest,
+    FeedbackCreateResponse,
+    FeedbackResponse
 )
 from app.services.chat_history_service import ChatHistoryService
-from app.core.logger import logger
+from app.utils.user_management import serialize_mongo_id, handle_service_error
+from typing import List
 
 router = APIRouter(prefix="/history", tags=["Chat History"])
 chat_history_service = ChatHistoryService()
 
+def create_response(data: dict, message: str) -> dict:
+    """Create a standardized API response."""
+    return {"info": serialize_mongo_id(data), "message": message}
 
-@router.post("/conversations", response_model=dict)
-async def create_conversation(request: CreateConversationRequest):
-    try:
-        conversation = chat_history_service.create_conversation(
-            session_id=request.session_id,
-            title=request.title or "New Chat"
-        )
-        return {
-            "message": "Conversation created successfully",
-            "chat_id": conversation.chat_id,
-            "session_id": conversation.session_id,
-            "title": conversation.title,
-            "created_at": conversation.created_at
-        }
+@router.post("/create/user/", status_code=status.HTTP_201_CREATED, response_model=UserCreateResponse)
+@handle_service_error
+def create_user(request: UserCreateRequest) -> UserCreateResponse:
+    """Create a new user."""
+    user_info = chat_history_service.create_user(
+        user_id=request.user_id,
+        username=request.username,
+        first_name=request.first_name,
+        last_name=request.last_name,
+        is_lawyer=request.is_lawyer,
+        picture=request.picture
+    )
+    return create_response(user_info, "User created successfully")
 
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error creating conversation: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create conversation"
-        )
+@router.post("/create/session/", status_code=status.HTTP_201_CREATED, response_model=SessionCreateResponse)
+@handle_service_error
+def create_session(request: SessionCreateRequest) -> SessionCreateResponse:
+    """Create a new user session."""
+    session_info = chat_history_service.create_session(
+        user_id=request.user_id,
+        session_id=request.session_id,
+        title=request.title,
+        tags=request.tags
+    )
+    return create_response(session_info, "Session created successfully")
 
+@router.get("/sessions/{user_id}", response_model=List[SessionResponse])
+@handle_service_error
+def get_sessions(user_id: str, limit: int = 50) -> List[SessionResponse]:
+    """Retrieve user sessions."""
+    sessions = chat_history_service.get_sessions(user_id=user_id, limit=limit)
+    return [serialize_mongo_id(session) for session in sessions]
 
-@router.get("/conversations", response_model=ConversationListResponse)
-async def list_conversations(session_id: str, limit: int = 50):
-    try:
-        conversations = chat_history_service.list_conversations(session_id, limit)
-        return conversations
+@router.post("/add/message/", status_code=status.HTTP_201_CREATED, response_model=MessageCreateResponse)
+@handle_service_error
+def add_message(request: MessageCreateRequest) -> MessageCreateResponse:
+    """Add a message to a user session."""
+    message_info = chat_history_service.add_message(
+        user_id=request.user_id,
+        session_id=request.session_id,
+        message_id=request.message_id,
+        content=request.content,
+        metadata=request.metadata
+    )
+    return create_response(message_info, "Message added successfully")
 
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error listing conversations: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to list conversations"
-        )
+@router.get("/messages/{user_id}/{session_id}", response_model=List[MessageResponse])
+@handle_service_error
+def get_messages(user_id: str, session_id: str, limit: int = 100) -> List[MessageResponse]:
+    """Retrieve messages from a user session."""
+    messages = chat_history_service.get_messages(user_id=user_id, session_id=session_id, limit=limit)
+    return [serialize_mongo_id(message) for message in messages]
 
+@router.post("/submit/feedback/", status_code=status.HTTP_201_CREATED, response_model=FeedbackCreateResponse)
+@handle_service_error
+def submit_feedback(request: FeedbackCreateRequest) -> FeedbackCreateResponse:
+    """Submit feedback for a message."""
+    feedback_info = chat_history_service.submit_feedback(
+        user_id=request.user_id,
+        session_id=request.session_id,
+        message_id=request.message_id,
+        feedback_type=request.feedback_type,
+        comments=request.comment
+    )
+    return create_response(feedback_info, "Feedback submitted successfully")
 
-@router.get("/conversations/{chat_id}", response_model=ConversationResponse)
-async def get_conversation(chat_id: str):
-    try:
-        conversation = chat_history_service.get_conversation(chat_id)
-
-        if not conversation:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found"
-            )
-
-        return conversation
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error getting conversation {chat_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve conversation"
-        )
-
-
-@router.put("/conversations/{chat_id}", response_model=dict)
-async def add_message(chat_id: str, request: AddMessageRequest, session_id: str):
-    try:
-        success = chat_history_service.add_message(
-            chat_id,
-            session_id,
-            request.message
-        )
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to add message"
-            )
-
-        return {
-            "message": "Message added successfully",
-            "chat_id": chat_id,
-            "message_id": request.message.message_id
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error adding message to {chat_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to add message"
-        )
-
-
-@router.delete("/conversations/{chat_id}", response_model=dict)
-async def archive_conversation(chat_id: str):
-    try:
-        success = chat_history_service.archive_conversation(chat_id)
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found or already archived"
-            )
-
-        return {
-            "message": "Conversation archived successfully",
-            "chat_id": chat_id
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error archiving conversation {chat_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to archive conversation"
-        )
-
-
-@router.post("/feedback", response_model=FeedbackResponse)
-async def submit_feedback(request: CreateFeedbackRequest):
-    try:
-        if request.feedback_type not in ["positive", "negative"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Feedback type must be 'positive' or 'negative'"
-            )
-
-        feedback_response = chat_history_service.submit_feedback(
-            request.chat_id,
-            request.message_id,
-            request.feedback_type,
-            request.comment
-        )
-
-        return feedback_response
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error submitting feedback: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to submit feedback"
-        )
-
-
-@router.get("/feedback/{chat_id}", response_model=List[ChatFeedback])
-async def get_conversation_feedback(chat_id: str):
-    try:
-        feedback_list = chat_history_service.get_conversation_feedback(chat_id)
-        return feedback_list
-
-    except Exception as e:
-        logger.error(f"[ChatHistory] Error getting feedback for {chat_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve feedback"
-        )
+@router.get("/feedback/{user_id}/{session_id}/{message_id}", response_model=List[FeedbackResponse])
+@handle_service_error
+def get_feedback(user_id: str, session_id: str, message_id: str) -> List[FeedbackResponse]:
+    """Retrieve feedback for a specific message."""
+    feedbacks = chat_history_service.get_feedback(user_id=user_id, session_id=session_id, message_id=message_id)
+    return [serialize_mongo_id(feedback) for feedback in feedbacks]

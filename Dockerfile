@@ -7,10 +7,20 @@ WORKDIR /app
 # Copy only requirements first for better caching
 COPY requirements.txt .
 
-# # Install system dependencies needed for cryptography and database drivers
+# Install system dependencies needed for cryptography, database drivers, and Azure Speech SDK
 RUN apt-get update && apt-get install -y \
     build-essential \
+    ffmpeg \
     pkg-config \
+    libasound2-dev \
+    alsa-utils \
+    libc6 \
+    libc6-dev \
+    libssl-dev \
+    libasound2 \
+    wget \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python packages
