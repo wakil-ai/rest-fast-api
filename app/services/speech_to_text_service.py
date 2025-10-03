@@ -165,7 +165,7 @@ class AzureRESTSpeechToTextService(SpeechToTextService):
                 headers=headers,
                 params=params,
                 data=audio_data,
-                timeout=30
+                timeout=60
             )
 
             if response.status_code == 200:
