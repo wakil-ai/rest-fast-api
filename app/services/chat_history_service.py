@@ -2,283 +2,201 @@ from typing import List, Optional
 from datetime import datetime
 from bson import ObjectId
 import uuid
-import re
+from pydantic import BaseModel
 
 from app.db.db_manager import DBManager
-from app.models.chat_history import (
-    ChatConversation,
-    ChatMessage,
-    ChatFeedback,
-    ConversationResponse,
-    ConversationListResponse,
-    ConversationListItem,
-    FeedbackResponse
-)
 from app.core.logger import logger
 from app.core.config import settings
-
 
 class ChatHistoryService:
     def __init__(self):
         self.db_manager = DBManager()
-        self.conversations_collection = settings.MONGO_CONVERSATIONS_COLLECTION
-        self.feedback_collection = settings.MONGO_FEEDBACK_COLLECTION
+        self.users_collection = settings.USERS_COLLECTION
+        self.sessions_collection = settings.SESSIONS_COLLECTION
+        self.messages_collection = settings.MESSAGES_COLLECTION
+        self.feedback_collection = settings.FEEDBACK_COLLECTION
+        self._init_collections()
 
-    @staticmethod
-    def generate_chat_id() -> str:
-        return f"chat_{uuid.uuid4().hex[:12]}"
+    def _init_collections(self):
+        """Initialize necessary database collections."""
+        for collection in [self.users_collection, self.sessions_collection, self.messages_collection, self.feedback_collection]:
+            self.db_manager.create_collection(collection)
 
-    @staticmethod
-    def generate_title_from_message(message: str) -> str:
-        if not message or len(message.strip()) == 0:
-            return "New Chat"
+    def _validate_user_id(self, user_id: str) -> None:
+        """Validate user ID."""
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
 
-        clean_message = re.sub(r'[^\w\s\u0400-\u04FF]', '', message.strip())
+    def _validate_session_id(self, session_id: str) -> None:
+        """Validate session ID."""
+        if not session_id or not session_id.strip():
+            raise ValueError("Session ID cannot be empty")
 
-        if len(clean_message) > 50:
-            title = clean_message[:47] + "..."
-        else:
-            title = clean_message
+    def create_user(self, user_id: str, username: Optional[str] = None, 
+                    first_name: Optional[str] = None, last_name: Optional[str] = None, 
+                    picture: Optional[str] = None, is_lawyer: Optional[bool] = False) -> dict:
+        """Create or retrieve an existing user."""
+        self._validate_user_id(user_id)
+        existing_user = self.db_manager.find_documents(self.users_collection, {"user_id": user_id})
 
-        return title if title.strip() else "New Chat"
+        if existing_user:
+            logger.info(f"User with user_id {user_id} already exists.")
+            return existing_user[0]
 
-    def create_conversation(self, session_id: str, title: str = "New Chat") -> ChatConversation:
-        try:
-            chat_id = self.generate_chat_id()
-            conversation = ChatConversation(
-                chat_id=chat_id,
-                session_id=session_id,
-                title=title
-            )
+        user = {
+            "user_id": user_id,
+            "username": username,
+            "first_name": first_name,
+            "last_name": last_name,
+            "picture": picture,
+            "is_lawyer": is_lawyer,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
 
-            conversation_dict = conversation.dict(by_alias=True, exclude={"id"})
-            result_ids = self.db_manager.insert_documents(
-                collection_name=self.conversations_collection,
-                documents=[conversation_dict]
-            )
+        result_ids = self.db_manager.insert_documents(self.users_collection, [user])
+        if not result_ids:
+            raise ValueError("Failed to create user")
 
-            if result_ids and len(result_ids) > 0:
-                conversation.id = ObjectId(result_ids[0])
-                logger.info(f"Created conversation {chat_id} for session: {session_id}")
-                return conversation
-            else:
-                raise Exception("Failed to create conversation")
+        user["_id"] = ObjectId(result_ids[0])
+        logger.info(f"Created new user with user_id: {user_id}")
+        return user
 
-        except Exception as e:
-            logger.error(f"Error creating conversation: {str(e)}")
-            raise
+    def create_session(self, user_id: str, session_id: Optional[str] = None, 
+                      title: Optional[str] = None, tags: Optional[List[str]] = None) -> dict:
+        """Create or retrieve an existing session."""
+        self._validate_user_id(user_id)
+        session_id = session_id or str(uuid.uuid4())
+        self._validate_session_id(session_id)
 
-    def get_conversation(self, chat_id: str) -> Optional[ConversationResponse]:
-        try:
-            query = {"chat_id": chat_id, "status": "active"}
-            conversations = self.db_manager.find_documents(
-                collection_name=self.conversations_collection,
-                query=query
-            )
+        existing_session = self.db_manager.find_documents(
+            self.sessions_collection, {"user_id": user_id, "session_id": session_id}
+        )
 
-            if conversations and len(conversations) > 0:
-                conv_data = conversations[0]
-                return ConversationResponse(
-                    chat_id=conv_data["chat_id"],
-                    session_id=conv_data["session_id"],
-                    title=conv_data.get("title", "New Chat"),
-                    messages=[ChatMessage(**msg) for msg in conv_data.get("messages", [])],
-                    total_messages=conv_data.get("total_messages", 0),
-                    created_at=conv_data["created_at"],
-                    updated_at=conv_data["updated_at"]
-                )
-            return None
+        if existing_session:
+            logger.info(f"Session with session_id {session_id} already exists for user {user_id}.")
+            return existing_session[0]
 
-        except Exception as e:
-            logger.error(f"Error getting conversation {chat_id}: {str(e)}")
-            raise
+        session = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "title": title or "New Chat",
+            "tags": tags or [],
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
 
-    def list_conversations(self, session_id: str, limit: int = 50) -> ConversationListResponse:
-        try:
-            query = {"session_id": session_id, "status": "active"}
-            conversations = self.db_manager.find_documents(
-                collection_name=self.conversations_collection,
-                query=query
-            )
+        result_ids = self.db_manager.insert_documents(self.sessions_collection, [session])
+        if not result_ids:
+            raise ValueError("Failed to create session")
 
-            conversations.sort(key=lambda x: x.get("updated_at", datetime.min), reverse=True)
-            conversations = conversations[:limit]
+        session["_id"] = ObjectId(result_ids[0])
+        logger.info(f"Created new session with session_id: {session_id} for user {user_id}")
+        return session
 
-            conversation_items = []
-            for conv in conversations:
-                messages = conv.get("messages", [])
-                last_message_preview = None
-                if messages:
-                    last_msg = messages[-1]
-                    content = last_msg.get("content", "")
-                    last_message_preview = content[:100] + "..." if len(content) > 100 else content
+    def get_sessions(self, user_id: str, limit: int = 50) -> List[dict]:
+        """Retrieve all sessions for a user."""
+        self._validate_user_id(user_id)
+        sessions = self.db_manager.find_documents(self.sessions_collection, {"user_id": user_id}, limit=limit)
+        logger.info(f"Retrieved {len(sessions)} sessions for user {user_id}")
+        return sessions
 
-                conversation_items.append(ConversationListItem(
-                    chat_id=conv["chat_id"],
-                    title=conv.get("title", "New Chat"),
-                    created_at=conv["created_at"],
-                    updated_at=conv["updated_at"],
-                    total_messages=conv.get("total_messages", 0),
-                    last_message_preview=last_message_preview
-                ))
+    def add_message(self, user_id: str, session_id: str, message_id: str, 
+                    content: dict, metadata: Optional[dict] = None) -> dict:
+        """Add a message to a session."""
+        self._validate_user_id(user_id)
+        self._validate_session_id(session_id)
+        if not message_id or not message_id.strip():
+            raise ValueError("Message ID cannot be empty")
 
-            return ConversationListResponse(
-                conversations=conversation_items,
-                total_count=len(conversation_items)
-            )
+        existing_message = self.db_manager.find_documents(
+            self.messages_collection, {"user_id": user_id, "session_id": session_id, "message_id": message_id}
+        )
 
-        except Exception as e:
-            logger.error(f"Error listing conversations for session {session_id}: {str(e)}")
-            raise
+        if existing_message:
+            logger.info(f"Message with message_id {message_id} already exists in session {session_id} for user {user_id}.")
+            return existing_message[0]
 
+        if isinstance(content, BaseModel):
+            content = content.model_dump()
 
-    def add_message(self, chat_id: str, session_id: str, message: ChatMessage) -> bool:
-        try:
-            existing = self.get_conversation(chat_id)
-            if not existing:
-                title = "New Chat"
-                if message.type == "question":
-                    title = self.generate_title_from_message(message.content)
+        message = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "message_id": message_id,
+            "content": content,
+            "metadata": metadata or {},
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
 
-                conversation = self.create_conversation(session_id, title)
-                chat_id = conversation.chat_id
+        result_ids = self.db_manager.insert_documents(self.messages_collection, [message])
+        if not result_ids:
+            raise ValueError("Failed to add message")
 
-            query = {"chat_id": chat_id, "status": "active"}
-            update = {
-                "$push": {"messages": message.dict()},
-                "$inc": {"total_messages": 1},
-                "$set": {"updated_at": datetime.utcnow()}
-            }
+        message["_id"] = ObjectId(result_ids[0])
+        self.db_manager.update_documents(
+            self.sessions_collection,
+            {"user_id": user_id, "session_id": session_id},
+            {"$set": {"updated_at": datetime.utcnow()}}
+        )
+        logger.info(f"Added new message with message_id: {message_id} to session {session_id} for user {user_id}")
+        return message
 
-            result = self.db_manager.update_documents(
-                collection_name=self.conversations_collection,
-                query=query,
-                update=update
-            )
+    def get_messages(self, user_id: str, session_id: str, limit: int = 100) -> List[dict]:
+        """Retrieve all messages for a session."""
+        self._validate_user_id(user_id)
+        self._validate_session_id(session_id)
+        # Filter to only get actual messages (not feedback) by ensuring content field exists
+        query = {
+            "user_id": user_id, 
+            "session_id": session_id,
+            "content": {"$exists": True}
+        }
+        messages = self.db_manager.find_documents(
+            self.messages_collection, query, limit=limit
+        )
+        logger.info(f"Retrieved {len(messages)} messages from session {session_id} for user {user_id}")
+        return messages
+    
+    def submit_feedback(self, user_id: str, session_id: str, message_id: str,
+                        feedback_type: str, comments: Optional[str] = None) -> dict:
+        """Submit feedback for a message."""
+        self._validate_user_id(user_id)
+        self._validate_session_id(session_id)
+        
+        if not message_id or not message_id.strip():
+            raise ValueError("Message ID cannot be empty")
 
-            success = result.modified_count > 0
-            if success:
-                logger.info(f"Added message to conversation {chat_id}")
-            return success
+        feedback = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "message_id": message_id,
+            "feedback_type": feedback_type,
+            "comments": comments or "",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
 
-        except Exception as e:
-            logger.error(f"Error adding message to conversation {chat_id}: {str(e)}")
-            raise
+        result_ids = self.db_manager.insert_documents(self.feedback_collection, [feedback])
+        if not result_ids:
+            raise ValueError("Failed to submit feedback")
 
-    def submit_feedback(self, chat_id: str, message_id: str, feedback_type: str, comment: str = None) -> FeedbackResponse:
-        try:
-            feedback = ChatFeedback(
-                chat_id=chat_id,
-                message_id=message_id,
-                feedback_type=feedback_type,
-                comment=comment
-            )
+        feedback["_id"] = ObjectId(result_ids[0])
+        logger.info(f"Submitted feedback for message_id: {message_id} in session {session_id} for user {user_id}")
+        return feedback
+    
+    def get_feedback(self, user_id: str, session_id: str, message_id: str) -> List[dict]:
+        """Retrieve feedback for a specific message."""
+        self._validate_user_id(user_id)
+        self._validate_session_id(session_id)
+        
+        if not message_id or not message_id.strip():
+            raise ValueError("Message ID cannot be empty")
 
-            query = {"chat_id": chat_id, "message_id": message_id}
-            feedback_dict = feedback.dict(by_alias=True, exclude={"id"})
-            update = {
-                "$set": feedback_dict,
-                "$setOnInsert": {}
-            }
-
-            result = self.db_manager.update_documents(
-                collection_name=self.feedback_collection,
-                query=query,
-                update=update,
-                upsert=True
-            )
-
-            action = "updated" if result.modified_count > 0 else "created"
-            logger.info(f"Feedback {action} for message {message_id}: {feedback_type}")
-
-            return FeedbackResponse(
-                feedback_id=str(result.upserted_id) if result.upserted_id else "updated",
-                message=f"Feedback {action} successfully"
-            )
-
-        except Exception as e:
-            logger.error(f"Error submitting feedback: {str(e)}")
-            raise
-
-    def get_conversation_feedback(self, chat_id: str) -> List[ChatFeedback]:
-        try:
-            query = {"chat_id": chat_id}
-            feedback_docs = self.db_manager.find_documents(
-                collection_name=self.feedback_collection,
-                query=query
-            )
-
-            return [ChatFeedback(**doc) for doc in feedback_docs] if feedback_docs else []
-
-        except Exception as e:
-            logger.error(f"Error getting feedback for conversation {chat_id}: {str(e)}")
-            raise
-
-    def get_message_feedback(self, message_id: str) -> Optional[ChatFeedback]:
-        try:
-            query = {"message_id": message_id}
-            feedback_doc = self.db_manager.find_documents(
-                collection_name=self.feedback_collection,
-                query=query
-            )
-
-            if feedback_doc and len(feedback_doc) > 0:
-                return ChatFeedback(**feedback_doc[0])
-            return None
-
-        except Exception as e:
-            logger.error(f"Error getting feedback for message {message_id}: {str(e)}")
-            return None
-
-    def update_conversation(self, chat_id: str, title: str) -> bool:
-        try:
-            query = {"chat_id": chat_id, "status": "active"}
-            update = {
-                "$set": {
-                    "title": title,
-                    "updated_at": datetime.utcnow()
-                }
-            }
-
-            result = self.db_manager.update_documents(
-                collection_name=self.conversations_collection,
-                query=query,
-                update=update
-            )
-
-            success = result.modified_count > 0
-            if success:
-                logger.info(f"Successfully updated conversation {chat_id} with new title: {title}")
-            else:
-                logger.warning(f"No conversation found or updated for chat_id: {chat_id}")
-
-            return success
-
-        except Exception as e:
-            logger.error(f"Error updating conversation {chat_id}: {str(e)}")
-            return False
-
-    def archive_conversation(self, chat_id: str) -> bool:
-        try:
-            query = {"chat_id": chat_id}
-            update = {
-                "$set": {
-                    "status": "archived",
-                    "updated_at": datetime.utcnow()
-                }
-            }
-
-            result = self.db_manager.update_documents(
-                collection_name=self.conversations_collection,
-                query=query,
-                update=update
-            )
-
-            success = result.modified_count > 0
-            if success:
-                logger.info(f"Archived conversation {chat_id}")
-            return success
-
-        except Exception as e:
-            logger.error(f"Error archiving conversation {chat_id}: {str(e)}")
-            raise
+        feedbacks = self.db_manager.find_documents(
+            self.feedback_collection, 
+            {"user_id": user_id, "session_id": session_id, "message_id": message_id}
+        )
+        logger.info(f"Retrieved {len(feedbacks)} feedback entries for message_id: {message_id} in session {session_id} for user {user_id}")
+        return feedbacks

@@ -31,12 +31,12 @@ class MongoHandler:
         return [str(doc_id) for doc_id in result.inserted_ids]
 
 
-    def find_documents(self, collection_name: str, query: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def find_documents(self, collection_name: str, query: Dict[str, Any], limit: int = 50) -> List[Dict[str, Any]]:
         """
         Find documents matching a query.
         """
         collection = self.db[collection_name]
-        cursor = collection.find(query)
+        cursor = collection.find(query, limit=limit)
         return list(cursor)
 
     def close_connection(self):

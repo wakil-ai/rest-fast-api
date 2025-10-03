@@ -10,10 +10,8 @@ class LLM(ABC):
     @abstractmethod
     async def generate_response(
         self, 
-        query: str, 
-        context: str, 
-        chat_history_text: str,
-        language_instruction: str = None,
+        user_prompt: str,
+        system_prompt: str,
         stream: bool = settings.STREAM
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
