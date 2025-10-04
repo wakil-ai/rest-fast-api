@@ -11,12 +11,6 @@ from app.llms.novita import Novita
 from app.llms.local_vllm import LocalVLLM
 from app.services.memory_service import ChatMemoryService
 from app.chains.prompts import PROMPT
-import re
-
-_SENTENCE_SPLIT_RE = re.compile(
-    r'([^\n]*?(?:[\.!?…]+(?:\s+|$)|\n))',
-    re.UNICODE
-)
 
 class ChatChain:
     """
