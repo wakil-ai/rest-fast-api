@@ -69,10 +69,10 @@ def edit_session(session_id: str, title: str = None, tags: List[str] = None) -> 
 
 @router.delete("/delete/session/{user_id}/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_service_error
-def delete_session(user_id: str, session_id: str) -> dict:
+def delete_session(user_id: str, session_id: str) -> None:
     """Delete a user session and its messages."""
     chat_history_service.delete_session(user_id=user_id, session_id=session_id)
-    return {"message": "Session deleted successfully"}
+    return 
 
 @router.post("/add/message/", status_code=status.HTTP_201_CREATED, response_model=MessageCreateResponse)
 @handle_service_error
