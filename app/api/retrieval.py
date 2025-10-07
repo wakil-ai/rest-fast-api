@@ -27,8 +27,8 @@ async def mongo_metadata_search(request: MongoMetadataRequest):
 
 @router.post("/", summary="Search in Vector DB without specific method in production")
 async def vector_db_search(request: VectorDBRequest):
-    results = retrieval_service.retrieve_context(
-        query_text=request.query_text,
+    results = await retrieval_service.retrieve_context(
+        query=request.query_text,
         top_k=request.top_k,
     )
     return {"results": results}
