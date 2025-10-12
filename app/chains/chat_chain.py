@@ -75,7 +75,8 @@ class ChatChain:
         query: str,
         is_lawyer: bool = False,
         chat_history: Optional[List] = None,
-        stream: bool = settings.STREAM
+        stream: bool = settings.STREAM,
+        file_context: Optional[str] = None,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response to the user's query using RAG approach.
@@ -84,7 +85,26 @@ class ChatChain:
         try:
             language = self.language_detector.detect_language(query)
             instruction = self.language_detector.get_instruction(language)
-            context = await self.retrieval_service.retrieve_context(query=query)
+
+            # If file context is provided, prepend it to the retrieved context so LLM uses file content
+            # Retrieve relavant documents query + file context if file provided
+            context = ""
+            
+            if file_context:
+                top_k = max(1, settings.TOP_K // 2)  # Reduce top_k by half if file context is provided
+                context_with_query = await self.retrieval_service.retrieve_context(query=query, top_k=top_k)
+                context_with_file_context = await self.retrieval_service.retrieve_context(query=file_context, top_k=top_k)
+                retrieved_context = context_with_query + "\n\n" + context_with_file_context
+                
+                context = f"""{retrieved_context}
+                
+                File Content:
+                Use the following extracted text from the uploaded file to answer the question:
+                {file_context}"""
+                
+            else:  
+                context = await self.retrieval_service.retrieve_context(query=query, top_k=settings.TOP_K)
+                
             
             memory_text = await self.mem_service.search_memory(user_id, query)
             

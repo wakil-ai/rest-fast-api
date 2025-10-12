@@ -19,7 +19,8 @@ class ChatService:
         query: str, 
         is_lawyer: bool = False,
         chat_history: Optional[List[MessagePair]] = None,
-        stream: bool = settings.STREAM
+        stream: bool = settings.STREAM,
+        file_context: Optional[str] = None,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Handle the question by retrieving context and generating an answer.
@@ -38,6 +39,7 @@ class ChatService:
             query=query,
             is_lawyer=is_lawyer,
             chat_history=chat_history,
-            stream=stream
+            stream=stream,
+            file_context=file_context,
         )
         return answer
