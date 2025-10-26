@@ -133,6 +133,9 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_LOGIN: str
     TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3 # 3 day in seconds
     
+    # Web Scraping
+    TAVILY_API_KEY: Optional[str] = None
+    
     # EMBEDDING DIM
     @property
     def EMBEDDING_DIM(self) -> int:

@@ -111,3 +111,28 @@ async def ask_with_file(
     except Exception as e:
         logger.error(f"[AskFileAPI] Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process file and answer the question.")
+
+from app.agent.crew import crew
+@router.post("/agent", summary="Ask a legal question via agentic RAG")
+async def ask_question_via_agent(request: ChatRequest):
+    """
+    Ask a question using the agentic RAG approach.
+    The agent will decide how to retrieve context and generate the answer.
+    """
+    try:
+        response = await crew.kickoff(
+            inputs={
+                "user_id": request.user_id,
+                "session_id": "default",
+                "query": request.query,
+                # "chat_history": request.chat_history,
+            },
+        )
+        return ChatResponse(answer=response)
+
+    except Exception as e:
+        logger.error(f"[ChatAgentAPI] Error: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to generate answer via agent. Please try again later."
+        )
