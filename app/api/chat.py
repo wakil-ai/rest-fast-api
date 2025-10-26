@@ -120,15 +120,18 @@ async def ask_question_via_agent(request: ChatRequest):
     The agent will decide how to retrieve context and generate the answer.
     """
     try:
-        response = await crew.kickoff(
+        response = await crew.kickoff_async(
             inputs={
                 "user_id": request.user_id,
                 "session_id": "default",
+                "user_type": "lawyer",
+                "language_instruction": "Uzbek Latin",
                 "query": request.query,
-                # "chat_history": request.chat_history,
+                "context": "",
+                "chat_history": "",
             },
         )
-        return ChatResponse(answer=response)
+        return ChatResponse(answer=response.raw)
 
     except Exception as e:
         logger.error(f"[ChatAgentAPI] Error: {str(e)}")

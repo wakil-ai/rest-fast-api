@@ -36,7 +36,7 @@ class MongoHandler:
         Find documents matching a query.
         """
         collection = self.db[collection_name]
-        cursor = collection.find(query, limit=limit)
+        cursor = collection.find(query, limit=limit, sort=[("created_at", -1)])
         return list(cursor)
 
     def close_connection(self):

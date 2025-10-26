@@ -81,7 +81,16 @@ USER TYPE
 {user_type}
 """
 
+TASK_DESCRIPTION_TEMPLATE = """
+User Question:
+{query}
+
+Step by step, do the following:
+1. Build the system prompt using agent tool.
+2. Generate the final answer using the built system prompt and retrieved context and memories provided.
+"""
+
 PROMPT = PromptTemplate(
     template=SYSTEM_PROMPT,
-    input_variables=["context", "chat_history", "language_instruction", "user_type"],
+    optional_variables=["context", "chat_history", "language_instruction", "user_type"],
 )

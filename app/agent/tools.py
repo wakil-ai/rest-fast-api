@@ -4,22 +4,12 @@ from crewai.tools import BaseTool
 from crewai_tools import TavilyExtractorTool, TavilySearchTool
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.memory_service import ChatMemoryService
+from app.chains.prompts import PROMPT
 from app.core.config import settings
 
 # Import class
 retreival_service = RetrievalService()
 chat_memory_service = ChatMemoryService()
-
-# Crew AI default tools with config
-search_tool = TavilySearchTool(
-    api_key=settings.TAVILY_API_KEY,
-    include_images=False,
-)
-
-extract_tool = TavilyExtractorTool(
-    api_key=settings.TAVILY_API_KEY,
-    include_images=False,
-)
 
 class RetrievalTool(BaseTool):
     name: str = "retrieve_documents"
@@ -41,3 +31,24 @@ class PersonalMemoryTool(BaseTool):
 
     async def _run(self, user_id: str, query: str):
         return await chat_memory_service.search_memory(user_id, query)
+        
+        
+# Crew AI default tools with config
+WebSearchTool = TavilySearchTool(
+    api_key=settings.TAVILY_API_KEY,
+    include_images=False,
+)
+
+WebExtractionTool = TavilyExtractorTool(
+    api_key=settings.TAVILY_API_KEY,
+    include_images=False,
+)
+        
+tools = [
+    WebSearchTool,
+    WebExtractionTool,
+    RetrievalTool(),
+    SessionMemoryTool(),
+    PersonalMemoryTool(),
+    # BuildSystemPromptTool(),
+]

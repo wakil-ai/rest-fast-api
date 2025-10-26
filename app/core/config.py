@@ -71,8 +71,10 @@ class Settings(BaseSettings):
     GPT_COMPLETION_MODEL: str = "gpt-4o"  # Default GPT model
 
     # Novita AI API for Gemma provider
+    NOVITA_API_BASE: str = "https://api.novita.ai/v3/openai"
     NOVITA_API_KEY: Optional[str] = None
-    NOVITA_MODEL: str = "google/gemma-3-27b-it" 
+    NOVITA_TINY_MODEL: str = "openai/gpt-oss-120b"
+    NOVITA_MODEL: str = "openai/gpt-oss-120b" 
 
     # Novita Embeddings (OpenAI-compatible)
     NOVITA_EMBEDDING_BASE_URL: str = "https://api.novita.ai/openai"

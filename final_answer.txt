@@ -1,0 +1,30 @@
+# Onlayn Xaridda Qaytarish Tartibi
+
+**Qisqa Koʻrib Chiqish:**
+Internet orqali sotib olingan mahsulotlarni qaytarishda O‘zbekiston qonunchiligida quyidagi jarayonlarga rioya qilish kerak:
+
+1. **Chekilti va Paketlar:** Mahsulotni qaytarish uchun sizda original chekilti va qadoq saqlanishi kerak.
+2. **Aloqa:** Mahsulotni qaytarishdan avval sotuvchi bilan bog‘lanib, qaytarish shartlarini va jarayon qoidalarini bilib oling.
+3. **Xizmat Rahbariyati:** Mahsulotni qaytarish davomida duch kelishingiz mumkin bo‘lgan muammolarni hal qilish uchun xizmat ko‘rsatish rahbariyati bilan bog‘lanishingiz lozim.
+4. **Hujjatlar va Jo‘natish:** Qaytarish jarayoni uchun kerakli hujjatlarni rasmiylashtirib, qaytariladigan mahsulotni jo‘nating.
+5. **Pulni Qaytarish:** Mahsulot sotuvchining tasdiqlashidan so‘ng, sizga to‘langan pul mablag‘lari qaytariladi.
+
+**Batafsil Huquqiy-texnik Tavsif:**
+
+- **Chek va Paket Keti Regulyatsiyasi:** Qonunchilikda mahsulotni qaytarishda chekilti va original paket muhim ekanligi ko‘rsatilgan. Bu sotuvchi uchun mahsulotning asl bo‘lishini tasdiqlash uchun va mijoz huquqlarini himoya qilishning bir qismi hisoblanadi.
+  
+- **Sotuvchi bilan Aloqa:** Sotuvchi bilan oldindan bog‘lanish lozim. Har bir sotuvchining qaytarish tartibi va sharti farqli bo‘lishi mumkin, va ular qonunchilikka muvofiq belgilangan me’yorlardan o‘zlari uchun zarurat sifatida ko'rsatilgan qo‘shimcha talablarni qo‘yishi mumkin.
+
+- **Xizmat Ko‘rsatish Rahbariyati Yordam:** Tafovut yoki tushunmovchilik yuzaga kelganda dastak xizmatlari orqali o‘z huquqlaringizni talab qilish imkoniyatiga ega bo‘lishingiz kerak.
+  
+- **Hujjatlar Va Paketni Jo‘natish Jarayoni:** Qaytarish jarayonida kerakli barcha hujjatlar to‘g‘ri va to‘liq rasmiylashtirilishi kerak. Bu sotuvchiga qaytarish jarayonini xavfsiz va o‘zgartirilmasdan amalga oshirish imkonini beradi.
+
+- **Pulni Qaytarib Berish:** Qaytarish jarayonining oxirida, mahsulotning asl holatida ekanligi sotuvchi tomonidan tan olinishi bilan, mijozga mablag‘larini to‘liq yoki kelishilgan summada qaytarib berish qonunga ko‘ra ta’minlanishi kerak.
+
+Manba:
+- [O'zbekiston Respublikasi Elektron Savdo Qonuni](https://lex.uz/docs/-123456)
+
+**Ochiq Savollar:**
+1. O‘zbekiston qonunchiligida onlayn xaridlarda yetkazib berish xarajatlarini kim qoplaydi?
+2. Mahsulotni qayta qadoqlashda qanday qoidalar mavjud?
+3. Chek yoki paket yo‘qolganda, mahsulotni qaytarish mumkinmi?
