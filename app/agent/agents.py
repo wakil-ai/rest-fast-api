@@ -2,6 +2,10 @@
 
 from crewai import Agent
 from app.agent.llm import main_llm, tiny_llm
+from app.agent.tools import (RetrievalTool, 
+                             SessionMemoryTool, PersonalMemoryTool, 
+                             WebSearchTool, WebExtractionTool,
+                             )
 from app.chains.prompts import PROMPT
 
 RetrievalAgent = Agent(
@@ -11,6 +15,7 @@ RetrievalAgent = Agent(
     llm=tiny_llm,
     allow_delegation=False,
     verbose=True,
+    tools=[RetrievalTool(result_as_answer=True), WebSearchTool, WebExtractionTool],
     max_iter=1
 )
 
@@ -20,6 +25,7 @@ MemoryAgent = Agent(
     backstory="You intelligently decide whether memory is needed.",
     llm=tiny_llm,
     allow_delegation=False,
+    tools=[SessionMemoryTool(), PersonalMemoryTool()],
     verbose=True,
 )
 

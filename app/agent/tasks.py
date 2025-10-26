@@ -27,18 +27,7 @@ RetrievalTask = Task(
     User Question:
     {query}
     """,
-    expected_output="""
-    Retrieved legal documents formatted as:
-    --------------------------------------------------
-    Document Content: [text]
-    Citation: [citation path]
-    Date: [date if available]
-    Document Number: [number if available]
-    Source URL: [url]
-    --------------------------------------------------
-    
-    Return only the formatted documents without JSON wrapper.
-    """,
+    expected_output="""None""",
     agent=RetrievalAgent,
     tools=[RetrievalTool(), WebSearchTool, WebExtractionTool],
 )
