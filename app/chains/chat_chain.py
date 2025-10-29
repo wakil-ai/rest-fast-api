@@ -10,7 +10,7 @@ from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
 from app.llms.local_vllm import LocalVLLM
 from app.services.memory_service import ChatMemoryService
-from app.chains.prompts import PROMPT
+from app.chains.prompts import PROMPT, SOLIQ_PROMPT
 
 class ChatChain:
     """
@@ -60,14 +60,23 @@ class ChatChain:
     async def make_system_prompt(self, context: str, 
                                    chat_history_text: str, 
                                    is_lawyer: bool, 
-                                   language_instruction: Optional[str]) -> str:
+                                   language_instruction: Optional[str],
+                                   prompt_template: Any = PROMPT) -> str:
         """Create the system prompt using the provided context and chat history."""
-        return PROMPT.format(
-            context=context,
-            chat_history=chat_history_text,
-            user_type="lawyer" if is_lawyer else "citizen",
-            language_instruction=language_instruction if language_instruction else ""
-        )
+        # SOLIQ_PROMPT doesn't use user_type parameter
+        if prompt_template == SOLIQ_PROMPT:
+            return prompt_template.format(
+                context=context,
+                chat_history=chat_history_text,
+                language_instruction=language_instruction if language_instruction else ""
+            )
+        else:
+            return prompt_template.format(
+                context=context,
+                chat_history=chat_history_text,
+                user_type="lawyer" if is_lawyer else "citizen",
+                language_instruction=language_instruction if language_instruction else ""
+            )
 
     async def generate_answer(
         self,
@@ -83,6 +92,9 @@ class ChatChain:
         Falls back to ChatGPT if the primary LLM fails.
         """
         try:
+            # Select the appropriate prompt template based on collection
+            prompt_template = SOLIQ_PROMPT if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME else PROMPT
+            
             language = self.language_detector.detect_language(query)
             instruction = self.language_detector.get_instruction(language)
             context = await self.retrieval_service.retrieve_context(query=query, collection_name=collection_name)
@@ -101,7 +113,8 @@ class ChatChain:
                 context=context,
                 chat_history_text=chat_history_text,
                 is_lawyer=is_lawyer,
-                language_instruction=instruction
+                language_instruction=instruction,
+                prompt_template=prompt_template
             )
                 
             logger.debug(f"[ChatChain] System Prompt: {system_prompt}")

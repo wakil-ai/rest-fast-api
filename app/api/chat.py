@@ -54,6 +54,7 @@ async def ask_soliq_question(request: ChatRequest):
     """
     Ask a question related to Uzbek tax/soliq documents.
     Retrieves context from the Soliq-specific vector DB collection and generates an answer.
+    Always provides deep, detailed analysis regardless of user type.
     
     Response format automatically adapts based on STREAM config:
     """
@@ -61,7 +62,7 @@ async def ask_soliq_question(request: ChatRequest):
         response = await chat_service.ask_question(
             user_id=request.user_id,
             query=request.query,
-            is_lawyer=request.is_lawyer,
+            is_lawyer=True,  # Always use deep analysis for Soliq assistant
             chat_history=request.chat_history,
             stream=request.stream,
             collection_name=settings.MILVUS_SOLIQ_ASSISTANT_NAME
