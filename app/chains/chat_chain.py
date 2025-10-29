@@ -75,7 +75,8 @@ class ChatChain:
         query: str,
         is_lawyer: bool = False,
         chat_history: Optional[List] = None,
-        stream: bool = settings.STREAM
+        stream: bool = settings.STREAM,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response to the user's query using RAG approach.
@@ -84,7 +85,7 @@ class ChatChain:
         try:
             language = self.language_detector.detect_language(query)
             instruction = self.language_detector.get_instruction(language)
-            context = await self.retrieval_service.retrieve_context(query=query)
+            context = await self.retrieval_service.retrieve_context(query=query, collection_name=collection_name)
             
             memory_text = await self.mem_service.search_memory(user_id, query)
             

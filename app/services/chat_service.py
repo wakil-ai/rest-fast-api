@@ -19,7 +19,8 @@ class ChatService:
         query: str, 
         is_lawyer: bool = False,
         chat_history: Optional[List[MessagePair]] = None,
-        stream: bool = settings.STREAM
+        stream: bool = settings.STREAM,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Handle the question by retrieving context and generating an answer.
@@ -28,6 +29,7 @@ class ChatService:
             query (str): User's question
             top_k (int): Number of top documents to retrieve (default from settings)
             chat_history (List[MessagePair]): Previous conversation history (optional)
+            collection_name (str): Milvus collection name to retrieve from
 
         Returns:
             - str: Complete answer if streaming is disabled
@@ -38,6 +40,7 @@ class ChatService:
             query=query,
             is_lawyer=is_lawyer,
             chat_history=chat_history,
-            stream=stream
+            stream=stream,
+            collection_name=collection_name,
         )
         return answer

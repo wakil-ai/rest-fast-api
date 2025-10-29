@@ -13,16 +13,17 @@ from app.core.config import settings
 from app.db.vector_db_handler import VectorDBHandler
 from app.utils.text_cleaning import extract_integers
 
-
 class MilvusHandler(VectorDBHandler):
     def __init__(self):
         # Connect to Milvus given URI
+        self.milvus_collections = [settings.MILVUS_MAIN_NAME, settings.MILVUS_SOLIQ_ASSISTANT_NAME]
         self.client = MilvusClient(
             uri=settings.MILVUS_URI,
             user=settings.MILVUS_USER,
             password=settings.MILVUS_PASSWORD
         )
-        self.collection_name = self.create_collection(settings.MILVUS_COLLECTION_NAME)
+        for col in self.milvus_collections:
+            self.create_collection(col)
 
     def create_collection(self, collection_name: str):
         # Drop existing collection if it exists
@@ -47,18 +48,18 @@ class MilvusHandler(VectorDBHandler):
 
         return collection_name
     
-    def create_partition(self, partition_name: str):
+    def create_partition(self, partition_name: str, collection_name: str = settings.MILVUS_MAIN_NAME) -> str:
         # Create if missing
-        if not self.client.has_partition(self.collection_name, partition_name):
+        if not self.client.has_partition(collection_name, partition_name):
             self.client.create_partition(
-                collection_name=self.collection_name,
+                collection_name=collection_name,
                 partition_name=partition_name,
             )
-            logger.info(f"Created partition '{partition_name}' in {self.collection_name}")
+            logger.info(f"Created partition '{partition_name}' in {collection_name}")
         else:
             return partition_name
 
-    def upsert_vectors(self, documents: List[Dict[str, Any]], partition_name: str = None) -> None:
+    def upsert_vectors(self, documents: List[Dict[str, Any]], partition_name: str = None, collection_name: str = settings.MILVUS_MAIN_NAME) -> None:
         milvus_data = []
         
         partition_name = self.create_partition(partition_name)
@@ -88,7 +89,7 @@ class MilvusHandler(VectorDBHandler):
 
         if milvus_data:
             try:
-                self.client.insert(self.collection_name, milvus_data, partition_name=partition_name)
+                self.client.insert(collection_name, milvus_data, partition_name=partition_name)
             except Exception as e:
                 logger.error(f"Error upserting to Milvus: {str(e)}")
                 raise
@@ -99,6 +100,7 @@ class MilvusHandler(VectorDBHandler):
         text_query: str,
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
+        collection_name: str = settings.MILVUS_MAIN_NAME
     ) -> List[Dict[str, Any]]:
         """
         Perform hybrid search using both dense vectors and BM25 sparse vectors
@@ -124,7 +126,7 @@ class MilvusHandler(VectorDBHandler):
         # Perform hybrid search with weighted ranking - pass weights as separate arguments
         ranker = WeightedRanker(alpha, 1 - alpha)
         results = self.client.hybrid_search(
-            collection_name=self.collection_name,
+            collection_name=collection_name,
             reqs=[dense_search, sparse_search],
             ranker=ranker,
             limit=top_k,
@@ -137,13 +139,14 @@ class MilvusHandler(VectorDBHandler):
     def query_dense(
         self,
         dense_vector: List[float],
-        top_k: int = settings.TOP_K
+        top_k: int = settings.TOP_K,
+        collection_name: str = settings.MILVUS_MAIN_NAME
     ) -> List[Dict[str, Any]]:
         """
         Perform dense vector search using semantic similarity
         """
         results = self.client.search(
-            collection_name=self.collection_name,
+            collection_name=collection_name,
             data=[dense_vector],
             anns_field="text_dense",
             search_params={"metric_type": "COSINE"},
@@ -158,13 +161,14 @@ class MilvusHandler(VectorDBHandler):
         self,
         text_query: str,
         top_k: int = settings.TOP_K,
-        anns_field: str = "text_sparse"
+        anns_field: str = "text_sparse",
+        collection_name: str = settings.MILVUS_MAIN_NAME
     ) -> List[Dict[str, Any]]:
         """
         Perform BM25 sparse vector search using keyword matching
         """
         results = self.client.search(
-            collection_name=self.collection_name,
+            collection_name=collection_name,
             data=[text_query],
             anns_field=anns_field,
             search_params={
@@ -182,7 +186,8 @@ class MilvusHandler(VectorDBHandler):
         text_query: str,
         top_k: int = settings.TOP_K,
         anns_field: str = "text_sparse_hierarchy",
-        partition_name: str = "with-modda"
+        partition_name: str = "with-modda",
+        collection_name: str = settings.MILVUS_MAIN_NAME
     ) -> List[Dict[str, Any]]:
         """
         Perform specific sparse vector search using keyword matching
@@ -190,7 +195,7 @@ class MilvusHandler(VectorDBHandler):
         nums = extract_integers(text_query)
         expr = self.build_like_or_expr(nums)
         results = self.client.search(
-            collection_name=self.collection_name,
+            collection_name=collection_name,
             data=[text_query],
             anns_field=anns_field,
             filter=expr,
@@ -278,7 +283,7 @@ class MilvusHandler(VectorDBHandler):
 
         return formatted_results
 
-    def delete_collection(self, collection_name: str = settings.MILVUS_COLLECTION_NAME) -> None:
+    def delete_collection(self, collection_name: str = settings.MILVUS_MAIN_NAME) -> None:
         if self.client.has_collection(collection_name):
             self.client.drop_collection(collection_name)
             logger.info(f"Deleted collection {collection_name}")
