@@ -63,6 +63,7 @@ web_search_task = Task(
     2. Only keep URLs from official or reputable legal sources (e.g., lex.uz, gov.uz, reputable law databases).
     3. For each source, extract or summarize the most relevant content in 2–4 sentences.
     4. Return up to 5 high-quality results.
+    5. Content's language must not be changed; keep it how it is on the source page.
 
     Return structured JSON data as follows:
     {

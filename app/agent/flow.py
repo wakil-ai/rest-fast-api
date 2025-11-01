@@ -165,7 +165,7 @@ class LegalQAFlow(Flow[LegalQAState]):
             # Execute web search crew
             result = await web_search_crew.kickoff_async(
                 inputs={
-                    "query": self.state.retrieval_output.get("query_rewrite", self.state.query),
+                    "query": self.state.query,
                 }
             )
             
