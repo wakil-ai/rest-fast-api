@@ -37,3 +37,12 @@ class ModelInfoResponse(BaseModel):
     service_provider: str = Field(..., example="novita", description="Service provider (novita or deepinfra)")
     embedding_model: str = Field(..., example="qwen", description="Embedding model (qwen or openai)")
     stream: bool = Field(..., example=False, description="Whether streaming responses are enabled")
+
+class AgenticRAGRequest(BaseModel):
+    """
+    Request body for agentic RAG questions.
+    """
+    query: str = Field(..., example="Explain the tax regulations for freelancers in Uzbekistan.")
+    user_id: str = Field(default="user_123", description="User identifier")
+    session_id: str = Field(default="default", description="Session identifier")
+    enable_web_search: bool = Field(default=True, description="Flag to enable/disable web search fallback")

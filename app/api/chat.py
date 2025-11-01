@@ -4,17 +4,17 @@ from fastapi import APIRouter, HTTPException
 from fastapi import UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from app.core.config import settings
-from app.models.chat import ChatRequest, ChatResponse, ModelInfoResponse
+from app.models.chat import ChatRequest, ChatResponse, ModelInfoResponse, AgenticRAGRequest
 from app.services.chat_service import ChatService
 from app.services.ocr_service import OCRService
+from app.agent.flow import AgenticRAGFlow
 from app.utils.streaming import format_streaming_response, get_streaming_headers
-
-
 from app.core.logger import logger
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
 # Initialize service
+agentic_rag_service = AgenticRAGFlow()
 chat_service = ChatService()
 ocr_service = OCRService()
 
@@ -112,30 +112,24 @@ async def ask_with_file(
         logger.error(f"[AskFileAPI] Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process file and answer the question.")
 
-from app.agent.flow import crew
-@router.post("/agent", summary="Ask a legal question via agentic RAG")
-async def ask_question_via_agent(request: ChatRequest):
-    """
-    Ask a question using the agentic RAG approach.
-    The agent will decide how to retrieve context and generate the answer.
-    """
-    try:
-        response = await crew.kickoff_async(
-            inputs={
-                "user_id": request.user_id,
-                "session_id": "default",
-                "user_type": "lawyer",
-                "language_instruction": "Uzbek Latin",
-                "query": request.query,
-                "context": "",
-                "chat_history": "",
-            },
-        )
-        return ChatResponse(answer=response.raw)
 
-    except Exception as e:
-        logger.error(f"[ChatAgentAPI] Error: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail="Failed to generate answer via agent. Please try again later."
-        )
+
+@router.post("/agent", summary="Ask a legal question via agentic RAG")
+async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
+    """
+    Execute legal QA flow end-to-end using agentic RAG approach.
+    """
+    logger.info(f"Starting Legal QA Flow for query: {request.query[:100]}...")
+    
+    # Build initial state
+    initial_state = {
+        "query": request.query,
+        "user_id": request.user_id,
+        "session_id": request.session_id,
+        "enable_web_search": request.enable_web_search,
+    }
+    
+    # Execute flow
+    answer = await agentic_rag_service.kickoff_async(initial_state)
+    
+    return ChatResponse(answer=answer)

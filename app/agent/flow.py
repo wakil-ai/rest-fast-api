@@ -1,9 +1,8 @@
 # app/agent/crew.py
 
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any
 import json
 from crewai.flow.flow import Flow, listen, start
-from pydantic import BaseModel, Field
 
 # Import crews
 from app.agent.crews.memory import memory_crew
@@ -11,51 +10,21 @@ from app.agent.crews.retrieval import retrieval_crew
 from app.agent.crews.final_answer import final_answer_crew
 from app.agent.crews.web_search import web_search_crew
 
+# Import state
+from app.agent.state import AgenticRAGState
+
 # Import services
 from app.retrieval.retrieval_service import RetrievalService
 from app.core.logger import logger
 
-
-class LegalQAState(BaseModel):
-    """State management for legal QA workflow"""
-    
-    # Input parameters
-    query: str = Field(default="", description="User's legal question")
-    user_id: str = Field(default="", description="User identifier")
-    session_id: str = Field(default="default", description="Session identifier")
-    user_type: str = Field(default="lawyer", description="User type (lawyer, general, etc.)")
-    language_instruction: str = Field(
-        default="Respond in the same language as the question",
-        description="Language instruction for response"
-    )
-    enable_web_search: bool = Field(default=True, description="Flag to enable/disable web search fallback")
-    chat_history: Optional[str] = Field(default=None, description="Previous chat context")
-    
-    # Intermediate outputs
-    memory_output: Optional[Dict[str, Any]] = Field(default=None, description="Structured memory data")
-    memory_docs: Optional[str] = Field(default=None, description="Formatted memory for context")
-    retrieval_output: Optional[Dict[str, Any]] = Field(default=None, description="Retrieval metadata")
-    retrieval_docs: Optional[str] = Field(default=None, description="Retrieved document content")
-    web_search_output: Optional[Dict[str, Any]] = Field(default=None, description="Web search results")
-    web_extraction_output: Optional[Dict[str, Any]] = Field(default=None, description="Web extraction results")
-    
-    # Final output
-    answer: Optional[str] = Field(default=None, description="Generated answer")
-    
-    # Error tracking
-    errors: List[str] = Field(default_factory=list, description="Accumulated errors")
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-class LegalQAFlow(Flow[LegalQAState]):
+class AgenticRAGFlow(Flow[AgenticRAGState]):
     """
-    Multi-agent legal QA flow with sequential execution:
+    Agentic RAG flow with sequential execution:
     1. Memory Retrieval: Fetch session and personal memory
     2. Document Retrieval Strategy: Determine best retrieval approach
     3. Document Fetch: Execute retrieval from vector DB
-    4. Final Answer: Generate response using LLM
+    4. Web Search & Extraction if enabled
+    5. Final Answer: Generate response using LLM
     """
     
     def __init__(self):
@@ -216,11 +185,15 @@ class LegalQAFlow(Flow[LegalQAState]):
             
             self.state.answer = str(result)
             logger.info(f"✓ Answer generated: {len(self.state.answer)} characters")
+        
+            return self.state.answer
             
         except Exception as e:
             logger.error(f"✗ Answer generation failed: {e}", exc_info=True)
             self.state.errors.append(f"Final answer error: {str(e)}")
             self.state.answer = "Error generating answer. Please try again."
+            
+            return self.state.answer
     
     # Helper Methods  
     def _parse_json_output(self, output: Any) -> Dict[str, Any]:
@@ -282,47 +255,3 @@ class LegalQAFlow(Flow[LegalQAState]):
             "query_rewrite": self.state.query,
             "strategy": "hybrid",
         }
-
-# Main Function
-async def run_agentic_rag(
-    query: str,
-    user_id: str = "user_123",
-    session_id: str = "default",
-    user_type: str = "lawyer",
-    language_instruction: str = "Respond in the same language as the question",
-    chat_history: Optional[str] = None,
-    **kwargs
-) -> LegalQAState:
-    """
-    Execute legal QA flow end-to-end
-    
-    Args:
-        query: User's legal question
-        user_id: User identifier for personalization
-        session_id: Session identifier for context continuity
-        user_type: User type (lawyer, general, etc.) for response tailoring
-        language_instruction: Language preference for response
-        chat_history: Previous conversation context
-        **kwargs: Additional state parameters
-    
-    Returns:
-        LegalQAState: Complete state object with answer and metadata
-    """
-    logger.info(f"Starting Legal QA Flow for query: {query[:100]}...")
-    
-    # Build initial state
-    initial_state = {
-        "query": query,
-        "user_id": user_id,
-        "session_id": session_id,
-        "user_type": user_type,
-        "language_instruction": language_instruction,
-        "chat_history": chat_history,
-        **kwargs,
-    }
-    
-    # Execute flow
-    flow = LegalQAFlow()
-    result_state = await flow.kickoff_async(initial_state)
-    
-    return result_state
