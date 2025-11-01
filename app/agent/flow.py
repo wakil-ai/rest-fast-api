@@ -2,15 +2,18 @@
 
 from typing import Optional, Dict, Any, List
 import json
-
 from crewai.flow.flow import Flow, listen, start
 from pydantic import BaseModel, Field
 
-from app.core.logger import logger
+# Import crews
 from app.agent.crews.memory import memory_crew
 from app.agent.crews.retrieval import retrieval_crew
 from app.agent.crews.final_answer import final_answer_crew
+from app.agent.crews.web_search import web_search_crew
+
+# Import services
 from app.retrieval.retrieval_service import RetrievalService
+from app.core.logger import logger
 
 
 class LegalQAState(BaseModel):
@@ -25,6 +28,7 @@ class LegalQAState(BaseModel):
         default="Respond in the same language as the question",
         description="Language instruction for response"
     )
+    enable_web_search: bool = Field(default=True, description="Flag to enable/disable web search fallback")
     chat_history: Optional[str] = Field(default=None, description="Previous chat context")
     
     # Intermediate outputs
@@ -32,6 +36,8 @@ class LegalQAState(BaseModel):
     memory_docs: Optional[str] = Field(default=None, description="Formatted memory for context")
     retrieval_output: Optional[Dict[str, Any]] = Field(default=None, description="Retrieval metadata")
     retrieval_docs: Optional[str] = Field(default=None, description="Retrieved document content")
+    web_search_output: Optional[Dict[str, Any]] = Field(default=None, description="Web search results")
+    web_extraction_output: Optional[Dict[str, Any]] = Field(default=None, description="Web extraction results")
     
     # Final output
     answer: Optional[str] = Field(default=None, description="Generated answer")
@@ -143,8 +149,51 @@ class LegalQAFlow(Flow[LegalQAState]):
             logger.error(f"✗ Document retrieval failed: {e}", exc_info=True)
             self.state.errors.append(f"Document fetch error: {str(e)}")
             self.state.retrieval_docs = ""
-    
+            
     @listen(fetch_documents)
+    async def perform_web_search(self) -> None:
+        """
+        Step 4: Web search and extraction
+        """
+        logger.info("=== Step 4: Conditional Web Search ===")
+        
+        try:
+            if self.state.enable_web_search is False:
+                logger.info("Web search disabled by configuration.")
+                return
+            
+            # Execute web search crew
+            result = await web_search_crew.kickoff_async(
+                inputs={
+                    "query": self.state.retrieval_output.get("query_rewrite", self.state.query),
+                }
+            )
+            
+            # Parse outputs
+            web_search_json = self._parse_json_output(result)
+            
+            self.state.web_search_output = web_search_json
+            
+            # Combine extracted docs into retrieval docs
+            extracted_docs = web_search_json.get("docs", [])
+            combined_docs = self.state.retrieval_docs or ""
+            combined_docs += "\n\n--- Web Search Results ---\n"
+            for doc in extracted_docs:
+                content = doc.get("content", "")
+                url = doc.get("url", "")
+                str_doc = f"\nSource: {url}\n{content}\n"
+                
+                combined_docs += str_doc      
+            
+            self.state.retrieval_docs = combined_docs
+            
+            logger.info(f"✓ Web search and extraction completed: {len(extracted_docs)} documents")
+            
+        except Exception as e:
+            logger.error(f"✗ Web search/extraction failed: {e}", exc_info=True)
+            self.state.errors.append(f"Web search error: {str(e)}")
+    
+    @listen(perform_web_search)
     async def generate_final_answer(self) -> None:
         """
         Step 4: Generate final answer

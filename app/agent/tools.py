@@ -25,7 +25,11 @@ class PersonalMemoryTool(BaseTool):
 # Crew AI default tools with config
 WebSearchTool = TavilySearchTool(
     api_key=settings.TAVILY_API_KEY,
+    search_depth='basic',
+    max_results=10,
     include_images=False,
+    include_answer=True,
+    timeout=10,
 )
 
 WebExtractionTool = TavilyExtractorTool(
