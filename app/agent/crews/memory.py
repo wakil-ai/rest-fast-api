@@ -28,7 +28,7 @@ MemoryAgent = Agent(
     allow_delegation=False,
     tools=[SessionMemoryTool(), PersonalMemoryTool()],
     verbose=True,
-    max_iter=3,  # Allow more iterations to properly fetch and summarize
+    max_iter=3,
 )
 
 

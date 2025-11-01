@@ -7,10 +7,10 @@ from app.chains.prompts import SYSTEM_PROMPT
 
 FinalAnswerAgent = Agent(
     role="Final Answer Composer",
-    goal=(
-        "Generate the final legal answer strictly following the SYSTEM_PROMPT: "
-        "language/script, structure by user type, strict-context adherence, and citation rules."
-    ),
+    goal=SYSTEM_PROMPT + """
+    
+    Query: {query}
+    """,
     backstory=(
         "You synthesize only the provided legal texts into a precise, user-appropriate legal answer. "
         "You never invent sources or facts beyond CONTEXT. You strictly obey citation formatting and "
@@ -19,10 +19,6 @@ FinalAnswerAgent = Agent(
     llm=main_llm,
     allow_delegation=False,
     verbose=True,
-    instructions=SYSTEM_PROMPT + """
-    
-    Query: {query}
-    """
 )
 
 

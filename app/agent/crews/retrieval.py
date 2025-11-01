@@ -33,7 +33,7 @@ RetrievalAgent = Agent(
     llm=tiny_llm,
     allow_delegation=False,
     verbose=True,
-    max_iter=2,
+    max_iter=3,
 )
 
 retrieval_task = Task(

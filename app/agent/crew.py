@@ -1,15 +1,20 @@
 # app/agent/crew.py
+"""
+Legal QA Flow using CrewAI
+Orchestrates multi-agent workflow: Memory → Retrieval → Document Fetch → Final Answer
+"""
 
 from typing import Optional, Dict, Any, List
 import json
 
 from crewai.flow.flow import Flow, listen, start
+from crewai import Crew, Process
 from pydantic import BaseModel, Field
 
 from app.core.logger import logger
-from app.agent.crews.memory import memory_crew
-from app.agent.crews.retrieval import retrieval_crew
-from app.agent.crews.final_answer import final_answer_crew
+from app.agent.crews.memory import MemoryAgent, memory_task
+from app.agent.crews.retrieval import RetrievalAgent, retrieval_task
+from app.agent.crews.final_answer import FinalAnswerAgent, final_answer_task
 from app.retrieval.retrieval_service import RetrievalService
 
 
@@ -68,7 +73,14 @@ class LegalQAFlow(Flow[LegalQAState]):
         logger.info("=== Step 1: Memory Retrieval ===")
         
         try:
-            result = await memory_crew.kickoff_async(
+            crew = Crew(
+                agents=[MemoryAgent],
+                tasks=[memory_task],
+                process=Process.sequential,
+                verbose=True
+            )
+            
+            result = await crew.kickoff_async(
                 inputs={
                     "query": self.state.query,
                     "user_id": self.state.user_id,
@@ -101,7 +113,14 @@ class LegalQAFlow(Flow[LegalQAState]):
         logger.info("=== Step 2: Retrieval Strategy Selection ===")
         
         try:
-            result = await retrieval_crew.kickoff_async(
+            crew = Crew(
+                agents=[RetrievalAgent],
+                tasks=[retrieval_task],
+                process=Process.sequential,
+                verbose=True
+            )
+            
+            result = await crew.kickoff_async(
                 inputs={"query": self.state.query}
             )
             
@@ -155,7 +174,14 @@ class LegalQAFlow(Flow[LegalQAState]):
         logger.info("=== Step 4: Final Answer Generation ===")
         
         try:
-            result = await final_answer_crew.kickoff_async(
+            crew = Crew(
+                agents=[FinalAnswerAgent],
+                tasks=[final_answer_task],
+                process=Process.sequential,
+                verbose=True
+            )
+            
+            result = await crew.kickoff_async(
                 inputs={
                     "query": self.state.query,
                     "context": self.state.retrieval_docs or "",
@@ -173,7 +199,8 @@ class LegalQAFlow(Flow[LegalQAState]):
             self.state.errors.append(f"Final answer error: {str(e)}")
             self.state.answer = "Error generating answer. Please try again."
     
-    # Helper Methods  
+    # Helper Methods
+    
     def _parse_json_output(self, output: Any) -> Dict[str, Any]:
         """
         Parse JSON from agent output with fallback handling
@@ -258,6 +285,15 @@ async def run_agentic_rag(
     
     Returns:
         LegalQAState: Complete state object with answer and metadata
+        
+    Example:
+        >>> result = await run_legal_qa_flow(
+        ...     query="What are the tax penalties?",
+        ...     user_id="user_123",
+        ...     user_type="lawyer"
+        ... )
+        >>> print(result.answer)
+        >>> print(result.errors)
     """
     logger.info(f"Starting Legal QA Flow for query: {query[:100]}...")
     
