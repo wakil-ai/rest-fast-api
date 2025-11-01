@@ -1,10 +1,16 @@
 # app/agent/crew.py
+"""
+Legal QA Flow using CrewAI
+Orchestrates multi-agent workflow: Memory → Retrieval → Document Fetch → Final Answer
+"""
 
-from crewai.flow.flow import Flow, listen, router, start
-from crewai import Crew, Process
-from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any, List
 import json
+
+from crewai.flow.flow import Flow, listen, start
+from crewai import Crew, Process
+from pydantic import BaseModel, Field
+
 from app.core.logger import logger
 from app.agent.memory import MemoryAgent, memory_task
 from app.agent.retrieval import RetrievalAgent, retrieval_task
@@ -12,37 +18,60 @@ from app.agent.final_answer import FinalAnswerAgent, final_answer_task
 from app.retrieval.retrieval_service import RetrievalService
 
 
-retrieval_service = RetrievalService()
-
 class LegalQAState(BaseModel):
-    """State object for the legal QA flow"""
-    query: str = ""
-    user_id: str = ""
-    session_id: str = "default"
-    user_type: str = "lawyer"
-    language_instruction: str = "Respond in the same language as the question"
-    chat_history: Optional[str] = None
+    """State management for legal QA workflow"""
+    
+    # Input parameters
+    query: str = Field(default="", description="User's legal question")
+    user_id: str = Field(default="", description="User identifier")
+    session_id: str = Field(default="default", description="Session identifier")
+    user_type: str = Field(default="lawyer", description="User type (lawyer, general, etc.)")
+    language_instruction: str = Field(
+        default="Respond in the same language as the question",
+        description="Language instruction for response"
+    )
+    chat_history: Optional[str] = Field(default=None, description="Previous chat context")
     
     # Intermediate outputs
-    memory_output: Optional[dict] = None
-    retrieval_output: Optional[dict] = None
-    retrieval_docs: Optional[list] = None
-    answer: Optional[str] = None
+    memory_output: Optional[Dict[str, Any]] = Field(default=None, description="Structured memory data")
+    memory_docs: Optional[str] = Field(default=None, description="Formatted memory for context")
+    retrieval_output: Optional[Dict[str, Any]] = Field(default=None, description="Retrieval metadata")
+    retrieval_docs: Optional[str] = Field(default=None, description="Retrieved document content")
+    
+    # Final output
+    answer: Optional[str] = Field(default=None, description="Generated answer")
     
     # Error tracking
-    errors: list = []
+    errors: List[str] = Field(default_factory=list, description="Accumulated errors")
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class LegalQAFlow(Flow[LegalQAState]):
     """
-    CrewAI Flow for end-to-end legal QA with subtasks:
-    Memory → Retrieval → Web Search → Web Extraction → System Prompt → Final Answer
+    Multi-agent legal QA flow with sequential execution:
+    1. Memory Retrieval: Fetch session and personal memory
+    2. Document Retrieval Strategy: Determine best retrieval approach
+    3. Document Fetch: Execute retrieval from vector DB
+    4. Final Answer: Generate response using LLM
     """
     
+    def __init__(self):
+        super().__init__()
+        self.retrieval_service = RetrievalService()
+    
     @start()
-    async def start_memory_retrieval(self):
-        """Step 1: Retrieve session and personal memory"""
-        logger.info("=== Starting Memory Retrieval ===")
+    async def start_memory_retrieval(self) -> None:
+        """
+        Step 1: Retrieve session and personal memory
+        
+        Fetches:
+        - Session notes: Recent conversation context
+        - Personal notes: Long-term user preferences and information
+        """
+        logger.info("=== Step 1: Memory Retrieval ===")
+        
         try:
             crew = Crew(
                 agents=[MemoryAgent],
@@ -59,22 +88,30 @@ class LegalQAFlow(Flow[LegalQAState]):
                 }
             )
             
-            # Parse JSON output
-            self.state.memory_output = await self._parse_json_output(result)
-            logger.info(f"Memory output: {self.state.memory_output}")
+            # Parse and structure memory output
+            self.state.memory_output = self._parse_json_output(result)
+            self.state.memory_docs = self._format_memory_context(self.state.memory_output)
+            
+            logger.info(f"✓ Memory retrieved: {len(self.state.memory_docs)} characters")
             
         except Exception as e:
-            logger.error(f"Memory retrieval failed: {e}")
+            logger.error(f"✗ Memory retrieval failed: {e}", exc_info=True)
             self.state.errors.append(f"Memory retrieval error: {str(e)}")
-            self.state.memory_output = {
-                "session_notes": "",
-                "personal_notes": "",
-            }
+            self._set_default_memory()
     
     @listen(start_memory_retrieval)
-    async def start_retrieval(self):
-        """Step 2: Retrieve legal documents using chosen strategy"""
-        logger.info("=== Starting Document Retrieval ===")
+    async def determine_retrieval_strategy(self) -> None:
+        """
+        Step 2: Determine optimal retrieval strategy
+        
+        Agent analyzes query to choose:
+        - hybrid: Combines semantic + keyword search
+        - dense: Semantic similarity search
+        - sparse: Keyword/BM25 search
+        - specific: Exact article/statute lookup
+        """
+        logger.info("=== Step 2: Retrieval Strategy Selection ===")
+        
         try:
             crew = Crew(
                 agents=[RetrievalAgent],
@@ -84,53 +121,59 @@ class LegalQAFlow(Flow[LegalQAState]):
             )
             
             result = await crew.kickoff_async(
-                inputs={
-                    "query": self.state.query,
-                }
+                inputs={"query": self.state.query}
             )
             
-            # Parse JSON output
-            self.state.retrieval_output = await self._parse_json_output(result)
-            logger.info(f"Retrieval strategy: {self.state.retrieval_output.get('strategy')}")
-            
-        except Exception as e:
-            logger.error(f"Retrieval failed: {e}")
-            self.state.errors.append(f"Retrieval error: {str(e)}")
-            self.state.retrieval_output = {
-                "query_rewrite": self.state.query,
-                "strategy": "hybrid",
-            }
-            
-    @listen(start_retrieval)
-    async def retreive_documents(self):
-        """Step 3: Retrieve documents if needed"""
-        logger.info("=== Retrieving Documents if Needed ===")
-        try:
+            self.state.retrieval_output = self._parse_json_output(result)
             strategy = self.state.retrieval_output.get("strategy", "hybrid")
             query_rewrite = self.state.retrieval_output.get("query_rewrite", self.state.query)
             
-            result = await retrieval_service.retrieve_context(
-                query=query_rewrite,
+            logger.info(f"✓ Strategy selected: {strategy}")
+            logger.info(f"  Query rewrite: {query_rewrite}")
+            
+        except Exception as e:
+            logger.error(f"✗ Strategy selection failed: {e}", exc_info=True)
+            self.state.errors.append(f"Retrieval strategy error: {str(e)}")
+            self._set_default_retrieval_strategy()
+    
+    @listen(determine_retrieval_strategy)
+    async def fetch_documents(self) -> None:
+        """
+        Step 3: Execute document retrieval
+        
+        Fetches relevant legal documents from vector database
+        using the strategy determined in previous step
+        """
+        logger.info("=== Step 3: Document Retrieval ===")
+        
+        try:
+            strategy = self.state.retrieval_output.get("strategy", "hybrid")
+            query = self.state.retrieval_output.get("query_rewrite", self.state.query)
+            
+            result = await self.retrieval_service.retrieve_context(
+                query=query,
                 search_type=strategy
             )
             
             self.state.retrieval_docs = str(result)
+            logger.info(f"✓ Documents retrieved: {len(self.state.retrieval_docs)} characters")
             
-            logger.info(f"Retrieved documents updated in retrieval output.")
-                
         except Exception as e:
-            logger.error(f"Document retrieval failed: {e}")
-            self.state.errors.append(f"Document retrieval error: {str(e)}")
-            self.state.retrieval_output = {
-                "query_rewrite": self.state.query,
-                "strategy": "hybrid",
-            }
+            logger.error(f"✗ Document retrieval failed: {e}", exc_info=True)
+            self.state.errors.append(f"Document fetch error: {str(e)}")
+            self.state.retrieval_docs = ""
     
-    @listen(retreive_documents)
-    async def generate_final_answer(self):
-        """Step 6: Generate the final answer"""
-        logger.info("=== Generating Final Answer ===")
-        try:            
+    @listen(fetch_documents)
+    async def generate_final_answer(self) -> None:
+        """
+        Step 4: Generate final answer
+        
+        Synthesizes all retrieved information to produce
+        a comprehensive, contextually-aware response
+        """
+        logger.info("=== Step 4: Final Answer Generation ===")
+        
+        try:
             crew = Crew(
                 agents=[FinalAnswerAgent],
                 tasks=[final_answer_task],
@@ -142,51 +185,84 @@ class LegalQAFlow(Flow[LegalQAState]):
                 inputs={
                     "query": self.state.query,
                     "context": self.state.retrieval_docs or "",
-                    "chat_history": json.dumps(self.state.memory_output) if self.state.memory_output else "{}",
+                    "chat_history": self.state.memory_docs or "",
                     "user_type": self.state.user_type,
                     "language_instruction": self.state.language_instruction,
                 }
             )
             
-            logger.info(f"Final answer output: {result}")
-            
             self.state.answer = str(result)
-            logger.info("Final answer generated successfully")
+            logger.info(f"✓ Answer generated: {len(self.state.answer)} characters")
             
         except Exception as e:
-            logger.error(f"Final answer generation failed: {e}")
+            logger.error(f"✗ Answer generation failed: {e}", exc_info=True)
             self.state.errors.append(f"Final answer error: {str(e)}")
             self.state.answer = "Error generating answer. Please try again."
     
-    async def _parse_json_output(self, output) -> dict:
+    # Helper Methods
+    
+    def _parse_json_output(self, output: Any) -> Dict[str, Any]:
         """
-        Parse JSON from agent output.
-        Handles cases where the output might be wrapped in markdown or contain extra text.
+        Parse JSON from agent output with fallback handling
+        
+        Handles:
+        - Direct JSON strings
+        - CrewOutput objects with .raw attribute
+        - Markdown code blocks (```json ... ```)
+        - Plain code blocks (``` ... ```)
         """
-        # Handle CrewOutput objects
-        if hasattr(output, 'raw'):
-            output_str = output.raw
-        else:
-            output_str = str(output)
-            
+        # Extract string representation
+        output_str = output.raw if hasattr(output, 'raw') else str(output)
+        
+        # Try direct parsing
         try:
-            # Try direct JSON parsing
             return json.loads(output_str)
         except json.JSONDecodeError:
-            # Try extracting JSON from markdown code blocks
-            if "```json" in output_str:
-                json_str = output_str.split("```json")[1].split("```")[0].strip()
-                return json.loads(json_str)
-            elif "```" in output_str:
-                json_str = output_str.split("```")[1].split("```")[0].strip()
-                return json.loads(json_str)
-            else:
-                logger.warning(f"Could not parse JSON from output: {output_str[:100]}")
-                return {}
+            pass
+        
+        # Try markdown code block extraction
+        for delimiter in ["```json", "```"]:
+            if delimiter in output_str:
+                try:
+                    json_str = output_str.split(delimiter)[1].split("```")[0].strip()
+                    return json.loads(json_str)
+                except (IndexError, json.JSONDecodeError):
+                    continue
+        
+        # Fallback
+        logger.warning(f"Could not parse JSON from output: {output_str[:200]}...")
+        return {}
+    
+    def _format_memory_context(self, memory_output: Dict[str, Any]) -> str:
+        """Format memory output for context inclusion"""
+        session_notes = memory_output.get('session_notes', '')
+        personal_notes = memory_output.get('personal_notes', '')
+        
+        return f"""
+        Session Context:
+        {session_notes}
 
+        User Preferences:
+        {personal_notes}
+        """.strip()
+    
+    def _set_default_memory(self) -> None:
+        """Set default empty memory on failure"""
+        self.state.memory_output = {
+            "session_notes": "",
+            "personal_notes": "",
+        }
+        self.state.memory_docs = ""
+    
+    def _set_default_retrieval_strategy(self) -> None:
+        """Set default retrieval strategy on failure"""
+        self.state.retrieval_output = {
+            "query_rewrite": self.state.query,
+            "strategy": "hybrid",
+        }
 
-# Async function to run the flow
-async def run_legal_qa_flow(
+# Main Function
+async def run_agentic_rag(
     query: str,
     user_id: str = "user_123",
     session_id: str = "default",
@@ -194,23 +270,34 @@ async def run_legal_qa_flow(
     language_instruction: str = "Respond in the same language as the question",
     chat_history: Optional[str] = None,
     **kwargs
-) -> dict:
+) -> LegalQAState:
     """
-    Run the legal QA flow end-to-end.
+    Execute legal QA flow end-to-end
     
     Args:
-        query: The user's legal question
-        user_id: User identifier
-        session_id: Session identifier
-        user_type: Type of user (general, legal_professional, etc.)
-        language_instruction: Language instruction for response
-        chat_history: Previous chat history context
-        **kwargs: Additional state variables
+        query: User's legal question
+        user_id: User identifier for personalization
+        session_id: Session identifier for context continuity
+        user_type: User type (lawyer, general, etc.) for response tailoring
+        language_instruction: Language preference for response
+        chat_history: Previous conversation context
+        **kwargs: Additional state parameters
     
     Returns:
-        dict with final_answer, state details, and any errors
+        LegalQAState: Complete state object with answer and metadata
+        
+    Example:
+        >>> result = await run_legal_qa_flow(
+        ...     query="What are the tax penalties?",
+        ...     user_id="user_123",
+        ...     user_type="lawyer"
+        ... )
+        >>> print(result.answer)
+        >>> print(result.errors)
     """
-    # Create initial state
+    logger.info(f"Starting Legal QA Flow for query: {query[:100]}...")
+    
+    # Build initial state
     initial_state = {
         "query": query,
         "user_id": user_id,
@@ -221,15 +308,8 @@ async def run_legal_qa_flow(
         **kwargs,
     }
     
-    # Create and run flow
-    
-    
-    
+    # Execute flow
     flow = LegalQAFlow()
-    result = await flow.kickoff_async(initial_state)
+    result_state = await flow.kickoff_async(initial_state)
     
-    return result
-
-
-# For backwards compatibility
-crew = None  # Remove default instance since Flow needs to be instantiated with state
+    return result_state

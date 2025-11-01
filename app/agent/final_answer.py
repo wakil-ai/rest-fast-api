@@ -1,7 +1,7 @@
 # app/agent/final_answer.py
 
 from crewai import Agent, Task
-from app.agent.llm import tiny_llm  
+from app.agent.llm import main_llm  
 from app.chains.prompts import SYSTEM_PROMPT
 
 
@@ -16,7 +16,7 @@ FinalAnswerAgent = Agent(
         "You never invent sources or facts beyond CONTEXT. You strictly obey citation formatting and "
         "language/script instructions."
     ),
-    llm=tiny_llm,
+    llm=main_llm,
     allow_delegation=False,
     verbose=True,
     instructions=SYSTEM_PROMPT + """

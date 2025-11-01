@@ -18,7 +18,7 @@ MemoryAgent = Agent(
         "If a memory type is needed, you call the corresponding tool to load it "
         "and summarize only the essential, factual details directly related to the question. "
         "You never invent or infer beyond available memory data. "
-        "Each output must stay concise (≤120 words per field) and factual."
+        "Each output must stay concise and factual."
     ),
     llm=tiny_llm,
     allow_delegation=False,
@@ -33,7 +33,7 @@ memory_task = Task(
     Given a user {query}, decide whether session memory, personal memory, both, or neither are needed to answer it.
 
     If a memory type is needed, use the corresponding tool to load it and summarize only the minimal, relevant facts 
-    necessary to answer the question. Keep each notes field concise (≤120 words), factual, and non-duplicative.
+    necessary to answer the question. Keep each notes field concise, factual, and non-duplicative.
     If a memory type is not needed, return an empty string for that field.
 
     Do not invent information. Output must be valid JSON with exactly the following keys.

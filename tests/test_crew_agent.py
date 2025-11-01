@@ -2,11 +2,11 @@
 import sys
 import asyncio
 sys.path.append(".")
-from app.agent.crew import run_legal_qa_flow
+from app.agent.crew import run_agentic_rag
 
 
 async def main():
-    result = await run_legal_qa_flow(
+    result = await run_agentic_rag(
         user_id="5904877504",
         session_id="e5d84aca-4473-4da0-9b40-d45dd6296ba7",
         query="Soliq to'lash o'z vaqtidan o'tib ketsa nima bo'ladi?",
