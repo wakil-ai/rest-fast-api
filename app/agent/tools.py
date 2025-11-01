@@ -31,15 +31,3 @@ WebSearchTool = TavilySearchTool(
     include_answer=True,
     timeout=10,
 )
-
-WebExtractionTool = TavilyExtractorTool(
-    api_key=settings.TAVILY_API_KEY,
-    include_images=False,
-)
-        
-tools = [
-    WebSearchTool,
-    WebExtractionTool,
-    SessionMemoryTool(),
-    PersonalMemoryTool(),
-]

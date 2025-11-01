@@ -5,7 +5,7 @@ Uses Tavily API for intelligent web search and content extraction
 """
 
 from crewai import Agent, Task, Crew, Process
-from app.agent.tools import WebSearchTool, WebExtractionTool
+from app.agent.tools import WebSearchTool
 from app.agent.llm import tiny_llm
 
 
