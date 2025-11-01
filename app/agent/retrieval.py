@@ -1,5 +1,5 @@
 # app/agent/retrieval.py
-from crewai import Agent, Task
+from crewai import Agent, Task, Crew, Process
 from app.agent.llm import tiny_llm
 
 
@@ -59,5 +59,12 @@ retrieval_task = Task(
     """,
     agent=RetrievalAgent,
     output_key="retrieval_json",
+    verbose=True,
+)
+
+retrieval_crew = Crew(
+    agents=[RetrievalAgent],
+    tasks=[retrieval_task],
+    process=Process.sequential,
     verbose=True,
 )

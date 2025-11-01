@@ -1,6 +1,6 @@
 # app/agent/memory.py
 
-from crewai import Agent, Task
+from crewai import Agent, Task, Crew, Process
 from app.agent.tools import SessionMemoryTool, PersonalMemoryTool
 from app.agent.llm import tiny_llm
 
@@ -51,5 +51,13 @@ memory_task = Task(
     """,
     agent=MemoryAgent,
     output_key="memory_json",
+    verbose=True,
+)
+
+
+memory_crew = Crew(
+    agents=[MemoryAgent],
+    tasks=[memory_task],
+    process=Process.sequential,
     verbose=True,
 )

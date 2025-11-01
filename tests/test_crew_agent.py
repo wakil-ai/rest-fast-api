@@ -2,7 +2,7 @@
 import sys
 import asyncio
 sys.path.append(".")
-from app.agent.crew import run_agentic_rag
+from app.agent.flow import run_agentic_rag
 
 
 async def main():

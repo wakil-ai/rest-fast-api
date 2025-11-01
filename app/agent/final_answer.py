@@ -1,6 +1,6 @@
 # app/agent/final_answer.py
 
-from crewai import Agent, Task
+from crewai import Agent, Task, Crew, Process
 from app.agent.llm import main_llm  
 from app.chains.prompts import SYSTEM_PROMPT
 
@@ -58,4 +58,12 @@ final_answer_task = Task(
     agent=FinalAnswerAgent,
     output_key="final_answer_markdown",
     verbose=True,
+)
+
+
+final_answer_crew = Crew(
+    agents=[FinalAnswerAgent],
+    tasks=[final_answer_task],
+    process=Process.sequential,
+    verbose=True
 )
