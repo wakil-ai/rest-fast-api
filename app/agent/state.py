@@ -14,6 +14,7 @@ class AgenticRAGState(BaseModel):
     chat_history: Optional[str] = Field(default=None, description="Previous chat context")
     
     # Intermediate outputs
+    query_language: Optional[str] = Field(default=None, description="Detected language of the query")
     memory_output: Optional[Dict[str, Any]] = Field(default=None, description="Structured memory data")
     memory_docs: Optional[str] = Field(default=None, description="Formatted memory for context")
     retrieval_output: Optional[Dict[str, Any]] = Field(default=None, description="Retrieval metadata")
@@ -23,6 +24,7 @@ class AgenticRAGState(BaseModel):
     
     # Final output
     answer: Optional[str] = Field(default=None, description="Generated answer")
+    language_corrected_answer: Optional[str] = Field(default=None, description="Language-corrected final answer")
     
     # Error tracking
     errors: List[str] = Field(default_factory=list, description="Accumulated errors")

@@ -15,6 +15,7 @@ from app.agent.state import AgenticRAGState
 
 # Import services
 from app.retrieval.retrieval_service import RetrievalService
+from app.services.language_service import LanguageDetector
 from app.core.logger import logger
 
 class AgenticRAGFlow(Flow[AgenticRAGState]):
@@ -30,8 +31,32 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     def __init__(self):
         super().__init__()
         self.retrieval_service = RetrievalService()
-    
+        self.language_service = LanguageDetector()
+        
     @start()
+    async def detect_language_instruction(self) -> None:
+        """
+        Step 0: Detect language of the query
+        
+        Sets language_instruction in state for later use
+        """
+        logger.info("=== Step 0: Language Detection ===")
+        
+        try:
+            lang = self.language_service.detect_language(self.state.query)
+            
+            self.state.query_language = lang
+            self.state.language_instruction = self.language_service.get_instruction(lang)
+            
+            logger.info(f"✓ Detected language: {lang}")
+            
+        except Exception as e:
+            logger.error(f"✗ Language detection failed: {e}", exc_info=True)
+            self.state.errors.append(f"Language detection error: {str(e)}")
+            self.state.language_instruction = "Respond in the same language as the question."
+        
+    
+    @listen(detect_language_instruction)
     async def start_memory_retrieval(self) -> None:
         """
         Step 1: Retrieve session and personal memory
@@ -185,13 +210,42 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             
             self.state.answer = str(result)
             logger.info(f"✓ Answer generated: {len(self.state.answer)} characters")
-        
-            return self.state.answer
             
         except Exception as e:
             logger.error(f"✗ Answer generation failed: {e}", exc_info=True)
             self.state.errors.append(f"Final answer error: {str(e)}")
             self.state.answer = "Error generating answer. Please try again."
+        
+    @listen(generate_final_answer)
+    async def correct_answer_language(self) -> None:
+        """
+        Step 5: Language correction of final answer
+        
+        Ensures the final answer matches the detected language of the query
+        """
+        logger.info("=== Step 5: Language Correction ===")
+        
+        try:
+            if not self.state.query_language:
+                logger.info("No detected query language; skipping correction.")
+                self.state.language_corrected_answer = self.state.answer
+                return
+            
+            corrected_answer = self.language_service.correct_language(
+                text=self.state.answer,
+                language=self.state.query_language
+            )
+            
+            self.state.language_corrected_answer = corrected_answer
+            logger.info("✓ Language correction completed.")
+            logger.info('Final corrected answer preview: ' + corrected_answer)
+            
+            return corrected_answer
+            
+        except Exception as e:
+            logger.error(f"✗ Language correction failed: {e}", exc_info=True)
+            self.state.errors.append(f"Language correction error: {str(e)}")
+            self.state.language_corrected_answer = self.state.answer
             
             return self.state.answer
     
