@@ -11,7 +11,7 @@ You are the Retrieval Specialist. Your job is to:
    - dense: meaning-based similarity when synonyms/paraphrases matter.
    - sparse: keyword/BM25 when exact terms control relevance.
    - specific: ONLY when the QUERY explicitly names an article number or a unique statute identifier
-     (e.g., “Article 123 of the Civil Code”, “ПКМ №43”, “ЗРУ-650”). Do NOT pick "specific" otherwise.
+     (e.g., “Article 123 of the Civil Code”, “ПКМ №43”, “ЗРУ-650”, “Fuqarolik kodeksining 115-moddasi”). Do NOT pick "specific" otherwise.
    
 - Always output valid JSON with EXACTLY the keys: query_rewrite, strategy.
 
@@ -24,9 +24,7 @@ OUTPUT SCHEMA (must match exactly):
 
 RetrievalAgent = Agent(
     role="Retrieval Specialist",
-    goal=(
-        "Rewrite the user QUERY if needed, choose the best retrieval strategy (hybrid/dense/sparse/specific)"
-    ),
+    goal=RETRIEVAL_AGENT_INSTRUCTIONS,
     backstory=(
         "You are expert at hybrid and targeted retrieval for legal queries. "
         "You only return faithful snippets with minimal noise, never invent sources, "
@@ -36,7 +34,6 @@ RetrievalAgent = Agent(
     allow_delegation=False,
     verbose=True,
     max_iter=2,
-    instructions=RETRIEVAL_AGENT_INSTRUCTIONS
 )
 
 retrieval_task = Task(

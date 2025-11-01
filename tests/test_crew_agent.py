@@ -9,7 +9,7 @@ async def main():
     result = await run_agentic_rag(
         user_id="5904877504", 
         session_id="e5d84aca-4473-4da0-9b40-d45dd6296ba7",
-        query="Mening ismim nima?",
+        query="Where am I?", # Mening ismim nima?
         user_type="lawyer",
     )
     print("Agent Response:", result)

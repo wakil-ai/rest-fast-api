@@ -182,7 +182,6 @@ class MilvusHandler(VectorDBHandler):
         text_query: str,
         top_k: int = settings.TOP_K,
         anns_field: str = "text_sparse_hierarchy",
-        partition_name: str = "with-modda"
     ) -> List[Dict[str, Any]]:
         """
         Perform specific sparse vector search using keyword matching
@@ -195,8 +194,7 @@ class MilvusHandler(VectorDBHandler):
             anns_field=anns_field,
             filter=expr,
             top_k=top_k,
-            output_fields=["text", "metadata", "hierarchy_path"],
-            partition_names=[partition_name]
+            output_fields=["text", "metadata", "hierarchy_path"]
         )
 
         # Parse results

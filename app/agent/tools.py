@@ -2,7 +2,6 @@
 
 from crewai.tools import BaseTool
 from crewai_tools import TavilyExtractorTool, TavilySearchTool
-from app.db.db_manager import DBManager
 from app.services.memory_service import ChatMemoryService
 from app.core.config import settings
 
@@ -19,8 +18,8 @@ class PersonalMemoryTool(BaseTool):
     name: str = "get_personal_memory"
     description: str = "Retrieve personal memory from mem0."
 
-    async def _run(self, user_id: str, query: str):
-        return await chat_memory_service.search_memory(user_id, query)
+    async def _run(self, user_id: str):
+        return await chat_memory_service.get_all_memories(user_id)
       
         
 # Crew AI default tools with config
