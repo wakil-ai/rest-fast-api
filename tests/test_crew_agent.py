@@ -2,25 +2,17 @@
 import sys
 import asyncio
 sys.path.append(".")
-from app.chains.prompts import PROMPT
-from app.agent.crew import crew
+from app.agent.crew import run_legal_qa_flow
 
 
 async def main():
-    inputs = {
-        "user_id": "6454924619",
-        "session_id": "232fa88b-1440-4a7e-aa8e-5dce79533417",
-        "question": "Fuqarolik kodeksining 123-moddasiga ko‘ra, tomonlarning majburiyatlari qanday?",
-        "user_type": "lawyer",
-        "language_instruction": "Uzbek Latin",
-        "chat_history": "",
-        "context": "",
-        "system_policy": PROMPT.template  # or "" to use default 
-    }
-
-    result = await crew.kickoff_async(inputs=inputs)
-    final_text = result["final_answer"] if isinstance(result, dict) else str(result)
-    print(final_text)
+    result = await run_legal_qa_flow(
+        user_id="5904877504",
+        session_id="e5d84aca-4473-4da0-9b40-d45dd6296ba7",
+        query="Soliq to'lash o'z vaqtidan o'tib ketsa nima bo'ladi?",
+        user_type="lawyer",
+    )
+    print("Agent Response:", result)
     
 
 if __name__ == "__main__":    
