@@ -17,12 +17,14 @@ WakilAI API provides intelligent legal document search, question-answering, and 
 ### AI & Machine Learning
 - **LangChain** - Framework for LLM application development
 - **LangGraph** - Advanced workflow orchestration
+- **CrewAI** - Multi-agent framework for agentic RAG workflows
 - **OpenAI API** - GPT models for text generation
 - **Novita AI** - Alternative LLM provider (Gemma models)
 - **Local VLLM** - Self-hosted language models
 - **Qwen Embeddings** - Advanced text embedding models
 - **FastText** - Language detection and processing
 - **Mem0AI** - Persistent memory management
+- **Tavily API** - Web search and content extraction
 
 ### Speech Processing
 - **Google Cloud Speech-to-Text** - Enterprise speech recognition
@@ -357,11 +359,175 @@ The application includes a production-ready Dockerfile with:
 - **Session Management** with configurable timeouts
 - **Rate Limiting** and secure headers middleware
 
+## 🤖 Agentic RAG with CrewAI
+
+### Overview
+WakilAI implements an advanced **multi-agent Agentic RAG (Retrieval-Augmented Generation)** workflow powered by **CrewAI**. This architecture orchestrates specialized agents that collaborate to deliver intelligent, context-aware legal responses.
+
+### Agent Architecture
+
+The system consists of four specialized agents working in a coordinated pipeline:
+
+#### 1. **Memory Agent** (`MemoryAgent`)
+- **Role**: Memory Router & Summarizer
+- **Responsibilities**:
+  - Retrieves session memory (recent conversation context)
+  - Fetches personal memory (long-term user preferences and facts)
+  - Synthesizes relevant context for current query
+  - Provides concise summaries (max 100 words each)
+- **Tools**: `SessionMemoryTool`, `PersonalMemoryTool`
+- **Output**: Structured JSON with `session_notes` and `personal_notes`
+
+#### 2. **Retrieval Agent** (`RetrievalAgent`)
+- **Role**: Retrieval Specialist
+- **Responsibilities**:
+  - Analyzes query to determine optimal retrieval strategy
+  - Optionally rewrites query for better retrieval
+  - Selects one of four strategies:
+    - **hybrid**: Combines semantic + keyword search for recall & precision
+    - **dense**: Meaning-based similarity search
+    - **sparse**: Keyword/BM25 search for exact term matching
+    - **specific**: Targeted lookup for explicit article/statute references
+- **Output**: JSON with rewritten query and selected strategy
+
+#### 3. **Web Search Agent** (`WebSearchAgent`)
+- **Role**: Web Search Specialist
+- **Responsibilities**:
+  - Performs advanced web searches using Tavily API
+  - Filters results for authoritative legal sources (lex.uz, gov.uz, etc.)
+  - Extracts and summarizes relevant legal content
+  - Returns high-quality sources with metadata
+- **Tools**: `WebSearchTool`, `TavilyExtractorTool`
+- **Output**: JSON with up to 5 curated legal sources and extracted content
+
+#### 4. **Final Answer Agent** (`FinalAnswerAgent`)
+- **Role**: Final Answer Composer
+- **Responsibilities**:
+  - Synthesizes all retrieved information
+  - Generates precise, user-appropriate legal responses
+  - Strictly adheres to provided context (no hallucinations)
+  - Formats citations and follow-up questions
+  - Respects language and script preferences
+- **LLM**: Main LLM (GPT-4o or equivalent)
+- **Output**: Polished markdown answer with proper citations
+
+### Workflow Pipeline
+
+The **AgenticRAGFlow** orchestrates the entire process with 6 sequential steps:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Step 0: Language Detection                                  │
+│ Detects query language → Sets language_instruction          │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────┐
+│ Step 1: Memory Retrieval                                    │
+│ SessionMemoryTool + PersonalMemoryTool → Memory Context     │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────┐
+│ Step 2: Retrieval Strategy Selection                        │
+│ RetrievalAgent → Chooses: hybrid|dense|sparse|specific      │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────┐
+│ Step 3: Document Retrieval                                  │
+│ RetrievalService → Fetches from Vector DB                   │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────┐
+│ Step 4: Conditional Web Search                              │
+│ WebSearchAgent → Tavily API (if enabled)                    │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────┐
+│ Step 5: Final Answer Generation                             │
+│ FinalAnswerAgent → Markdown with citations & follow-ups     │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────┐
+│ Step 6: Language Correction (Optional)                      │
+│ Ensures answer matches detected query language              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### State Management
+
+All agents operate within an **AgenticRAGState** that tracks:
+
+**Input Parameters**:
+- `query`: User's legal question
+- `user_id`, `session_id`: Session context
+- `user_type`: "lawyer" or "citizen"
+- `enable_web_search`, `enable_memory`: Feature toggles
+
+**Intermediate Outputs**:
+- `query_language`: Detected language
+- `memory_output`: Retrieved session/personal memory
+- `retrieval_output`: Chosen strategy and rewritten query
+- `retrieval_docs`: Retrieved legal documents
+- `web_search_output`: Web search results
+- `web_extraction_output`: Extracted web content
+
+**Final Output**:
+- `language_corrected_answer`: Final markdown answer
+
+**Error Tracking**:
+- `errors`: Accumulated errors from all stages
+
+### Key Features
+
+- ✅ **Multi-Agent Collaboration**: Specialized agents with clear responsibilities
+- ✅ **Flexible Retrieval**: Multiple strategies (hybrid, dense, sparse, specific)
+- ✅ **Context Awareness**: Integrates session and personal memory
+- ✅ **Web Augmentation**: Fallback to web search for comprehensive answers
+- ✅ **Language Handling**: Automatic language detection and localization
+- ✅ **Error Resilience**: Fallback strategies if any step fails
+- ✅ **JSON Parsing**: Robust extraction from agent outputs
+- ✅ **Async Execution**: Non-blocking workflow for better performance
+
+### Configuration
+
+Enable/disable features in the chat request:
+
+```json
+{
+  "query": "What are marriage laws in Uzbekistan?",
+  "user_id": "user123",
+  "session_id": "session456",
+  "enable_memory": true,
+  "enable_web_search": false,
+  "user_type": "lawyer"
+}
+```
+
+### Development
+
+**Agent Implementation Files**:
+- `app/agent/flow.py` - Main AgenticRAGFlow orchestrator
+- `app/agent/state.py` - State management model
+- `app/agent/llm.py` - LLM configurations
+- `app/agent/tools.py` - Custom tools for agents
+- `app/agent/crews/` - Individual agent definitions
+
+---
+
 ## 📝 Development
 
 ### Project Structure
 ```
 app/
+├── agent/             # CrewAI Agentic RAG
+│   ├── flow.py        # Main workflow orchestrator
+│   ├── state.py       # State management
+│   ├── llm.py         # LLM configurations
+│   ├── tools.py       # Custom tools
+│   └── crews/         # Individual agents
+│       ├── memory.py       # Memory retrieval agent
+│       ├── retrieval.py    # Retrieval strategy agent
+│       ├── web_search.py   # Web search agent
+│       └── final_answer.py # Answer composition agent
 ├── api/               # API route handlers
 │   ├── auth.py        # Telegram authentication
 │   ├── chat.py        # Chat and Q&A endpoints
@@ -399,14 +565,21 @@ app/
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
-
-This project is proprietary software. All rights reserved.
 
 ## 🚀 Recent Updates & Features
 
+### Version 5.1.0 - CrewAI Agentic RAG
+- **🤖 Multi-Agent Architecture**: Specialized agents for memory, retrieval, web search, and answer generation
+- **📚 Intelligent Retrieval**: Dynamic strategy selection (hybrid, dense, sparse, specific)
+- **🧠 Context Integration**: Session and personal memory in every query
+- **🌐 Web Search Augmentation**: Tavily API integration for external legal sources
+- **🔗 Workflow Orchestration**: CrewAI Flow for seamless agent coordination
+- **📝 Language-Aware Processing**: Automatic language detection and localization
+- **⚡ Async Pipeline**: Non-blocking execution for improved performance
+- **🛡️ Error Resilience**: Fallback strategies and comprehensive error tracking
+
 ### Version 5.0.0 - Major Feature Release
-- **�️ Real-time Speech-to-Text**: WebSocket-based live audio transcription
+- **️ Real-time Speech-to-Text**: WebSocket-based live audio transcription
 - **🧠 Persistent Memory**: Long-term conversation memory with Mem0AI
 - **👥 User Management**: Complete user session and conversation tracking
 - **🔐 Telegram Authentication**: Social login integration
@@ -442,4 +615,4 @@ This project is proprietary software. All rights reserved.
 
 ---
 
-**Status**: 🚀 **WakilAI API v5.0.0** - Production-ready legal AI assistant with advanced conversational capabilities!
+**Status**: 🚀 **WakilAI API v5.1.0** - Production-ready legal AI assistant with multi-agent CrewAI orchestration and advanced conversational capabilities!
