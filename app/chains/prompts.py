@@ -149,3 +149,8 @@ PROMPT = PromptTemplate(
     template=SYSTEM_PROMPT,
     optional_variables=["context", "chat_history", "language_instruction", "user_type"],
 )
+
+SOLIQ_PROMPT = PromptTemplate(
+    template=SOLIQ_ASSISTANT_PROMPT,
+    optional_variables=["context", "chat_history", "language_instruction"],
+)

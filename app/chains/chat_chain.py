@@ -105,8 +105,8 @@ class ChatChain:
             
             if file_context:
                 top_k = max(1, settings.TOP_K // 2)  # Reduce top_k by half if file context is provided
-                context_with_query = await self.retrieval_service.retrieve_context(query=query, top_k=top_k)
-                context_with_file_context = await self.retrieval_service.retrieve_context(query=file_context, top_k=top_k)
+                context_with_query = await self.retrieval_service.retrieve_context(query=query, top_k=top_k, collection_name=collection_name)
+                context_with_file_context = await self.retrieval_service.retrieve_context(query=file_context, top_k=top_k, collection_name=collection_name)
                 retrieved_context = context_with_query + "\n\n" + context_with_file_context
                 
                 context = f"""{retrieved_context}
@@ -116,10 +116,8 @@ class ChatChain:
                 {file_context}"""
                 
             else:  
-                context = await self.retrieval_service.retrieve_context(query=query, top_k=settings.TOP_K)
-                
-            context = await self.retrieval_service.retrieve_context(query=query, collection_name=collection_name)
-            
+                context = await self.retrieval_service.retrieve_context(query=query, top_k=settings.TOP_K, collection_name=collection_name)
+
             memory_text = await self.mem_service.search_memory(user_id, query)
             
             chat_history_text = await self._format_chat_history(chat_history)

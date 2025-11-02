@@ -105,7 +105,7 @@ class MilvusHandler(VectorDBHandler):
         """
         Perform hybrid search using both dense vectors and BM25 sparse vectors
         """
-        logger.debug(f'TOP_K: {top_k}, ALPHA: {alpha}')
+        logger.debug(f'TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}')
 
         # Create search requests for both dense and sparse vectors
         dense_search = AnnSearchRequest(
@@ -186,7 +186,6 @@ class MilvusHandler(VectorDBHandler):
         text_query: str,
         top_k: int = settings.TOP_K,
         anns_field: str = "text_sparse_hierarchy",
-        partition_name: str = "with-modda",
         collection_name: str = settings.MILVUS_MAIN_NAME
     ) -> List[Dict[str, Any]]:
         """

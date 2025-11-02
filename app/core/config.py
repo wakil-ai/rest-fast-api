@@ -25,6 +25,11 @@ class EmbeddingModel(str, Enum):
     openai = "openai"
     novita_qwen = "novita_qwen"
     deepinfra = "deepinfra"
+    
+# SPEECH TO TEXT
+class SpeechToTextProvider(str, Enum):
+    google = "google"
+    azure = "azure"
 
 class Settings(BaseSettings):
     # General
@@ -44,7 +49,7 @@ class Settings(BaseSettings):
     # MongoDB
     MONGODB_URI: Optional[str] = None  # Make optional
     COLLECTION_NAME: Optional[str] = None  # Make optional
-    MONGODB_DB_NAME: Optional[str] = None  # Make optional
+    MONGODB_DB_NAME: str = "wakilai"
     USERS_COLLECTION: str = "users"
     SESSIONS_COLLECTION: str = "sessions"
     MESSAGES_COLLECTION: str = "messages"
@@ -89,11 +94,6 @@ class Settings(BaseSettings):
     # EMBEDDING MODEL
     EMBEDDING_MODEL: EmbeddingModel = EmbeddingModel.qwen
 
-    # SPEECH TO TEXT
-    class SpeechToTextProvider(str, Enum):
-        google = "google"
-        azure = "azure"
-
     SPEECH_TO_TEXT_PROVIDER: SpeechToTextProvider = SpeechToTextProvider.azure
     AZURE_SPEECH_KEY: Optional[str] = None
     AZURE_SPEECH_REGION: Optional[str] = None
@@ -125,11 +125,11 @@ class Settings(BaseSettings):
     # TEMPERATURE
     TEMPERATURE: float = 0.1
     CHAT_HISTORY_LIMIT: int = 5
+    OUTPUT_MAX_TOKENS: int = 8192
 
     LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
-    OUTPUT_MAX_TOKENS: int = 8192
     
     # Auth (For Telegram Login)
     TELEGRAM_BOT_TOKEN: str

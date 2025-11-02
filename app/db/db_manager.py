@@ -36,7 +36,7 @@ class DBManager:
         existing_collections = self.mongo_handler.db.list_collection_names()
         
         if collection_name in existing_collections:
-            logger.info(f"[DBManager] Collection {collection_name} already exists in MongoDB.")
+            # logger.info(f"[DBManager] Collection {collection_name} already exists in MongoDB.")
             return
         
         self.mongo_handler.db.create_collection(collection_name)
@@ -84,18 +84,18 @@ class DBManager:
         """Dense-only search."""
         return self.vector_handler.query_dense(dense_vector, top_k, collection_name)
 
-    def search_sparse(self, text_query: str, top_k: int = settings.TOP_K) -> List[Dict[str, Any]]:
+    def search_sparse(self, text_query: str, top_k: int = settings.TOP_K, collection_name: str = settings.MILVUS_MAIN_NAME) -> List[Dict[str, Any]]:
         """Sparse-only search."""
-        return self.vector_handler.query_sparse(text_query, top_k)
+        return self.vector_handler.query_sparse(text_query, top_k, collection_name)
 
     def search_hybrid(self, dense_vector: List[float], text_query: str, top_k: int = settings.TOP_K, alpha: float = settings.ALPHA, collection_name: str = settings.MILVUS_MAIN_NAME) -> List[Dict[str, Any]]:
         """Hybrid search (dense + sparse)."""
         return self.vector_handler.query_hybrid(dense_vector, text_query, top_k, alpha, collection_name)
 
-    def search_specific(self, text_query: str, top_k: int = settings.TOP_K) -> List[Dict[str, Any]]:
+    def search_specific(self, text_query: str, top_k: int = settings.TOP_K, collection_name: str = settings.MILVUS_MAIN_NAME) -> List[Dict[str, Any]]:
         """Specific search when article number asked."""
         if settings.VECTOR_DB_TYPE == VectorDBType.milvus:
-            return self.vector_handler.query_specific(text_query, top_k)
+            return self.vector_handler.query_specific(text_query, top_k, collection_name)
         else:
             # Return empty list
             return []
