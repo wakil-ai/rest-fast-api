@@ -3,6 +3,7 @@
 from crewai import Agent, Task, Crew, Process
 from app.agent.tools import SessionMemoryTool, PersonalMemoryTool
 from app.agent.llm import tiny_llm
+from app.core.config import settings
 
 
 # Agent Definition
@@ -27,7 +28,7 @@ MemoryAgent = Agent(
     llm=tiny_llm,
     allow_delegation=False,
     tools=[SessionMemoryTool(), PersonalMemoryTool()],
-    verbose=True,
+    verbose=settings.DEBUG,
     max_iter=3,
 )
 
@@ -73,7 +74,7 @@ memory_task = Task(
     """,
     agent=MemoryAgent,
     output_key="memory_json",
-    verbose=True,
+    verbose=settings.DEBUG,
 )
 
 
@@ -81,5 +82,5 @@ memory_crew = Crew(
     agents=[MemoryAgent],
     tasks=[memory_task],
     process=Process.sequential,
-    verbose=True,
+    verbose=settings.DEBUG,
 )

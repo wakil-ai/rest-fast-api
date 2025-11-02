@@ -1,6 +1,7 @@
 # app/agent/retrieval.py
 from crewai import Agent, Task, Crew, Process
 from app.agent.llm import tiny_llm
+from app.core.config import settings
 
 
 RETRIEVAL_AGENT_INSTRUCTIONS = """
@@ -32,7 +33,7 @@ RetrievalAgent = Agent(
     ),
     llm=tiny_llm,
     allow_delegation=False,
-    verbose=True,
+    verbose=settings.DEBUG,
     max_iter=3,
 )
 
@@ -56,12 +57,12 @@ retrieval_task = Task(
     """,
     agent=RetrievalAgent,
     output_key="retrieval_json",
-    verbose=True,
+    verbose=settings.DEBUG,
 )
 
 retrieval_crew = Crew(
     agents=[RetrievalAgent],
     tasks=[retrieval_task],
     process=Process.sequential,
-    verbose=True,
+    verbose=settings.DEBUG,
 )

@@ -7,6 +7,7 @@ Uses Tavily API for intelligent web search and content extraction
 from crewai import Agent, Task, Crew, Process
 from app.agent.tools import WebSearchTool
 from app.agent.llm import tiny_llm
+from app.core.config import settings
 
 
 WEB_SEARCH_INSTRUCTIONS = """
@@ -44,7 +45,7 @@ WebSearchAgent = Agent(
     llm=tiny_llm,
     function_calling_llm=tiny_llm,
     allow_delegation=False,
-    verbose=True,
+    verbose=settings.DEBUG,
     tools=[WebSearchTool],
     max_iter=3,
     
@@ -95,7 +96,7 @@ web_search_task = Task(
     """,
     agent=WebSearchAgent,
     output_key="web_search_json",
-    verbose=True,
+    verbose=settings.DEBUG,
 )
 
 
@@ -103,5 +104,5 @@ web_search_crew = Crew(
     agents=[WebSearchAgent],
     tasks=[web_search_task],
     process=Process.sequential,
-    verbose=True,
+    verbose=settings.DEBUG,
 )
