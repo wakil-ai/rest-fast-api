@@ -47,7 +47,7 @@ class DBManager:
         """Create vector database handler based on configuration."""
         if settings.VECTOR_DB_TYPE == "milvus":
             milvus_handler = MilvusHandler()
-            logger.info(f"[DBManager] Initialized MilvusHandler with collection: {settings.MILVUS_COLLECTION_NAME}")
+            logger.info(f"[DBManager] Initialized MilvusHandler with collection: {settings.MILVUS_MAIN_NAME}")
             return milvus_handler
         elif settings.VECTOR_DB_TYPE == "pinecone": 
             pinecone_handler = PineconeHandler()
@@ -80,17 +80,17 @@ class DBManager:
         """Upsert vectors into vector database."""
         self.vector_handler.upsert_vectors(documents, partition_name)
 
-    def search_dense(self, dense_vector: List[float], top_k: int = settings.TOP_K) -> List[Dict[str, Any]]:
+    def search_dense(self, dense_vector: List[float], top_k: int = settings.TOP_K, collection_name: str = settings.MILVUS_MAIN_NAME) -> List[Dict[str, Any]]:
         """Dense-only search."""
-        return self.vector_handler.query_dense(dense_vector, top_k)
+        return self.vector_handler.query_dense(dense_vector, top_k, collection_name)
 
     def search_sparse(self, text_query: str, top_k: int = settings.TOP_K) -> List[Dict[str, Any]]:
         """Sparse-only search."""
         return self.vector_handler.query_sparse(text_query, top_k)
 
-    def search_hybrid(self, dense_vector: List[float], text_query: str, top_k: int = settings.TOP_K, alpha: float = settings.ALPHA) -> List[Dict[str, Any]]:
+    def search_hybrid(self, dense_vector: List[float], text_query: str, top_k: int = settings.TOP_K, alpha: float = settings.ALPHA, collection_name: str = settings.MILVUS_MAIN_NAME) -> List[Dict[str, Any]]:
         """Hybrid search (dense + sparse)."""
-        return self.vector_handler.query_hybrid(dense_vector, text_query, top_k, alpha)
+        return self.vector_handler.query_hybrid(dense_vector, text_query, top_k, alpha, collection_name)
 
     def search_specific(self, text_query: str, top_k: int = settings.TOP_K) -> List[Dict[str, Any]]:
         """Specific search when article number asked."""
