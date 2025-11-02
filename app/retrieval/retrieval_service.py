@@ -19,6 +19,7 @@ class RetrievalService:
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
         search_type: str = "hybrid",
+        collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> str:
         """Retrieve and format top documents by combining hybrid search and metadata reranking results."""
         try:
@@ -35,6 +36,9 @@ class RetrievalService:
                 search_results = self.search_hybrid(
                     query_text=query, top_k=top_k, alpha=alpha
                 )
+            search_results = self.search_hybrid(
+                query_text=query, top_k=top_k, alpha=alpha, collection_name=collection_name
+            )
             
             return self._format_results(search_results)
         except Exception as e:
@@ -53,16 +57,18 @@ class RetrievalService:
         self,
         query_text: str,
         top_k: int = settings.TOP_K,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> List[Dict[str, Any]]:
         """Perform dense vector search using semantic embeddings."""
         embedding = self.embedding_manager.embed_query(query_text)
-        return self.db_manager.search_dense(embedding, top_k)
+        return self.db_manager.search_dense(embedding, top_k, collection_name)
 
     def search_hybrid(
         self,
         query_text: str,
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> List[Dict[str, Any]]:
         """Perform hybrid search combining dense vectors and BM25 keyword relevance using Milvus."""
         embedding = self.embedding_manager.embed_query(query_text)
@@ -71,6 +77,7 @@ class RetrievalService:
             text_query=query_text,
             top_k=top_k,
             alpha=alpha,
+            collection_name=collection_name,
         )
     
     def search_specific(

@@ -148,7 +148,7 @@ WakilAI API provides intelligent legal document search, question-answering, and 
    
    # Milvus Configuration
    MILVUS_URI=http://localhost:19530
-   MILVUS_COLLECTION_NAME=lexuz
+   MILVUS_MAIN_NAME=lexuz
    MILVUS_USER=optional-username
    MILVUS_PASSWORD=optional-password
    

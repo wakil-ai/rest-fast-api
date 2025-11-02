@@ -53,6 +53,43 @@ async def ask_question(request: ChatRequest):
             detail="Failed to generate answer. Please try again later."
         )
 
+@router.post("/soliq", summary="Ask a question to Soliq assistant")
+async def ask_soliq_question(request: ChatRequest):
+    """
+    Ask a question related to Uzbek tax/soliq documents.
+    Retrieves context from the Soliq-specific vector DB collection and generates an answer.
+    Always provides deep, detailed analysis regardless of user type.
+    
+    Response format automatically adapts based on STREAM config:
+    """
+    try:
+        response = await chat_service.ask_question(
+            user_id=request.user_id,
+            query=request.query,
+            is_lawyer=True,  # Always use deep analysis for Soliq assistant
+            chat_history=request.chat_history,
+            stream=request.stream,
+            collection_name=settings.MILVUS_SOLIQ_ASSISTANT_NAME
+        )
+        
+        if request.stream:
+            # Return streaming response
+            return StreamingResponse(
+                format_streaming_response(response),
+                media_type="text/event-stream",
+                headers=get_streaming_headers()
+            )
+        else:
+            # Return JSON response
+            return ChatResponse(answer=response)
+
+    except Exception as e:
+        logger.error(f"[ChatAPI] Error in Soliq endpoint: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to generate answer. Please try again later."
+        )
+
 @router.get("/model-info", response_model=ModelInfoResponse, summary="Get model configuration info")
 async def get_model_info():
     """

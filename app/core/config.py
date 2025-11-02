@@ -51,7 +51,8 @@ class Settings(BaseSettings):
     FEEDBACK_COLLECTION: str = "feedbacks"
 
     # Milvus
-    MILVUS_COLLECTION_NAME: str = "lexuz" # Do not name it with -
+    MILVUS_MAIN_NAME: str = "lexuz" 
+    MILVUS_SOLIQ_ASSISTANT_NAME: str = "soliq"
     MILVUS_URI: str = "http://localhost:19530"
     MILVUS_USER: Optional[str] = None
     MILVUS_PASSWORD: Optional[str] = None
