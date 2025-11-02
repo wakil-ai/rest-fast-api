@@ -1,5 +1,6 @@
 # app/agent/crew.py
 
+import os
 from typing import Dict, Any
 import json
 from crewai.flow.flow import Flow, listen, start
@@ -17,6 +18,9 @@ from app.agent.state import AgenticRAGState
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.language_service import LanguageDetector
 from app.core.logger import logger
+
+# Disable all OpenTelemetry (including CrewAI)
+os.environ['OTEL_SDK_DISABLED'] = 'true'
 
 class AgenticRAGFlow(Flow[AgenticRAGState]):
     """
