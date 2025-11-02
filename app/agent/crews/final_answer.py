@@ -19,6 +19,8 @@ FinalAnswerAgent = Agent(
     ),
     llm=main_llm,
     allow_delegation=False,
+    reasoning=True,
+    max_reasoning_attempts=3,
     verbose=settings.DEBUG,
 )
 
