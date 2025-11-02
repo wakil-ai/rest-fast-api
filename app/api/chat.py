@@ -127,6 +127,7 @@ async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
         "user_id": request.user_id,
         "session_id": request.session_id,
         "enable_web_search": request.enable_web_search,
+        "enable_memory": request.enable_memory,
     }
     
     # Execute flow

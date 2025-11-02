@@ -46,3 +46,4 @@ class AgenticRAGRequest(BaseModel):
     user_id: str = Field(default="user_123", description="User identifier")
     session_id: str = Field(default="default", description="Session identifier")
     enable_web_search: bool = Field(default=True, description="Flag to enable/disable web search fallback")
+    enable_memory: bool = Field(default=True, description="Flag to enable/disable memory retrieval")

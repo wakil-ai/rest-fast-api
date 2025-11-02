@@ -11,7 +11,7 @@ class AgenticRAGState(BaseModel):
     user_type: str = Field(default="lawyer", description="User type (lawyer, general, etc.)")
     language_instruction: str = Field(default="Respond in the same language as the question",description="Language instruction for response")
     enable_web_search: bool = Field(default=True, description="Flag to enable/disable web search fallback")
-    chat_history: Optional[str] = Field(default=None, description="Previous chat context")
+    enable_memory: bool = Field(default=True, description="Flag to enable/disable memory retrieval")
     
     # Intermediate outputs
     query_language: Optional[str] = Field(default=None, description="Detected language of the query")

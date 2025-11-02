@@ -72,6 +72,11 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         logger.info("=== Step 1: Memory Retrieval ===")
         
         try:
+            if self.state.enable_memory is False:
+                logger.info("Memory retrieval disabled by configuration.")
+                self._set_default_memory()
+                return
+            
             result = await memory_crew.kickoff_async(
                 inputs={
                     "query": self.state.query,
