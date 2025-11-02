@@ -133,3 +133,29 @@ async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
     answer = await agentic_rag_service.kickoff_async(initial_state)
     
     return ChatResponse(answer=answer)
+
+@router.post("/agent/stream", summary="Stream legal question answer via agentic RAG")
+async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
+    """
+    Execute legal QA flow end-to-end using agentic RAG approach with streaming response.
+    """
+    logger.info(f"Starting Streaming Legal QA Flow for query: {request.query[:100]}...")
+    
+    # Build initial state
+    initial_state = {
+        "query": request.query,
+        "user_id": request.user_id,
+        "session_id": request.session_id,
+        "enable_web_search": request.enable_web_search,
+    }
+    
+    # Execute flow with streaming
+    async def response_generator():
+        answer = await agentic_rag_service.kickoff_async(initial_state)
+        yield answer
+        
+    return StreamingResponse(
+        format_streaming_response(response_generator()),
+        media_type="text/event-stream",
+        headers=get_streaming_headers()
+    )
