@@ -70,6 +70,11 @@ class DBManager:
         collection = self.mongo_handler.db[collection_name]
         return collection.update_one(query, update, upsert=upsert)
     
+    def delete_documents(self, collection_name: str, query: Dict[str, Any]) -> Any:
+        """Delete documents from MongoDB collection."""
+        collection = self.mongo_handler.db[collection_name]
+        return collection.delete_many(query)
+
     # Vector database operations (Pinecone, or Milvus)
     def upsert_vectors(self, documents: List[Dict[str, Any]], partition_name: str = None) -> None:
         """Upsert vectors into vector database."""

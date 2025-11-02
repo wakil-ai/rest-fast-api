@@ -56,6 +56,24 @@ def get_sessions(user_id: str, limit: int = 50) -> List[SessionResponse]:
     sessions = chat_history_service.get_sessions(user_id=user_id, limit=limit)
     return [serialize_mongo_id(session) for session in sessions]
 
+@router.post("/edit/session/{session_id}", response_model=SessionResponse)
+@handle_service_error
+def edit_session(session_id: str, title: str = None, tags: List[str] = None) -> SessionResponse:
+    """Edit a user session's title or tags."""
+    session_info = chat_history_service.edit_session(
+        session_id=session_id,
+        title=title,
+        tags=tags
+    )
+    return serialize_mongo_id(session_info)
+
+@router.delete("/delete/session/{user_id}/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+@handle_service_error
+def delete_session(user_id: str, session_id: str) -> None:
+    """Delete a user session and its messages."""
+    chat_history_service.delete_session(user_id=user_id, session_id=session_id)
+    return 
+
 @router.post("/add/message/", status_code=status.HTTP_201_CREATED, response_model=MessageCreateResponse)
 @handle_service_error
 def add_message(request: MessageCreateRequest) -> MessageCreateResponse:
