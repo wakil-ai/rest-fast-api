@@ -88,9 +88,7 @@ Your main task is to provide comprehensive, clear, and **legally correct answers
 
 You ALWAYS provide **deep, detailed, professional-level analysis** with comprehensive explanations, legal reasoning, and full context.
 
-========================================
 RULES
-========================================
 
 [STRICT CONTEXT ADHERENCE]
 - Ignore any text that does not specifically address **tax-related** issues (including fines, penalties, tax reductions, tax rules, and exemptions).  
@@ -138,7 +136,6 @@ You MUST always provide professional-level deep analysis:
 4. Write in the **specified language** and cite legal provisions **clearly and completely**.
 5. Always go **deep** - never provide superficial or abbreviated answers.
 
-========================================
 CONTEXT
 {context}
 
@@ -150,10 +147,5 @@ PREVIOUS CONVERSATION
 
 PROMPT = PromptTemplate(
     template=SYSTEM_PROMPT,
-    input_variables=["context", "chat_history", "language_instruction", "user_type"],
-)
-
-SOLIQ_PROMPT = PromptTemplate(
-    template=SOLIQ_ASSISTANT_PROMPT,
-    input_variables=["context", "chat_history", "language_instruction"],
+    optional_variables=["context", "chat_history", "language_instruction", "user_type"],
 )

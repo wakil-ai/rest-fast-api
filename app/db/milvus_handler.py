@@ -200,8 +200,7 @@ class MilvusHandler(VectorDBHandler):
             anns_field=anns_field,
             filter=expr,
             top_k=top_k,
-            output_fields=["text", "metadata", "hierarchy_path"],
-            partition_names=[partition_name]
+            output_fields=["text", "metadata", "hierarchy_path"]
         )
 
         # Parse results

@@ -12,17 +12,30 @@ class RetrievalService:
     def __init__(self):
         self.db_manager = DBManager()
         self.embedding_manager = EmbeddingManager()
-
+                
     async def retrieve_context(
         self,
         query: str,
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
+        search_type: str = "hybrid",
         collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> str:
         """Retrieve and format top documents by combining hybrid search and metadata reranking results."""
-        # Perform hybrid search using Milvus
         try:
+            if search_type == "sparse":
+                search_results = self.search_sparse(query_text=query, 
+                                                    top_k=top_k)
+            elif search_type == "dense":
+                search_results = self.search_dense(query_text=query, 
+                                                   top_k=top_k)
+            elif search_type == "specific":
+                search_results = self.search_specific(query_text=query, 
+                                                      top_k=top_k)
+            else:
+                search_results = self.search_hybrid(
+                    query_text=query, top_k=top_k, alpha=alpha
+                )
             search_results = self.search_hybrid(
                 query_text=query, top_k=top_k, alpha=alpha, collection_name=collection_name
             )

@@ -13,7 +13,7 @@ class Novita(LLM):
     
     def __init__(self):
         self.client = AsyncOpenAI(
-            base_url="https://api.novita.ai/v3/openai",
+            base_url=settings.NOVITA_API_BASE,
             api_key=settings.NOVITA_API_KEY
         )
         self.model = settings.NOVITA_MODEL

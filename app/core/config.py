@@ -72,8 +72,10 @@ class Settings(BaseSettings):
     GPT_COMPLETION_MODEL: str = "gpt-4o"  # Default GPT model
 
     # Novita AI API for Gemma provider
+    NOVITA_API_BASE: str = "https://api.novita.ai/v3/openai"
     NOVITA_API_KEY: Optional[str] = None
-    NOVITA_MODEL: str = "google/gemma-3-27b-it" 
+    NOVITA_TINY_MODEL: str = "openai/gpt-oss-120b"
+    NOVITA_MODEL: str = "openai/gpt-oss-120b" 
 
     # Novita Embeddings (OpenAI-compatible)
     NOVITA_EMBEDDING_BASE_URL: str = "https://api.novita.ai/openai"
@@ -95,6 +97,9 @@ class Settings(BaseSettings):
     SPEECH_TO_TEXT_PROVIDER: SpeechToTextProvider = SpeechToTextProvider.azure
     AZURE_SPEECH_KEY: Optional[str] = None
     AZURE_SPEECH_REGION: Optional[str] = None
+    
+    # OCR Service
+    OCR_API_URL: Optional[str] = 'http://localhost:3030'
     
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
@@ -130,6 +135,9 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str
     TELEGRAM_BOT_LOGIN: str
     TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3 # 3 day in seconds
+    
+    # Web Scraping
+    TAVILY_API_KEY: Optional[str] = None
     
     # EMBEDDING DIM
     @property

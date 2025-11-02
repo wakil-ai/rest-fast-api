@@ -69,7 +69,7 @@ class DBManager:
         """Update documents in MongoDB collection."""
         collection = self.mongo_handler.db[collection_name]
         return collection.update_one(query, update, upsert=upsert)
-
+    
     # Vector database operations (Pinecone, or Milvus)
     def upsert_vectors(self, documents: List[Dict[str, Any]], partition_name: str = None) -> None:
         """Upsert vectors into vector database."""

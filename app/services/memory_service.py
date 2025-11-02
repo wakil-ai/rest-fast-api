@@ -1,11 +1,38 @@
-from typing import Any, List
+from typing import Any, List, Dict
 from mem0 import AsyncMemoryClient
+from app.db.db_manager import DBManager
 from app.core.config import settings
 from app.core.logger import logger
 
 class ChatMemoryService:
     def __init__(self):
+        self.db_manager = DBManager()
         self.client = AsyncMemoryClient(api_key=settings.MEM0_API_KEY)
+        
+    async def get_session_memory(self, user_id: str, session_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Retrieve previous conversation memory for a user session."""
+        try:
+            filter = {"user_id": user_id, "session_id": session_id}
+            session_memories = self.db_manager.find_documents(
+                collection_name=settings.MESSAGES_COLLECTION,
+                query=filter,
+                limit=limit,
+            )
+            
+            # Sort memories by created_at timestamp latest first
+            session_memories.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+            content = []
+            for memory in session_memories:
+                memory.pop("_id", None)  # Remove MongoDB internal ID
+                content.append({
+                    "query": memory.get("content", "").get("query", ""),
+                    "response": memory.get("content", "").get("response", ""),
+                })
+            
+            return content
+        except Exception as e:
+            logger.error(f"[RetrievalService] Failed to get session memory: {e}", exc_info=True)
+            return []     
 
     async def search_memory(self, user_id: str, query: str):
         """Searches for memories for a given user."""

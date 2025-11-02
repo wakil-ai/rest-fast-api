@@ -20,6 +20,7 @@ class ChatService:
         is_lawyer: bool = False,
         chat_history: Optional[List[MessagePair]] = None,
         stream: bool = settings.STREAM,
+        file_context: Optional[str] = None,
         collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
@@ -41,6 +42,7 @@ class ChatService:
             is_lawyer=is_lawyer,
             chat_history=chat_history,
             stream=stream,
+            file_context=file_context,
             collection_name=collection_name,
         )
         return answer
