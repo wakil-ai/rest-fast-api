@@ -105,4 +105,5 @@ web_search_crew = Crew(
     tasks=[web_search_task],
     process=Process.sequential,
     verbose=settings.DEBUG,
+    tracing=settings.TRACING,
 )

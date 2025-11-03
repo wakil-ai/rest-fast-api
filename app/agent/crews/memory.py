@@ -83,4 +83,5 @@ memory_crew = Crew(
     tasks=[memory_task],
     process=Process.sequential,
     verbose=settings.DEBUG,
+    tracing=settings.TRACING,
 )

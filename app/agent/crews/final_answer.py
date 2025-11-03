@@ -64,5 +64,6 @@ final_answer_crew = Crew(
     agents=[FinalAnswerAgent],
     tasks=[final_answer_task],
     process=Process.sequential,
-    verbose=settings.DEBUG
+    verbose=settings.DEBUG,
+    tracing=settings.TRACING,
 )

@@ -1,4 +1,5 @@
 # app/main.py
+import os
 import secrets
 
 # FastAPI imports
@@ -64,6 +65,12 @@ async def lifespan(app: FastAPI):
     port = 8080  # This should match the port in the Dockerfile
     logger.info(f"WakilAI API running at http://localhost:{port} and http://0.0.0.0:{port}")
     logger.info(f"API documentation available at http://localhost:{port}/docs")
+    
+    # Disable all OpenTelemetry (including CrewAI)
+    # os.environ['OTEL_SDK_DISABLED'] = 'true'
+    if settings.TRACING:
+        os.environ['CREWAI_TRACING_ENABLED'] = 'true'
+        
     yield
     # Shutdown (if needed)
     pass

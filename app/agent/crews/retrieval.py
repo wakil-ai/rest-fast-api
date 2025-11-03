@@ -65,4 +65,5 @@ retrieval_crew = Crew(
     tasks=[retrieval_task],
     process=Process.sequential,
     verbose=settings.DEBUG,
+    tracing=settings.TRACING,
 )

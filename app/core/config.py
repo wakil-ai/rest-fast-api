@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
+    TRACING: bool = False # Enable tracing for agents and crews
     
     # Memory Service API Key
     MEM0_API_KEY: str  # Mem

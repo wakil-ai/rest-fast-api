@@ -18,9 +18,8 @@ from app.agent.state import AgenticRAGState
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.language_service import LanguageDetector
 from app.core.logger import logger
+from app.core.config import settings
 
-# Disable all OpenTelemetry (including CrewAI)
-os.environ['OTEL_SDK_DISABLED'] = 'true'
 
 class AgenticRAGFlow(Flow[AgenticRAGState]):
     """
@@ -33,7 +32,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     """
     
     def __init__(self):
-        super().__init__()
+        super().__init__(tracing=settings.TRACING)
         self.retrieval_service = RetrievalService()
         self.language_service = LanguageDetector()
         
