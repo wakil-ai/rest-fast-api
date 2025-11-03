@@ -15,6 +15,7 @@ class AgenticRAGState(BaseModel):
     
     # Intermediate outputs
     query_language: Optional[str] = Field(default=None, description="Detected language of the query")
+    resolved_query: Optional[str] = Field(default=None, description="Resolved query with context")
     memory_output: Optional[Dict[str, Any]] = Field(default=None, description="Structured memory data")
     memory_docs: Optional[str] = Field(default=None, description="Formatted memory for context")
     retrieval_output: Optional[Dict[str, Any]] = Field(default=None, description="Retrieval metadata")

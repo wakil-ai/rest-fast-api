@@ -24,9 +24,16 @@ class ChatMemoryService:
             content = []
             for memory in session_memories:
                 memory.pop("_id", None)  # Remove MongoDB internal ID
+                created_at = memory.get("created_at")
+                if created_at:
+                    dt_str = created_at.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    dt_str = "Unknown"
+
                 content.append({
                     "query": memory.get("content", "").get("query", ""),
                     "response": memory.get("content", "").get("response", ""),
+                    "created_at": dt_str,
                 })
             
             return content

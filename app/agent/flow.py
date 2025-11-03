@@ -5,11 +5,8 @@ from typing import Dict, Any
 import json
 from crewai.flow.flow import Flow, listen, start
 
-# Import crews
-from app.agent.crews.memory import memory_crew
-from app.agent.crews.retrieval import retrieval_crew
-from app.agent.crews.final_answer import final_answer_crew
-from app.agent.crews.web_search import web_search_crew
+# Import agents factory (replace crews)
+from app.agent.crews.crew_base import Agents
 
 # Import state
 from app.agent.state import AgenticRAGState
@@ -17,8 +14,11 @@ from app.agent.state import AgenticRAGState
 # Import services
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.language_service import LanguageDetector
+from app.services.memory_service import ChatMemoryService
 from app.core.logger import logger
 from app.core.config import settings
+
+from app.agent.crews.schemas import MemoryAgentResponse
 
 
 class AgenticRAGFlow(Flow[AgenticRAGState]):
@@ -35,6 +35,8 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         super().__init__(tracing=settings.TRACING)
         self.retrieval_service = RetrievalService()
         self.language_service = LanguageDetector()
+        self.memory_service = ChatMemoryService()
+        self.agents = Agents()
         
     @start()
     async def detect_language_instruction(self) -> None:
@@ -76,18 +78,41 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                 self._set_default_memory()
                 return
             
-            result = await memory_crew.kickoff_async(
-                inputs={
-                    "query": self.state.query,
-                    "user_id": self.state.user_id,
-                    "session_id": self.state.session_id,
-                }
+            # First, retrieve raw memories
+            session_mem = await self.memory_service.get_session_memory(
+                user_id=self.state.user_id,
+                session_id=self.state.session_id,
+            )
+            personal_mem = await self.memory_service.get_all_memories(
+                user_id=self.state.user_id
+            )
+
+            has_session = bool(session_mem)
+            has_personal = bool(personal_mem and personal_mem.get("memories"))
+
+            if not has_session and not has_personal:
+                logger.info("No session or personal memories found; skipping summarizer.")
+                self._set_default_memory()
+                return
+
+            input_inject = f"""
+            "query": "{self.state.query}",
+            "session_memory": {json.dumps(session_mem, ensure_ascii=False)},
+            "personal_memory": {json.dumps(personal_mem, ensure_ascii=False)},
+            """
+            # When we have memory data, use the Memory Summarizer agent
+            result = await self.agents.memory_summarizer().kickoff_async(
+                input_inject,
+                response_format=MemoryAgentResponse
             )
             
             # Parse and structure memory output
             self.state.memory_output = self._parse_json_output(result)
             self.state.memory_docs = self._format_memory_context(self.state.memory_output)
             
+            # Get resolved query if provided 
+            self.state.resolved_query = self.state.memory_output.get("resolved_query", self.state.query)
+
             logger.info(f"✓ Memory retrieved: {len(self.state.memory_docs)} characters")
             
         except Exception as e:
@@ -109,9 +134,8 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         logger.info("=== Step 2: Retrieval Strategy Selection ===")
         
         try:
-            result = await retrieval_crew.kickoff_async(
-                inputs={"query": self.state.query}
-            )
+            retrieval_agent = self.agents.retrieval_specialist()
+            result = await retrieval_agent.kickoff_async(self.state.query)
             
             self.state.retrieval_output = self._parse_json_output(result)
             strategy = self.state.retrieval_output.get("strategy", "hybrid")
@@ -164,12 +188,9 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                 logger.info("Web search disabled by configuration.")
                 return
             
-            # Execute web search crew
-            result = await web_search_crew.kickoff_async(
-                inputs={
-                    "query": self.state.query,
-                }
-            )
+            # Execute web search agent
+            web_agent = self.agents.web_search_summarizer()
+            result = await web_agent.kickoff_async(self.state.query)
             
             # Parse outputs
             web_search_json = self._parse_json_output(result)
@@ -178,17 +199,20 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             
             # Combine extracted docs into retrieval docs
             extracted_docs = web_search_json.get("docs", [])
+            if not extracted_docs:
+                logger.info("No web search docs found; skipping merge into context.")
+                return
+
             combined_docs = self.state.retrieval_docs or ""
             combined_docs += "\n\n--- Web Search Results ---\n"
             for doc in extracted_docs:
                 content = doc.get("content", "")
                 url = doc.get("url", "")
                 str_doc = f"\nSource: {url}\n{content}\n"
-                
-                combined_docs += str_doc      
-            
+                combined_docs += str_doc
+
             self.state.retrieval_docs = combined_docs
-            
+
             logger.info(f"✓ Web search and extraction completed: {len(extracted_docs)} documents")
             
         except Exception as e:
@@ -206,14 +230,20 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         logger.info("=== Step 4: Final Answer Generation ===")
         
         try:
-            result = await final_answer_crew.kickoff_async(
-                inputs={
-                    "query": self.state.query,
-                    "context": self.state.retrieval_docs or "",
-                    "chat_history": self.state.memory_docs or "",
-                    "user_type": self.state.user_type,
-                    "language_instruction": self.state.language_instruction,
-                }
+            final_agent = self.agents.final_answer()
+            
+            # Input injection for final agent
+            input_inject = f"""
+            "query": "{self.state.query}",
+            "resolved_query": "{self.state.resolved_query} ,query which may clarify questions from memory.",
+            "context": """ + json.dumps(self.state.retrieval_docs or "") + """,
+            "chat_history": """ + json.dumps(self.state.memory_docs or "") + """,
+            "user_type": + """ + {self.state.user_type} + """,
+            "language_instruction": + """ + {self.state.language_instruction} + """,
+            """
+            
+            result = await final_agent.kickoff_async(
+                input_inject
             )
             
             self.state.answer = str(result)
