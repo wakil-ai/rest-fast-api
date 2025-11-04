@@ -3,17 +3,18 @@
 from fastapi import APIRouter, HTTPException
 from fastapi import UploadFile, File, Form
 from fastapi.responses import StreamingResponse
+
 from app.core.config import settings
 from app.models.chat import ChatRequest, ChatResponse, ModelInfoResponse, AgenticRAGRequest
 from app.services.chat_service import ChatService
 from app.services.ocr_service import OCRService
-from app.agent.flow import AgenticRAGFlow
+from app.orchestration.flow import AgenticRAGFlow
 from app.utils.streaming import format_streaming_response, get_streaming_headers
 from app.core.logger import logger
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
-# Initialize service
+# Initialize services
 agentic_rag_service = AgenticRAGFlow()
 chat_service = ChatService()
 ocr_service = OCRService()
