@@ -1,274 +1,189 @@
-# app/agent/crew.py
+# app/agent/flow.py
 
-import os
-from typing import Dict, Any
 import json
+from typing import Any, Dict
+
 from crewai.flow.flow import Flow, listen, start
 
-# Import agents factory (replace crews)
 from app.agent.crews.crew_base import Agents
-
-# Import state
+from app.agent.crews.schemas import MemoryAgentResponse
+from app.agent.crews.schemas import RetrievalStrategyResponse
+from app.agent.crews.schemas import WebSearchResponse
 from app.agent.state import AgenticRAGState
-
-# Import services
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.language_service import LanguageDetector
 from app.services.memory_service import ChatMemoryService
-from app.core.logger import logger
 from app.core.config import settings
-
-from app.agent.crews.schemas import MemoryAgentResponse
+from app.core.logger import logger
 
 
 class AgenticRAGFlow(Flow[AgenticRAGState]):
     """
-    Agentic RAG flow with sequential execution:
-    1. Memory Retrieval: Fetch session and personal memory
-    2. Document Retrieval Strategy: Determine best retrieval approach
-    3. Document Fetch: Execute retrieval from vector DB
-    4. Web Search & Extraction if enabled
-    5. Final Answer: Generate response using LLM
+    Agentic RAG pipeline with memory, retrieval strategy, and web search.
+    
+    Flow:
+        1. Language Detection
+        2. Memory Retrieval (session + personal context)
+        3. Retrieval Strategy Selection
+        4. Document Retrieval
+        5. Web Search (conditional)
+        6. Answer Generation
+        7. Language Correction
     """
     
     def __init__(self):
         super().__init__(tracing=settings.TRACING)
+        self._initialize_services()
+        self._initialize_agents()
+    
+    def _initialize_services(self) -> None:
+        """Initialize all required services."""
         self.retrieval_service = RetrievalService()
         self.language_service = LanguageDetector()
         self.memory_service = ChatMemoryService()
-        self.agents = Agents()
-        
+    
+    def _initialize_agents(self) -> None:
+        """Initialize and cache all agents once."""
+        agents_factory = Agents()
+        self.memory_agent = agents_factory.memory_summarizer()
+        self.retrieval_agent = agents_factory.retrieval_specialist()
+        self.web_search_agent = agents_factory.web_search_summarizer()
+        self.final_answer_agent = agents_factory.final_answer()
+    
     @start()
     async def detect_language_instruction(self) -> None:
-        """
-        Step 0: Detect language of the query
-        
-        Sets language_instruction in state for later use
-        """
+        """Detect query language and set response instruction."""
         logger.info("=== Step 0: Language Detection ===")
         
         try:
-            lang = self.language_service.detect_language(self.state.query)
+            detected_language = self.language_service.detect_language(self.state.query)
+            self.state.query_language = detected_language
+            self.state.language_instruction = self.language_service.get_instruction(detected_language)
             
-            self.state.query_language = lang
-            self.state.language_instruction = self.language_service.get_instruction(lang)
+            logger.info(f"✓ Detected language: {detected_language}")
             
-            logger.info(f"✓ Detected language: {lang}")
-            
-        except Exception as e:
-            logger.error(f"✗ Language detection failed: {e}", exc_info=True)
-            self.state.errors.append(f"Language detection error: {str(e)}")
+        except Exception as error:
+            await self._handle_error("Language detection", error)
             self.state.language_instruction = "Respond in the same language as the question."
-        
     
     @listen(detect_language_instruction)
     async def start_memory_retrieval(self) -> None:
-        """
-        Step 1: Retrieve session and personal memory
-        
-        Fetches:
-        - Session notes: Recent conversation context
-        - Personal notes: Long-term user preferences and information
-        """
+        """Retrieve and summarize session and personal memory."""
         logger.info("=== Step 1: Memory Retrieval ===")
         
+        if not self.state.enable_memory:
+            logger.info("Memory retrieval disabled by configuration.")
+            await self._set_default_memory()
+            return
+        
         try:
-            if self.state.enable_memory is False:
-                logger.info("Memory retrieval disabled by configuration.")
-                self._set_default_memory()
+            session_memory, personal_memory = await self._fetch_memories()
+            
+            if not await self._has_any_memory(session_memory, personal_memory):
+                logger.info("No memories found; skipping summarization.")
+                await self._set_default_memory()
                 return
             
-            # First, retrieve raw memories
-            session_mem = await self.memory_service.get_session_memory(
-                user_id=self.state.user_id,
-                session_id=self.state.session_id,
-            )
-            personal_mem = await self.memory_service.get_all_memories(
-                user_id=self.state.user_id
-            )
-
-            has_session = bool(session_mem)
-            has_personal = bool(personal_mem and personal_mem.get("memories"))
-
-            if not has_session and not has_personal:
-                logger.info("No session or personal memories found; skipping summarizer.")
-                self._set_default_memory()
-                return
-
-            input_inject = f"""
-            "query": "{self.state.query}",
-            "session_memory": {json.dumps(session_mem, ensure_ascii=False)},
-            "personal_memory": {json.dumps(personal_mem, ensure_ascii=False)},
-            """
-            # When we have memory data, use the Memory Summarizer agent
-            result = await self.agents.memory_summarizer().kickoff_async(
-                input_inject,
-                response_format=MemoryAgentResponse
-            )
+            memory_response = await self._summarize_memory(session_memory, personal_memory)
+            await self._apply_memory_response(memory_response)
             
-            # Parse and structure memory output
-            self.state.memory_output = self._parse_json_output(result)
-            self.state.memory_docs = self._format_memory_context(self.state.memory_output)
-            
-            # Get resolved query if provided 
-            self.state.resolved_query = self.state.memory_output.get("resolved_query", self.state.query)
-
+            self.state.enriched_query = await self._enrich_query_with_memory(self.state.query)
             logger.info(f"✓ Memory retrieved: {len(self.state.memory_docs)} characters")
             
-        except Exception as e:
-            logger.error(f"✗ Memory retrieval failed: {e}", exc_info=True)
-            self.state.errors.append(f"Memory retrieval error: {str(e)}")
-            self._set_default_memory()
+        except Exception as error:
+            await self._handle_error("Memory retrieval", error)
+            await self._set_default_memory()
     
     @listen(start_memory_retrieval)
     async def determine_retrieval_strategy(self) -> None:
-        """
-        Step 2: Determine optimal retrieval strategy
-        
-        Agent analyzes query to choose:
-        - hybrid: Combines semantic + keyword search
-        - dense: Semantic similarity search
-        - sparse: Keyword/BM25 search
-        - specific: Exact article/statute lookup
-        """
+        """Analyze query to select optimal retrieval strategy."""
         logger.info("=== Step 2: Retrieval Strategy Selection ===")
         
         try:
-            retrieval_agent = self.agents.retrieval_specialist()
-            result = await retrieval_agent.kickoff_async(self.state.query)
+            result = await self.retrieval_agent.kickoff_async(self.state.enriched_query)
+            strategy_response = await self._parse_structured_output(result, RetrievalStrategyResponse)
             
-            self.state.retrieval_output = self._parse_json_output(result)
-            strategy = self.state.retrieval_output.get("strategy", "hybrid")
-            query_rewrite = self.state.retrieval_output.get("query_rewrite", self.state.query)
+            self.state.retrieval_output = strategy_response.model_dump()
             
-            logger.info(f"✓ Strategy selected: {strategy}")
-            logger.info(f"  Query rewrite: {query_rewrite}")
+            logger.info(f"✓ Strategy: {strategy_response.strategy}")
+            logger.info(f"  Query rewrite: {strategy_response.query_rewrite}")
+            if strategy_response.reasoning:
+                logger.info(f"  Reasoning: {strategy_response.reasoning}")
             
-        except Exception as e:
-            logger.error(f"✗ Strategy selection failed: {e}", exc_info=True)
-            self.state.errors.append(f"Retrieval strategy error: {str(e)}")
-            self._set_default_retrieval_strategy()
+        except Exception as error:
+            await self._handle_error("Strategy selection", error)
+            await self._set_default_retrieval_strategy()
     
     @listen(determine_retrieval_strategy)
     async def fetch_documents(self) -> None:
-        """
-        Step 3: Execute document retrieval
-        
-        Fetches relevant legal documents from vector database
-        using the strategy determined in previous step
-        """
+        """Execute document retrieval using selected strategy."""
         logger.info("=== Step 3: Document Retrieval ===")
         
         try:
             strategy = self.state.retrieval_output.get("strategy", "hybrid")
-            query = self.state.retrieval_output.get("query_rewrite", self.state.query)
+            self.state.rewritten_query = self.state.retrieval_output.get("query_rewrite", self.state.query)
             
-            result = await self.retrieval_service.retrieve_context(
-                query=query,
+            documents = await self.retrieval_service.retrieve_context(
+                query=self.state.rewritten_query,
                 search_type=strategy
             )
             
-            self.state.retrieval_docs = str(result)
+            self.state.retrieval_docs = str(documents)
             logger.info(f"✓ Documents retrieved: {len(self.state.retrieval_docs)} characters")
             
-        except Exception as e:
-            logger.error(f"✗ Document retrieval failed: {e}", exc_info=True)
-            self.state.errors.append(f"Document fetch error: {str(e)}")
+        except Exception as error:
+            await self._handle_error("Document retrieval", error)
             self.state.retrieval_docs = ""
-            
+    
     @listen(fetch_documents)
     async def perform_web_search(self) -> None:
-        """
-        Step 4: Web search and extraction
-        """
-        logger.info("=== Step 4: Conditional Web Search ===")
+        """Perform web search and merge results with retrieved documents."""
+        logger.info("=== Step 4: Web Search ===")
+        
+        if not self.state.enable_web_search:
+            logger.info("Web search disabled by configuration.")
+            return
         
         try:
-            if self.state.enable_web_search is False:
-                logger.info("Web search disabled by configuration.")
+            web_response = await self._execute_web_search()
+            
+            if not web_response.docs:
+                logger.info("No web search documents found.")
                 return
             
-            # Execute web search agent
-            web_agent = self.agents.web_search_summarizer()
-            result = await web_agent.kickoff_async(self.state.query)
+            await self._merge_web_documents(web_response)
+            logger.info(f"✓ Web search completed: {len(web_response.docs)} documents extracted")
             
-            # Parse outputs
-            web_search_json = self._parse_json_output(result)
-            
-            self.state.web_search_output = web_search_json
-            
-            # Combine extracted docs into retrieval docs
-            extracted_docs = web_search_json.get("docs", [])
-            if not extracted_docs:
-                logger.info("No web search docs found; skipping merge into context.")
-                return
-
-            combined_docs = self.state.retrieval_docs or ""
-            combined_docs += "\n\n--- Web Search Results ---\n"
-            for doc in extracted_docs:
-                content = doc.get("content", "")
-                url = doc.get("url", "")
-                str_doc = f"\nSource: {url}\n{content}\n"
-                combined_docs += str_doc
-
-            self.state.retrieval_docs = combined_docs
-
-            logger.info(f"✓ Web search and extraction completed: {len(extracted_docs)} documents")
-            
-        except Exception as e:
-            logger.error(f"✗ Web search/extraction failed: {e}", exc_info=True)
-            self.state.errors.append(f"Web search error: {str(e)}")
+        except Exception as error:
+            await self._handle_error("Web search", error)
     
     @listen(perform_web_search)
     async def generate_final_answer(self) -> None:
-        """
-        Step 4: Generate final answer
-        
-        Synthesizes all retrieved information to produce
-        a comprehensive, contextually-aware response
-        """
-        logger.info("=== Step 4: Final Answer Generation ===")
+        """Generate comprehensive answer from all retrieved context."""
+        logger.info("=== Step 5: Answer Generation ===")
         
         try:
-            final_agent = self.agents.final_answer()
-            
-            # Input injection for final agent
-            input_inject = f"""
-            "query": "{self.state.query}",
-            "resolved_query": "{self.state.resolved_query} ,query which may clarify questions from memory.",
-            "context": """ + json.dumps(self.state.retrieval_docs or "") + """,
-            "chat_history": """ + json.dumps(self.state.memory_docs or "") + """,
-            "user_type": + """ + {self.state.user_type} + """,
-            "language_instruction": + """ + {self.state.language_instruction} + """,
-            """
-            
-            result = await final_agent.kickoff_async(
-                input_inject
-            )
+            agent_input = await self._build_final_agent_input()
+            result = await self.final_answer_agent.kickoff_async(agent_input)
             
             self.state.answer = str(result)
             logger.info(f"✓ Answer generated: {len(self.state.answer)} characters")
             
-        except Exception as e:
-            logger.error(f"✗ Answer generation failed: {e}", exc_info=True)
-            self.state.errors.append(f"Final answer error: {str(e)}")
+        except Exception as error:
+            await self._handle_error("Answer generation", error)
             self.state.answer = "Error generating answer. Please try again."
-        
+    
     @listen(generate_final_answer)
-    async def correct_answer_language(self) -> None:
-        """
-        Step 5: Language correction of final answer
+    async def correct_answer_language(self) -> str:
+        """Ensure answer matches detected query language."""
+        logger.info("=== Step 6: Language Correction ===")
         
-        Ensures the final answer matches the detected language of the query
-        """
-        logger.info("=== Step 5: Language Correction ===")
+        if not self.state.query_language:
+            logger.info("No detected language; skipping correction.")
+            self.state.language_corrected_answer = self.state.answer
+            return self.state.answer
         
         try:
-            if not self.state.query_language:
-                logger.info("No detected query language; skipping correction.")
-                self.state.language_corrected_answer = self.state.answer
-                return
-            
             corrected_answer = self.language_service.correct_language(
                 text=self.state.answer,
                 language=self.state.query_language
@@ -276,74 +191,178 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             
             self.state.language_corrected_answer = corrected_answer
             logger.info("✓ Language correction completed.")
-            logger.info('Final corrected answer preview: ' + corrected_answer)
+            logger.info(f"Final answer preview: {corrected_answer[:100]}...")
             
             return corrected_answer
             
-        except Exception as e:
-            logger.error(f"✗ Language correction failed: {e}", exc_info=True)
-            self.state.errors.append(f"Language correction error: {str(e)}")
+        except Exception as error:
+            await self._handle_error("Language correction", error)
             self.state.language_corrected_answer = self.state.answer
-            
             return self.state.answer
     
-    # Helper Methods  
-    def _parse_json_output(self, output: Any) -> Dict[str, Any]:
+    async def _fetch_memories(self) -> tuple[Any, Dict]:
+        """Fetch session and personal memories concurrently."""
+        session_memory = await self.memory_service.get_session_memory(
+            user_id=self.state.user_id,
+            session_id=self.state.session_id
+        )
+        personal_memory = await self.memory_service.get_all_memories(
+            user_id=self.state.user_id
+        )
+        return session_memory, personal_memory
+    
+    async def _has_any_memory(self, session_memory: Any, personal_memory: Dict) -> bool:
+        """Check if any memory exists."""
+        has_session = bool(session_memory)
+        has_personal = bool(personal_memory and personal_memory.get("memories"))
+        return has_session or has_personal
+    
+    async def _summarize_memory(
+        self,
+        session_memory: Any,
+        personal_memory: Dict
+    ) -> MemoryAgentResponse:
+        """Summarize memory using cached agent."""
+        memory_input = await self._build_memory_input(session_memory, personal_memory)
+        result = await self.memory_agent.kickoff_async(
+            memory_input,
+            response_format=MemoryAgentResponse
+        )
+        return await self._parse_structured_output(result, MemoryAgentResponse)
+    
+    async def _build_memory_input(self, session_memory: Any, personal_memory: Dict) -> str:
+        """Build input for memory summarizer agent."""
+        return f"""
+            "query": "{self.state.query}",
+            "session_memory": {json.dumps(session_memory, ensure_ascii=False)},
+            "personal_memory": {json.dumps(personal_memory, ensure_ascii=False)},
         """
-        Parse JSON from agent output with fallback handling
+    
+    async def _apply_memory_response(self, memory_response: MemoryAgentResponse) -> None:
+        """Apply memory response to state."""
+        self.state.memory_output = memory_response.model_dump()
+        self.state.memory_docs = await self._format_memory_context(memory_response)
+        self.state.resolved_query = memory_response.resolved_query
+    
+    async def _execute_web_search(self) -> WebSearchResponse:
+        """Execute web search using cached agent and return structured response."""
+        result = await self.web_search_agent.kickoff_async(self.state.rewritten_query)
+        web_response = await self._parse_structured_output(result, WebSearchResponse)
         
-        Handles:
-        - Direct JSON strings
-        - CrewOutput objects with .raw attribute
-        - Markdown code blocks (```json ... ```)
-        - Plain code blocks (``` ... ```)
+        self.state.web_search_output = web_response.model_dump()
+        return web_response
+    
+    async def _merge_web_documents(self, web_response: WebSearchResponse) -> None:
+        """Merge web documents into retrieval context."""
+        combined_docs = self.state.retrieval_docs or ""
+        combined_docs += "\n\n--- Web Search Results ---\n"
+        
+        for doc in web_response.docs:
+            combined_docs += f"\nSource: {doc.url}\n"
+            if doc.title:
+                combined_docs += f"Title: {doc.title}\n"
+            combined_docs += f"{doc.content}\n"
+        
+        self.state.retrieval_docs = combined_docs
+    
+    async def _build_final_agent_input(self) -> str:
+        """Build input for final answer agent."""
+        return f"""
+            "query": "{self.state.query}",
+            "resolved_query": "{self.state.resolved_query}, Query which may clarify questions from memory.",
+            "context": {json.dumps(self.state.retrieval_docs or "", ensure_ascii=False)},
+            "chat_history": {json.dumps(self.state.memory_docs or "", ensure_ascii=False)},
+            "user_type": {self.state.user_type},
+            "language_instruction": {self.state.language_instruction},
         """
-        # Extract string representation
+    
+    async def _parse_structured_output(self, output: Any, schema_class: type) -> Any:
+        """Parse structured output using Pydantic schema."""
         output_str = output.raw if hasattr(output, 'raw') else str(output)
+        parsed_dict = await self._parse_json_output(output_str)
         
-        # Try direct parsing
         try:
-            return json.loads(output_str)
-        except json.JSONDecodeError:
-            pass
+            return schema_class(**parsed_dict)
+        except Exception as error:
+            logger.warning(f"Failed to parse into {schema_class.__name__}: {error}")
+            return schema_class()
+    
+    async def _parse_json_output(self, output_str: str) -> Dict[str, Any]:
+        """Parse JSON from string with fallback handling."""
+        if parsed := await self._try_direct_json_parse(output_str):
+            return parsed
         
-        # Try markdown code block extraction
-        for delimiter in ["```json", "```"]:
-            if delimiter in output_str:
-                try:
-                    json_str = output_str.split(delimiter)[1].split("```")[0].strip()
-                    return json.loads(json_str)
-                except (IndexError, json.JSONDecodeError):
-                    continue
+        if parsed := await self._try_extract_code_block(output_str):
+            return parsed
         
-        # Fallback
         logger.warning(f"Could not parse JSON from output: {output_str[:200]}...")
         return {}
     
-    def _format_memory_context(self, memory_output: Dict[str, Any]) -> str:
-        """Format memory output for context inclusion"""
-        session_notes = memory_output.get('session_notes', '')
-        personal_notes = memory_output.get('personal_notes', '')
+    async def _try_direct_json_parse(self, text: str) -> Dict[str, Any] | None:
+        """Attempt direct JSON parsing."""
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return None
+    
+    async def _try_extract_code_block(self, text: str) -> Dict[str, Any] | None:
+        """Extract and parse JSON from markdown code blocks."""
+        for delimiter in ["```json", "```"]:
+            if delimiter not in text:
+                continue
+            
+            try:
+                json_str = text.split(delimiter)[1].split("```")[0].strip()
+                return json.loads(json_str)
+            except (IndexError, json.JSONDecodeError):
+                continue
         
+        return None
+    
+    async def _format_memory_context(self, memory_response: MemoryAgentResponse) -> str:
+        """Format memory response for context inclusion."""
         return f"""
-        Session Context:
-        {session_notes}
+            Session Context:
+            {memory_response.session_notes}
 
-        User Preferences:
-        {personal_notes}
+            User Preferences:
+            {memory_response.personal_notes}
         """.strip()
     
-    def _set_default_memory(self) -> None:
-        """Set default empty memory on failure"""
-        self.state.memory_output = {
-            "session_notes": "",
-            "personal_notes": "",
-        }
+    async def _set_default_memory(self) -> None:
+        """Set default empty memory."""
+        default_response = MemoryAgentResponse(
+            session_notes="",
+            personal_notes="",
+            resolved_query=self.state.query
+        )
+        self.state.memory_output = default_response.model_dump()
         self.state.memory_docs = ""
+        self.state.resolved_query = self.state.query
     
-    def _set_default_retrieval_strategy(self) -> None:
-        """Set default retrieval strategy on failure"""
-        self.state.retrieval_output = {
-            "query_rewrite": self.state.query,
-            "strategy": "hybrid",
-        }
+    async def _set_default_retrieval_strategy(self) -> None:
+        """Set default retrieval strategy."""
+        default_response = RetrievalStrategyResponse(
+            strategy="hybrid",
+            query_rewrite=self.state.query
+        )
+        self.state.retrieval_output = default_response.model_dump()
+    
+    async def _handle_error(self, operation: str, error: Exception) -> None:
+        """Log error and add to state."""
+        logger.error(f"✗ {operation} failed: {error}", exc_info=True)
+        self.state.errors.append(f"{operation} error: {str(error)}")
+    
+    async def _enrich_query_with_memory(self, base_query: str) -> str:
+        """Enrich query with resolved memory context if available."""
+        if not await self._should_enrich_query():
+            return base_query
+        
+        return f"{base_query} Resolved Query from memory: {self.state.resolved_query}".strip()
+    
+    async def _should_enrich_query(self) -> bool:
+        """Check if query should be enriched with memory context."""
+        return (
+            self.state.resolved_query and 
+            self.state.resolved_query != self.state.query
+        )

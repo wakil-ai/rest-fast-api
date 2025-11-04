@@ -14,6 +14,8 @@ class AgenticRAGState(BaseModel):
     enable_memory: bool = Field(default=True, description="Flag to enable/disable memory retrieval")
     
     # Intermediate outputs
+    enriched_query: Optional[str] = Field(default=None, description="Query enriched with memory context")
+    rewritten_query: Optional[str] = Field(default=None, description="Rewritten query for retrieval with enrichments")
     query_language: Optional[str] = Field(default=None, description="Detected language of the query")
     resolved_query: Optional[str] = Field(default=None, description="Resolved query with context")
     memory_output: Optional[Dict[str, Any]] = Field(default=None, description="Structured memory data")
