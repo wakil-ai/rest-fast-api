@@ -3,7 +3,7 @@ import sys
 
 sys.path.append(".")  # Ensure current directory is in path for imports
 
-from app.agent.crews.crew_base import Agents
+from app.agent.agents import Agents
 
 crew = Agents()
 

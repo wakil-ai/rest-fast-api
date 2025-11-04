@@ -6,8 +6,8 @@ from typing import Any, Callable, Dict, List, Optional
 import yaml
 from crewai import Agent
 
-from app.agent.llm import main_llm, tiny_llm
-from app.agent.tools import WebSearchTool
+from app.orchestration.config.llms import main_llm, tiny_llm
+from app.orchestration.tools import WebSearchTool
 from app.chains.prompts import SYSTEM_PROMPT
 from app.core.config import settings
 
@@ -29,7 +29,7 @@ class Agents:
     @classmethod
     def _load_config(cls) -> None:
         """Load agent configurations from YAML file."""
-        config_path = Path(__file__).parent / "agents.yaml"
+        config_path = Path(__file__).parent / "config/agents.yaml"
         with config_path.open(encoding="utf-8") as file:
             data = yaml.safe_load(file)
             cls._CONFIG.update(data.get("agents", {}))

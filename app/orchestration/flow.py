@@ -1,15 +1,17 @@
-# app/agent/flow.py
+# app/orchestration/flow.py
 
 import json
 from typing import Any, Dict
 
 from crewai.flow.flow import Flow, listen, start
 
-from app.agent.crews.crew_base import Agents
-from app.agent.crews.schemas import MemoryAgentResponse
-from app.agent.crews.schemas import RetrievalStrategyResponse
-from app.agent.crews.schemas import WebSearchResponse
-from app.agent.state import AgenticRAGState
+from app.orchestration.agents import Agents
+from app.orchestration.schemas import (
+    AgenticRAGState,
+    MemoryAgentResponse,
+    RetrievalStrategyResponse,
+    WebSearchResponse
+)
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.language_service import LanguageDetector
 from app.services.memory_service import ChatMemoryService
