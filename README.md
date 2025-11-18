@@ -182,8 +182,13 @@ WakilAI API provides intelligent legal document search, question-answering, and 
    DEEPINFRA_EMBEDDING_BASE_URL=https://api.deepinfra.com/v1/openai
    DEEPINFRA_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-4B
    
+   # SILICONFLOW 
+   SILICONFLOW_API_KEY=your-SILICONFLOW-api-key
+   SILICONFLOW_EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+   SILICONFLOW_EMBEDDING_MODEL=qwen3-4b-embedding
+   
    # Embedding Configuration
-   EMBEDDING_MODEL=qwen  # qwen, openai, novita_qwen, deepinfra
+   EMBEDDING_MODEL=qwen  # qwen, openai, novita_qwen, deepinfra, SILICONFLOW
    
    # Qwen VLLM Embedding (if using local)
    QWEN_EMBEDDING_URL=http://localhost:8001
@@ -313,7 +318,7 @@ Once the server is running, access interactive documentation:
 
 ### Model Configuration
 - `LLM_PROVIDER`: Choose between `novita` or `local` for language models
-- `EMBEDDING_MODEL`: Select from `qwen`, `openai`, `novita_qwen`, `deepinfra`
+- `EMBEDDING_MODEL`: Select from `qwen`, `openai`, `novita_qwen`, `deepinfra`, `SILICONFLOW`
 - `VECTOR_DB_TYPE`: Choose between `milvus` or `pinecone`
 - `SPEECH_TO_TEXT_PROVIDER`: Choose between `google` or `azure`
 
