@@ -39,5 +39,5 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 ENV PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 
-# Start server with streaming-optimized configuration
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--loop", "asyncio", "--http", "httptools", "--timeout-keep-alive", "30", "--workers", "4"]
+# Start server with streaming-optimized configuration (single worker to avoid protobuf multiprocessing issues)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--loop", "asyncio", "--http", "httptools", "--timeout-keep-alive", "30"]
