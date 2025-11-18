@@ -10,7 +10,7 @@ from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
 from app.llms.local_vllm import LocalVLLM
 from app.services.memory_service import ChatMemoryService
-from app.chains.prompts import PROMPT
+from app.chains.prompts import PROMPT, SOLIQ_PROMPT
 
 class ChatChain:
     """
@@ -60,14 +60,23 @@ class ChatChain:
     async def make_system_prompt(self, context: str, 
                                    chat_history_text: str, 
                                    is_lawyer: bool, 
-                                   language_instruction: Optional[str]) -> str:
+                                   language_instruction: Optional[str],
+                                   prompt_template: Any = PROMPT) -> str:
         """Create the system prompt using the provided context and chat history."""
-        return PROMPT.format(
-            context=context,
-            chat_history=chat_history_text,
-            user_type="lawyer" if is_lawyer else "citizen",
-            language_instruction=language_instruction if language_instruction else ""
-        )
+        # SOLIQ_PROMPT doesn't use user_type parameter
+        if prompt_template == SOLIQ_PROMPT:
+            return prompt_template.format(
+                context=context,
+                chat_history=chat_history_text,
+                language_instruction=language_instruction if language_instruction else ""
+            )
+        else:
+            return prompt_template.format(
+                context=context,
+                chat_history=chat_history_text,
+                user_type="lawyer" if is_lawyer else "citizen",
+                language_instruction=language_instruction if language_instruction else ""
+            )
 
     async def generate_answer(
         self,
@@ -75,17 +84,40 @@ class ChatChain:
         query: str,
         is_lawyer: bool = False,
         chat_history: Optional[List] = None,
-        stream: bool = settings.STREAM
+        stream: bool = settings.STREAM,
+        file_context: Optional[str] = None,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response to the user's query using RAG approach.
         Falls back to ChatGPT if the primary LLM fails.
         """
         try:
+            # Select the appropriate prompt template based on collection
+            prompt_template = SOLIQ_PROMPT if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME else PROMPT
+            
             language = self.language_detector.detect_language(query)
             instruction = self.language_detector.get_instruction(language)
-            context = await self.retrieval_service.retrieve_context(query=query)
+
+            # If file context is provided, prepend it to the retrieved context so LLM uses file content
+            # Retrieve relavant documents query + file context if file provided
+            context = ""
             
+            if file_context:
+                top_k = max(1, settings.TOP_K // 2)  # Reduce top_k by half if file context is provided
+                context_with_query = await self.retrieval_service.retrieve_context(query=query, top_k=top_k, collection_name=collection_name)
+                context_with_file_context = await self.retrieval_service.retrieve_context(query=file_context, top_k=top_k, collection_name=collection_name)
+                retrieved_context = context_with_query + "\n\n" + context_with_file_context
+                
+                context = f"""{retrieved_context}
+                
+                File Content:
+                Use the following extracted text from the uploaded file to answer the question:
+                {file_context}"""
+                
+            else:  
+                context = await self.retrieval_service.retrieve_context(query=query, top_k=settings.TOP_K, collection_name=collection_name)
+
             memory_text = await self.mem_service.search_memory(user_id, query)
             
             chat_history_text = await self._format_chat_history(chat_history)
@@ -100,7 +132,8 @@ class ChatChain:
                 context=context,
                 chat_history_text=chat_history_text,
                 is_lawyer=is_lawyer,
-                language_instruction=instruction
+                language_instruction=instruction,
+                prompt_template=prompt_template
             )
                 
             logger.debug(f"[ChatChain] System Prompt: {system_prompt}")

@@ -100,6 +100,44 @@ class ChatHistoryService:
         sessions = self.db_manager.find_documents(self.sessions_collection, {"user_id": user_id}, limit=limit)
         logger.info(f"Retrieved {len(sessions)} sessions for user {user_id}")
         return sessions
+    
+    def edit_session(self, session_id: str, title: Optional[str] = None, tags: Optional[List[str]] = None) -> dict:
+        """Edit a session's title or tags."""
+        self._validate_session_id(session_id)
+        update_fields = {}
+        if title is not None:
+            update_fields["title"] = title
+        if tags is not None:
+            update_fields["tags"] = tags
+        if not update_fields:
+            raise ValueError("No fields to update")
+
+        update_fields["updated_at"] = datetime.utcnow()
+        updated_count = self.db_manager.update_documents(
+            self.sessions_collection, {"session_id": session_id}, {"$set": update_fields}
+        )
+        if updated_count == 0:
+            raise ValueError("Session not found or no changes made")
+
+        session = self.db_manager.find_documents(self.sessions_collection, {"session_id": session_id})
+        logger.info(f"Updated session with session_id: {session_id}")
+        return session[0] if session else {}
+    
+    def delete_session(self, user_id: str, session_id: str) -> None:
+        """Delete a session and its messages."""
+        self._validate_user_id(user_id)
+        self._validate_session_id(session_id)
+
+        deleted_count = self.db_manager.delete_documents(
+            self.sessions_collection, {"user_id": user_id, "session_id": session_id}
+        )
+        if deleted_count == 0:
+            raise ValueError("Session not found")
+
+        self.db_manager.delete_documents(
+            self.messages_collection, {"user_id": user_id, "session_id": session_id}
+        )
+        logger.info(f"Deleted session with session_id: {session_id} and its messages for user {user_id}")
 
     def add_message(self, user_id: str, session_id: str, message_id: str, 
                     content: dict, metadata: Optional[dict] = None) -> dict:

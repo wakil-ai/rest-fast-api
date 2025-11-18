@@ -25,6 +25,14 @@ async def mongo_metadata_search(request: MongoMetadataRequest):
     )
     return {"results": results}
 
+@router.post("/", summary="Search in Vector DB without specific method in production")
+async def vector_db_search(request: VectorDBRequest):
+    results = await retrieval_service.retrieve_context(
+        query=request.query_text,
+        top_k=request.top_k,
+    )
+    return {"results": results}
+
 @router.post("/search-hybrid", summary="Hybrid search in Vector DB")
 async def vector_db_hybrid_search(request: VectorDBRequest):
     results = retrieval_service.search_hybrid(

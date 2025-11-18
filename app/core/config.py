@@ -26,6 +26,11 @@ class EmbeddingModel(str, Enum):
     novita_qwen = "novita_qwen"
     deepinfra = "deepinfra"
     siliconflow = "siliconflow"
+    
+# SPEECH TO TEXT
+class SpeechToTextProvider(str, Enum):
+    google = "google"
+    azure = "azure"
 
 class Settings(BaseSettings):
     # General
@@ -34,6 +39,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
+    TRACING: bool = False # Enable tracing for agents and crews
     
     # Memory Service API Key
     MEM0_API_KEY: str  # Mem
@@ -45,14 +51,15 @@ class Settings(BaseSettings):
     # MongoDB
     MONGODB_URI: Optional[str] = None  # Make optional
     COLLECTION_NAME: Optional[str] = None  # Make optional
-    MONGODB_DB_NAME: Optional[str] = None  # Make optional
+    MONGODB_DB_NAME: str = "wakilai"
     USERS_COLLECTION: str = "users"
     SESSIONS_COLLECTION: str = "sessions"
     MESSAGES_COLLECTION: str = "messages"
     FEEDBACK_COLLECTION: str = "feedbacks"
 
     # Milvus
-    MILVUS_COLLECTION_NAME: str = "lexuz" # Do not name it with -
+    MILVUS_MAIN_NAME: str = "lexuz" 
+    MILVUS_SOLIQ_ASSISTANT_NAME: str = "soliq"
     MILVUS_URI: str = "http://localhost:19530"
     MILVUS_USER: Optional[str] = None
     MILVUS_PASSWORD: Optional[str] = None
@@ -72,8 +79,10 @@ class Settings(BaseSettings):
     GPT_COMPLETION_MODEL: str = "gpt-4o"  # Default GPT model
 
     # Novita AI API for Gemma provider
+    NOVITA_API_BASE: str = "https://api.novita.ai/v3/openai"
     NOVITA_API_KEY: Optional[str] = None
-    NOVITA_MODEL: str = "google/gemma-3-27b-it" 
+    NOVITA_TINY_MODEL: str = "openai/gpt-oss-120b"
+    NOVITA_MODEL: str = "openai/gpt-oss-120b" 
 
     # Novita Embeddings (OpenAI-compatible)
     NOVITA_EMBEDDING_BASE_URL: str = "https://api.novita.ai/openai"
@@ -92,14 +101,12 @@ class Settings(BaseSettings):
     # EMBEDDING MODEL
     EMBEDDING_MODEL: EmbeddingModel = EmbeddingModel.qwen
 
-    # SPEECH TO TEXT
-    class SpeechToTextProvider(str, Enum):
-        google = "google"
-        azure = "azure"
-
     SPEECH_TO_TEXT_PROVIDER: SpeechToTextProvider = SpeechToTextProvider.azure
     AZURE_SPEECH_KEY: Optional[str] = None
     AZURE_SPEECH_REGION: Optional[str] = None
+    
+    # OCR Service
+    OCR_API_URL: Optional[str] = 'http://localhost:3030'
     
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
@@ -125,16 +132,19 @@ class Settings(BaseSettings):
     # TEMPERATURE
     TEMPERATURE: float = 0.1
     CHAT_HISTORY_LIMIT: int = 5
+    OUTPUT_MAX_TOKENS: int = 8192
 
     LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
-    OUTPUT_MAX_TOKENS: int = 8192
     
     # Auth (For Telegram Login)
     TELEGRAM_BOT_TOKEN: str
     TELEGRAM_BOT_LOGIN: str
     TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3 # 3 day in seconds
+    
+    # Web Scraping
+    TAVILY_API_KEY: Optional[str] = None
     
     # EMBEDDING DIM
     @property
