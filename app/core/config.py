@@ -25,6 +25,7 @@ class EmbeddingModel(str, Enum):
     openai = "openai"
     novita_qwen = "novita_qwen"
     deepinfra = "deepinfra"
+    siliconflow = "siliconflow"
     
 # SPEECH TO TEXT
 class SpeechToTextProvider(str, Enum):
@@ -92,6 +93,11 @@ class Settings(BaseSettings):
     DEEPINFRA_EMBEDDING_BASE_URL: str = "https://api.deepinfra.com/v1/openai"
     DEEPINFRA_EMBEDDING_MODEL: str = "Qwen/Qwen3-Embedding-4B"
 
+    # SiliconFlow Embeddings (OpenAI-compatible)
+    SILICONFLOW_API_KEY: Optional[str] = None
+    SILICONFLOW_EMBEDDING_BASE_URL: str = "https://api.siliconflow.com/v1/embeddings/"
+    SILICONFLOW_EMBEDDING_MODEL: str = "Qwen/Qwen3-Embedding-4B"
+
     # EMBEDDING MODEL
     EMBEDDING_MODEL: EmbeddingModel = EmbeddingModel.qwen
 
@@ -143,7 +149,7 @@ class Settings(BaseSettings):
     # EMBEDDING DIM
     @property
     def EMBEDDING_DIM(self) -> int:
-        if self.EMBEDDING_MODEL == EmbeddingModel.qwen or self.EMBEDDING_MODEL == EmbeddingModel.deepinfra: # Qwen3-Embedding-4B
+        if self.EMBEDDING_MODEL == EmbeddingModel.qwen or self.EMBEDDING_MODEL == EmbeddingModel.deepinfra or self.EMBEDDING_MODEL == EmbeddingModel.siliconflow: # Qwen3-Embedding-4B
             return 2560
         elif self.EMBEDDING_MODEL == EmbeddingModel.openai: # Text-Embedding-Ada-002
             return 1536

@@ -23,9 +23,10 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python packages
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+# Install python packages with protobuf pure Python implementation
+RUN PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python pip install --upgrade pip && \
+    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python pip install --no-cache-dir --upgrade setuptools wheel && \
+    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
 COPY . .
@@ -36,6 +37,7 @@ EXPOSE 8080
 # Add environment variables for debugging
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
+ENV PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 
-# Start server with streaming-optimized configuration
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--loop", "asyncio", "--http", "httptools", "--timeout-keep-alive", "30", "--workers", "4"]
+# Start server with streaming-optimized configuration (single worker to avoid protobuf multiprocessing issues)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--loop", "asyncio", "--http", "httptools", "--timeout-keep-alive", "30"]

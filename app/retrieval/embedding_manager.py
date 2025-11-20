@@ -211,6 +211,54 @@ class OpenAIEmbedding(BaseEmbedding):
             raise
 
 
+class SiliconFlowEmbedding(BaseEmbedding):
+    """SiliconFlow Embedding implementation for Qwen3-Embedding-4B."""
+    def __init__(self):
+        self.api_url = settings.SILICONFLOW_EMBEDDING_BASE_URL
+        self.api_key = settings.SILICONFLOW_API_KEY
+        self.model_name = settings.SILICONFLOW_EMBEDDING_MODEL
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+    def embed_query(self, query: str) -> List[float]:
+        return self.embed_doc(get_instruction(query))
+
+    def embed_doc(self, text: str) -> List[float]:        
+        payload = {
+        "model": self.model_name,
+        "input": text,
+        "encoding_format": "float"
+        }
+
+        try:
+            response = requests.post(self.api_url, headers=self.headers, json=payload)
+            response.raise_for_status()
+            return response.json()["data"][0]["embedding"]
+        except requests.RequestException as e:
+            logger.error(f"SiliconFlow embedding failed: {e}")
+            raise
+
+    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+
+        payload = {
+            "model": self.model_name,
+            "input": texts,
+            "encoding_format": "float"
+        }
+
+        try:
+            response = requests.post(self.api_url, headers=self.headers, json=payload)
+            response.raise_for_status()
+            return [item["embedding"] for item in response.json().get("data", [])]
+        except requests.RequestException as e:
+            logger.error(f"SiliconFlow batch embedding failed: {e}")
+            raise
+
+
 class EmbeddingManager:
     _instance = None
     _initialized = False
@@ -228,7 +276,8 @@ class EmbeddingManager:
             EmbeddingModel.novita_qwen: NovitaQwenEmbedding,
             EmbeddingModel.deepinfra: DeepInfraEmbedding,
             EmbeddingModel.qwen: QwenEmbedding,
-            EmbeddingModel.openai: OpenAIEmbedding
+            EmbeddingModel.openai: OpenAIEmbedding,
+            EmbeddingModel.siliconflow: SiliconFlowEmbedding
         }
 
         self.embedding = model_map.get(settings.EMBEDDING_MODEL, OpenAIEmbedding)()
