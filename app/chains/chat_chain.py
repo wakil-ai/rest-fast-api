@@ -68,7 +68,6 @@ class ChatChain:
             return prompt_template.format(
                 context=context,
                 chat_history=chat_history_text,
-                language_instruction=language_instruction if language_instruction else ""
             )
         else:
             return prompt_template.format(
@@ -213,7 +212,7 @@ class ChatChain:
         async for chunk in response_generator:
             buffer += chunk
             if buffer.endswith('\n'):
-                buffer = self.language_detector.correct_language(buffer, language)
+                # buffer = self.language_detector.correct_language(buffer, language)
                 buffer = self.replace_punctuation(buffer)
                 
                 for char in buffer:
@@ -222,7 +221,7 @@ class ChatChain:
                 buffer = ""
                 
         if buffer:
-            buffer = self.language_detector.correct_language(buffer, language)
+            # buffer = self.language_detector.correct_language(buffer, language)
             for char in buffer:
                 yield char
             full_response += buffer

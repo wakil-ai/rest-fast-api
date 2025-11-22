@@ -110,7 +110,6 @@ RULES
 - When citing start each word with capital letter and following letters with small, always follow this convention even if it came wrongly in context.
   
 [LANGUAGE RULES]
-- {language_instruction}
 - Use **clear legal language** with appropriate technical terminology.
 - Be grammatically correct and precise.
 - Expand abbreviations where necessary, e.g., FHDY → Fuqarolik holati dalolatnomalarini yozish. 
@@ -169,8 +168,6 @@ CONTEXT
 
 PREVIOUS CONVERSATION
 {chat_history}
-
-{language_instruction}
 """
 
 PROMPT = PromptTemplate(
