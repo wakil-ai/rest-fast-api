@@ -156,11 +156,11 @@ class RetrievalService:
         if date := metadata.get("date"):
             entry.append(f"Date: {date}\n")
         if document_number := metadata.get("document_number"):
-            entry.append(f"Document Number: {document_number}\n")
+            entry.append(f"Document Number: {document_number}\n")            
         if url := metadata.get("chunk_url"):
             entry.append(f"Source URL: {url}\n")
         else:
-            if url := metadata.get("url"):
-                entry.append(f"Source URL: {url}\n")
-            
+                if url := metadata.get("url"):
+                    if not 'buxgalter.uz' in url:
+                        entry.append(f"Source URL: {url}\n")
         return "\n".join(entry)
