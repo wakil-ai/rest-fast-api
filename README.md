@@ -231,7 +231,43 @@ WakilAI API provides intelligent legal document search, question-answering, and 
    uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
    ```
 
-#### Method 2: Docker
+#### Method 2: Docker Compose (Recommended)
+
+The easiest way to get started with all required services:
+
+1. **Create environment file**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your API keys and configuration
+   ```
+
+2. **Start all services**
+   ```bash
+   docker-compose up -d
+   ```
+
+This will start:
+- FastAPI application (port 8080)
+- MongoDB database (port 27017)
+- Milvus vector database (port 19530)
+- Supporting services (etcd, MinIO)
+
+3. **Verify services**
+   ```bash
+   docker-compose ps
+   curl http://localhost:8080/
+   ```
+
+4. **View logs**
+   ```bash
+   docker-compose logs -f api
+   ```
+
+📖 **For detailed Docker setup instructions, see [DOCKER_SETUP.md](./DOCKER_SETUP.md)**
+
+#### Method 3: Docker (Single Container)
+
+If you already have MongoDB and Milvus running:
 
 1. **Build and run with Docker**
    ```bash
@@ -343,8 +379,17 @@ Once the server is running, access interactive documentation:
 
 ## 🐳 Docker Support
 
-The application includes a production-ready Dockerfile with:
-- **Multi-worker Uvicorn setup** with 4 workers for high concurrency
+The application includes complete Docker support with Docker Compose:
+
+### Docker Compose Features
+- **Complete Stack**: API, MongoDB, Milvus vector database, and dependencies
+- **One-Command Setup**: Get everything running with `docker-compose up -d`
+- **Persistent Storage**: Data volumes for MongoDB and Milvus
+- **Health Checks**: Automatic service health monitoring
+- **Networking**: Isolated network for service communication
+- **Easy Management**: Simple start, stop, and log viewing
+
+### Dockerfile Features
 - **Optimized for streaming responses** with asyncio loop and httptools
 - **Audio processing support** with ffmpeg and ALSA libraries  
 - **Health check endpoints** for container orchestration
@@ -352,6 +397,17 @@ The application includes a production-ready Dockerfile with:
 - **System dependencies** for cryptography, database drivers, and Azure Speech SDK
 - **Lightweight base** using Python 3.11-slim for reduced image size
 
+### Quick Start with Docker Compose
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop all services
+docker-compose down
+```
 ## 🔒 Security Features
 
 - **API Key Authentication** for all protected endpoints
