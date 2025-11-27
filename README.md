@@ -233,6 +233,8 @@ WakilAI API provides intelligent legal document search, question-answering, and 
 
 #### Method 2: Docker Compose (Recommended)
 
+*Note: You can use docker compose file when all the services are running on same server*
+
 The easiest way to get started with all required services:
 
 1. **Create environment file**
@@ -263,9 +265,42 @@ This will start:
    docker-compose logs -f api
    ```
 
-📖 **For detailed Docker setup instructions, see [DOCKER_SETUP.md](./DOCKER_SETUP.md)**
+#### Method 3: Run services separately (Milvus, Mongo)
 
-#### Method 3: Docker (Single Container)
+*Will be used when DBs or services deployed on separate servers than backend*
+
+##### Milvus
+```bash
+# 1 Get Milvus/download milvus
+wget https://github.com/milvus-io/milvus/releases/download/v2.5.14/milvus-standalone-docker-compose.yml -O docker-compose.yml
+
+# 2 Start the container
+docker compose up -d
+
+# 3 Check whether it is working
+sudo docker compose ps
+docker port milvus-standalone 19530/tcp
+```
+
+##### Mongo
+```bash
+# 1 Pull the MongoDB Image:
+docker pull mongo:latest
+
+# 2 Create a Docker Volume for Persistent Data:
+docker volume create mongodb_data
+
+# 3 Run the MongoDB Container:
+docker run -d \
+  --name wakilai-mongodb \
+  -p 27017:27017 \
+  -v mongodb_data:/data/db \
+  -e MONGO_INITDB_ROOT_USERNAME=nlp \
+  -e MONGO_INITDB_ROOT_PASSWORD=nlp123 \
+  mongo:latest
+```
+
+#### Method 4: Docker (Single Container)
 
 If you already have MongoDB and Milvus running:
 
@@ -398,6 +433,9 @@ The application includes complete Docker support with Docker Compose:
 - **Lightweight base** using Python 3.11-slim for reduced image size
 
 ### Quick Start with Docker Compose
+
+*Note: You can use docker compose file when all the services are running on same server*
+
 ```bash
 # Start all services
 docker-compose up -d
@@ -413,7 +451,7 @@ docker-compose down
 - **API Key Authentication** for all protected endpoints
 - **WebSocket Authentication** via query parameters
 - **Basic Authentication** for documentation access
-- **Telegram Bot Integration** for social authentication
+- **Telegram Bot Integration** for login
 - **CORS Configuration** for secure web client access
 - **Request Validation** with Pydantic models
 - **Cryptographic Security** for data encryption
