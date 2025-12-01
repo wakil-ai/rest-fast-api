@@ -100,7 +100,8 @@ class MilvusHandler(VectorDBHandler):
         text_query: str,
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
-        collection_name: str = settings.MILVUS_MAIN_NAME
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+        partitions: List[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Perform hybrid search using both dense vectors and BM25 sparse vectors
@@ -130,7 +131,8 @@ class MilvusHandler(VectorDBHandler):
             reqs=[dense_search, sparse_search],
             ranker=ranker,
             limit=top_k,
-            output_fields=["text", "metadata"]
+            output_fields=["text", "metadata"],
+            partitions=partitions
         )
 
         return self._parse_results(results)
@@ -140,7 +142,8 @@ class MilvusHandler(VectorDBHandler):
         self,
         dense_vector: List[float],
         top_k: int = settings.TOP_K,
-        collection_name: str = settings.MILVUS_MAIN_NAME
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+        partitions: List[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Perform dense vector search using semantic similarity
@@ -151,7 +154,8 @@ class MilvusHandler(VectorDBHandler):
             anns_field="text_dense",
             search_params={"metric_type": "COSINE"},
             limit=top_k,
-            output_fields=["text", "metadata"]
+            output_fields=["text", "metadata"],
+            partitions=partitions
         )
 
         return self._parse_results(results)
@@ -162,7 +166,8 @@ class MilvusHandler(VectorDBHandler):
         text_query: str,
         top_k: int = settings.TOP_K,
         anns_field: str = "text_sparse",
-        collection_name: str = settings.MILVUS_MAIN_NAME
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+        partitions: List[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Perform BM25 sparse vector search using keyword matching
@@ -175,7 +180,8 @@ class MilvusHandler(VectorDBHandler):
                 "drop_ratio_search": 0.2
             },
             limit=top_k,
-            output_fields=["text", "metadata"]
+            output_fields=["text", "metadata"],
+            partitions=partitions
         )
 
         return self._parse_results(results)
@@ -186,7 +192,8 @@ class MilvusHandler(VectorDBHandler):
         text_query: str,
         top_k: int = settings.TOP_K,
         anns_field: str = "text_sparse_hierarchy",
-        collection_name: str = settings.MILVUS_MAIN_NAME
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+        partitions: List[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Perform specific sparse vector search using keyword matching
@@ -199,7 +206,8 @@ class MilvusHandler(VectorDBHandler):
             anns_field=anns_field,
             filter=expr,
             top_k=top_k,
-            output_fields=["text", "metadata", "hierarchy_path"]
+            output_fields=["text", "metadata", "hierarchy_path"],
+            partitions=partitions
         )
 
         # Parse results
@@ -207,6 +215,25 @@ class MilvusHandler(VectorDBHandler):
         
         return search_results
     
+    def query_soliq_assistant(self,
+        dense_vector: List[float],
+        text_query: str,
+        top_k: int = settings.TOP_K,
+        collection_name: str = settings.MILVUS_SOLIQ_ASSISTANT_NAME
+    ) -> List[Dict[str, Any]]:
+        """
+        Perform specific sparse vector search using keyword matching
+        """
+        partitions = ['lexuz', ['buxgalter_premium', 'buxgalter_free'], ['Default partition', 'civil_code']]
+        search_results = []
+        for partition in partitions:
+            # make top-k on half of the top_k
+            top_k_half = top_k // 2
+            results = self.query_hybrid(dense_vector, text_query, top_k=top_k_half, collection_name=collection_name, partitions=partition)
+            search_results.extend(results)
+
+        return search_results
+
     def _create_schema(self):
         schema = MilvusClient.create_schema(auto_id=False)
         schema.add_field(field_name="id", datatype=DataType.VARCHAR, is_primary=True, max_length=100)
