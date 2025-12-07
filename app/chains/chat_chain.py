@@ -2,7 +2,6 @@ from typing import Union, AsyncGenerator, Optional, List, Any
 from app.retrieval.retrieval_service import RetrievalService
 from app.core.config import settings
 from app.llms.base import LLM
-from app.services.language_service import LanguageDetector
 from app.core.logger import logger
 
 # Import all supported LLMs
@@ -23,9 +22,8 @@ class ChatChain:
         self.retrieval_service = RetrievalService()
         self.llm = self._get_llm_provider()
         self.mem_service = ChatMemoryService()
-        self.llm_fallback = ChatGPT() # Fallback to OpenAI GPT if needed
-        self.language_detector = LanguageDetector()
-        
+        self.llm_fallback = ChatGPT() 
+
     def replace_punctuation(self, text: str) -> str:
         """Replace special punctuation characters with standard ones."""
         replacements = {
@@ -59,29 +57,14 @@ class ChatChain:
     
     async def make_system_prompt(self, context: str, 
                                    chat_history_text: str, 
-                                   is_lawyer: bool, 
-                                   language_instruction: Optional[str],
                                    prompt_template: Any = PROMPT) -> str:
         """Create the system prompt using the provided context and chat history."""
-        # SOLIQ_PROMPT doesn't use user_type parameter
-        if prompt_template == SOLIQ_PROMPT:
-            return prompt_template.format(
-                context=context,
-                chat_history=chat_history_text,
-            )
-        else:
-            return prompt_template.format(
-                context=context,
-                chat_history=chat_history_text,
-                user_type="lawyer" if is_lawyer else "citizen",
-                language_instruction=language_instruction if language_instruction else ""
-            )
+        return prompt_template.format(context=context, chat_history=chat_history_text)
 
     async def generate_answer(
         self,
         user_id: str,
         query: str,
-        is_lawyer: bool = False,
         chat_history: Optional[List] = None,
         stream: bool = settings.STREAM,
         file_context: Optional[str] = None,
@@ -94,10 +77,6 @@ class ChatChain:
         try:
             # Select the appropriate prompt template based on collection
             prompt_template = SOLIQ_PROMPT if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME else PROMPT
-            
-            language = self.language_detector.detect_language(query)
-            instruction = self.language_detector.get_instruction(language)
-
             # If file context is provided, prepend it to the retrieved context so LLM uses file content
             # Retrieve relavant documents query + file context if file provided
             context = ""
@@ -130,8 +109,6 @@ class ChatChain:
             system_prompt = await self.make_system_prompt(
                 context=context,
                 chat_history_text=chat_history_text,
-                is_lawyer=is_lawyer,
-                language_instruction=instruction,
                 prompt_template=prompt_template
             )
                 
@@ -146,7 +123,7 @@ class ChatChain:
                             system_prompt=system_prompt,
                             stream=stream
                         )
-                        async for chunk in self._stream_response(response_generator, language, query, user_id):
+                        async for chunk in self._stream_response(response_generator):
                             yield chunk
                     except Exception as llm_error:
                         logger.warning(f"[ChatChain] Primary LLM streaming failed, falling back to ChatGPT.", exc_info=True)
@@ -157,7 +134,7 @@ class ChatChain:
                                 system_prompt=system_prompt,
                                 stream=stream
                             )
-                            async for chunk in self._stream_response(fallback_generator, language, query, user_id):
+                            async for chunk in self._stream_response(fallback_generator):
                                 yield chunk
                         except Exception as fallback_error:
                             logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
@@ -185,7 +162,6 @@ class ChatChain:
                         logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
                         raise fallback_error # Re-raise to be caught by the outer handler
 
-                response = self.language_detector.correct_language(response, language)
                 response = self.replace_punctuation(response)
                 
                 logger.info(f"[DEBUG] LLM full response: {response}")
@@ -203,16 +179,13 @@ class ChatChain:
         else:
             return message
 
-    async def _stream_response(self, response_generator: AsyncGenerator[str, None], language: str, query: str, user_id: str) -> AsyncGenerator[str, None]:
+    async def _stream_response(self, response_generator: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
         """Handle streaming response and save conversation when complete."""
         full_response, buffer = "", ""
-        
-        logger.debug(f"[ChatChain] {language}")
         
         async for chunk in response_generator:
             buffer += chunk
             if buffer.endswith('\n'):
-                # buffer = self.language_detector.correct_language(buffer, language)
                 buffer = self.replace_punctuation(buffer)
                 
                 for char in buffer:
@@ -221,7 +194,6 @@ class ChatChain:
                 buffer = ""
                 
         if buffer:
-            # buffer = self.language_detector.correct_language(buffer, language)
             for char in buffer:
                 yield char
             full_response += buffer
