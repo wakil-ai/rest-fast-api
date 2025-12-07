@@ -55,15 +55,15 @@ class ChatChain:
         """
         # OpenAI models
         logger.debug(f"[ChatChain] Getting LLM by model: {model_name}")
-        if model_name in ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3-mini", "o3"]:
+        if model_name.startswith("gpt-"):
             return ChatGPT(model_name=model_name)
         
         # Claude/Anthropic models
-        elif model_name in ["claude-opus-4-5-20251101"]:
+        elif model_name.startswith("claude-"):
             return Claude(model_name=model_name)
         
         # Novita models
-        elif model_name in ["gpt-oss-120b", "gemma-3-27b"]:
+        elif model_name.startswith("gemma-") or model_name.startswith("gpt-oss-"):
             return Novita(model_name=model_name)
         
         # Default fallback to current configured provider
