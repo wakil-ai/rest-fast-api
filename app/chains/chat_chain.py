@@ -54,6 +54,7 @@ class ChatChain:
             LLM instance configured for the specified model
         """
         # OpenAI models
+        logger.debug(f"[ChatChain] Getting LLM by model: {model_name}")
         if model_name in ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3-mini", "o3"]:
             return ChatGPT(model_name=model_name)
         
