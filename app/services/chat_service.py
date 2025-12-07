@@ -21,6 +21,7 @@ class ChatService:
         stream: bool = settings.STREAM,
         file_context: Optional[str] = None,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        model_name: Optional[str] = None,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Handle the question by retrieving context and generating an answer.
@@ -30,6 +31,7 @@ class ChatService:
             top_k (int): Number of top documents to retrieve (default from settings)
             chat_history (List[MessagePair]): Previous conversation history (optional)
             collection_name (str): Milvus collection name to retrieve from
+            model_name (str): Optional model name to use for generation
 
         Returns:
             - str: Complete answer if streaming is disabled
@@ -42,5 +44,6 @@ class ChatService:
             stream=stream,
             file_context=file_context,
             collection_name=collection_name,
+            model_name=model_name,
         )
         return answer

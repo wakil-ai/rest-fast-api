@@ -76,7 +76,10 @@ class Settings(BaseSettings):
 
     # OpenAI GPT
     OPENAI_API_KEY: Optional[str] = None
-    GPT_COMPLETION_MODEL: str = "gpt-4o"  # Default GPT model
+    GPT_COMPLETION_MODEL: str = "gpt-4.1"  # Default GPT model
+    
+    # Anthropic Claude
+    ANTHROPIC_API_KEY: Optional[str] = None
 
     # Novita AI API for Gemma provider
     NOVITA_API_BASE: str = "https://api.novita.ai/v3/openai"

@@ -5,6 +5,7 @@ langchain==0.3.0
 langchain-openai==0.3.17
 pinecone[async]==6.0.2
 openai>=1.90,<2.0.0
+anthropic>=0.39.0
 tqdm==4.65.0
 python-dotenv==1.1.1
 httptools==0.6.4

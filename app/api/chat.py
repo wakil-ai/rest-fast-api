@@ -28,11 +28,15 @@ async def ask_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
+        # Extract model name from enum if provided
+        model_name = request.model.value if request.model else None
+        
         response = await chat_service.ask_question(
             user_id=request.user_id,
             query=request.query,
             chat_history=request.chat_history,
-            stream=request.stream
+            stream=request.stream,
+            model_name=model_name
         )
         
         if request.stream:
@@ -63,12 +67,16 @@ async def ask_soliq_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
+        # Extract model name from enum if provided
+        model_name = request.model.value if request.model else None
+        
         response = await chat_service.ask_question(
             user_id=request.user_id,
             query=request.query,
             chat_history=request.chat_history,
             stream=request.stream,
-            collection_name=settings.MILVUS_SOLIQ_ASSISTANT_NAME
+            collection_name=settings.MILVUS_SOLIQ_ASSISTANT_NAME,
+            model_name=model_name
         )
         
         if request.stream:

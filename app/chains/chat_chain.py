@@ -8,6 +8,7 @@ from app.core.logger import logger
 from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
 from app.llms.local_vllm import LocalVLLM
+from app.llms.claude import Claude
 from app.services.memory_service import ChatMemoryService
 from app.chains.prompts import PROMPT, SOLIQ_PROMPT
 
@@ -41,6 +42,33 @@ class ChatChain:
             "local": LocalVLLM,
         }
         return providers.get(settings.LLM_PROVIDER, Novita)()
+    
+    def _get_llm_by_model(self, model_name: str) -> LLM:
+        """
+        Factory method to get LLM instance based on model name.
+        
+        Args:
+            model_name: The model identifier (e.g., 'gpt-4o', 'claude-3-5-sonnet-20241022', 'gpt-oss-120b')
+        
+        Returns:
+            LLM instance configured for the specified model
+        """
+        # OpenAI models
+        if model_name in ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3-mini", "o3"]:
+            return ChatGPT(model_name=model_name)
+        
+        # Claude/Anthropic models
+        elif model_name in ["claude-opus-4-5-20251101"]:
+            return Claude(model_name=model_name)
+        
+        # Novita models
+        elif model_name in ["gpt-oss-120b", "gemma-3-27b"]:
+            return Novita(model_name=model_name)
+        
+        # Default fallback to current configured provider
+        else:
+            logger.warning(f"[ChatChain] Unknown model '{model_name}', using default provider")
+            return self._get_llm_provider()
 
     async def _format_chat_history(self, chat_history: Optional[List]) -> str:
         """Format chat history for use in prompt context."""
@@ -69,12 +97,16 @@ class ChatChain:
         stream: bool = settings.STREAM,
         file_context: Optional[str] = None,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        model_name: Optional[str] = None,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response to the user's query using RAG approach.
         Falls back to ChatGPT if the primary LLM fails.
         """
         try:
+            # Select LLM based on model_name if provided, otherwise use default
+            selected_llm = self._get_llm_by_model(model_name) if model_name else self.llm
+            
             # Select the appropriate prompt template based on collection
             prompt_template = SOLIQ_PROMPT if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME else PROMPT
             # If file context is provided, prepend it to the retrieved context so LLM uses file content
@@ -117,8 +149,8 @@ class ChatChain:
             if stream:
                 async def stream_generator() -> AsyncGenerator[str, None]:
                     try:
-                        # Attempt primary LLM
-                        response_generator = await self.llm.generate_response(
+                        # Attempt selected LLM
+                        response_generator = await selected_llm.generate_response(
                             user_prompt=query,
                             system_prompt=system_prompt,
                             stream=stream
@@ -145,7 +177,7 @@ class ChatChain:
             else:
                 # Non-streaming fallback logic
                 try:
-                    response = await self.llm.generate_response(
+                    response = await selected_llm.generate_response(
                         user_prompt=query,
                         system_prompt=system_prompt,
                         stream=stream
