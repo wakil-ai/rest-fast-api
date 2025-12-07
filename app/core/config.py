@@ -115,8 +115,8 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
 
     # Qwen with vllm
-    QWEN_EMBEDDING_URL: str = None  
-    QWEN_EMBEDDING_MODEL: str = None
+    QWEN_EMBEDDING_URL: Optional[str] = None  
+    QWEN_EMBEDDING_MODEL: Optional[str] = None
 
     # SECURITY
     # Docs User
