@@ -143,7 +143,8 @@ class MilvusHandler(VectorDBHandler):
         dense_vector: List[float],
         top_k: int = settings.TOP_K,
         collection_name: str = settings.MILVUS_MAIN_NAME,
-        partitions: List[str] = None
+        partitions: List[str] = None,
+        expr: str = None
     ) -> List[Dict[str, Any]]:
         """
         Perform dense vector search using semantic similarity
@@ -155,7 +156,8 @@ class MilvusHandler(VectorDBHandler):
             search_params={"metric_type": "COSINE"},
             limit=top_k,
             output_fields=["text", "metadata"],
-            partitions=partitions
+            partitions=partitions,
+            filter=expr if expr else None
         )
 
         return self._parse_results(results)
@@ -217,19 +219,18 @@ class MilvusHandler(VectorDBHandler):
     
     def query_soliq_assistant(self,
         dense_vector: List[float],
-        text_query: str,
         top_k: int = settings.TOP_K,
         collection_name: str = settings.MILVUS_SOLIQ_ASSISTANT_NAME
     ) -> List[Dict[str, Any]]:
         """
         Perform specific sparse vector search using keyword matching
         """
-        partitions = ['lexuz', ['buxgalter_premium', 'buxgalter_free'], ['Default partition', 'civil_code']]
+        filters = ['metadata["url"] like "%lex.uz%"', 'metadata["url"] like "%buxgalter.uz%"', None]
         search_results = []
-        for partition in partitions:
+        for expr in filters:
             # make top-k on half of the top_k
             top_k_half = top_k // 2
-            results = self.query_hybrid(dense_vector, text_query, top_k=top_k_half, collection_name=collection_name, partitions=partition)
+            results = self.query_dense(dense_vector=dense_vector, top_k=top_k_half, collection_name=collection_name, expr=expr)
             search_results.extend(results)
 
         return search_results

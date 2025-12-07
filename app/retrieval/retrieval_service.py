@@ -72,7 +72,7 @@ class RetrievalService:
     ) -> List[Dict[str, Any]]:
         """Perform soliq assistant search using keyword matching."""
         embedding = self.embedding_manager.embed_query(text_query)
-        return self.db_manager.vector_handler.query_soliq_assistant(dense_vector=embedding, text_query=text_query, top_k=top_k, collection_name=collection_name)
+        return self.db_manager.vector_handler.query_soliq_assistant(dense_vector=embedding, top_k=top_k, collection_name=collection_name)
 
     def search_hybrid(
         self,
