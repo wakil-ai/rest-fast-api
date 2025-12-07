@@ -9,7 +9,6 @@ class UserCreateRequest(BaseModel):
     username: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    is_lawyer: bool = Field(default=False)
     picture: Optional[str] = None
 
 
@@ -21,7 +20,6 @@ class UserResponse(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     picture: Optional[str] = None
-    is_lawyer: bool = Field(default=False)
     created_at: datetime
     updated_at: datetime
 

@@ -108,7 +108,6 @@ async def ask_with_file(
     file: UploadFile = File(...),
     user_id: str = Form(...),
     query: str = Form(...),
-    is_lawyer: bool = Form(False),
     stream: bool = Form(False),
 ):
     """
@@ -127,7 +126,6 @@ async def ask_with_file(
         response = await chat_service.ask_question(
             user_id=user_id,
             query=query,
-            is_lawyer=is_lawyer,
             chat_history=[],
             stream=stream,
             file_context=combined_text,

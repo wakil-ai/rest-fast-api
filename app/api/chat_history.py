@@ -32,7 +32,6 @@ def create_user(request: UserCreateRequest) -> UserCreateResponse:
         username=request.username,
         first_name=request.first_name,
         last_name=request.last_name,
-        is_lawyer=request.is_lawyer,
         picture=request.picture
     )
     return create_response(user_info, "User created successfully")
