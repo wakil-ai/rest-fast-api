@@ -76,7 +76,10 @@ class Settings(BaseSettings):
 
     # OpenAI GPT
     OPENAI_API_KEY: Optional[str] = None
-    GPT_COMPLETION_MODEL: str = "gpt-4o"  # Default GPT model
+    GPT_COMPLETION_MODEL: str = "gpt-4.1"  # Default GPT model
+    
+    # Anthropic Claude
+    ANTHROPIC_API_KEY: Optional[str] = None
 
     # Novita AI API for Gemma provider
     NOVITA_API_BASE: str = "https://api.novita.ai/v3/openai"
@@ -112,8 +115,8 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
 
     # Qwen with vllm
-    QWEN_EMBEDDING_URL: str = None  
-    QWEN_EMBEDDING_MODEL: str = None
+    QWEN_EMBEDDING_URL: Optional[str] = None  
+    QWEN_EMBEDDING_MODEL: Optional[str] = None
 
     # SECURITY
     # Docs User
@@ -132,7 +135,7 @@ class Settings(BaseSettings):
     # TEMPERATURE
     TEMPERATURE: float = 0.1
     CHAT_HISTORY_LIMIT: int = 5
-    OUTPUT_MAX_TOKENS: int = 8192
+    OUTPUT_MAX_TOKENS: int = 4096
 
     LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"

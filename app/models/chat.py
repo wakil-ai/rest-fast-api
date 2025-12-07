@@ -2,7 +2,21 @@
 
 from typing import List, Optional
 from pydantic import BaseModel, Field
+from enum import Enum
 from app.core.config import settings
+
+class ChatModel(str, Enum):
+    """Supported chat models."""
+    # OpenAI models
+    GPT_4_1 = "gpt-4.1"
+    GPT_4_1_MINI = "gpt-4.1-mini"
+    GPT_4O = "gpt-4o"
+    GPT_4O_MINI = "gpt-4o-mini"
+    # Claude models
+    CLAUDE_OPUS_4_5= "claude-opus-4-5-20251101"
+    # WakilAI models
+    GPT_OSS_120B = "gpt-oss-120b"
+    GEMMA_3_27B = "gemma-3-27b"
 
 class MessagePair(BaseModel):
     """
@@ -17,9 +31,9 @@ class ChatRequest(BaseModel):
     """
     user_id: str = Field(..., example="user_12345", description="Unique identifier for the user")
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
-    is_lawyer: Optional[bool] = Field(default=False, description="Indicates if the user is a lawyer")
     chat_history: Optional[List[MessagePair]] = Field(default=None, description="Previous question-answer pairs")
     stream: Optional[bool] = Field(default=settings.STREAM, description="Whether to stream the response")
+    model: Optional[ChatModel] = Field(default=None, description="LLM model to use for generation")
 
 class ChatResponse(BaseModel):
     """

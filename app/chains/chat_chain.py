@@ -2,13 +2,13 @@ from typing import Union, AsyncGenerator, Optional, List, Any
 from app.retrieval.retrieval_service import RetrievalService
 from app.core.config import settings
 from app.llms.base import LLM
-from app.services.language_service import LanguageDetector
 from app.core.logger import logger
 
 # Import all supported LLMs
 from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
 from app.llms.local_vllm import LocalVLLM
+from app.llms.claude import Claude
 from app.services.memory_service import ChatMemoryService
 from app.chains.prompts import PROMPT, SOLIQ_PROMPT
 
@@ -23,9 +23,8 @@ class ChatChain:
         self.retrieval_service = RetrievalService()
         self.llm = self._get_llm_provider()
         self.mem_service = ChatMemoryService()
-        self.llm_fallback = ChatGPT() # Fallback to OpenAI GPT if needed
-        self.language_detector = LanguageDetector()
-        
+        self.llm_fallback = ChatGPT() 
+
     def replace_punctuation(self, text: str) -> str:
         """Replace special punctuation characters with standard ones."""
         replacements = {
@@ -43,6 +42,34 @@ class ChatChain:
             "local": LocalVLLM,
         }
         return providers.get(settings.LLM_PROVIDER, Novita)()
+    
+    def _get_llm_by_model(self, model_name: str) -> LLM:
+        """
+        Factory method to get LLM instance based on model name.
+        
+        Args:
+            model_name: The model identifier (e.g., 'gpt-4o', 'claude-3-5-sonnet-20241022', 'gpt-oss-120b')
+        
+        Returns:
+            LLM instance configured for the specified model
+        """
+        # OpenAI models
+        logger.debug(f"[ChatChain] Getting LLM by model: {model_name}")
+        if model_name in ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3-mini", "o3"]:
+            return ChatGPT(model_name=model_name)
+        
+        # Claude/Anthropic models
+        elif model_name in ["claude-opus-4-5-20251101"]:
+            return Claude(model_name=model_name)
+        
+        # Novita models
+        elif model_name in ["gpt-oss-120b", "gemma-3-27b"]:
+            return Novita(model_name=model_name)
+        
+        # Default fallback to current configured provider
+        else:
+            logger.warning(f"[ChatChain] Unknown model '{model_name}', using default provider")
+            return self._get_llm_provider()
 
     async def _format_chat_history(self, chat_history: Optional[List]) -> str:
         """Format chat history for use in prompt context."""
@@ -59,45 +86,30 @@ class ChatChain:
     
     async def make_system_prompt(self, context: str, 
                                    chat_history_text: str, 
-                                   is_lawyer: bool, 
-                                   language_instruction: Optional[str],
                                    prompt_template: Any = PROMPT) -> str:
         """Create the system prompt using the provided context and chat history."""
-        # SOLIQ_PROMPT doesn't use user_type parameter
-        if prompt_template == SOLIQ_PROMPT:
-            return prompt_template.format(
-                context=context,
-                chat_history=chat_history_text,
-            )
-        else:
-            return prompt_template.format(
-                context=context,
-                chat_history=chat_history_text,
-                user_type="lawyer" if is_lawyer else "citizen",
-                language_instruction=language_instruction if language_instruction else ""
-            )
+        return prompt_template.format(context=context, chat_history=chat_history_text)
 
     async def generate_answer(
         self,
         user_id: str,
         query: str,
-        is_lawyer: bool = False,
         chat_history: Optional[List] = None,
         stream: bool = settings.STREAM,
         file_context: Optional[str] = None,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        model_name: Optional[str] = None,
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response to the user's query using RAG approach.
         Falls back to ChatGPT if the primary LLM fails.
         """
         try:
+            # Select LLM based on model_name if provided, otherwise use default
+            selected_llm = self._get_llm_by_model(model_name) if model_name else self.llm
+            
             # Select the appropriate prompt template based on collection
             prompt_template = SOLIQ_PROMPT if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME else PROMPT
-            
-            language = self.language_detector.detect_language(query)
-            instruction = self.language_detector.get_instruction(language)
-
             # If file context is provided, prepend it to the retrieved context so LLM uses file content
             # Retrieve relavant documents query + file context if file provided
             context = ""
@@ -130,8 +142,6 @@ class ChatChain:
             system_prompt = await self.make_system_prompt(
                 context=context,
                 chat_history_text=chat_history_text,
-                is_lawyer=is_lawyer,
-                language_instruction=instruction,
                 prompt_template=prompt_template
             )
                 
@@ -140,13 +150,13 @@ class ChatChain:
             if stream:
                 async def stream_generator() -> AsyncGenerator[str, None]:
                     try:
-                        # Attempt primary LLM
-                        response_generator = await self.llm.generate_response(
+                        # Attempt selected LLM
+                        response_generator = await selected_llm.generate_response(
                             user_prompt=query,
                             system_prompt=system_prompt,
                             stream=stream
                         )
-                        async for chunk in self._stream_response(response_generator, language, query, user_id):
+                        async for chunk in self._stream_response(response_generator):
                             yield chunk
                     except Exception as llm_error:
                         logger.warning(f"[ChatChain] Primary LLM streaming failed, falling back to ChatGPT.", exc_info=True)
@@ -157,7 +167,7 @@ class ChatChain:
                                 system_prompt=system_prompt,
                                 stream=stream
                             )
-                            async for chunk in self._stream_response(fallback_generator, language, query, user_id):
+                            async for chunk in self._stream_response(fallback_generator):
                                 yield chunk
                         except Exception as fallback_error:
                             logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
@@ -168,7 +178,7 @@ class ChatChain:
             else:
                 # Non-streaming fallback logic
                 try:
-                    response = await self.llm.generate_response(
+                    response = await selected_llm.generate_response(
                         user_prompt=query,
                         system_prompt=system_prompt,
                         stream=stream
@@ -185,7 +195,6 @@ class ChatChain:
                         logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
                         raise fallback_error # Re-raise to be caught by the outer handler
 
-                response = self.language_detector.correct_language(response, language)
                 response = self.replace_punctuation(response)
                 
                 logger.info(f"[DEBUG] LLM full response: {response}")
@@ -203,16 +212,13 @@ class ChatChain:
         else:
             return message
 
-    async def _stream_response(self, response_generator: AsyncGenerator[str, None], language: str, query: str, user_id: str) -> AsyncGenerator[str, None]:
+    async def _stream_response(self, response_generator: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
         """Handle streaming response and save conversation when complete."""
         full_response, buffer = "", ""
-        
-        logger.debug(f"[ChatChain] {language}")
         
         async for chunk in response_generator:
             buffer += chunk
             if buffer.endswith('\n'):
-                # buffer = self.language_detector.correct_language(buffer, language)
                 buffer = self.replace_punctuation(buffer)
                 
                 for char in buffer:
@@ -221,7 +227,6 @@ class ChatChain:
                 buffer = ""
                 
         if buffer:
-            # buffer = self.language_detector.correct_language(buffer, language)
             for char in buffer:
                 yield char
             full_response += buffer

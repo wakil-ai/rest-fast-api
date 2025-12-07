@@ -28,12 +28,15 @@ async def ask_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
+        # Extract model name from enum if provided
+        model_name = request.model.value if request.model else None
+        
         response = await chat_service.ask_question(
             user_id=request.user_id,
             query=request.query,
-            is_lawyer=request.is_lawyer,
             chat_history=request.chat_history,
-            stream=request.stream
+            stream=request.stream,
+            model_name=model_name
         )
         
         if request.stream:
@@ -64,13 +67,16 @@ async def ask_soliq_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
+        # Extract model name from enum if provided
+        model_name = request.model.value if request.model else None
+        
         response = await chat_service.ask_question(
             user_id=request.user_id,
             query=request.query,
-            is_lawyer=True,  # Always use deep analysis for Soliq assistant
             chat_history=request.chat_history,
             stream=request.stream,
-            collection_name=settings.MILVUS_SOLIQ_ASSISTANT_NAME
+            collection_name=settings.MILVUS_SOLIQ_ASSISTANT_NAME,
+            model_name=model_name
         )
         
         if request.stream:
@@ -110,7 +116,6 @@ async def ask_with_file(
     file: UploadFile = File(...),
     user_id: str = Form(...),
     query: str = Form(...),
-    is_lawyer: bool = Form(False),
     stream: bool = Form(False),
 ):
     """
@@ -129,7 +134,6 @@ async def ask_with_file(
         response = await chat_service.ask_question(
             user_id=user_id,
             query=query,
-            is_lawyer=is_lawyer,
             chat_history=[],
             stream=stream,
             file_context=combined_text,

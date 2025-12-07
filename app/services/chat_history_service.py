@@ -34,7 +34,7 @@ class ChatHistoryService:
 
     def create_user(self, user_id: str, username: Optional[str] = None, 
                     first_name: Optional[str] = None, last_name: Optional[str] = None, 
-                    picture: Optional[str] = None, is_lawyer: Optional[bool] = False) -> dict:
+                    picture: Optional[str] = None) -> dict:
         """Create or retrieve an existing user."""
         self._validate_user_id(user_id)
         existing_user = self.db_manager.find_documents(self.users_collection, {"user_id": user_id})
@@ -49,7 +49,6 @@ class ChatHistoryService:
             "first_name": first_name,
             "last_name": last_name,
             "picture": picture,
-            "is_lawyer": is_lawyer,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }

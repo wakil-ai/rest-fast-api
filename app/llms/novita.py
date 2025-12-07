@@ -11,12 +11,23 @@ from app.core.logger import logger
 class Novita(LLM):
     """Novita AI models using OpenAI-compatible API."""
     
-    def __init__(self):
+    def __init__(self, model_name: str = None):
         self.client = AsyncOpenAI(
             base_url=settings.NOVITA_API_BASE,
             api_key=settings.NOVITA_API_KEY
         )
-        self.model = settings.NOVITA_MODEL
+        # Map friendly names to Novita API model names
+        model_mapping = {
+            "gpt-oss-120b": "openai/gpt-oss-120b",
+            "gemma-3-27b": "google/gemma-3-27b-it",
+        }
+        
+        if model_name and model_name in model_mapping:
+            self.model = model_mapping[model_name]
+        elif model_name:
+            self.model = model_name
+        else:
+            self.model = settings.NOVITA_MODEL
     
     async def generate_response(
         self, 
