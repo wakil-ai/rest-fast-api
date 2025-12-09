@@ -12,4 +12,5 @@ class MongoMetadataRequest(BaseModel):
 
 class VectorDBRequest(BaseModel):
     query_text: str
-    top_k: Optional[int] = settings.TOP_K 
+    top_k: Optional[int] = settings.TOP_K
+    collection_name: Optional[str] = settings.MILVUS_MAIN_NAME

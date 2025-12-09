@@ -30,6 +30,7 @@ async def vector_db_search(request: VectorDBRequest):
     results = await retrieval_service.retrieve_context(
         query=request.query_text,
         top_k=request.top_k,
+        collection_name=request.collection_name,
     )
     return {"results": results}
 
@@ -38,6 +39,7 @@ async def vector_db_hybrid_search(request: VectorDBRequest):
     results = retrieval_service.search_hybrid(
         text_query=request.query_text,
         top_k=request.top_k,
+        collection_name=request.collection_name,
     )
     return {"results": results}
 
@@ -46,6 +48,7 @@ async def vector_db_dense_search(request: VectorDBRequest):
     results = retrieval_service.search_dense(
         text_query=request.query_text,
         top_k=request.top_k,
+        collection_name=request.collection_name,
     )
     return {"results": results}
 
@@ -54,6 +57,7 @@ async def vector_db_sparse_search(request: VectorDBRequest):
     results = retrieval_service.search_sparse(
         text_query=request.query_text,
         top_k=request.top_k,
+        collection_name=request.collection_name,
     )
     return {"results": results}
 
@@ -62,5 +66,6 @@ async def vector_db_specific_search(request: VectorDBRequest):
     results = retrieval_service.search_specific(
         text_query=request.query_text,
         top_k=request.top_k,
+        collection_name=request.collection_name,
     )
     return {"results": results}
