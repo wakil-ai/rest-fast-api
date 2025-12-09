@@ -173,21 +173,24 @@ class RetrievalService:
         text = metadata.get('text', '')
         url = metadata.get("url")
 
-        is_buxgalter_uz = True if 'buxgalter.uz' in url else False
+        is_buxgalter_uz = True if url and 'buxgalter.uz' in url else False
         text = await self.clean_text(text) if is_buxgalter_uz else text
         entry = [f"{'-'*50}", f"Document Content: {self.remove_header_lines(text)}\n"]
         
         # Add citation 
         if hierarchy := metadata.get("hierarchy_path"):
-            parts = [p.strip() for p in hierarchy.split(">")]
-            seen = set()
-            ordered_unique = []
-            for p in parts:
-                if p and p not in seen:
-                    seen.add(p)
-                    ordered_unique.append(p)
-            citation = ". ".join(ordered_unique)
-            entry.append(f"Citation: {citation}\n")     
+            if is_buxgalter_uz:
+                pass
+            else:
+                parts = [p.strip() for p in hierarchy.split(">")]
+                seen = set()
+                ordered_unique = []
+                for p in parts:
+                    if p and p not in seen:
+                        seen.add(p)
+                        ordered_unique.append(p)
+                citation = ". ".join(ordered_unique)
+                entry.append(f"Citation: {citation}\n")     
         
         if date := metadata.get("date"):
             entry.append(f"Date: {date}\n")
