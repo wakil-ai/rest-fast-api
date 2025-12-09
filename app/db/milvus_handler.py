@@ -230,6 +230,8 @@ class MilvusHandler(VectorDBHandler):
         for expr in filters:
             # make top-k on half of the top_k
             top_k_half = top_k // 2
+            if expr is None:
+                top_k_half = top_k # increase the top_k for none filter because of duplicates
             results = self.query_dense(dense_vector=dense_vector, top_k=top_k_half, collection_name=collection_name, expr=expr)
             search_results.extend(results)
 

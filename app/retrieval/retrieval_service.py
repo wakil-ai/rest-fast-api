@@ -193,12 +193,12 @@ class RetrievalService:
                 entry.append(f"Citation: {citation}\n")     
         
         if date := metadata.get("date"):
-            entry.append(f"Date: {date}\n")
-        if document_number := metadata.get("document_number"):
-            entry.append(f"Document Number: {document_number}\n")            
+            if not is_buxgalter_uz:
+                entry.append(f"Date: {date}\n")          
         if url := metadata.get("chunk_url"):
-            entry.append(f"Source URL: {url}\n")
-        else:
-            if url and not is_buxgalter_uz:
+            if not is_buxgalter_uz:
                 entry.append(f"Source URL: {url}\n")
+        if document_number := metadata.get("document_number"):
+            entry.append(f"Document Number: {document_number}\n")  
+            
         return "\n".join(entry)
