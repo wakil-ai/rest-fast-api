@@ -12,6 +12,24 @@ class RetrievalService:
     def __init__(self):
         self.db_manager = DBManager()
         self.embedding_manager = EmbeddingManager()
+
+    async def clean_text(self, text: str) -> str:
+        # Remove markdown bold (**) and italics (*)
+        cleaned_text = re.sub(r'(\*\*|\*|__|_)+', '', text)
+        
+        # Remove any markdown formatting (like headers, lists, etc.)
+        cleaned_text = re.sub(r'([#*-]+)', '', cleaned_text)
+        
+        # Remove URLs entirely (this will remove the links)
+        cleaned_text = re.sub(r'https?://[^\s]+', '', cleaned_text)
+        
+        # Remove buxgalter.uz links
+        cleaned_text = re.sub(r'buxgalter\.uz', '', cleaned_text, flags=re.IGNORECASE)
+
+        # Remove [],(),{} from text
+        cleaned_text = re.sub(r'[\[\]{}()<>]', '', cleaned_text)
+
+        return cleaned_text
                 
     async def retrieve_context(
         self,
@@ -25,7 +43,7 @@ class RetrievalService:
         try:
             if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME:
                 search_results = self.search_soliq_assistant(text_query=query, top_k=top_k, collection_name=collection_name)
-                return self._format_results(search_results)
+                return await self._format_results(search_results)
 
             if search_type == "sparse":
                 search_results = self.search_sparse(text_query=query, 
@@ -40,7 +58,7 @@ class RetrievalService:
                 search_results = self.search_hybrid(
                     text_query=query, top_k=top_k, alpha=alpha, collection_name=collection_name)
             
-            return self._format_results(search_results)
+            return await self._format_results(search_results)
         except Exception as e:
             logger.error(f"[RetrievalService] Retrieval failed: {e}", exc_info=True)
             return "No relevant documents found."
@@ -122,14 +140,14 @@ class RetrievalService:
             for doc in documents
         ]
 
-    def _format_results(self, documents: List[Dict[str, Any]]) -> str:
+    async def _format_results(self, documents: List[Dict[str, Any]]) -> str:
         """Format documents into a readable string."""
         formatted_entries = []
         seen_content = set()
 
         for doc in documents:
             metadata = doc.get("metadata", {})
-            entry = self._build_document_entry(
+            entry = await self._build_document_entry(
                metadata=metadata,
             )
 
@@ -150,9 +168,13 @@ class RetrievalService:
         return "\n".join(cleaned_lines).strip()
 
         
-    def _build_document_entry(self, metadata: Dict[str, Any]) -> str:
+    async def _build_document_entry(self, metadata: Dict[str, Any]) -> str:
         """Build a formatted entry for a single document."""
         text = metadata.get('text', '')
+        url = metadata.get("url")
+
+        is_buxgalter_uz = True if 'buxgalter.uz' in url else False
+        text = await self.clean_text(text) if is_buxgalter_uz else text
         entry = [f"{'-'*50}", f"Document Content: {self.remove_header_lines(text)}\n"]
         
         # Add citation 
@@ -174,7 +196,6 @@ class RetrievalService:
         if url := metadata.get("chunk_url"):
             entry.append(f"Source URL: {url}\n")
         else:
-                if url := metadata.get("url"):
-                    if not 'buxgalter.uz' in url:
-                        entry.append(f"Source URL: {url}\n")
+            if url and not is_buxgalter_uz:
+                entry.append(f"Source URL: {url}\n")
         return "\n".join(entry)
