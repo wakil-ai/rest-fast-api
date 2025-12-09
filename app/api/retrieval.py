@@ -36,7 +36,7 @@ async def vector_db_search(request: VectorDBRequest):
 @router.post("/search-hybrid", summary="Hybrid search in Vector DB")
 async def vector_db_hybrid_search(request: VectorDBRequest):
     results = retrieval_service.search_hybrid(
-        query_text=request.query_text,
+        text_query=request.query_text,
         top_k=request.top_k,
     )
     return {"results": results}
@@ -44,7 +44,7 @@ async def vector_db_hybrid_search(request: VectorDBRequest):
 @router.post("/search-dense", summary="Dense search in Vector DB")
 async def vector_db_dense_search(request: VectorDBRequest):
     results = retrieval_service.search_dense(
-        query_text=request.query_text,
+        text_query=request.query_text,
         top_k=request.top_k,
     )
     return {"results": results}
@@ -52,7 +52,7 @@ async def vector_db_dense_search(request: VectorDBRequest):
 @router.post("/search-sparse", summary="Sparse search in Vector DB")
 async def vector_db_sparse_search(request: VectorDBRequest):
     results = retrieval_service.search_sparse(
-        query_text=request.query_text,
+        text_query=request.query_text,
         top_k=request.top_k,
     )
     return {"results": results}
@@ -60,7 +60,7 @@ async def vector_db_sparse_search(request: VectorDBRequest):
 @router.post("/search-specific", summary="Specific search in Vector DB")
 async def vector_db_specific_search(request: VectorDBRequest):
     results = retrieval_service.search_specific(
-        query_text=request.query_text,
+        text_query=request.query_text,
         top_k=request.top_k,
     )
     return {"results": results}
