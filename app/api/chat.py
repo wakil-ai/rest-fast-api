@@ -123,8 +123,10 @@ async def ask_with_file(
     The number of retrieved documents (top_k) will be halved automatically when a file is sent.
     """
     try:
+
+        
         # Extract text from the file via OCR service
-        ocr_result = ocr_service.process_file(file.file, file.filename)
+        ocr_result = await ocr_service.process_file(file.file)
         
         # Combine per-page lines into one big text block
         combined_text = ocr_result.get("combined_text") or "\n".join(

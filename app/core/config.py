@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     AZURE_SPEECH_REGION: Optional[str] = None
     
     # OCR Service
-    OCR_API_URL: Optional[str] = 'http://localhost:3030'
+    DATABLAB_API_KEY: Optional[str] = None
     
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"

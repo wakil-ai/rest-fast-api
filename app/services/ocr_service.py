@@ -1,24 +1,16 @@
-# app/services/ocr_service.py
-
-import requests
-from typing import Optional, IO
+from pathlib import Path
+from typing import Union
 from app.core.config import settings
+from datalab_sdk import AsyncDatalabClient
+
 
 class OCRService:
     def __init__(self):
-        self.base_url = settings.OCR_API_URL
+        self.client = AsyncDatalabClient(api_key=settings.DATABLAB_API_KEY)
 
-    def process_file(self, file: IO, filename: str) -> dict:
+    async def process_file(self, file: Union[Path, str]) -> str:
         """
-        Sends the file to the OCR API and returns the parsed JSON response.
-        Expects the external OCR API to accept a multipart/form-data POST at /ocr/.
+        Sends the file to Datalab 
         """
-        url = f"{self.base_url.rstrip('/')}/ocr/"
-        files = {"file": (filename, file)}
-        resp = requests.post(url, files=files, timeout=120)
-        resp.raise_for_status()
-        return resp.json()
-
-
-def get_ocr_service() -> OCRService:
-    return OCRService()
+        result = await self.client.convert(file)
+        return result.markdown

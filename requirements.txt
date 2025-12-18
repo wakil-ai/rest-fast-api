@@ -32,3 +32,4 @@ crewai-tools==1.2.0
 tavily-python==0.7.12
 litellm==1.74.9
 anthropic==0.75.0
+datalab-python-sdk==0.2.0
