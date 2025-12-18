@@ -164,15 +164,19 @@ async def create_file_upload(user_id: str, file: UploadFile = File(...)) -> File
             file_metadata=file_metadata
         )
 
-        return FileUploadResponse(
+        # Return response with file_id (use /view endpoint to get the actual URL)
+        response = FileUploadResponse(
             user_id=user_id,
             file_id=file_id,
-            file_url=file_url,
+            file_url=f"/api/chat-history/files/{user_id}/{file_id}/view",  # API endpoint instead of GCS URL
             file_metadata=file_metadata,
             ocr_result=ocr_result,
             created_at=datetime.datetime.utcnow(),
             updated_at=datetime.datetime.utcnow()
         )
+        
+        logger.info(f"File uploaded successfully. Use GET /files/{user_id}/{file_id}/view to access the file.")
+        return response
 
     except Exception as e:
         logger.error(f"Error creating file upload: {str(e)}")
@@ -206,6 +210,51 @@ def get_file_upload(user_id: str, file_id: str) -> FileUploadResponse:
         )
     return serialize_mongo_id(file_record)
 
+@router.get("/files/{user_id}/{file_id}/view")
+@handle_service_error
+def get_file_view_url(user_id: str, file_id: str, expiration_minutes: int = 60) -> dict:
+    """
+    Get a temporary signed URL to view/download a file.
+    This endpoint hides the internal GCS path structure from the frontend.
+    
+    Returns a signed URL that expires after the specified time (default: 60 minutes).
+    """
+    # Get file record from database
+    file_record = chat_history_service.get_file_by_id(user_id=user_id, file_id=file_id)
+    
+    if not file_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File with file_id {file_id} not found for user {user_id}"
+        )
+    
+    # Get the GCS path from file metadata
+    gcs_path = file_record.get("file_metadata", {}).get("gcs_path")
+    if not gcs_path:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="File path not found in metadata"
+        )
+    
+    try:
+        # Generate a temporary signed URL
+        signed_url = storage_service.get_signed_url(gcs_path, expiration_minutes=expiration_minutes)
+        
+        return {
+            "file_id": file_id,
+            "file_name": file_record.get("file_metadata", {}).get("file_name"),
+            "view_url": signed_url,
+            "expires_in_minutes": expiration_minutes,
+            "content_type": file_record.get("file_metadata", {}).get("file_type")
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate signed URL for file {file_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate file access URL"
+        )
+
+
 @router.delete("/files/{user_id}/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_service_error
 def delete_file_upload(user_id: str, file_id: str) -> None:
@@ -219,14 +268,14 @@ def delete_file_upload(user_id: str, file_id: str) -> None:
             detail=f"File with file_id {file_id} not found for user {user_id}"
         )
     
-    # Delete from Google Cloud Storage
+    # Delete from Google Cloud Storage (archives the file)
     gcs_path = file_record.get("file_metadata", {}).get("gcs_path")
     if gcs_path:
         try:
             storage_service.delete_file(gcs_path)
-            logger.info(f"Deleted file from GCS: {gcs_path}")
+            logger.info(f"Archived file from GCS: {gcs_path}")
         except Exception as e:
-            logger.warning(f"Failed to delete file from GCS: {str(e)}")
+            logger.warning(f"Failed to archive file from GCS: {str(e)}")
     
     # Delete from database
     chat_history_service.delete_file_upload(user_id=user_id, file_id=file_id)

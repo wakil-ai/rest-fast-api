@@ -44,7 +44,9 @@ class StorageService:
         self, 
         file_content: bytes, 
         destination_path: str, 
-        content_type: str = "application/octet-stream"
+        content_type: str = "application/octet-stream",
+        return_signed_url: bool = True,
+        expiration_minutes: int = 60
     ) -> str:
         """
         Upload a file to Google Cloud Storage.
@@ -53,21 +55,34 @@ class StorageService:
             file_content: Binary content of the file
             destination_path: Path where file will be stored in the bucket (e.g., 'users/user123/file.pdf')
             content_type: MIME type of the file
+            return_signed_url: If True, returns a signed URL (recommended). If False, returns public URL
+            expiration_minutes: How long the signed URL should be valid (default: 60 minutes)
         
         Returns:
-            Public URL of the uploaded file
+            Signed URL (private, temporary) or public URL (permanent) based on return_signed_url parameter
         """
         try:
             blob = self.bucket.blob(destination_path)
             blob.upload_from_string(file_content, content_type=content_type)
             
-            # Make the blob publicly accessible (optional - comment out if you want private files)
-            # blob.make_public()
-            
-            # Return the public URL or signed URL
-            public_url = blob.public_url
             logger.info(f"[StorageService] Uploaded file to: {destination_path}")
-            return public_url
+            
+            # Return signed URL (recommended for security) or public URL
+            if return_signed_url:
+                # Generate a temporary signed URL for private access
+                signed_url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(minutes=expiration_minutes),
+                    method="GET"
+                )
+                logger.info(f"[StorageService] Generated signed URL (expires in {expiration_minutes} minutes)")
+                return signed_url
+            else:
+                # Return public URL (use only for truly public files like logos)
+                # Note: Files are NOT made public automatically. You need to set bucket/object permissions.
+                public_url = blob.public_url
+                logger.warning(f"[StorageService] Returning public URL. Ensure proper permissions are set.")
+                return public_url
         except Exception as e:
             logger.error(f"[StorageService] Failed to upload file: {str(e)}")
             raise
