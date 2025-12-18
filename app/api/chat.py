@@ -8,9 +8,8 @@ from fastapi import UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
-from app.models.chat import ChatRequest, ChatResponse, ModelInfoResponse, AgenticRAGRequest, AssistantType
+from app.models.chat import ChatRequest, ChatResponse, ModelInfoResponse, AgenticRAGRequest, AssistantType, AskFileRequest
 from app.services.chat_service import ChatService
-from app.services.ocr_service import OCRService
 from app.services.chat_history_service import ChatHistoryService
 from app.orchestration.flow import AgenticRAGFlow
 from app.utils.streaming import format_streaming_response, get_streaming_headers
@@ -21,7 +20,6 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 # Initialize services
 agentic_rag_service = AgenticRAGFlow()
 chat_service = ChatService()
-ocr_service = OCRService()
 chat_history_service = ChatHistoryService()
 
 @router.post("/ask", summary="Ask a legal question")
@@ -124,48 +122,58 @@ async def get_model_info():
     )
 
 @router.post("/file", response_model=ChatResponse)
-async def ask_with_file(
-    file: UploadFile = File(...),
-    user_id: str = Form(...),
-    query: str = Form(...),
-    stream: bool = Form(False),
-    assistant: str = Form("main"),
-):
+async def ask_with_file(request: AskFileRequest):
     """
-    Upload a file and ask a question using the file's content as context.
-    The number of retrieved documents (top_k) will be halved automatically when a file is sent.
+    Ask a question about a previously uploaded file using its file_id.
+    The file content (OCR result) is retrieved from the database.
     
     Parameters:
-    - file: The file to upload (PDF, DOCX, images, etc.)
     - user_id: User ID
+    - file_id: ID of the previously uploaded file
     - query: The question to ask about the file
     - stream: Whether to stream the response
     - assistant: Assistant type ('main' or 'soliq') - determines which collection to use
+    - model: Optional model to use for generation
     """
-    temp_file_path = None
     try:
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
-            content = await file.read()
-            temp_file.write(content)
-            temp_file_path = temp_file.name
+        # Fetch file record from database
+        file_record = chat_history_service.get_file_by_id(user_id=request.user_id, file_id=request.file_id)
         
-        # Extract text from the file via OCR service
-        ocr_result = await ocr_service.process_file(temp_file_path)
+        if not file_record:
+            raise HTTPException(
+                status_code=404,
+                detail=f"File with file_id {request.file_id} not found for user {request.user_id}"
+            )
+        
+        # Get OCR result from the file record (already processed during upload)
+        ocr_result = file_record.get("ocr_result", "")
+        
+        if not ocr_result:
+            logger.warning(f"No OCR result found for file {request.file_id}")
+            raise HTTPException(
+                status_code=400,
+                detail="File does not have processed content. Please re-upload the file."
+            )
+        
+        # Extract model name from enum if provided
+        model_name = request.model.value if request.model else None
         
         # Determine collection based on assistant type
-        collection_name = settings.MILVUS_SOLIQ_ASSISTANT_NAME if assistant == "soliq" else settings.MILVUS_MAIN_NAME
+        collection_name = settings.MILVUS_SOLIQ_ASSISTANT_NAME if request.assistant == AssistantType.SOLIQ else settings.MILVUS_MAIN_NAME
+        
+        logger.info(f"Processing file query for file_id: {request.file_id}, user: {request.user_id}")
         
         response = await chat_service.ask_question(
-            user_id=user_id,
-            query=query,
+            user_id=request.user_id,
+            query=request.query,
             chat_history=[],
-            stream=stream,
+            stream=request.stream,
             file_context=ocr_result,
             collection_name=collection_name,
+            model_name=model_name
         )
 
-        if stream:
+        if request.stream:
             return StreamingResponse(
                 format_streaming_response(response),
                 media_type="text/event-stream",
@@ -175,13 +183,11 @@ async def ask_with_file(
             # Return JSON response
             return ChatResponse(answer=response)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[AskFileAPI] Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to process file and answer the question.")
-
-    finally:
-        if temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        raise HTTPException(status_code=500, detail="Failed to process file query. Please try again.")
 
 @router.post("/agent", summary="Ask a legal question via agentic RAG")
 async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:

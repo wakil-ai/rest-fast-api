@@ -60,6 +60,17 @@ class ModelInfoResponse(BaseModel):
     embedding_model: str = Field(..., example="qwen", description="Embedding model (qwen or openai)")
     stream: bool = Field(..., example=False, description="Whether streaming responses are enabled")
 
+class AskFileRequest(BaseModel):
+    """
+    Request body for asking questions about uploaded files.
+    """
+    user_id: str = Field(..., example="user_12345", description="Unique identifier for the user")
+    file_id: str = Field(..., example="19e82083-61d4-45bb-b408-349a0fb2a237", description="ID of the uploaded file")
+    query: str = Field(..., example="What is the main topic of this document?", description="Question about the file content")
+    stream: Optional[bool] = Field(default=settings.STREAM, description="Whether to stream the response")
+    assistant: Optional[AssistantType] = Field(default=AssistantType.MAIN, description="Assistant type: main or soliq")
+    model: Optional[ChatModel] = Field(default=None, description="LLM model to use for generation")
+
 class AgenticRAGRequest(BaseModel):
     """
     Request body for agentic RAG questions.
