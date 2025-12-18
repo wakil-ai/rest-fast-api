@@ -56,7 +56,13 @@ class Settings(BaseSettings):
     SESSIONS_COLLECTION: str = "sessions"
     MESSAGES_COLLECTION: str = "messages"
     FEEDBACK_COLLECTION: str = "feedbacks"
-
+    FILES_COLLECTION: str = "files"
+    
+    # Google Cloud Storage
+    GCS_BUCKET_NAME: Optional[str] = None
+    GCS_CREDENTIALS_PATH: Optional[str] = None  # Path to service account JSON file
+    GCS_PROJECT_ID: Optional[str] = None
+    
     # Milvus
     MILVUS_MAIN_NAME: str = "lexuz" 
     MILVUS_SOLIQ_ASSISTANT_NAME: str = "soliq"

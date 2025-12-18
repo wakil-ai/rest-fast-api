@@ -20,6 +20,7 @@ UzTransliterator==0.0.36
 loguru==0.7.3
 requests==2.32.5
 google-cloud-speech>=2.26.0
+google-cloud-storage>=2.10.0
 pydub==0.25.1
 azure-cognitiveservices-speech==1.38.0
 qdrant-client==1.15.1

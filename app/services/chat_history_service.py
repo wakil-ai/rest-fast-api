@@ -15,11 +15,12 @@ class ChatHistoryService:
         self.sessions_collection = settings.SESSIONS_COLLECTION
         self.messages_collection = settings.MESSAGES_COLLECTION
         self.feedback_collection = settings.FEEDBACK_COLLECTION
+        self.files_collection = settings.FILES_COLLECTION
         self._init_collections()
 
     def _init_collections(self):
         """Initialize necessary database collections."""
-        for collection in [self.users_collection, self.sessions_collection, self.messages_collection, self.feedback_collection]:
+        for collection in [self.users_collection, self.sessions_collection, self.messages_collection, self.feedback_collection, self.files_collection]:
             self.db_manager.create_collection(collection)
 
     def _validate_user_id(self, user_id: str) -> None:
@@ -237,3 +238,100 @@ class ChatHistoryService:
         )
         logger.info(f"Retrieved {len(feedbacks)} feedback entries for message_id: {message_id} in session {session_id} for user {user_id}")
         return feedbacks
+    
+    def add_file_upload(self, user_id: str, file_id: str, file_url: str, ocr_result: str, file_metadata: dict) -> dict:
+        """Add a file upload record to the database."""
+        self._validate_user_id(user_id)
+        if not file_id or not file_id.strip():
+            raise ValueError("File ID cannot be empty")
+        if not file_url or not file_url.strip():
+            raise ValueError("File URL cannot be empty")
+        if not ocr_result or not ocr_result.strip():
+            raise ValueError("OCR result cannot be empty")
+        if not file_metadata or not isinstance(file_metadata, dict):
+            raise ValueError("File metadata must be a valid dictionary")
+
+        file_record = {
+            "user_id": user_id,
+            "file_id": file_id,
+            "file_url": file_url,
+            "ocr_result": ocr_result,
+            "file_metadata": file_metadata,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+
+        result_ids = self.db_manager.insert_documents(self.files_collection, [file_record])
+        if not result_ids:
+            raise ValueError("Failed to add file upload record")
+
+        file_record["_id"] = ObjectId(result_ids[0])
+        logger.info(f"Added file upload record with file_id: {file_id} for user {user_id}")
+        return file_record
+    
+    def get_files(self, user_id: str, limit: int = 50) -> List[dict]:
+        """Retrieve all files for a user."""
+        self._validate_user_id(user_id)
+        
+        query = {"user_id": user_id}
+        files = self.db_manager.find_documents(
+            self.files_collection, query, limit=limit
+        )
+        logger.info(f"Retrieved {len(files)} files for user {user_id}")
+        return files
+    
+    def get_file_by_id(self, user_id: str, file_id: str) -> Optional[dict]:
+        """Retrieve a specific file by file_id."""
+        self._validate_user_id(user_id)
+        
+        if not file_id or not file_id.strip():
+            raise ValueError("File ID cannot be empty")
+        
+        files = self.db_manager.find_documents(
+            self.files_collection, 
+            {"user_id": user_id, "file_id": file_id}
+        )
+        
+        if files:
+            logger.info(f"Retrieved file with file_id: {file_id} for user {user_id}")
+            return files[0]
+        
+        logger.warning(f"File with file_id {file_id} not found for user {user_id}")
+        return None
+    
+    def delete_file_upload(self, user_id: str, file_id: str) -> dict:
+        """Delete a file upload record from the database."""
+        self._validate_user_id(user_id)
+        
+        if not file_id or not file_id.strip():
+            raise ValueError("File ID cannot be empty")
+        
+        # Get file record first to return it
+        file_record = self.get_file_by_id(user_id, file_id)
+        if not file_record:
+            raise ValueError(f"File with file_id {file_id} not found for user {user_id}")
+        
+        # Delete from database
+        deleted_count = self.db_manager.delete_documents(
+            self.files_collection,
+            {"user_id": user_id, "file_id": file_id}
+        ).deleted_count
+        
+        if deleted_count == 0:
+            raise ValueError("Failed to delete file record")
+        
+        logger.info(f"Deleted file upload record with file_id: {file_id} for user {user_id}")
+        return file_record
+
+    def delete_file_upload(self, user_id: str, file_id: str) -> None:
+        """Delete a file upload record."""
+        self._validate_user_id(user_id)
+        if not file_id or not file_id.strip():
+            raise ValueError("File ID cannot be empty")
+
+        deleted_count = self.db_manager.delete_documents(
+            self.files_collection, {"user_id": user_id, "file_id": file_id}
+        )
+        if deleted_count == 0:
+            raise ValueError("File not found")
+        logger.info(f"Deleted file upload record with file_id: {file_id} for user {user_id}")

@@ -27,6 +27,11 @@ class MessagePair(BaseModel):
     question: str
     answer: str
 
+class AssistantType(str, Enum):
+    """Supported assistant types."""
+    MAIN = "main"
+    SOLIQ = "soliq"
+
 class ChatRequest(BaseModel):
     """
     Request body for chat questions.
@@ -36,6 +41,7 @@ class ChatRequest(BaseModel):
     chat_history: Optional[List[MessagePair]] = Field(default=None, description="Previous question-answer pairs")
     stream: Optional[bool] = Field(default=settings.STREAM, description="Whether to stream the response")
     model: Optional[ChatModel] = Field(default=None, description="LLM model to use for generation")
+    assistant: Optional[AssistantType] = Field(default=AssistantType.MAIN, description="Assistant type: main or soliq")
 
 class ChatResponse(BaseModel):
     """
