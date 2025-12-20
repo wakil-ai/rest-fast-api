@@ -117,12 +117,10 @@ class ChatChain:
             context = ""
             
             if file_context:
-                top_k = max(1, settings.TOP_K // 2)  # Reduce top_k by half if file context is provided
-                context_with_query = await self.retrieval_service.retrieve_context(query=query, top_k=top_k, collection_name=collection_name)
-                context_with_file_context = await self.retrieval_service.retrieve_context(query=file_context, top_k=top_k, collection_name=collection_name)
-                retrieved_context = context_with_query + "\n\n" + context_with_file_context
-                
-                context = f"""{retrieved_context}
+                # Merge file context and query context 
+                merged_query = f"{query} \n\n File Content: {file_context}"
+                context_with_query = await self.retrieval_service.retrieve_context(query=merged_query, top_k=settings.TOP_K, collection_name=collection_name)
+                context = f"""{context_with_query}
                 
                 File Content:
                 Use the following extracted text from the uploaded file to answer the question:
