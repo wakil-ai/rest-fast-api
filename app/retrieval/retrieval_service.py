@@ -150,6 +150,8 @@ class RetrievalService:
             entry = await self._build_document_entry(
                metadata=metadata,
             )
+            score = doc.get("score", 0)
+            entry = f"Relevance Score: {score:.4f}\n{entry}"
 
             if entry not in seen_content:
                 seen_content.add(entry)

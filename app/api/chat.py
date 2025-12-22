@@ -55,6 +55,14 @@ async def ask_question(request: ChatRequest):
                 headers=get_streaming_headers()
             )
         else:
+            # Handle development mode with debug data
+            if settings.DEVELOPMENT_MODE and isinstance(response, tuple):
+                answer, debug_data = response
+                return ChatResponse(
+                    answer=answer,
+                    retrieved_contents=debug_data.get("retrieved_contents"),
+                    logs=debug_data.get("logs")
+                )
             # Return JSON response
             return ChatResponse(answer=response)
 
@@ -97,6 +105,14 @@ async def ask_soliq_question(request: ChatRequest):
                 headers=get_streaming_headers()
             )
         else:
+            # Handle development mode with debug data
+            if settings.DEVELOPMENT_MODE and isinstance(response, tuple):
+                answer, debug_data = response
+                return ChatResponse(
+                    answer=answer,
+                    retrieved_contents=debug_data.get("retrieved_contents"),
+                    logs=debug_data.get("logs")
+                )
             # Return JSON response
             return ChatResponse(answer=response)
 
@@ -180,6 +196,14 @@ async def ask_with_file(request: AskFileRequest):
                 headers=get_streaming_headers()
             )
         else:
+            # Handle development mode with debug data
+            if settings.DEVELOPMENT_MODE and isinstance(response, tuple):
+                answer, debug_data = response
+                return ChatResponse(
+                    answer=answer,
+                    retrieved_contents=debug_data.get("retrieved_contents"),
+                    logs=debug_data.get("logs")
+                )
             # Return JSON response
             return ChatResponse(answer=response)
 

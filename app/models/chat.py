@@ -1,6 +1,6 @@
 # app/models/chat.py
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from enum import Enum
 from app.core.config import settings
@@ -48,6 +48,8 @@ class ChatResponse(BaseModel):
     Response body for chat answers.
     """
     answer: str
+    retrieved_contents: Optional[List[Dict[str, Any]]] = Field(default=None, description="Retrieved documents (dev mode only)")
+    logs: Optional[List[str]] = Field(default=None, description="Processing logs (dev mode only)")
 
 class ModelInfoResponse(BaseModel):
     """

@@ -6,19 +6,32 @@ import asyncio
 async def format_streaming_response(response_generator: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
     """
     Format streaming response as Server-Sent Events.
+    Supports both text chunks and debug data events.
     
     Args:
-        response_generator: AsyncGenerator that yields text chunks
+        response_generator: AsyncGenerator that yields text chunks or dict with debug data
         
     Yields:
         str: Formatted SSE data strings
+        
+    Event types:
+        - debug: Development mode debug data (sent once at start if available)
+        - chunk: Character chunks of the answer
+        - end: Stream completion signal
+        - error: Error message
     """
     try:
-        async for chunk in response_generator:
-            for char in chunk:
-                char_data = {"type": "chunk", "chunk": char}
-                yield f"data: {json.dumps(char_data)}\n\n"
-                await asyncio.sleep(0.0001)  # Yield control to event loop
+        async for item in response_generator:
+            # Handle debug data (sent as dict)
+            if isinstance(item, dict):
+                debug_event = {"type": "debug", "data": item}
+                yield f"data: {json.dumps(debug_event)}\n\n"
+            # Handle text chunks
+            else:
+                for char in item:
+                    char_data = {"type": "chunk", "chunk": char}
+                    yield f"data: {json.dumps(char_data)}\n\n"
+                    await asyncio.sleep(0.0001)  # Yield control to event loop
                         
         # Send completion signal
         end_signal = {"type": "end"}
