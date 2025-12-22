@@ -6,7 +6,7 @@ import aiohttp
 sys.path.append(".")
 from app.core.config import settings
 
-api_url = "http://localhost:8080/api/chat/agent/stream"
+api_url = "http://localhost:8085/api/chat/agent/stream"
 
 
 async def main():
@@ -15,7 +15,6 @@ async def main():
             "user_id": "5904877504",
             "session_id": "e5d84aca-4473-4da0-9b40-d45dd6296ba7",
             "query": "my.gov.uz sayti raqami qanday?",
-            "enable_web_search": True
         }
 
         headers = {

@@ -30,11 +30,15 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         4. Context Evaluation
         5. Web Search (conditional - only if context insufficient)
         6. Answer Generation
+    
+    Streaming is enabled by default to provide real-time output from crew executions.
     """
     
-    def __init__(self, stream: bool = False):
+    stream = True  # Enable streaming for all crew executions
+    
+    def __init__(self, enable_progress_stream: bool = False):
         super().__init__(tracing=settings.TRACING)
-        self.stream = stream
+        self.enable_progress_stream = enable_progress_stream
         self._initialize_services()
         self._initialize_agents()
     
@@ -199,7 +203,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             await self._handle_error("Web search", error)
     
     @listen(and_(retry_query_and_retrieval, perform_web_search))
-    async def generate_final_answer(self) -> None:
+    async def generate_final_answer(self) -> str:
         """Generate comprehensive answer from all retrieved context."""
         logger.info("=== Step 6: Answer Generation ===")
         
@@ -209,10 +213,12 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             
             self.state.answer = str(result)
             logger.info(f"✓ Answer generated: {len(self.state.answer)} characters")
-            
+              
         except Exception as error:
             await self._handle_error("Answer generation", error)
             self.state.answer = "Error generating answer. Please try again."
+        
+        return self.state.answer
     
     @listen('sufficient')
     async def generate_final_answer_sufficient(self) -> None:

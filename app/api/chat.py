@@ -224,9 +224,7 @@ async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
     initial_state = {
         "query": request.query,
         "user_id": request.user_id,
-        "session_id": request.session_id,
-        "enable_web_search": request.enable_web_search,
-        "enable_memory": request.enable_memory,
+        "session_id": request.session_id
     }
     
     # Execute flow
@@ -238,44 +236,46 @@ async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
 async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
     """
     Execute legal QA flow end-to-end using agentic RAG approach with streaming response.
+    
+    Note: CrewAI Flow streaming works by setting stream=True on the Flow class itself,
+    which enables streaming for all Crew executions within the flow.
     """
     logger.info(f"Starting Streaming Legal QA Flow for query: {request.query[:100]}...")
     
-    # Create streaming flow instance
-    flow = AgenticRAGFlow(stream=True)
+    # Create flow instance with streaming enabled
+    flow = AgenticRAGFlow()
     
     # Build initial state
     initial_state = {
         "query": request.query,
         "user_id": request.user_id,
-        "session_id": request.session_id,
-        "enable_web_search": request.enable_web_search,
+        "session_id": request.session_id
     }
     
-    # Execute flow with streaming
     async def response_generator():
         try:
-            # Start the flow with streaming enabled
-            streaming = await flow.kickoff_async(inputs=initial_state)
-            
-            # Check if streaming is supported
+            # For CrewAI flows, streaming needs to be set as class attribute
+            # The flow will automatically stream crew outputs
+            streaming = await flow.kickoff_async(initial_state)
+
+            # Check if streaming is actually available
             if hasattr(streaming, '__aiter__'):
-                # Iterate over streaming chunks
                 async for chunk in streaming:
+                    # Stream the content from crews
                     if hasattr(chunk, 'content'):
                         yield chunk.content
                     else:
                         yield str(chunk)
             else:
-                # Fallback if not streaming
+                # If no streaming available, return the final result
                 yield str(streaming)
-                
+
         except Exception as e:
-            logger.error(f"Streaming error: {e}", exc_info=True)
-            yield f"Error: {str(e)}"
-        
+            logger.error("Streaming error", exc_info=True)
+            yield {"error": str(e)}
+
     return StreamingResponse(
         format_streaming_response(response_generator()),
         media_type="text/event-stream",
-        headers=get_streaming_headers()
+        headers=get_streaming_headers(),
     )
