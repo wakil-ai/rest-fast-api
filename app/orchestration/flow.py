@@ -3,17 +3,17 @@
 import json
 from typing import Any, Dict
 
-from crewai.flow.flow import Flow, listen, start
+from crewai.flow.flow import Flow, listen, start, router, and_
 
 from app.orchestration.agents import Agents
 from app.orchestration.schemas import (
     AgenticRAGState,
     MemoryAgentResponse,
     RetrievalStrategyResponse,
+    ContextEvaluationResponse,
     WebSearchResponse
 )
 from app.retrieval.retrieval_service import RetrievalService
-from app.services.language_service import LanguageDetector
 from app.services.memory_service import ChatMemoryService
 from app.core.config import settings
 from app.core.logger import logger
@@ -21,27 +21,26 @@ from app.core.logger import logger
 
 class AgenticRAGFlow(Flow[AgenticRAGState]):
     """
-    Agentic RAG pipeline with memory, retrieval strategy, and web search.
+    Agentic RAG pipeline with memory, retrieval strategy, context evaluation, and web search.
     
     Flow:
-        1. Language Detection
-        2. Memory Retrieval (session + personal context)
-        3. Retrieval Strategy Selection
-        4. Document Retrieval
-        5. Web Search (conditional)
+        1. Memory Retrieval (session + personal context)
+        2. Retrieval Strategy & Assistant Selection
+        3. Document Retrieval
+        4. Context Evaluation
+        5. Web Search (conditional - only if context insufficient)
         6. Answer Generation
-        7. Language Correction
     """
     
-    def __init__(self):
+    def __init__(self, stream: bool = False):
         super().__init__(tracing=settings.TRACING)
+        self.stream = stream
         self._initialize_services()
         self._initialize_agents()
     
     def _initialize_services(self) -> None:
         """Initialize all required services."""
         self.retrieval_service = RetrievalService()
-        self.language_service = LanguageDetector()
         self.memory_service = ChatMemoryService()
     
     def _initialize_agents(self) -> None:
@@ -49,35 +48,14 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         agents_factory = Agents()
         self.memory_agent = agents_factory.memory_summarizer()
         self.retrieval_agent = agents_factory.retrieval_specialist()
+        self.context_evaluator_agent = agents_factory.context_evaluator()
         self.web_search_agent = agents_factory.web_search_summarizer()
         self.final_answer_agent = agents_factory.final_answer()
     
     @start()
-    async def detect_language_instruction(self) -> None:
-        """Detect query language and set response instruction."""
-        logger.info("=== Step 0: Language Detection ===")
-        
-        try:
-            detected_language = self.language_service.detect_language(self.state.query)
-            self.state.query_language = detected_language
-            self.state.language_instruction = self.language_service.get_instruction(detected_language)
-            
-            logger.info(f"✓ Detected language: {detected_language}")
-            
-        except Exception as error:
-            await self._handle_error("Language detection", error)
-            self.state.language_instruction = "Respond in the same language as the question."
-    
-    @listen(detect_language_instruction)
     async def start_memory_retrieval(self) -> None:
         """Retrieve and summarize session and personal memory."""
         logger.info("=== Step 1: Memory Retrieval ===")
-        
-        if not self.state.enable_memory:
-            logger.info("Memory retrieval disabled by configuration.")
-            await self._set_default_memory()
-            return
-        
         try:
             session_memory, personal_memory = await self._fetch_memories()
             
@@ -102,12 +80,18 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         logger.info("=== Step 2: Retrieval Strategy Selection ===")
         
         try:
-            result = await self.retrieval_agent.kickoff_async(self.state.enriched_query)
+            # Build query input for retrieval agent
+            query_input = self.state.enriched_query or self.state.query
+            result = await self.retrieval_agent.kickoff_async(
+                query_input,
+                response_format=RetrievalStrategyResponse
+            )
             strategy_response = await self._parse_structured_output(result, RetrievalStrategyResponse)
             
             self.state.retrieval_output = strategy_response.model_dump()
+            self.state.selected_assistant = strategy_response.assistant
             
-            logger.info(f"✓ Strategy: {strategy_response.strategy}")
+            logger.info(f"✓ Strategy: {strategy_response.strategy}, Assistant: {strategy_response.assistant}")
             logger.info(f"  Query rewrite: {strategy_response.query_rewrite}")
             if strategy_response.reasoning:
                 logger.info(f"  Reasoning: {strategy_response.reasoning}")
@@ -118,34 +102,89 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     @listen(determine_retrieval_strategy)
     async def fetch_documents(self) -> None:
-        """Execute document retrieval using selected strategy."""
+        """Execute document retrieval using selected strategy and assistant."""
         logger.info("=== Step 3: Document Retrieval ===")
         
         try:
             strategy = self.state.retrieval_output.get("strategy", "hybrid")
+            assistant = self.state.selected_assistant or "umumiy"
             self.state.rewritten_query = self.state.retrieval_output.get("query_rewrite", self.state.query)
+            
+            # Map assistant to collection name
+            collection_name = settings.MILVUS_SOLIQ_ASSISTANT_NAME if assistant == "soliq" else settings.MILVUS_MAIN_NAME
+            
+            # If specific strategy, always use main collection
+            if strategy == "specific":
+                collection_name = settings.MILVUS_MAIN_NAME
             
             documents = await self.retrieval_service.retrieve_context(
                 query=self.state.rewritten_query,
-                search_type=strategy
+                search_type=strategy,
+                collection_name=collection_name
             )
             
             self.state.retrieval_docs = str(documents)
-            logger.info(f"✓ Documents retrieved: {len(self.state.retrieval_docs)} characters")
+            logger.info(f"✓ Documents retrieved: {len(self.state.retrieval_docs)} characters from {assistant} assistant")
             
         except Exception as error:
             await self._handle_error("Document retrieval", error)
             self.state.retrieval_docs = ""
     
-    @listen(fetch_documents)
+    @router(fetch_documents)
+    async def evaluate_context_sufficiency(self) -> str:
+        """Evaluate if retrieved context is sufficient to answer the query."""
+        logger.info("=== Step 4: Context Evaluation ===")
+        
+        try:
+            # Build formatted input for context evaluator
+            evaluation_input = f"""
+            Query: {self.state.query}
+
+            Retrieved Context:
+            {self.state.retrieval_docs or "No context retrieved."}
+            """
+            
+            result = await self.context_evaluator_agent.kickoff_async(
+                evaluation_input,
+                response_format=ContextEvaluationResponse
+            )
+            
+            evaluation_response = await self._parse_structured_output(result, ContextEvaluationResponse)
+            self.state.context_evaluation_output = evaluation_response.model_dump()
+            
+            logger.info(f"✓ Context sufficient: {evaluation_response.is_sufficient}")
+            
+            # If sufficient, go to answer generation
+            # If insufficient, trigger parallel retry
+            return 'sufficient' if evaluation_response.is_sufficient else 'insufficient'
+            
+        except Exception as error:
+            await self._handle_error("Context evaluation", error)
+            # Default to sufficient if evaluation fails
+            self.state.context_evaluation_output = {
+                "is_sufficient": True,
+                "reasoning": "Evaluation failed, proceeding with available context",
+                "missing_info": ""
+            }
+            return 'sufficient'
+    
+    @listen('insufficient')
+    async def retry_query_and_retrieval(self) -> None:
+        """Retry with improved query rewriting and retrieval when context is insufficient."""
+        logger.info("=== Step 5a: Retry Query & Retrieval (Parallel) ===")
+        
+        try:
+            await self.determine_retrieval_strategy()
+            await self.fetch_documents()
+            logger.info(f"✓ Retry retrieval completed characters")
+            
+        except Exception as error:
+            await self._handle_error("Retry query and retrieval", error)
+    
+    @listen('insufficient')
     async def perform_web_search(self) -> None:
-        """Perform web search and merge results with retrieved documents."""
-        logger.info("=== Step 4: Web Search ===")
-        
-        if not self.state.enable_web_search:
-            logger.info("Web search disabled by configuration.")
-            return
-        
+        """Perform web search in parallel when context is insufficient."""
+        logger.info("=== Step 5b: Web Search (Parallel) ===")
         try:
             web_response = await self._execute_web_search()
             
@@ -159,10 +198,10 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         except Exception as error:
             await self._handle_error("Web search", error)
     
-    @listen(perform_web_search)
+    @listen(and_(retry_query_and_retrieval, perform_web_search))
     async def generate_final_answer(self) -> None:
         """Generate comprehensive answer from all retrieved context."""
-        logger.info("=== Step 5: Answer Generation ===")
+        logger.info("=== Step 6: Answer Generation ===")
         
         try:
             agent_input = await self._build_final_agent_input()
@@ -175,33 +214,11 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             await self._handle_error("Answer generation", error)
             self.state.answer = "Error generating answer. Please try again."
     
-    @listen(generate_final_answer)
-    async def correct_answer_language(self) -> str:
-        """Ensure answer matches detected query language."""
-        logger.info("=== Step 6: Language Correction ===")
+    @listen('sufficient')
+    async def generate_final_answer_sufficient(self) -> None:
+        """Generate answer when context is sufficient."""
+        await self.generate_final_answer()  
         
-        if not self.state.query_language:
-            logger.info("No detected language; skipping correction.")
-            self.state.language_corrected_answer = self.state.answer
-            return self.state.answer
-        
-        try:
-            corrected_answer = self.language_service.correct_language(
-                text=self.state.answer,
-                language=self.state.query_language
-            )
-            
-            self.state.language_corrected_answer = corrected_answer
-            logger.info("✓ Language correction completed.")
-            logger.info(f"Final answer preview: {corrected_answer[:100]}...")
-            
-            return corrected_answer
-            
-        except Exception as error:
-            await self._handle_error("Language correction", error)
-            self.state.language_corrected_answer = self.state.answer
-            return self.state.answer
-    
     async def _fetch_memories(self) -> tuple[Any, Dict]:
         """Fetch session and personal memories concurrently."""
         session_memory = await self.memory_service.get_session_memory(
@@ -244,11 +261,12 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         """Apply memory response to state."""
         self.state.memory_output = memory_response.model_dump()
         self.state.memory_docs = await self._format_memory_context(memory_response)
-        self.state.resolved_query = memory_response.resolved_query
+        # Use original query if resolved_query is None
+        self.state.resolved_query = memory_response.resolved_query or self.state.query
     
     async def _execute_web_search(self) -> WebSearchResponse:
         """Execute web search using cached agent and return structured response."""
-        result = await self.web_search_agent.kickoff_async(self.state.rewritten_query)
+        result = await self.web_search_agent.kickoff_async(self.state.rewritten_query, response_format=WebSearchResponse)
         web_response = await self._parse_structured_output(result, WebSearchResponse)
         
         self.state.web_search_output = web_response.model_dump()
@@ -274,8 +292,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             "resolved_query": "{self.state.resolved_query}, Query which may clarify questions from memory.",
             "context": {json.dumps(self.state.retrieval_docs or "", ensure_ascii=False)},
             "chat_history": {json.dumps(self.state.memory_docs or "", ensure_ascii=False)},
-            "user_type": {self.state.user_type},
-            "language_instruction": {self.state.language_instruction},
+            "web_search": {json.dumps(self.state.web_search_output or {}, ensure_ascii=False)}
         """
     
     async def _parse_structured_output(self, output: Any, schema_class: type) -> Any:
@@ -291,6 +308,9 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     async def _parse_json_output(self, output_str: str) -> Dict[str, Any]:
         """Parse JSON from string with fallback handling."""
+        # Replace None/null with proper JSON null first
+        output_str = output_str.replace(": None", ": null")
+        
         if parsed := await self._try_direct_json_parse(output_str):
             return parsed
         
@@ -346,9 +366,11 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         """Set default retrieval strategy."""
         default_response = RetrievalStrategyResponse(
             strategy="hybrid",
-            query_rewrite=self.state.query
+            query_rewrite=self.state.query,
+            assistant="umumiy"
         )
         self.state.retrieval_output = default_response.model_dump()
+        self.state.selected_assistant = "umumiy"
     
     async def _handle_error(self, operation: str, error: Exception) -> None:
         """Log error and add to state."""

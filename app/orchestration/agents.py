@@ -40,6 +40,7 @@ class Agents:
             Agents._agents_cache = {
                 "memory_summarizer": self._create_memory_summarizer(),
                 "retrieval_specialist": self._create_retrieval_specialist(),
+                "context_evaluator": self._create_context_evaluator(),
                 "web_search_summarizer": self._create_web_search_summarizer(),
                 "final_answer": self._create_final_answer(),
             }
@@ -98,6 +99,13 @@ class Agents:
             name="retrieval_specialist",
             llm=tiny_llm,
         )
+    
+    def _create_context_evaluator(self) -> Agent:
+        """Create agent for evaluating context sufficiency."""
+        return self._create_agent(
+            name="context_evaluator",
+            llm=tiny_llm,
+        )
 
     def _create_web_search_summarizer(self) -> Agent:
         """Create agent for web search and content extraction."""
@@ -129,6 +137,10 @@ class Agents:
     def retrieval_specialist(self) -> Agent:
         """Get cached retrieval specialist agent."""
         return self._agents_cache["retrieval_specialist"]
+    
+    def context_evaluator(self) -> Agent:
+        """Get cached context evaluator agent."""
+        return self._agents_cache["context_evaluator"]
 
     def web_search_summarizer(self) -> Agent:
         """Get cached web search summarizer agent."""

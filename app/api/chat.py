@@ -241,6 +241,9 @@ async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
     """
     logger.info(f"Starting Streaming Legal QA Flow for query: {request.query[:100]}...")
     
+    # Create streaming flow instance
+    flow = AgenticRAGFlow(stream=True)
+    
     # Build initial state
     initial_state = {
         "query": request.query,
@@ -251,8 +254,25 @@ async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
     
     # Execute flow with streaming
     async def response_generator():
-        answer = await agentic_rag_service.kickoff_async(initial_state)
-        yield answer
+        try:
+            # Start the flow with streaming enabled
+            streaming = await flow.kickoff_async(inputs=initial_state)
+            
+            # Check if streaming is supported
+            if hasattr(streaming, '__aiter__'):
+                # Iterate over streaming chunks
+                async for chunk in streaming:
+                    if hasattr(chunk, 'content'):
+                        yield chunk.content
+                    else:
+                        yield str(chunk)
+            else:
+                # Fallback if not streaming
+                yield str(streaming)
+                
+        except Exception as e:
+            logger.error(f"Streaming error: {e}", exc_info=True)
+            yield f"Error: {str(e)}"
         
     return StreamingResponse(
         format_streaming_response(response_generator()),
