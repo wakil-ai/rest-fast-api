@@ -1,5 +1,5 @@
 # Use lightweight python base
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 # Set workdir
 WORKDIR /app

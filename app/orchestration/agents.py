@@ -77,7 +77,6 @@ class Agents:
             verbose=settings.DEBUG,
             tools=tools or [],
             function_calling_llm=function_calling_llm,
-            reasoning=True
         )
 
     def _get_agent_config(
