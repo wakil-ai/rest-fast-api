@@ -54,7 +54,10 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         self.retrieval_agent = agents_factory.retrieval_specialist()
         self.context_evaluator_agent = agents_factory.context_evaluator()
         self.web_search_agent = agents_factory.web_search_summarizer()
-        self.final_answer_agent = agents_factory.final_answer()
+        self.final_answer_agents = {
+            "umumiy": agents_factory.final_answer_umumiy(),
+            "soliq": agents_factory.final_answer_soliq(),
+        }
     
     @start()
     async def start_memory_retrieval(self) -> None:
@@ -119,7 +122,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             
             # If specific strategy, always use main collection
             if strategy == "specific":
-                collection_name = settings.MILVUS_MAIN_NAME
+                collection_name = settings.MILVUS_MAIN_NAME # because specific means main collection
             
             documents = await self.retrieval_service.retrieve_context(
                 query=self.state.rewritten_query,
@@ -209,7 +212,13 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         
         try:
             agent_input = await self._build_final_agent_input()
-            result = await self.final_answer_agent.kickoff_async(agent_input)
+            
+            # According to assistant selection, change goal of the final answer agent
+            assistant = self.state.selected_assistant or "umumiy"
+            final_agent = self.final_answer_agents.get(assistant, self.final_answer_agents["umumiy"])
+                
+            
+            result = await final_agent.kickoff_async(agent_input)
             
             self.state.answer = str(result)
             logger.info(f"✓ Answer generated: {len(self.state.answer)} characters")
@@ -221,9 +230,9 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         return self.state.answer
     
     @listen('sufficient')
-    async def generate_final_answer_sufficient(self) -> None:
+    async def generate_final_answer_sufficient(self) -> str:
         """Generate answer when context is sufficient."""
-        await self.generate_final_answer()  
+        return await self.generate_final_answer()
         
     async def _fetch_memories(self) -> tuple[Any, Dict]:
         """Fetch session and personal memories concurrently."""

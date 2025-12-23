@@ -230,9 +230,11 @@ async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
     # Execute flow
     answer = await agentic_rag_service.kickoff_async(initial_state)
     
-    context = agentic_rag_service.state.retrieval_docs + str(agentic_rag_service.state.web_search_output)
-    
     if settings.DEVELOPMENT_MODE:
+        try:
+            context = agentic_rag_service.state.retrieval_docs +  'Relevance Score: ' + str(agentic_rag_service.state.web_search_output)
+        except Exception:
+            context = "No retrieved contents available to show."
         return ChatResponse(answer=answer, retrieved_contents=context)
     else:
         return ChatResponse(answer=answer)
