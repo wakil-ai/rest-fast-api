@@ -48,8 +48,7 @@ class ChatResponse(BaseModel):
     Response body for chat answers.
     """
     answer: str
-    retrieved_contents: Optional[List[Dict[str, Any]]] = Field(default=None, description="Retrieved documents (dev mode only)")
-    logs: Optional[List[str]] = Field(default=None, description="Processing logs (dev mode only)")
+    retrieved_contents: Optional[str] = Field(default=None, description="Retrieved documents (dev mode only)")
 
 class ModelInfoResponse(BaseModel):
     """

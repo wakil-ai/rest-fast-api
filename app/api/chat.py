@@ -61,10 +61,11 @@ async def ask_question(request: ChatRequest):
                 return ChatResponse(
                     answer=answer,
                     retrieved_contents=debug_data.get("retrieved_contents"),
-                    logs=debug_data.get("logs")
                 )
-            # Return JSON response
-            return ChatResponse(answer=response)
+            else:
+                # Return JSON response
+                return ChatResponse(answer=response)
+
 
     except Exception as e:
         logger.error(f"[ChatAPI] Error: {str(e)}")
@@ -111,10 +112,10 @@ async def ask_soliq_question(request: ChatRequest):
                 return ChatResponse(
                     answer=answer,
                     retrieved_contents=debug_data.get("retrieved_contents"),
-                    logs=debug_data.get("logs")
                 )
-            # Return JSON response
-            return ChatResponse(answer=response)
+            else:
+                # Return JSON response
+                return ChatResponse(answer=response)
 
     except Exception as e:
         logger.error(f"[ChatAPI] Error in Soliq endpoint: {str(e)}")
@@ -202,7 +203,6 @@ async def ask_with_file(request: AskFileRequest):
                 return ChatResponse(
                     answer=answer,
                     retrieved_contents=debug_data.get("retrieved_contents"),
-                    logs=debug_data.get("logs")
                 )
             # Return JSON response
             return ChatResponse(answer=response)
@@ -230,7 +230,12 @@ async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
     # Execute flow
     answer = await agentic_rag_service.kickoff_async(initial_state)
     
-    return ChatResponse(answer=answer)
+    context = agentic_rag_service.state.retrieval_docs + str(agentic_rag_service.state.web_search_output)
+    
+    if settings.DEVELOPMENT_MODE:
+        return ChatResponse(answer=answer, retrieved_contents=context)
+    else:
+        return ChatResponse(answer=answer)
 
 @router.post("/agent/stream", summary="Stream legal question answer via agentic RAG")
 async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
