@@ -16,6 +16,7 @@ async def format_streaming_response(response_generator: AsyncGenerator[str, None
         
     Event types:
         - debug: Development mode debug data (sent once at start if available)
+        - progress: Agentic RAG step progress updates
         - chunk: Character chunks of the answer
         - end: Stream completion signal
         - error: Error message
@@ -24,8 +25,12 @@ async def format_streaming_response(response_generator: AsyncGenerator[str, None
         async for item in response_generator:
             # Handle debug data (sent as dict)
             if isinstance(item, dict):
-                debug_event = {"type": "debug", "data": item}
-                yield f"data: {json.dumps(debug_event)}\n\n"
+                # Check if this is a progress event
+                if item.get("type") == "progress":
+                    yield f"data: {json.dumps(item)}\n\n"
+                else:
+                    debug_event = {"type": "debug", "data": item}
+                    yield f"data: {json.dumps(debug_event)}\n\n"
             # Handle text chunks
             else:
                 for char in item:
@@ -42,6 +47,27 @@ async def format_streaming_response(response_generator: AsyncGenerator[str, None
         error_data = {"type": "error", "error": str(e)}
         yield f"data: {json.dumps(error_data)}\n\n"
 
+
+async def format_progress_event(event_type: str, status: str, message: str, details: dict = None) -> dict:
+    """
+    Format a progress event for streaming.
+    
+    Args:
+        event_type: Type of event (memory_retrieval, retrieval_strategy, etc.)
+        status: Status of the event (in_progress, completed, failed)
+        message: User-friendly message describing the step
+        
+    Returns:
+        dict: Formatted progress event ready for streaming
+    """
+    event = {
+        "type": "progress",
+        "event_type": event_type,
+        "status": status,
+        "message": message
+    }
+
+    return event
 
 def get_streaming_headers() -> dict:
     """

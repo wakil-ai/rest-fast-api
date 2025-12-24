@@ -11,12 +11,14 @@ from app.orchestration.schemas import (
     MemoryAgentResponse,
     RetrievalStrategyResponse,
     ContextEvaluationResponse,
-    WebSearchResponse
+    WebSearchResponse,
+    ProgressEventType
 )
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.memory_service import ChatMemoryService
 from app.core.config import settings
 from app.core.logger import logger
+from app.utils.streaming import format_progress_event
 
 
 class AgenticRAGFlow(Flow[AgenticRAGState]):
@@ -36,9 +38,10 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     stream = True  # Enable streaming for all crew executions
     
-    def __init__(self, enable_progress_stream: bool = False):
+    def __init__(self, enable_progress_stream: bool = False, progress_callback=None):
         super().__init__(tracing=settings.TRACING)
         self.enable_progress_stream = enable_progress_stream
+        self.progress_callback = progress_callback
         self._initialize_services()
         self._initialize_agents()
     
@@ -59,16 +62,34 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             "soliq": agents_factory.final_answer_soliq(),
         }
     
+    async def _emit_progress(self, event_type: str, status: str, message: str, details: dict = None) -> None:
+        """Emit progress event if callback is registered."""
+        if self.progress_callback:
+            event = await format_progress_event(event_type, status, message, details)
+            await self.progress_callback(event)
+    
     @start()
     async def start_memory_retrieval(self) -> None:
         """Retrieve and summarize session and personal memory."""
         logger.info("=== Step 1: Memory Retrieval ===")
+        
+        await self._emit_progress(
+            ProgressEventType.MEMORY_RETRIEVAL,
+            "in_progress",
+            "Analyzing your conversation history and preferences..."
+        )
+        
         try:
             session_memory, personal_memory = await self._fetch_memories()
             
             if not await self._has_any_memory(session_memory, personal_memory):
                 logger.info("No memories found; skipping summarization.")
                 await self._set_default_memory()
+                await self._emit_progress(
+                    ProgressEventType.MEMORY_RETRIEVAL,
+                    "completed",
+                    "Memory context loaded"
+                )
                 return
             
             memory_response = await self._summarize_memory(session_memory, personal_memory)
@@ -77,14 +98,41 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             self.state.enriched_query = await self._enrich_query_with_memory(self.state.query)
             logger.info(f"✓ Memory retrieved: {len(self.state.memory_docs)} characters")
             
+            # Notify if query was enriched
+            details = {}
+            if self.state.enriched_query and self.state.enriched_query != self.state.query:
+                await self._emit_progress(
+                    ProgressEventType.MEMORY_RETRIEVAL,
+                    "in_progress",
+                    "Query enriched with conversation context for better retrieval",
+                    {"enriched_query": True}
+                )
+            
+            await self._emit_progress(
+                ProgressEventType.MEMORY_RETRIEVAL,
+                "completed",
+                "Memory context loaded successfully"
+            )
+            
         except Exception as error:
             await self._handle_error("Memory retrieval", error)
             await self._set_default_memory()
+            await self._emit_progress(
+                ProgressEventType.MEMORY_RETRIEVAL,
+                "completed",
+                "Proceeding without memory context"
+            )
     
     @listen(start_memory_retrieval)
     async def determine_retrieval_strategy(self) -> None:
         """Analyze query to select optimal retrieval strategy."""
         logger.info("=== Step 2: Retrieval Strategy Selection ===")
+        
+        await self._emit_progress(
+            ProgressEventType.RETRIEVAL_STRATEGY,
+            "in_progress",
+            "Determining best search strategy for your question..."
+        )
         
         try:
             # Build query input for retrieval agent
@@ -98,19 +146,47 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             self.state.retrieval_output = strategy_response.model_dump()
             self.state.selected_assistant = strategy_response.assistant
             
-            logger.info(f"✓ Strategy: {strategy_response.strategy}, Assistant: {strategy_response.assistant}")
-            logger.info(f"  Query rewrite: {strategy_response.query_rewrite}")
+            logger.info(f"Strategy: {strategy_response.strategy}, Assistant: {strategy_response.assistant}")
+            logger.info(f"Query rewrite: {strategy_response.query_rewrite}")
             if strategy_response.reasoning:
                 logger.info(f"  Reasoning: {strategy_response.reasoning}")
+            
+            # Check if query was rewritten
+            query_rewritten = strategy_response.query_rewrite != self.state.query
+            
+            # Notify about query rewrite if it happened
+            if query_rewritten:
+                await self._emit_progress(
+                    ProgressEventType.RETRIEVAL_STRATEGY,
+                    "in_progress",
+                    strategy_response.reasoning,
+                )
+            
+            await self._emit_progress(
+                ProgressEventType.RETRIEVAL_STRATEGY,
+                "completed",
+                f"Using {strategy_response.assistant} assistant",
+            )
             
         except Exception as error:
             await self._handle_error("Strategy selection", error)
             await self._set_default_retrieval_strategy()
+            await self._emit_progress(
+                ProgressEventType.RETRIEVAL_STRATEGY,
+                "completed",
+                "Using default search strategy"
+            )
     
     @listen(determine_retrieval_strategy)
     async def fetch_documents(self) -> None:
         """Execute document retrieval using selected strategy and assistant."""
         logger.info("=== Step 3: Document Retrieval ===")
+        
+        await self._emit_progress(
+            ProgressEventType.DOCUMENT_RETRIEVAL,
+            "in_progress",
+            "Searching legal document database..."
+        )
         
         try:
             strategy = self.state.retrieval_output.get("strategy", "hybrid")
@@ -133,14 +209,31 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             self.state.retrieval_docs = str(documents)
             logger.info(f"✓ Documents retrieved: {len(self.state.retrieval_docs)} characters from {assistant} assistant")
             
+            await self._emit_progress(
+                ProgressEventType.DOCUMENT_RETRIEVAL,
+                "completed",
+                "Relevant documents retrieved"
+            )
+            
         except Exception as error:
             await self._handle_error("Document retrieval", error)
             self.state.retrieval_docs = ""
+            await self._emit_progress(
+                ProgressEventType.DOCUMENT_RETRIEVAL,
+                "failed",
+                "Document retrieval failed, continuing..."
+            )
     
     @router(fetch_documents)
     async def evaluate_context_sufficiency(self) -> str:
         """Evaluate if retrieved context is sufficient to answer the query."""
         logger.info("=== Step 4: Context Evaluation ===")
+        
+        await self._emit_progress(
+            ProgressEventType.CONTEXT_EVALUATION,
+            "in_progress",
+            "Evaluating document relevance and quality..."
+        )
         
         try:
             # Build formatted input for context evaluator
@@ -161,6 +254,18 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             
             logger.info(f"✓ Context sufficient: {evaluation_response.is_sufficient}")
             
+            if evaluation_response.reasoning:
+                message = "Context is sufficient because " + evaluation_response.reasoning if evaluation_response.is_sufficient else \
+                        "Context is insufficient because " + evaluation_response.reasoning
+            else:
+                message = "Context evaluation completed."
+            
+            await self._emit_progress(
+                ProgressEventType.CONTEXT_EVALUATION,
+                "completed",
+                message
+            )
+            
             # If sufficient, go to answer generation
             # If insufficient, trigger parallel retry
             return 'sufficient' if evaluation_response.is_sufficient else 'insufficient'
@@ -173,6 +278,11 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                 "reasoning": "Evaluation failed, proceeding with available context",
                 "missing_info": ""
             }
+            await self._emit_progress(
+                ProgressEventType.CONTEXT_EVALUATION,
+                "completed",
+                "Proceeding with available information"
+            )
             return 'sufficient'
     
     @listen('insufficient')
@@ -192,23 +302,50 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     async def perform_web_search(self) -> None:
         """Perform web search in parallel when context is insufficient."""
         logger.info("=== Step 5b: Web Search (Parallel) ===")
+        
+        await self._emit_progress(
+            ProgressEventType.CONTEXT_EVALUATION,
+            "in_progress",
+            "Switching to web search for additional information..."
+        )
+        
+        await self._emit_progress(
+            ProgressEventType.WEB_SEARCH,
+            "in_progress",
+            "Searching the web for additional information..."
+        )
+        
         try:
             web_response = await self._execute_web_search()
             
-            if not web_response.docs:
-                logger.info("No web search documents found.")
-                return
-            
             await self._merge_web_documents(web_response)
             logger.info(f"✓ Web search completed: {len(web_response.docs)} documents extracted")
+
+            message = await self._format_web_search_message(web_response)
+            await self._emit_progress(
+                ProgressEventType.WEB_SEARCH,
+                "completed",
+                message
+            )
             
         except Exception as error:
             await self._handle_error("Web search", error)
+            await self._emit_progress(
+                ProgressEventType.WEB_SEARCH,
+                "completed",
+                "Proceeding without web results"
+            )
     
     @listen(and_(retry_query_and_retrieval, perform_web_search))
     async def generate_final_answer(self) -> str:
         """Generate comprehensive answer from all retrieved context."""
         logger.info("=== Step 6: Answer Generation ===")
+        
+        await self._emit_progress(
+            ProgressEventType.ANSWER_GENERATION,
+            "in_progress",
+            "Generating comprehensive answer..."
+        )
         
         try:
             agent_input = await self._build_final_agent_input()
@@ -217,7 +354,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             assistant = self.state.selected_assistant or "umumiy"
             final_agent = self.final_answer_agents.get(assistant, self.final_answer_agents["umumiy"])
                 
-            
             result = await final_agent.kickoff_async(agent_input)
             
             self.state.answer = str(result)
@@ -226,6 +362,11 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         except Exception as error:
             await self._handle_error("Answer generation", error)
             self.state.answer = "Error generating answer. Please try again."
+            await self._emit_progress(
+                ProgressEventType.ANSWER_GENERATION,
+                "failed",
+                "Answer generation failed"
+            )
         
         return self.state.answer
     
@@ -299,6 +440,22 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             combined_docs += f"{doc.content}\n"
         
         self.state.retrieval_docs = combined_docs
+        
+    async def _format_web_search_message(self, web_response: WebSearchResponse) -> str:
+        docs = web_response.docs
+        if not docs:
+            return "No relevant web documents found"
+
+        sources = []
+        for doc in docs:
+            sources.append(f"Title: {doc.title}\n Url:({doc.url})\n Content: ({doc.content})\n\n")
+
+        sources_str = "; ".join(sources)
+
+        return (
+            f"Found {len(docs)} web document(s) as additional sources: "
+            f"{sources_str}"
+        )
     
     async def _build_final_agent_input(self) -> str:
         """Build input for final answer agent."""

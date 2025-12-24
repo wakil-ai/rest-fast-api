@@ -61,3 +61,23 @@ class WebSearchDocument(BaseModel):
 class WebSearchResponse(BaseModel):
     """Response schema for web search summarizer agent."""
     docs: List[WebSearchDocument] = Field(default_factory=list,description="List of extracted and summarized web documents")
+
+
+class ProgressEventType(str):
+    """Event types for progress streaming"""
+    MEMORY_RETRIEVAL = "memory_retrieval"
+    RETRIEVAL_STRATEGY = "retrieval_strategy"
+    DOCUMENT_RETRIEVAL = "document_retrieval"
+    CONTEXT_EVALUATION = "context_evaluation"
+    WEB_SEARCH = "web_search"
+    ANSWER_GENERATION = "answer_generation"
+    COMPLETED = "completed"
+    ERROR = "error"
+
+
+class ProgressEvent(BaseModel):
+    """Schema for progress events during agentic RAG execution."""
+    event_type: str = Field(description="Type of progress event")
+    status: str = Field(description="Status: in_progress, completed, failed")
+    message: str = Field(description="User-friendly progress message")
+    details: Optional[Dict[str, Any]] = Field(default=None, description="Additional non-sensitive details")

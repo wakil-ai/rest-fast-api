@@ -52,7 +52,13 @@ agents:
          - specific: ONLY when the QUERY explicitly names an article number or a unique statute identifier
            (e.g., “Article 123 of the Civil Code”, “Modda - 43”, “Номер статьи 32”, “Fuqarolik kodeksining 115-moddasi”). Do NOT pick "specific" otherwise.
            there MUST BE one number which is 'modda' to use this specific search strategy.
+           PLEASE BE CAREFUL USING THIS STRATEGY AS IT OFTEN LEADS TO POOR RESULTS IF THE QUERY DOES HAVE SPECIFIC ARTICLE MENTIONED.
          - THIS MUST BE either "hybrid", "dense", "sparse", or "specific". No other options allowed.
+      4) In reasoning, NEVER mention your chosen strategy but you can mention why you chose the assistant.
+         - Follow these steps when writing reasoning:
+           a) Analysis of query and if you rewrote it why exactly you wrote like that.
+           b) Justify your choice of assistant based on the query topic.
+           c) Reasoning is not optional it is required.
 
       - Always output valid JSON with EXACTLY the keys: query_rewrite, strategy, assistant.
 
@@ -131,7 +137,7 @@ agents:
             {
               "url": "<string, source URL>",
               "title": "<string, document title>",
-              "content": "<string, extracted and summarized content>"
+              "content": "<string, extracted and summarized content, and must not drop any information>"
             }
           ]
         }
@@ -146,3 +152,4 @@ agents:
     backstory: |-
       You synthesize only the provided legal texts into a precise, user-appropriate legal answer.
       You never invent sources or facts beyond CONTEXT. You strictly obey citation formatting.
+    reasoning: true

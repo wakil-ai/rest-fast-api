@@ -1,18 +1,15 @@
 # app/api/chat.py
-import tempfile
-import os
-import uuid
+import asyncio
 
 from fastapi import APIRouter, HTTPException
-from fastapi import UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
-from app.core.config import settings
 from app.models.chat import ChatRequest, ChatResponse, ModelInfoResponse, AgenticRAGRequest, AssistantType, AskFileRequest
 from app.services.chat_service import ChatService
 from app.services.chat_history_service import ChatHistoryService
 from app.orchestration.flow import AgenticRAGFlow
-from app.utils.streaming import format_streaming_response, get_streaming_headers
+from app.utils.streaming import format_streaming_response, get_streaming_headers, format_progress_event
+from app.core.config import settings
 from app.core.logger import logger
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -244,13 +241,25 @@ async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
     """
     Execute legal QA flow end-to-end using agentic RAG approach with streaming response.
     
-    Note: CrewAI Flow streaming works by setting stream=True on the Flow class itself,
-    which enables streaming for all Crew executions within the flow.
+    Streams progress events for each step of the agentic RAG pipeline to provide
+    real-time feedback to users while processing takes place.
+    
+    Event types streamed:
+    - progress: Step-by-step progress updates (memory retrieval, document search, etc.)
+    - chunk: Final answer character chunks
+    - end: Stream completion signal
     """
     logger.info(f"Starting Streaming Legal QA Flow for query: {request.query[:100]}...")
     
-    # Create flow instance with streaming enabled
-    flow = AgenticRAGFlow()
+    # Queue for progress events
+    progress_queue = asyncio.Queue()
+    
+    async def progress_callback(event: dict):
+        """Callback to receive progress events from the flow."""
+        await progress_queue.put(event)
+    
+    # Create flow instance with progress callback
+    flow = AgenticRAGFlow(enable_progress_stream=True, progress_callback=progress_callback)
     
     # Build initial state
     initial_state = {
@@ -260,26 +269,47 @@ async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
     }
     
     async def response_generator():
+        """Generate streaming response with progress events and final answer."""
+        # Start the flow execution in background
+        flow_task = asyncio.create_task(flow.kickoff_async(initial_state))
+        
+        # Stream progress events as they come
+        while not flow_task.done():
+            try:
+                # Wait for progress events with timeout
+                event = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
+                yield event
+            except asyncio.TimeoutError:
+                # Continue waiting if no events yet
+                continue
+            except Exception as e:
+                logger.error(f"Error getting progress event: {e}")
+                continue
+        
+        # Get remaining progress events from queue
+        while not progress_queue.empty():
+            try:
+                event = progress_queue.get_nowait()
+                yield event
+            except asyncio.QueueEmpty:
+                break
+        
+        # Get final result
         try:
-            # For CrewAI flows, streaming needs to be set as class attribute
-            # The flow will automatically stream crew outputs
-            streaming = await flow.kickoff_async(initial_state)
-
-            # Check if streaming is actually available
-            if hasattr(streaming, '__aiter__'):
-                async for chunk in streaming:
-                    # Stream the content from crews
-                    if hasattr(chunk, 'content'):
-                        yield chunk.content
-                    else:
-                        yield str(chunk)
-            else:
-                # If no streaming available, return the final result
-                yield str(streaming)
-
+            answer = await flow_task
+            
+            # Stream the answer content
+            # Field answer chunk by chunk by splitting with \n
+            for chunk in answer.split('\n'):
+                yield chunk
+            
         except Exception as e:
             logger.error("Streaming error", exc_info=True)
-            yield {"error": str(e)}
+            yield await format_progress_event(
+                "error",
+                "failed",
+                f"An error occurred: {str(e)}"
+            )
 
     return StreamingResponse(
         format_streaming_response(response_generator()),
