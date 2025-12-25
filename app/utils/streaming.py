@@ -25,8 +25,8 @@ async def format_streaming_response(response_generator: AsyncGenerator[str, None
         async for item in response_generator:
             # Handle debug data (sent as dict)
             if isinstance(item, dict):
-                # Check if this is a progress event
-                if item.get("type") == "progress":
+                # Check if this is a progress or chunk event
+                if item.get("type") in ["progress", "chunk"]:
                     yield f"data: {json.dumps(item)}\n\n"
                 else:
                     debug_event = {"type": "debug", "data": item}

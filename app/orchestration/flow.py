@@ -4,8 +4,9 @@ import json
 from typing import Any, Dict
 
 from crewai.flow.flow import Flow, listen, start, router, and_
+from crewai.types.streaming import StreamChunkType
 
-from app.orchestration.agents import Agents
+from app.orchestration.crews import Crews
 from app.orchestration.schemas import (
     AgenticRAGState,
     MemoryAgentResponse,
@@ -36,30 +37,31 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     Streaming is enabled by default to provide real-time output from crew executions.
     """
     
-    stream = True  # Enable streaming for all crew executions
+    #stream = True  # Enable streaming for all crew executions
+    #verbose = True
     
     def __init__(self, enable_progress_stream: bool = False, progress_callback=None):
         super().__init__(tracing=settings.TRACING)
         self.enable_progress_stream = enable_progress_stream
         self.progress_callback = progress_callback
         self._initialize_services()
-        self._initialize_agents()
+        self._initialize_crews()
     
     def _initialize_services(self) -> None:
         """Initialize all required services."""
         self.retrieval_service = RetrievalService()
         self.memory_service = ChatMemoryService()
     
-    def _initialize_agents(self) -> None:
-        """Initialize and cache all agents once."""
-        agents_factory = Agents()
-        self.memory_agent = agents_factory.memory_summarizer()
-        self.retrieval_agent = agents_factory.retrieval_specialist()
-        self.context_evaluator_agent = agents_factory.context_evaluator()
-        self.web_search_agent = agents_factory.web_search_summarizer()
-        self.final_answer_agents = {
-            "umumiy": agents_factory.final_answer_umumiy(),
-            "soliq": agents_factory.final_answer_soliq(),
+    def _initialize_crews(self) -> None:
+        """Initialize and cache all crews once."""
+        crews_factory = Crews()
+        self.memory_crew = crews_factory.memory_crew()
+        self.retrieval_strategy_crew = crews_factory.retrieval_strategy_crew()
+        self.evaluation_crew = crews_factory.evaluation_crew()
+        self.web_search_crew = crews_factory.web_search_crew()
+        self.answer_crews = {
+            "umumiy": crews_factory.answer_crew("umumiy"),
+            "soliq": crews_factory.answer_crew("soliq"),
         }
     
     async def _emit_progress(self, event_type: str, status: str, message: str, details: dict = None) -> None:
@@ -70,9 +72,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     @start()
     async def start_memory_retrieval(self) -> None:
-        """Retrieve and summarize session and personal memory."""
-        logger.info("=== Step 1: Memory Retrieval ===")
-        
+        """Retrieve and summarize session and personal memory."""        
         await self._emit_progress(
             ProgressEventType.MEMORY_RETRIEVAL,
             "in_progress",
@@ -96,7 +96,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             await self._apply_memory_response(memory_response)
             
             self.state.enriched_query = await self._enrich_query_with_memory(self.state.query)
-            logger.info(f"✓ Memory retrieved: {len(self.state.memory_docs)} characters")
             
             # Notify if query was enriched
             details = {}
@@ -125,9 +124,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     @listen(start_memory_retrieval)
     async def determine_retrieval_strategy(self) -> None:
-        """Analyze query to select optimal retrieval strategy."""
-        logger.info("=== Step 2: Retrieval Strategy Selection ===")
-        
+        """Analyze query to select optimal retrieval strategy."""        
         await self._emit_progress(
             ProgressEventType.RETRIEVAL_STRATEGY,
             "in_progress",
@@ -135,21 +132,15 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         )
         
         try:
-            # Build query input for retrieval agent
-            query_input = self.state.enriched_query or self.state.query
-            result = await self.retrieval_agent.kickoff_async(
-                query_input,
-                response_format=RetrievalStrategyResponse
+            # Build query input for retrieval crew
+            query_input = {"query": self.state.enriched_query or self.state.query}
+            result = await self.retrieval_strategy_crew.kickoff_async(
+                inputs=query_input,
             )
             strategy_response = await self._parse_structured_output(result, RetrievalStrategyResponse)
             
             self.state.retrieval_output = strategy_response.model_dump()
             self.state.selected_assistant = strategy_response.assistant
-            
-            logger.info(f"Strategy: {strategy_response.strategy}, Assistant: {strategy_response.assistant}")
-            logger.info(f"Query rewrite: {strategy_response.query_rewrite}")
-            if strategy_response.reasoning:
-                logger.info(f"  Reasoning: {strategy_response.reasoning}")
             
             # Check if query was rewritten
             query_rewritten = strategy_response.query_rewrite != self.state.query
@@ -179,9 +170,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     @listen(determine_retrieval_strategy)
     async def fetch_documents(self) -> None:
-        """Execute document retrieval using selected strategy and assistant."""
-        logger.info("=== Step 3: Document Retrieval ===")
-        
+        """Execute document retrieval using selected strategy and assistant."""        
         await self._emit_progress(
             ProgressEventType.DOCUMENT_RETRIEVAL,
             "in_progress",
@@ -206,9 +195,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                 collection_name=collection_name
             )
             
-            self.state.retrieval_docs = str(documents)
-            logger.info(f"✓ Documents retrieved: {len(self.state.retrieval_docs)} characters from {assistant} assistant")
-            
+            self.state.retrieval_docs = str(documents)            
             await self._emit_progress(
                 ProgressEventType.DOCUMENT_RETRIEVAL,
                 "completed",
@@ -226,9 +213,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     @router(fetch_documents)
     async def evaluate_context_sufficiency(self) -> str:
-        """Evaluate if retrieved context is sufficient to answer the query."""
-        logger.info("=== Step 4: Context Evaluation ===")
-        
+        """Evaluate if retrieved context is sufficient to answer the query."""        
         await self._emit_progress(
             ProgressEventType.CONTEXT_EVALUATION,
             "in_progress",
@@ -236,23 +221,18 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         )
         
         try:
-            # Build formatted input for context evaluator
-            evaluation_input = f"""
-            Query: {self.state.query}
-
-            Retrieved Context:
-            {self.state.retrieval_docs or "No context retrieved."}
-            """
+            # Build formatted input for evaluation crew
+            evaluation_input = {
+                "query": self.state.query,
+                "context": self.state.retrieval_docs or "No context retrieved."
+            }
             
-            result = await self.context_evaluator_agent.kickoff_async(
-                evaluation_input,
-                response_format=ContextEvaluationResponse
+            result = await self.evaluation_crew.kickoff_async(
+                inputs=evaluation_input,
             )
             
             evaluation_response = await self._parse_structured_output(result, ContextEvaluationResponse)
             self.state.context_evaluation_output = evaluation_response.model_dump()
-            
-            logger.info(f"✓ Context sufficient: {evaluation_response.is_sufficient}")
             
             if evaluation_response.reasoning:
                 message = "Context is sufficient because " + evaluation_response.reasoning if evaluation_response.is_sufficient else \
@@ -287,22 +267,17 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     @listen('insufficient')
     async def retry_query_and_retrieval(self) -> None:
-        """Retry with improved query rewriting and retrieval when context is insufficient."""
-        logger.info("=== Step 5a: Retry Query & Retrieval (Parallel) ===")
-        
+        """Retry with improved query rewriting and retrieval when context is insufficient."""        
         try:
             await self.determine_retrieval_strategy()
             await self.fetch_documents()
-            logger.info(f"✓ Retry retrieval completed characters")
             
         except Exception as error:
             await self._handle_error("Retry query and retrieval", error)
     
     @listen('insufficient')
     async def perform_web_search(self) -> None:
-        """Perform web search in parallel when context is insufficient."""
-        logger.info("=== Step 5b: Web Search (Parallel) ===")
-        
+        """Perform web search in parallel when context is insufficient."""        
         await self._emit_progress(
             ProgressEventType.CONTEXT_EVALUATION,
             "in_progress",
@@ -319,7 +294,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             web_response = await self._execute_web_search()
             
             await self._merge_web_documents(web_response)
-            logger.info(f"✓ Web search completed: {len(web_response.docs)} documents extracted")
 
             message = await self._format_web_search_message(web_response)
             await self._emit_progress(
@@ -338,9 +312,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     @listen(and_(retry_query_and_retrieval, perform_web_search))
     async def generate_final_answer(self) -> str:
-        """Generate comprehensive answer from all retrieved context."""
-        logger.info("=== Step 6: Answer Generation ===")
-        
+        """Generate comprehensive answer from all retrieved context."""        
         await self._emit_progress(
             ProgressEventType.ANSWER_GENERATION,
             "in_progress",
@@ -350,14 +322,57 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         try:
             agent_input = await self._build_final_agent_input()
             
-            # According to assistant selection, change goal of the final answer agent
+            # According to assistant selection, use the corresponding answer crew
             assistant = self.state.selected_assistant or "umumiy"
-            final_agent = self.final_answer_agents.get(assistant, self.final_answer_agents["umumiy"])
+            final_crew = self.answer_crews.get(assistant, self.answer_crews["umumiy"])
                 
-            result = await final_agent.kickoff_async(agent_input)
+            streaming = await final_crew.kickoff_async(
+                inputs=agent_input,
+            )
             
-            self.state.answer = str(result)
-            logger.info(f"✓ Answer generated: {len(self.state.answer)} characters")
+            # Buffer to track if we're still in the prefix section
+            chunk_buffer = ""
+            prefix_complete = False
+            
+            async for chunk in streaming:
+                if chunk.chunk_type == StreamChunkType.TEXT and self.progress_callback:
+                    if not prefix_complete:
+                        # Add to buffer
+                        chunk_buffer += chunk.content
+                        
+                        # Check if we've passed the "Final Answer:" marker
+                        if "Final Answer:" in chunk_buffer:
+                            # Extract content after "Final Answer:"
+                            parts = chunk_buffer.split("Final Answer:", 1)
+                            if len(parts) > 1:
+                                remaining_content = parts[1].lstrip()
+                                prefix_complete = True
+                                
+                                # Send the remaining content if any
+                                if remaining_content:
+                                    await self.progress_callback({
+                                        "type": "chunk",
+                                        "chunk": remaining_content
+                                    })
+                                # Clear buffer
+                                chunk_buffer = ""
+                        # Keep buffer size reasonable (max 500 chars)
+                        elif len(chunk_buffer) > 500:
+                            # If buffer exceeds 500 chars without finding prefix, assume no prefix
+                            prefix_complete = True
+                            await self.progress_callback({
+                                "type": "chunk",
+                                "chunk": chunk_buffer
+                            })
+                            chunk_buffer = ""
+                    else:
+                        # Prefix already removed, stream directly
+                        await self.progress_callback({
+                            "type": "chunk",
+                            "chunk": chunk.content
+                        })
+            
+            self.state.answer = str(streaming.result)
               
         except Exception as error:
             await self._handle_error("Answer generation", error)
@@ -399,19 +414,18 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     ) -> MemoryAgentResponse:
         """Summarize memory using cached agent."""
         memory_input = await self._build_memory_input(session_memory, personal_memory)
-        result = await self.memory_agent.kickoff_async(
-            memory_input,
-            response_format=MemoryAgentResponse
+        result = await self.memory_crew.kickoff_async(
+            inputs=memory_input,
         )
         return await self._parse_structured_output(result, MemoryAgentResponse)
     
-    async def _build_memory_input(self, session_memory: Any, personal_memory: Dict) -> str:
-        """Build input for memory summarizer agent."""
-        return f"""
-            "query": "{self.state.query}",
-            "session_memory": {json.dumps(session_memory, ensure_ascii=False)},
-            "personal_memory": {json.dumps(personal_memory, ensure_ascii=False)},
-        """
+    async def _build_memory_input(self, session_memory: Any, personal_memory: Dict) -> Dict:
+        """Build input for memory crew."""
+        return {
+            "query": self.state.query,
+            "session_memory": json.dumps(session_memory, ensure_ascii=False),
+            "personal_memory": json.dumps(personal_memory, ensure_ascii=False)
+        }
     
     async def _apply_memory_response(self, memory_response: MemoryAgentResponse) -> None:
         """Apply memory response to state."""
@@ -421,8 +435,11 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         self.state.resolved_query = memory_response.resolved_query or self.state.query
     
     async def _execute_web_search(self) -> WebSearchResponse:
-        """Execute web search using cached agent and return structured response."""
-        result = await self.web_search_agent.kickoff_async(self.state.rewritten_query, response_format=WebSearchResponse)
+        """Execute web search using web search crew and return structured response."""
+        inputs = {"query": self.state.rewritten_query}
+        result = await self.web_search_crew.kickoff_async(
+            inputs=inputs,
+        )
         web_response = await self._parse_structured_output(result, WebSearchResponse)
         
         self.state.web_search_output = web_response.model_dump()
@@ -457,16 +474,16 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             f"{sources_str}"
         )
     
-    async def _build_final_agent_input(self) -> str:
-        """Build input for final answer agent."""
-        return f"""
-            "query": "{self.state.query}",
-            "resolved_query": "{self.state.resolved_query}, Query which may clarify questions from memory.",
-            "context": {json.dumps(self.state.retrieval_docs or "", ensure_ascii=False)},
-            "chat_history": {json.dumps(self.state.memory_docs or "", ensure_ascii=False)},
-            "web_search": {json.dumps(self.state.web_search_output or {}, ensure_ascii=False)}
-        """
-    
+    async def _build_final_agent_input(self) -> Dict:
+        """Build input for final answer crew."""
+        return {
+            "query": self.state.query,
+            "resolved_query": f"{self.state.resolved_query}, Query which may clarify questions from memory.",
+            "context": self.state.retrieval_docs or "No retrived text",
+            "chat_history": self.state.memory_docs or "",
+            "web_search": json.dumps(self.state.web_search_output, ensure_ascii=False) or ""
+        }
+
     async def _parse_structured_output(self, output: Any, schema_class: type) -> Any:
         """Parse structured output using Pydantic schema."""
         output_str = output.raw if hasattr(output, 'raw') else str(output)

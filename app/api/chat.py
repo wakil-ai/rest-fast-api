@@ -273,43 +273,33 @@ async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
         # Start the flow execution in background
         flow_task = asyncio.create_task(flow.kickoff_async(initial_state))
         
-        # Stream progress events as they come
-        while not flow_task.done():
+        # Stream all events until flow completes AND queue is drained
+        flow_complete = False
+        while not (flow_complete and progress_queue.empty()):
+            # Check if flow is done
+            if flow_task.done() and not flow_complete:
+                flow_complete = True
+                # Await the result to catch any exceptions
+                try:
+                    await flow_task
+                except Exception as e:
+                    logger.error("Flow execution error", exc_info=True)
+                    yield {
+                        "type": "error",
+                        "message": f"An error occurred: {str(e)}"
+                    }
+                    break
+            
+            # Try to get events from queue
             try:
-                # Wait for progress events with timeout
                 event = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
                 yield event
             except asyncio.TimeoutError:
-                # Continue waiting if no events yet
+                # No events available, continue loop
                 continue
             except Exception as e:
                 logger.error(f"Error getting progress event: {e}")
-                continue
-        
-        # Get remaining progress events from queue
-        while not progress_queue.empty():
-            try:
-                event = progress_queue.get_nowait()
-                yield event
-            except asyncio.QueueEmpty:
                 break
-        
-        # Get final result
-        try:
-            answer = await flow_task
-            
-            # Stream the answer content
-            # Field answer chunk by chunk by splitting with \n
-            for chunk in answer.split('\n'):
-                yield chunk
-            
-        except Exception as e:
-            logger.error("Streaming error", exc_info=True)
-            yield await format_progress_event(
-                "error",
-                "failed",
-                f"An error occurred: {str(e)}"
-            )
 
     return StreamingResponse(
         format_streaming_response(response_generator()),

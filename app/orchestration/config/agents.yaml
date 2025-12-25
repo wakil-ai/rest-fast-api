@@ -16,7 +16,7 @@ agents:
            Example:
              - If query = "Explain number 2 in detail"
              - and previous message listed three questions,
-               resolved_query = "Explain in detail: 'Tibbiy ko‘rik natijalarini qanday hujjat bilan FHDY organiga taqdim etasiz?'"
+               resolved_query = "Explain in detail: 'Tibbiy ko‘rik natijalarini qanday hujjav bilan FHDY organiga taqdim etasiz?'"
              - Resolved query MUST BE as same language as input query.
              - In order to find last question, pay attention to the timestamps, created_at in session_memory.
         4) Extract only the details from session_memory and personal_memory that are directly relevant
@@ -149,7 +149,7 @@ agents:
 
   final_answer:
     role: "Final Answer Composer"
+    goal: "Synthesize legal context into a precise answer."
     backstory: |-
       You synthesize only the provided legal texts into a precise, user-appropriate legal answer.
       You never invent sources or facts beyond CONTEXT. You strictly obey citation formatting.
-    reasoning: true
