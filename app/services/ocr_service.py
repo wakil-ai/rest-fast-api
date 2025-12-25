@@ -1,24 +1,38 @@
-# app/services/ocr_service.py
-
-import requests
-from typing import Optional, IO
+from pathlib import Path, PosixPath
+from typing import Union
 from app.core.config import settings
+from datalab_sdk import AsyncDatalabClient
+from app.core.logger import logger
+
 
 class OCRService:
     def __init__(self):
-        self.base_url = settings.OCR_API_URL
+        self.client = AsyncDatalabClient(api_key=settings.DATALAB_API_KEY)
 
-    def process_file(self, file: IO, filename: str) -> dict:
+    async def process_file(self, file: Union[Path, str]) -> str:
         """
-        Sends the file to the OCR API and returns the parsed JSON response.
-        Expects the external OCR API to accept a multipart/form-data POST at /ocr/.
+        Sends the file to Datalab
         """
-        url = f"{self.base_url.rstrip('/')}/ocr/"
-        files = {"file": (filename, file)}
-        resp = requests.post(url, files=files, timeout=120)
-        resp.raise_for_status()
-        return resp.json()
+        logger.debug(f"[OCR Service] Processing file: {file}")
 
+        try:
+            result = await self.client.convert(file_path=file)
+            logger.success(f"[OCR Service] Conversion successful")
+            return result.markdown
+        except Exception as e:
+            logger.error(f"[OCR Service] Conversion failed: {str(e)}")
+            raise
 
-def get_ocr_service() -> OCRService:
-    return OCRService()
+    async def process_url(self, url: str) -> str:
+        """
+        Sends the URL to Datalab for processing
+        """
+        logger.debug(f"[OCR Service] Processing URL: {url}")
+
+        try:
+            result = await self.client.convert(file_url=url)
+            logger.success(f"[OCR Service] Conversion successful")
+            return result.markdown
+        except Exception as e:
+            logger.error(f"[OCR Service] Conversion failed: {str(e)}")
+            raise

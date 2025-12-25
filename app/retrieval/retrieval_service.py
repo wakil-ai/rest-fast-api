@@ -41,27 +41,96 @@ class RetrievalService:
     ) -> str:
         """Retrieve and format top documents by combining hybrid search and metadata reranking results."""
         try:
-            if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME:
-                search_results = self.search_soliq_assistant(text_query=query, top_k=top_k, collection_name=collection_name)
-                return await self._format_results(search_results)
-
-            if search_type == "sparse":
-                search_results = self.search_sparse(text_query=query, 
-                                                    top_k=top_k, collection_name=collection_name)
-            elif search_type == "dense":
-                search_results = self.search_dense(text_query=query, 
-                                                   top_k=top_k, collection_name=collection_name)
-            elif search_type == "specific":
-                search_results = self.search_specific(text_query=query, 
-                                                      top_k=top_k, collection_name=collection_name)
-            else: # Default to hybrid search
-                search_results = self.search_hybrid(
-                    text_query=query, top_k=top_k, alpha=alpha, collection_name=collection_name)
-            
+            search_results = await self._retrieve_raw_documents(
+                query=query,
+                top_k=top_k,
+                alpha=alpha,
+                search_type=search_type,
+                collection_name=collection_name
+            )
             return await self._format_results(search_results)
         except Exception as e:
             logger.error(f"[RetrievalService] Retrieval failed: {e}", exc_info=True)
             return "No relevant documents found."
+
+    async def _retrieve_raw_documents(
+        self,
+        query: str,
+        top_k: int = settings.TOP_K,
+        alpha: float = settings.ALPHA,
+        search_type: str = "hybrid",
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve raw documents without formatting."""
+        if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME:
+            return self.search_soliq_assistant(text_query=query, top_k=top_k, collection_name=collection_name)
+
+        if search_type == "sparse":
+            return self.search_sparse(text_query=query, top_k=top_k, collection_name=collection_name)
+        elif search_type == "dense":
+            return self.search_dense(text_query=query, top_k=top_k, collection_name=collection_name)
+        elif search_type == "specific":
+            return self.search_specific(text_query=query, top_k=top_k, collection_name=collection_name)
+        else: # Default to hybrid search
+            return self.search_hybrid(
+                text_query=query, top_k=top_k, alpha=alpha, collection_name=collection_name)
+
+    async def retrieve_multilingual(
+        self,
+        query_translations: Dict[str, str],
+        top_k: int = settings.TOP_K,
+        alpha: float = settings.ALPHA,
+        search_type: str = "hybrid",
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve and merge documents for multiple query translations."""
+        all_results = []
+        
+        # We retrieve slightly more per language to ensure we have enough after deduplication
+        per_lang_top_k = int(top_k * 1.5)
+        
+        for lang_code, query in query_translations.items():
+            try:
+                logger.info(f"[RetrievalService] Retrieving for {lang_code}: {query}")
+                results = await self._retrieve_raw_documents(
+                    query=query,
+                    top_k=per_lang_top_k,
+                    alpha=alpha,
+                    search_type=search_type,
+                    collection_name=collection_name
+                )
+                all_results.extend(results)
+            except Exception as e:
+                logger.error(f"[RetrievalService] Search failed for {lang_code}: {e}")
+        
+        if not all_results:
+            return []
+            
+        # Deduplicate
+        unique_results = self._deduplicate_documents(all_results)
+        
+        # Sort by score descending
+        sorted_results = sorted(unique_results, key=lambda x: x.get("score", 0), reverse=True)
+        
+        # Return top_k
+        return sorted_results[:top_k]
+
+    def _deduplicate_documents(self, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Deduplicate documents by chunk_url or text content hash."""
+        seen_urls = set()
+        unique_docs = []
+        
+        for doc in documents:
+            url = doc.get("metadata", {}).get("chunk_url")
+            if url:
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    unique_docs.append(doc)
+            else:
+                # If no URL, keep it (or we could use text hash)
+                unique_docs.append(doc)
+                
+        return unique_docs
 
     def search_sparse(
         self,
@@ -150,6 +219,8 @@ class RetrievalService:
             entry = await self._build_document_entry(
                metadata=metadata,
             )
+            score = doc.get("score", 0)
+            entry = f"Relevance Score: {score:.4f}\n{entry}"
 
             if entry not in seen_content:
                 seen_content.add(entry)

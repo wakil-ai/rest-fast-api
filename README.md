@@ -307,7 +307,7 @@ If you already have MongoDB and Milvus running:
 1. **Build and run with Docker**
    ```bash
    docker build -t wakilai-api .
-   docker run -p 8080:8080 --env-file .env wakilai-api
+   docker run -d -p 8080:8080 --env-file .env wakilai-api
    ```
 
 ### API Usage

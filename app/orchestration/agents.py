@@ -8,7 +8,7 @@ from crewai import Agent
 
 from app.orchestration.config.llms import main_llm, tiny_llm
 from app.orchestration.tools import WebSearchTool
-from app.chains.prompts import SYSTEM_PROMPT
+from app.chains.prompts import SYSTEM_PROMPT, SOLIQ_ASSISTANT_PROMPT
 from app.core.config import settings
 
 
@@ -40,8 +40,10 @@ class Agents:
             Agents._agents_cache = {
                 "memory_summarizer": self._create_memory_summarizer(),
                 "retrieval_specialist": self._create_retrieval_specialist(),
+                "context_evaluator": self._create_context_evaluator(),
                 "web_search_summarizer": self._create_web_search_summarizer(),
-                "final_answer": self._create_final_answer(),
+                "final_answer_umumiy": self._create_final_answer_umumiy(),
+                "final_answer_soliq": self._create_final_answer_soliq(),
             }
 
     def _create_agent(
@@ -63,6 +65,11 @@ class Agents:
             config_modifier: Optional function to modify config
         """
         config = self._get_agent_config(name, config_modifier)
+        if not isinstance(config, dict) or not config:
+            raise ValueError(
+                f"Invalid agent config for '{name}': expected non-empty dict, got {type(config).__name__}: {config!r}. "
+                "Check app/orchestration/config/agents.yaml and any config_modifier functions."
+            )
         
         return Agent(
             config=config,
@@ -98,6 +105,13 @@ class Agents:
             name="retrieval_specialist",
             llm=tiny_llm,
         )
+    
+    def _create_context_evaluator(self) -> Agent:
+        """Create agent for evaluating context sufficiency."""
+        return self._create_agent(
+            name="context_evaluator",
+            llm=tiny_llm,
+        )
 
     def _create_web_search_summarizer(self) -> Agent:
         """Create agent for web search and content extraction."""
@@ -108,19 +122,27 @@ class Agents:
             function_calling_llm=tiny_llm,
         )
 
-    def _create_final_answer(self) -> Agent:
-        """Create agent for generating final answers."""
+    def _create_final_answer_umumiy(self) -> Agent:
         return self._create_agent(
             name="final_answer",
             llm=main_llm,
-            config_modifier=self._inject_system_prompt,
+            config_modifier=self._inject_system_prompt(SYSTEM_PROMPT),
+        )
+
+    def _create_final_answer_soliq(self) -> Agent:
+        return self._create_agent(
+            name="final_answer",
+            llm=main_llm,
+            config_modifier=self._inject_system_prompt(SOLIQ_ASSISTANT_PROMPT),
         )
 
     @staticmethod
-    def _inject_system_prompt(config: Dict) -> Dict:
+    def _inject_system_prompt(prompt: str) -> Callable[[Dict], Dict]:
         """Inject system prompt into agent goal."""
-        config["goal"] = f"{SYSTEM_PROMPT}\n\nQuery: {{query}}"
-        return config
+        def modifier(config: Dict) -> Dict:
+            config["goal"] = f"{prompt}\n\nQuery: {{query}}"
+            return config
+        return modifier
 
     def memory_summarizer(self) -> Agent:
         """Get cached memory summarizer agent."""
@@ -129,11 +151,17 @@ class Agents:
     def retrieval_specialist(self) -> Agent:
         """Get cached retrieval specialist agent."""
         return self._agents_cache["retrieval_specialist"]
+    
+    def context_evaluator(self) -> Agent:
+        """Get cached context evaluator agent."""
+        return self._agents_cache["context_evaluator"]
 
     def web_search_summarizer(self) -> Agent:
         """Get cached web search summarizer agent."""
         return self._agents_cache["web_search_summarizer"]
 
-    def final_answer(self) -> Agent:
-        """Get cached final answer agent."""
-        return self._agents_cache["final_answer"]
+    def final_answer_umumiy(self) -> Agent:
+        return self._agents_cache["final_answer_umumiy"]
+
+    def final_answer_soliq(self) -> Agent:
+        return self._agents_cache["final_answer_soliq"]

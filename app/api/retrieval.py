@@ -69,3 +69,12 @@ async def vector_db_specific_search(request: VectorDBRequest):
         collection_name=request.collection_name,
     )
     return {"results": results}
+
+@router.post("/search/soliq/assistant", summary="Soliq assistant search in Vector DB")
+async def vector_db_soliq_assistant_search(request: VectorDBRequest):
+    results = retrieval_service.search_soliq_assistant(
+        text_query=request.query_text,
+        top_k=request.top_k,
+        collection_name=settings.MILVUS_SOLIQ_ASSISTANT_NAME,
+    )
+    return {"results": results}

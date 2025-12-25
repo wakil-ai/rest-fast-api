@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
+    DEVELOPMENT_MODE: bool = False  # Enable development mode to send retrieved contents and logs to UI
     TRACING: bool = False # Enable tracing for agents and crews
     
     # Memory Service API Key
@@ -56,7 +57,13 @@ class Settings(BaseSettings):
     SESSIONS_COLLECTION: str = "sessions"
     MESSAGES_COLLECTION: str = "messages"
     FEEDBACK_COLLECTION: str = "feedbacks"
-
+    FILES_COLLECTION: str = "files"
+    
+    # Google Cloud Storage
+    GCS_BUCKET_NAME: Optional[str] = None
+    GCS_CREDENTIALS_PATH: Optional[str] = None  # Path to service account JSON file
+    GCS_PROJECT_ID: Optional[str] = None
+    
     # Milvus
     MILVUS_MAIN_NAME: str = "lexuz" 
     MILVUS_SOLIQ_ASSISTANT_NAME: str = "soliq"
@@ -109,7 +116,7 @@ class Settings(BaseSettings):
     AZURE_SPEECH_REGION: Optional[str] = None
     
     # OCR Service
-    OCR_API_URL: Optional[str] = 'http://localhost:3030'
+    DATALAB_API_KEY: Optional[str] = None
     
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"

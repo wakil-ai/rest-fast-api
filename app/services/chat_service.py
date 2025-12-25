@@ -1,6 +1,6 @@
 # app/services/chat_service.py
 
-from typing import List, Optional, AsyncGenerator, Union
+from typing import List, Optional, AsyncGenerator, Union, Dict, Any, Tuple
 from app.core.config import settings
 from app.chains.chat_chain import ChatChain
 from app.models.chat import MessagePair
@@ -22,7 +22,7 @@ class ChatService:
         file_context: Optional[str] = None,
         collection_name: str = settings.MILVUS_MAIN_NAME,
         model_name: Optional[str] = None,
-    ) -> Union[str, AsyncGenerator[str, None]]:
+    ) -> Union[str, AsyncGenerator[str, None], Tuple[str, Dict[str, Any]]]:
         """
         Handle the question by retrieving context and generating an answer.
         
@@ -34,7 +34,8 @@ class ChatService:
             model_name (str): Optional model name to use for generation
 
         Returns:
-            - str: Complete answer if streaming is disabled
+            - str: Complete answer if streaming is disabled and dev mode is disabled
+            - Tuple[str, Dict]: Answer + debug data if streaming is disabled and dev mode is enabled
             - AsyncGenerator[str, None]: Streaming answer if streaming is enabled
         """
         answer = await self.chat_chain.generate_answer(

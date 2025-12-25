@@ -1,6 +1,6 @@
 # app/models/chat.py
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from enum import Enum
 from app.core.config import settings
@@ -27,6 +27,11 @@ class MessagePair(BaseModel):
     question: str
     answer: str
 
+class AssistantType(str, Enum):
+    """Supported assistant types."""
+    MAIN = "main"
+    SOLIQ = "soliq"
+
 class ChatRequest(BaseModel):
     """
     Request body for chat questions.
@@ -36,12 +41,14 @@ class ChatRequest(BaseModel):
     chat_history: Optional[List[MessagePair]] = Field(default=None, description="Previous question-answer pairs")
     stream: Optional[bool] = Field(default=settings.STREAM, description="Whether to stream the response")
     model: Optional[ChatModel] = Field(default=None, description="LLM model to use for generation")
+    assistant: Optional[AssistantType] = Field(default=AssistantType.MAIN, description="Assistant type: main or soliq")
 
 class ChatResponse(BaseModel):
     """
     Response body for chat answers.
     """
     answer: str
+    retrieved_contents: Optional[str] = Field(default=None, description="Retrieved documents (dev mode only)")
 
 class ModelInfoResponse(BaseModel):
     """
@@ -54,6 +61,17 @@ class ModelInfoResponse(BaseModel):
     embedding_model: str = Field(..., example="qwen", description="Embedding model (qwen or openai)")
     stream: bool = Field(..., example=False, description="Whether streaming responses are enabled")
 
+class AskFileRequest(BaseModel):
+    """
+    Request body for asking questions about uploaded files.
+    """
+    user_id: str = Field(..., example="user_12345", description="Unique identifier for the user")
+    file_id: str = Field(..., example="19e82083-61d4-45bb-b408-349a0fb2a237", description="ID of the uploaded file")
+    query: str = Field(..., example="What is the main topic of this document?", description="Question about the file content")
+    stream: Optional[bool] = Field(default=settings.STREAM, description="Whether to stream the response")
+    assistant: Optional[AssistantType] = Field(default=AssistantType.MAIN, description="Assistant type: main or soliq")
+    model: Optional[ChatModel] = Field(default=None, description="LLM model to use for generation")
+
 class AgenticRAGRequest(BaseModel):
     """
     Request body for agentic RAG questions.
@@ -61,5 +79,3 @@ class AgenticRAGRequest(BaseModel):
     query: str = Field(..., example="Explain the tax regulations for freelancers in Uzbekistan.")
     user_id: str = Field(default="user_123", description="User identifier")
     session_id: str = Field(default="default", description="Session identifier")
-    enable_web_search: bool = Field(default=True, description="Flag to enable/disable web search fallback")
-    enable_memory: bool = Field(default=True, description="Flag to enable/disable memory retrieval")

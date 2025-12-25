@@ -134,3 +134,15 @@ class FeedbackFetchRequest(BaseModel):
     user_id: str
     session_id: str
     message_id: str
+
+
+# FILE UPLOAD MODELS
+class FileUploadResponse(BaseModel):
+    """Response model for file upload data"""
+    user_id: str
+    file_id: str
+    file_url: str = Field(..., description="URL to access the file from Google Cloud Storage")
+    file_metadata: Dict[str, Any] = Field(..., description="File metadata (name, type, size)")
+    ocr_result: str
+    created_at: datetime
+    updated_at: datetime
