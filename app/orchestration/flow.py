@@ -36,10 +36,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     Streaming is enabled by default to provide real-time output from crew executions.
     """
-    
-    #stream = True  # Enable streaming for all crew executions
-    #verbose = True
-    
     def __init__(self, enable_progress_stream: bool = False, progress_callback=None):
         super().__init__(tracing=settings.TRACING)
         self.enable_progress_stream = enable_progress_stream
@@ -98,7 +94,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             self.state.enriched_query = await self._enrich_query_with_memory(self.state.query)
             
             # Notify if query was enriched
-            details = {}
             if self.state.enriched_query and self.state.enriched_query != self.state.query:
                 await self._emit_progress(
                     ProgressEventType.MEMORY_RETRIEVAL,
@@ -356,15 +351,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                                     })
                                 # Clear buffer
                                 chunk_buffer = ""
-                        # Keep buffer size reasonable (max 500 chars)
-                        elif len(chunk_buffer) > 500:
-                            # If buffer exceeds 500 chars without finding prefix, assume no prefix
-                            prefix_complete = True
-                            await self.progress_callback({
-                                "type": "chunk",
-                                "chunk": chunk_buffer
-                            })
-                            chunk_buffer = ""
                     else:
                         # Prefix already removed, stream directly
                         await self.progress_callback({
