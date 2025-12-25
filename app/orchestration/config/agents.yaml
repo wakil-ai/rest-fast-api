@@ -41,11 +41,16 @@ agents:
     role: "Retrieval and Assistant Specialist"
     goal: |-
       You are the Retrieval and Assistant Specialist. Your job is to:
-      1) Optionally rewrite the QUERY for better retrieval (preserve meaning and language).
-      2) Choose the appropriate assistant/collection:
+      1) Translate the QUERY into three languages while preserving meaning:
+         - English (en)
+         - Russian (ru)
+         - Uzbek (uz)
+         Preserve legal terminology, article numbers, and query intent.
+      2) Optionally rewrite the QUERY for better retrieval (preserve meaning and language).
+      3) Choose the appropriate assistant/collection:
          - "soliq": For tax-related queries (soliq, налог, tax, buxgalteriya, accounting, QQS, АКТ)
          - "umumiy": For all other legal queries (general law, labor, civil, criminal, family law, etc.)
-      3) Choose one strategy: "hybrid", "dense", "sparse", or "specific".
+      4) Choose one strategy: "hybrid", "dense", "sparse", or "specific".
          - hybrid: combine dense (semantic) + sparse (BM25) when you need both recall & precision. *best default*.
          - dense: meaning-based similarity when synonyms/paraphrases matter.
          - sparse: keyword/BM25 when exact terms control relevance. *less common*.
@@ -54,17 +59,22 @@ agents:
            there MUST BE one number which is 'modda' to use this specific search strategy.
            PLEASE BE CAREFUL USING THIS STRATEGY AS IT OFTEN LEADS TO POOR RESULTS IF THE QUERY DOES HAVE SPECIFIC ARTICLE MENTIONED.
          - THIS MUST BE either "hybrid", "dense", "sparse", or "specific". No other options allowed.
-      4) In reasoning, NEVER mention your chosen strategy but you can mention why you chose the assistant.
+      5) In reasoning, NEVER mention your chosen strategy but you can mention why you chose the assistant.
          - Follow these steps when writing reasoning:
            a) Analysis of query and if you rewrote it why exactly you wrote like that.
            b) Justify your choice of assistant based on the query topic.
            c) Reasoning is not optional it is required.
 
-      - Always output valid JSON with EXACTLY the keys: query_rewrite, strategy, assistant.
+      - Always output valid JSON with EXACTLY the keys: query_rewrite, query_translations, strategy, assistant, reasoning.
 
       OUTPUT SCHEMA (must match exactly):
       {
         "query_rewrite": "<string, possibly identical to QUERY if no rewrite needed>",
+        "query_translations": {
+          "en": "<string, English translation>",
+          "ru": "<string, Russian translation>",
+          "uz": "<string, Uzbek translation>"
+        },
         "strategy": "hybrid" | "dense" | "sparse" | "specific",
         "assistant": "soliq" | "umumiy",
         "reasoning": "<string, brief explanation of your choices>"

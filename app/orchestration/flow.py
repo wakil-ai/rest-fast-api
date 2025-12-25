@@ -3,7 +3,8 @@
 import json
 from typing import Any, Dict
 
-from crewai.flow.flow import Flow, listen, start, router, and_
+from crewai.flow.flow import Flow, listen, start, router
+from app.utils.streaming import format_progress_event
 from crewai.types.streaming import StreamChunkType
 
 from app.orchestration.crews import Crews
@@ -19,8 +20,6 @@ from app.retrieval.retrieval_service import RetrievalService
 from app.services.memory_service import ChatMemoryService
 from app.core.config import settings
 from app.core.logger import logger
-from app.utils.streaming import format_progress_event
-
 
 class AgenticRAGFlow(Flow[AgenticRAGState]):
     """
@@ -33,8 +32,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         4. Context Evaluation
         5. Web Search (conditional - only if context insufficient)
         6. Answer Generation
-    
-    Streaming is enabled by default to provide real-time output from crew executions.
     """
     def __init__(self, enable_progress_stream: bool = False, progress_callback=None):
         super().__init__(tracing=settings.TRACING)
@@ -99,7 +96,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                     ProgressEventType.MEMORY_RETRIEVAL,
                     "in_progress",
                     "Query enriched with conversation context for better retrieval",
-                    {"enriched_query": True}
                 )
             
             await self._emit_progress(
@@ -165,17 +161,24 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     @listen(determine_retrieval_strategy)
     async def fetch_documents(self) -> None:
-        """Execute document retrieval using selected strategy and assistant."""        
+        """Execute document retrieval using selected strategy and assistant translations."""        
         await self._emit_progress(
             ProgressEventType.DOCUMENT_RETRIEVAL,
             "in_progress",
-            "Searching legal document database..."
+            "Searching legal document database across multiple languages..."
         )
         
         try:
             strategy = self.state.retrieval_output.get("strategy", "hybrid")
             assistant = self.state.selected_assistant or "umumiy"
             self.state.rewritten_query = self.state.retrieval_output.get("query_rewrite", self.state.query)
+            
+            # Get multilingual translations from agent output
+            query_translations = self.state.retrieval_output.get("query_translations", {})
+            
+            # Fallback to rewritten query if translations are missing
+            if not query_translations:
+                query_translations = {"original": self.state.rewritten_query}
             
             # Map assistant to collection name
             collection_name = settings.MILVUS_SOLIQ_ASSISTANT_NAME if assistant == "soliq" else settings.MILVUS_MAIN_NAME
@@ -184,17 +187,21 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             if strategy == "specific":
                 collection_name = settings.MILVUS_MAIN_NAME # because specific means main collection
             
-            documents = await self.retrieval_service.retrieve_context(
-                query=self.state.rewritten_query,
+            # Use multilingual retrieval
+            documents_list = await self.retrieval_service.retrieve_multilingual(
+                query_translations=query_translations,
+                top_k=settings.TOP_K,
                 search_type=strategy,
                 collection_name=collection_name
             )
             
-            self.state.retrieval_docs = str(documents)            
+            # Format documents into string for state
+            self.state.retrieval_docs = await self.retrieval_service._format_results(documents_list)
+            
             await self._emit_progress(
                 ProgressEventType.DOCUMENT_RETRIEVAL,
                 "completed",
-                "Relevant documents retrieved"
+                f"Retrieved {len(documents_list)} unique highly relevant documents"
             )
             
         except Exception as error:
@@ -259,17 +266,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                 "Proceeding with available information"
             )
             return 'sufficient'
-    
-    @listen('insufficient')
-    async def retry_query_and_retrieval(self) -> None:
-        """Retry with improved query rewriting and retrieval when context is insufficient."""        
-        try:
-            await self.determine_retrieval_strategy()
-            await self.fetch_documents()
-            
-        except Exception as error:
-            await self._handle_error("Retry query and retrieval", error)
-    
+
     @listen('insufficient')
     async def perform_web_search(self) -> None:
         """Perform web search in parallel when context is insufficient."""        
@@ -305,7 +302,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                 "Proceeding without web results"
             )
     
-    @listen(and_(retry_query_and_retrieval, perform_web_search))
+    @listen(perform_web_search)
     async def generate_final_answer(self) -> str:
         """Generate comprehensive answer from all retrieved context."""        
         await self._emit_progress(

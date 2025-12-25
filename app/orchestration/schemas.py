@@ -43,6 +43,10 @@ class RetrievalStrategyResponse(BaseModel):
     """Response schema for retrieval specialist agent.""" 
     strategy: str = Field(description="Selected retrieval strategy: hybrid, dense, sparse, or specific")
     query_rewrite: str = Field(description="Optimized query for retrieval")
+    query_translations: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Query translated to en, ru, uz"
+    )
     assistant: str = Field(default="umumiy", description="Selected assistant/collection: soliq or umumiy")
     reasoning: Optional[str] = Field(default=None, description="Explanation for strategy selection")
 
