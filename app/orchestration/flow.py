@@ -16,7 +16,8 @@ from app.orchestration.schemas import (
     WebSearchResponse,
     ProgressEventType
 )
-from app.retrieval.retrieval_service import RetrievalService
+from app.chains.chat_chain import ChatChain
+from app.chains.prompts import PROMPT, SOLIQ_PROMPT
 from app.services.memory_service import ChatMemoryService
 from app.core.config import settings
 from app.core.logger import logger
@@ -42,7 +43,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     
     def _initialize_services(self) -> None:
         """Initialize all required services."""
-        self.retrieval_service = RetrievalService()
+        self.chat_chain = ChatChain()
         self.memory_service = ChatMemoryService()
     
     def _initialize_crews(self) -> None:
@@ -52,10 +53,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         self.retrieval_strategy_crew = crews_factory.retrieval_strategy_crew()
         self.evaluation_crew = crews_factory.evaluation_crew()
         self.web_search_crew = crews_factory.web_search_crew()
-        self.answer_crews = {
-            "umumiy": crews_factory.answer_crew("umumiy"),
-            "soliq": crews_factory.answer_crew("soliq"),
-        }
+
     
     async def _emit_progress(self, event_type: str, status: str, message: str, details: dict = None) -> None:
         """Emit progress event if callback is registered."""
@@ -188,7 +186,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                 collection_name = settings.MILVUS_MAIN_NAME # because specific means main collection
             
             # Use multilingual retrieval
-            documents_list = await self.retrieval_service.retrieve_multilingual(
+            documents_list = await self.chat_chain.retrieval_service.retrieve_multilingual(
                 query_translations=query_translations,
                 top_k=settings.TOP_K,
                 search_type=strategy,
@@ -196,7 +194,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             )
             
             # Format documents into string for state
-            self.state.retrieval_docs = await self.retrieval_service._format_results(documents_list)
+            self.state.retrieval_docs = await self.chat_chain.retrieval_service._format_results(documents_list)
             
             await self._emit_progress(
                 ProgressEventType.DOCUMENT_RETRIEVAL,
@@ -308,54 +306,56 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         await self._emit_progress(
             ProgressEventType.ANSWER_GENERATION,
             "in_progress",
-            "Generating comprehensive answer..."
+            "Generating final answer..."
         )
         
         try:
-            agent_input = await self._build_final_agent_input()
+            query = self.state.query + "\n Resolved Query which may help you to clarify question: " + self.state.resolved_query
             
-            # According to assistant selection, use the corresponding answer crew
-            assistant = self.state.selected_assistant or "umumiy"
-            final_crew = self.answer_crews.get(assistant, self.answer_crews["umumiy"])
-                
-            streaming = await final_crew.kickoff_async(
-                inputs=agent_input,
+            system_prompt = await self.chat_chain.make_system_prompt(
+                context=self.state.retrieval_docs,
+                chat_history_text=self.state.memory_docs,
+                prompt_template=PROMPT if self.state.selected_assistant == 'umumiy' else SOLIQ_PROMPT
+            )
+
+            debug_data = {
+                'retrieval_docs': self.state.retrieval_docs,
+            }
+
+            llm = self.chat_chain._get_llm_by_model(self.state.llm_model)
+
+            response = await self.chat_chain.run(
+                query=query,
+                system_prompt=system_prompt,
+                stream=True if self.enable_progress_stream else False,
+                llm=llm,
+                debug_data=debug_data
             )
             
-            # Buffer to track if we're still in the prefix section
-            chunk_buffer = ""
-            prefix_complete = False
-            
-            async for chunk in streaming:
-                if chunk.chunk_type == StreamChunkType.TEXT and self.progress_callback:
-                    if not prefix_complete:
-                        # Add to buffer
-                        chunk_buffer += chunk.content
+            if self.enable_progress_stream:
+                # If streaming, we iterate over the generator and build the answer
+                # while emitting chunk events
+                full_answer = ""
+                async for chunk in response:
+                    if isinstance(chunk, dict):
+                        continue
                         
-                        # Check if we've passed the "Final Answer:" marker
-                        if "Final Answer:" in chunk_buffer:
-                            # Extract content after "Final Answer:"
-                            parts = chunk_buffer.split("Final Answer:", 1)
-                            if len(parts) > 1:
-                                remaining_content = parts[1].lstrip()
-                                prefix_complete = True
-                                
-                                # Send the remaining content if any
-                                if remaining_content:
-                                    await self.progress_callback({
-                                        "type": "chunk",
-                                        "chunk": remaining_content
-                                    })
-                                # Clear buffer
-                                chunk_buffer = ""
-                    else:
-                        # Prefix already removed, stream directly
-                        await self.progress_callback({
-                            "type": "chunk",
-                            "chunk": chunk.content
-                        })
-            
-            self.state.answer = str(streaming.result)
+                    full_answer += chunk
+                    await self._emit_progress(
+                        "chunk",
+                        "in_progress",
+                        chunk
+                    )
+                self.state.answer = full_answer
+                return full_answer
+            else:
+                if isinstance(response, tuple):
+                    answer, _ = response
+                    self.state.answer = answer
+                    return answer
+                else:
+                    self.state.answer = response
+                    return response
               
         except Exception as error:
             await self._handle_error("Answer generation", error)
@@ -363,7 +363,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             await self._emit_progress(
                 ProgressEventType.ANSWER_GENERATION,
                 "failed",
-                "Answer generation failed"
+                f"Answer generation failed: {str(error)}"
             )
         
         return self.state.answer
@@ -456,16 +456,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             f"Found {len(docs)} web document(s) as additional sources: "
             f"{sources_str}"
         )
-    
-    async def _build_final_agent_input(self) -> Dict:
-        """Build input for final answer crew."""
-        return {
-            "query": self.state.query,
-            "resolved_query": f"{self.state.resolved_query}, Query which may clarify questions from memory.",
-            "context": self.state.retrieval_docs or "No retrived text",
-            "chat_history": self.state.memory_docs or "",
-            "web_search": json.dumps(self.state.web_search_output, ensure_ascii=False) or ""
-        }
 
     async def _parse_structured_output(self, output: Any, schema_class: type) -> Any:
         """Parse structured output using Pydantic schema."""
