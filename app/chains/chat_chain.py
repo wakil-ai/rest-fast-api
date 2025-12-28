@@ -78,10 +78,10 @@ class ChatChain:
         )
 
     async def run(self, query: str, 
-                                        system_prompt: str, 
-                                        stream: bool = settings.STREAM,
-                                        llm: Optional[LLM] = None, 
-                                        debug_data: Dict[str, Any] = None):
+                        system_prompt: str, 
+                        stream: bool = settings.STREAM,
+                        llm: Optional[LLM] = None, 
+                        debug_data: Dict[str, Any] = None):
         if llm is None:
             llm = self.llm
         if stream:
