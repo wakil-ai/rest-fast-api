@@ -28,7 +28,7 @@ mem0ai==0.1.118
 uvicorn[standard]==0.34.2
 protobuf>=5.29.0,<6.0.0
 python-multipart==0.0.20
-crewai==1.7.2
+crewai==1.2.0
 crewai-tools==1.2.0
 tavily-python==0.7.12
 litellm==1.74.9
