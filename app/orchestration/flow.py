@@ -5,7 +5,6 @@ from typing import Any, Dict
 
 from crewai.flow.flow import Flow, listen, start, router
 from app.utils.streaming import format_progress_event
-from crewai.types.streaming import StreamChunkType
 
 from app.orchestration.crews import Crews
 from app.orchestration.schemas import (
