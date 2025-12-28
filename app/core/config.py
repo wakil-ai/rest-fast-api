@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     TRACING: bool = False # Enable tracing for agents and crews
     
     # Memory Service API Key
-    MEM0_API_KEY: str  # Mem
+    MEM0_API_KEY: str = None # Mem
 
     # VECTOR DBs
     # Vector Database Configuration
@@ -168,6 +168,12 @@ class Settings(BaseSettings):
         else:
             raise ValueError(f"Unknown embedding model: {self.EMBEDDING_MODEL}")
        
+    # Google Auth
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_REDIRECT_URI: Optional[str] = None
+    AUTH_SECRET_KEY: str = "secret-key-change-me"
+
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
