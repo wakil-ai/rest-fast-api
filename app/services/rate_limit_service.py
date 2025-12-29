@@ -16,6 +16,15 @@ class RateLimitService:
     
     def __init__(self):
         self.mongo_handler = MongoHandler()
+        self._promo_code_service = None
+    
+    @property
+    def promo_code_service(self):
+        """Lazy initialization of PromoCodeService to avoid circular imports."""
+        if self._promo_code_service is None:
+            from app.services.promo_code_service import PromoCodeService
+            self._promo_code_service = PromoCodeService()
+        return self._promo_code_service
     
     def _get_today_date(self) -> str:
         """Get today's date in YYYY-MM-DD format."""
@@ -24,6 +33,7 @@ class RateLimitService:
     def check_and_increment_limit(self, user_id: str) -> tuple[bool, int, int]:
         """
         Check if user has exceeded daily limit and increment counter if not.
+        Users with valid promo codes have unlimited access.
         
         Args:
             user_id: The user's unique identifier
@@ -32,9 +42,14 @@ class RateLimitService:
             tuple: (is_allowed: bool, current_count: int, limit: int)
                 - is_allowed: True if request is allowed, False if limit exceeded
                 - current_count: Number of requests made today (after increment if allowed)
-                - limit: The daily limit
+                - limit: The daily limit (or -1 for unlimited)
         """
         try:
+            # Check if user has unlimited access via promo code
+            if self.promo_code_service.user_has_unlimited_access(user_id):
+                logger.info(f"[RateLimitService] User {user_id} has unlimited access via promo code")
+                return True, -1, -1  # -1 indicates unlimited
+            
             today = self._get_today_date()
             collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
             
@@ -78,14 +93,20 @@ class RateLimitService:
     def get_remaining_requests(self, user_id: str) -> int:
         """
         Get the number of remaining requests for today.
+        Returns -1 for users with unlimited access via promo code.
         
         Args:
             user_id: The user's unique identifier
             
         Returns:
-            int: Number of remaining requests
+            int: Number of remaining requests (-1 for unlimited)
         """
         try:
+            # Check if user has unlimited access via promo code
+            if self.promo_code_service.user_has_unlimited_access(user_id):
+                logger.info(f"[RateLimitService] User {user_id} has unlimited access")
+                return -1  # -1 indicates unlimited
+            
             today = self._get_today_date()
             collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
             
