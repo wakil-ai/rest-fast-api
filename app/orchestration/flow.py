@@ -130,17 +130,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             self.state.retrieval_output = strategy_response.model_dump()
             self.state.selected_assistant = strategy_response.assistant
             
-            # Check if query was rewritten
-            query_rewritten = strategy_response.query_rewrite != self.state.query
-            
-            # Notify about query rewrite if it happened
-            if query_rewritten:
-                await self._emit_progress(
-                    ProgressEventType.RETRIEVAL_STRATEGY,
-                    "in_progress",
-                    strategy_response.reasoning,
-                )
-            
             await self._emit_progress(
                 ProgressEventType.RETRIEVAL_STRATEGY,
                 "completed",
@@ -198,17 +187,12 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             await self._emit_progress(
                 ProgressEventType.DOCUMENT_RETRIEVAL,
                 "completed",
-                f"Retrieved {len(documents_list)} unique highly relevant documents"
+                f"Retrieved relevant documents from knowledge base"
             )
             
         except Exception as error:
             await self._handle_error("Document retrieval", error)
             self.state.retrieval_docs = ""
-            await self._emit_progress(
-                ProgressEventType.DOCUMENT_RETRIEVAL,
-                "failed",
-                "Document retrieval failed, continuing..."
-            )
     
     @router(fetch_documents)
     async def evaluate_context_sufficiency(self) -> str:
@@ -232,18 +216,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             
             evaluation_response = await self._parse_structured_output(result, ContextEvaluationResponse)
             self.state.context_evaluation_output = evaluation_response.model_dump()
-            
-            if evaluation_response.reasoning:
-                message = "Context is sufficient because " + evaluation_response.reasoning if evaluation_response.is_sufficient else \
-                        "Context is insufficient because " + evaluation_response.reasoning
-            else:
-                message = "Context evaluation completed."
-            
-            await self._emit_progress(
-                ProgressEventType.CONTEXT_EVALUATION,
-                "completed",
-                message
-            )
             
             # If sufficient, go to answer generation
             # If insufficient, trigger parallel retry
