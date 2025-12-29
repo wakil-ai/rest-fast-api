@@ -38,30 +38,37 @@ class ChatGPT(LLM):
     
     async def _generate_complete(self, system_prompt: str, query: str) -> str:
         """Generate complete response."""
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
+        # Handle parameter change for newer models
+        token_param = "max_completion_tokens" if "gpt-5.2" in self.model or self.model.startswith("o1") else "max_tokens"
+        kwargs = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query}
             ],
-            temperature=settings.TEMPERATURE,
-            max_tokens=settings.OUTPUT_MAX_TOKENS,
-        )
+            "temperature": settings.TEMPERATURE,
+            token_param: settings.OUTPUT_MAX_TOKENS,
+        }
         
+        response = await self.client.chat.completions.create(**kwargs)
         return response.choices[0].message.content.strip()
     
     async def _generate_streaming(self, system_prompt: str, query: str) -> AsyncGenerator[str, None]:
         """Generate streaming response."""
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
+        # Handle parameter change for newer models
+        token_param = "max_completion_tokens" if "gpt-5.2" in self.model or self.model.startswith("o1") else "max_tokens"
+        kwargs = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query}
             ],
-            temperature=settings.TEMPERATURE,
-            stream=True,
-            max_tokens=settings.OUTPUT_MAX_TOKENS,
-        )
+            "temperature": settings.TEMPERATURE,
+            "stream": True,
+            token_param: settings.OUTPUT_MAX_TOKENS,
+        }
+        
+        response = await self.client.chat.completions.create(**kwargs)
         
         async for chunk in response:
             content = chunk.choices[0].delta.content

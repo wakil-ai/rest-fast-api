@@ -7,11 +7,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, status, Depends, Security
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
-from app.api import chat, retrieval, chat_history, count, memory, auth, ocr, speech_to_text, ws_stt
+from app.api import chat, retrieval, chat_history, count, memory, auth, ocr, speech_to_text, ws_stt, google_auth
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -95,6 +96,22 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
+    # Session middleware - using more permissive settings for debugging protocol issues
+    app.add_middleware(
+        SessionMiddleware, 
+        secret_key=settings.AUTH_SECRET_KEY,
+        session_cookie="wakil_session",
+        https_only=False, # Allow HTTP/HTTPS for session to avoid protocol mismatches behind proxy
+        same_site="lax"
+    )
+
+    # Middleware to handle HTTPS redirect behind proxy
+    @app.middleware("http")
+    async def proxy_protocol_middleware(request, call_next):
+        if request.headers.get("x-forwarded-proto") == "https":
+            request.scope["scheme"] = "https"
+        return await call_next(request)
+    
     # Mount routers with API key authentication
     app.include_router(
         chat.router, 
@@ -136,10 +153,13 @@ def create_app() -> FastAPI:
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)]
     )
-    # Auth router without API prefix (Telegram needs direct access)
+    # Auth routers without API prefix 
     app.include_router(
         auth.router,
-        # dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        google_auth.router,
+        prefix=settings.API_PREFIX
     )
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"])

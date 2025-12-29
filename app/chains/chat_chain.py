@@ -77,6 +77,22 @@ class ChatChain:
             context=context, chat_history=chat_history_text
         )
 
+    async def run(self, query: str, 
+                        system_prompt: str, 
+                        stream: bool = settings.STREAM,
+                        llm: Optional[LLM] = None, 
+                        debug_data: Dict[str, Any] = None):
+        if llm is None:
+            llm = self.llm
+        if stream:
+            return self._stream_response(
+                llm, query, system_prompt, debug_data
+            )
+        else:
+            return await self._non_stream_response(
+                llm, query, system_prompt, debug_data
+            )
+
     async def generate_answer(
         self,
         user_id: str,
@@ -141,18 +157,16 @@ class ChatChain:
                 chat_history_text=chat_history_text,
                 prompt_template=prompt_template,
             )
-
             logger.debug(f"[ChatChain] System Prompt: {system_prompt}")
 
-            if stream:
-                return self._stream_response(
-                    selected_llm, query, system_prompt, debug_data
-                )
-            else:
-                return await self._non_stream_response(
-                    selected_llm, query, system_prompt, debug_data
-                )
-
+            return await self.run(
+                query=query,
+                system_prompt=system_prompt,
+                stream=stream,
+                llm=selected_llm,
+                debug_data=debug_data
+            )
+            
         except Exception as e:
             logger.error(f"[ChatChain] Generation failed: {e}", exc_info=True)
             error_msg = "Sorry, I couldn't generate an answer at the moment."

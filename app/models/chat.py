@@ -12,6 +12,8 @@ class ChatModel(str, Enum):
     GPT_4_1_MINI = "gpt-4.1-mini"
     GPT_4O = "gpt-4o"
     GPT_4O_MINI = "gpt-4o-mini"
+    GPT_5_2 = "gpt-5.2"
+    GPT_5_2_MINI = "gpt-5.2-mini"
     # Claude models
     CLAUDE_OPUS_4_5= "claude-opus-4-5-20251101"
     CLAUDE_SONNET_4_5 = "claude-sonnet-4-5-20250929"

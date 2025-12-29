@@ -16,10 +16,19 @@ tasks:
       - session_memory: {session_memory}
       - personal_memory: {personal_memory}
     expected_output: |-
-      A JSON object containing:
-      - session_notes: concise summary of relevant session memory
-      - personal_notes: concise summary of relevant personal memory
-      - resolved_query: rewritten query with references made explicit
+      A strictly formatted JSON object containing:
+      - "session_notes": concise summary of relevant session memory
+      - "personal_notes": concise summary of relevant personal memory
+      - "resolved_query": rewritten query with references made explicit
+      
+      Example:
+      {
+        "session_notes": "User previously asked about tax rates.",
+        "personal_notes": "User prefers English.",
+        "resolved_query": "What are the tax rates for freelancers?"
+      }
+      
+      Do NOT wrap in markdown code blocks. Return ONLY the JSON string.
     agent: memory_summarizer
 
   retrieval_strategy_task:

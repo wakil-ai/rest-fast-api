@@ -28,7 +28,30 @@ def format_timestamp():
     return datetime.now().strftime("%H:%M:%S")
 
 
-def print_progress(event_type: str, status: str, message: str, details: dict = None):
+class DualLogger:
+    """Logger that writes to both terminal (with colors) and file (clean)."""
+    
+    def __init__(self, filename="streaming_trace.txt"):
+        self.terminal_file = sys.stdout
+        self.log_file = open(filename, "w", encoding="utf-8")
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        
+    def log(self, text: str, end: str = "\n", flush: bool = False):
+        """Write text to both destinations."""
+        # Terminal gets original text (with colors)
+        print(text, end=end, file=self.terminal_file, flush=flush)
+        
+        # File gets clean text
+        clean_text = self.ansi_escape.sub('', text)
+        print(clean_text, end=end, file=self.log_file, flush=flush)
+        
+    def close(self):
+        self.log_file.close()
+
+import re
+
+
+def print_progress(logger: DualLogger, event_type: str, status: str, message: str, details: dict = None):
     """Print a formatted progress update."""
     
     # Map event types to emojis and colors
@@ -53,7 +76,7 @@ def print_progress(event_type: str, status: str, message: str, details: dict = N
     
     # Format the output
     timestamp = format_timestamp()
-    print(f"{color}[{timestamp}] {emoji} {label:<12} {status_symbol} {message}{Colors.ENDC}")
+    logger.log(f"{color}[{timestamp}] {emoji} {label:<12} {status_symbol} {message}{Colors.ENDC}")
     
     # Print details if available
     if details:
@@ -63,20 +86,20 @@ def print_progress(event_type: str, status: str, message: str, details: dict = N
             # Print other details first
             if details:
                 other_details = " | ".join([f"{k}: {v}" for k, v in details.items()])
-                print(f"{'':>21} └─ {other_details}")
+                logger.log(f"{'':>21} └─ {other_details}")
             # Print web results
-            print(f"{'':>21} └─ {Colors.CYAN}Web Sources:{Colors.ENDC}")
+            logger.log(f"{'':>21} └─ {Colors.CYAN}Web Sources:{Colors.ENDC}")
             for i, result in enumerate(web_results, 1):
                 title = result.get('title', 'Untitled')
                 url = result.get('url', '')
-                print(f"{'':>24} {i}. {title}")
-                print(f"{'':>27} {Colors.BLUE}{url}{Colors.ENDC}")
+                logger.log(f"{'':>24} {i}. {title}")
+                logger.log(f"{'':>27} {Colors.BLUE}{url}{Colors.ENDC}")
         else:
             # Filter out strategy and char_count if they somehow appear
             filtered_details = {k: v for k, v in details.items() if k not in ['strategy', 'char_count']}
             if filtered_details:
                 detail_str = " | ".join([f"{k}: {v}" for k, v in filtered_details.items()])
-                print(f"{'':>21} └─ {detail_str}")
+                logger.log(f"{'':>21} └─ {detail_str}")
 
 
 def stream_agentic_rag(query: str, user_id: str = "test_user", session_id: str = "test_session", base_url: str = "http://localhost:8085"):
@@ -96,11 +119,13 @@ def stream_agentic_rag(query: str, user_id: str = "test_user", session_id: str =
         "session_id": session_id
     }
     
-    print(f"\n{Colors.BOLD}{'='*80}{Colors.ENDC}")
-    print(f"{Colors.BOLD}🚀 Starting Agentic RAG Query{Colors.ENDC}")
-    print(f"{Colors.BOLD}{'='*80}{Colors.ENDC}\n")
-    print(f"{Colors.HEADER}Query:{Colors.ENDC} {query}\n")
-    print(f"{Colors.BOLD}{'─'*80}{Colors.ENDC}\n")
+    logger = DualLogger()
+    
+    logger.log(f"\n{Colors.BOLD}{'='*80}{Colors.ENDC}")
+    logger.log(f"{Colors.BOLD}🚀 Starting Agentic RAG Query{Colors.ENDC}")
+    logger.log(f"{Colors.BOLD}{'='*80}{Colors.ENDC}\n")
+    logger.log(f"{Colors.HEADER}Query:{Colors.ENDC} {query}\n")
+    logger.log(f"{Colors.BOLD}{'─'*80}{Colors.ENDC}\n")
     
     headers = {
         "accept": "application/json",
@@ -129,13 +154,26 @@ def stream_agentic_rag(query: str, user_id: str = "test_user", session_id: str =
                     event_type = event.get('type')
                     
                     if event_type == 'progress':
-                        # Debug: print raw details
-                        print_progress(
-                            event.get('event_type', ''),
-                            event.get('status', ''),
-                            event.get('message', ''),
-                            event.get('details')
-                        )
+                        # Check if this is actually a chunk wrapped in a progress event
+                        if event.get('event_type') == 'chunk':
+                            chunk = event.get('message', '')
+                            answer_buffer.append(chunk)
+                            
+                            # Start answer section on first chunk
+                            if len(answer_buffer) == 1:
+                                logger.log(f"\n{Colors.BOLD}{'─'*80}{Colors.ENDC}\n")
+                                logger.log(f"{Colors.BOLD}{Colors.GREEN}📝 Answer:{Colors.ENDC}\n")
+                            
+                            logger.log(chunk, end='', flush=True)
+                        else:
+                            # Standard progress event
+                            print_progress(
+                                logger,
+                                event.get('event_type', ''),
+                                event.get('status', ''),
+                                event.get('message', ''),
+                                event.get('details')
+                            )
                     
                     elif event_type == 'chunk':
                         chunk = event.get('chunk', '')
@@ -143,38 +181,51 @@ def stream_agentic_rag(query: str, user_id: str = "test_user", session_id: str =
                         
                         # Start answer section on first chunk
                         if len(answer_buffer) == 1:
-                            print(f"\n{Colors.BOLD}{'─'*80}{Colors.ENDC}\n")
-                            print(f"{Colors.BOLD}{Colors.GREEN}📝 Answer:{Colors.ENDC}\n")
+                            logger.log(f"\n{Colors.BOLD}{'─'*80}{Colors.ENDC}\n")
+                            logger.log(f"{Colors.BOLD}{Colors.GREEN}📝 Answer:{Colors.ENDC}\n")
                         
-                        print(chunk, end='', flush=True)
+                        logger.log(chunk, end='', flush=True)
                     
                     elif event_type == 'end':
-                        print(f"\n\n{Colors.BOLD}{'─'*80}{Colors.ENDC}\n")
-                        print(f"{Colors.GREEN}✨ Stream completed successfully!{Colors.ENDC}")
-                        print(f"\n{Colors.BOLD}{'='*80}{Colors.ENDC}\n")
+                        logger.log(f"\n\n{Colors.BOLD}{'─'*80}{Colors.ENDC}\n")
+                        logger.log(f"{Colors.GREEN}✨ Stream completed successfully!{Colors.ENDC}")
+                        logger.log(f"\n{Colors.BOLD}{'='*80}{Colors.ENDC}\n")
                         break
                     
                     elif event_type == 'error':
                         error_msg = event.get('error', 'Unknown error')
-                        print(f"\n{Colors.RED}❌ Error: {error_msg}{Colors.ENDC}\n")
+                        logger.log(f"\n{Colors.RED}❌ Error: {error_msg}{Colors.ENDC}\n")
                         break
                     
                     elif event_type == 'debug':
                         # Debug data (only in development mode)
                         debug_data = event.get('data', {})
-                        print(f"{Colors.YELLOW}🐛 Debug: {json.dumps(debug_data, indent=2)}{Colors.ENDC}\n")
+                        logger.log(f"{Colors.YELLOW}🐛 Debug: {json.dumps(debug_data, indent=2)}{Colors.ENDC}\n")
+                        
+            # Dump full prompt-response trace for frontend devs
+            with open("frontend_trace.json", "w", encoding="utf-8") as f:
+                trace_data = {
+                    "query": query,
+                    "answer": "".join(answer_buffer),
+                    "events": "See 'streaming_trace.txt' for event log"
+                }
+                json.dump(trace_data, f, indent=2, ensure_ascii=False)
+                logger.log(f"\nSaved simplified trace to frontend_trace.json")
+                logger.log(f"Saved detailed log to streaming_trace.txt")
     
     except requests.exceptions.ConnectionError:
-        print(f"\n{Colors.RED}❌ Connection Error: Could not connect to {base_url}{Colors.ENDC}")
-        print(f"{Colors.YELLOW}Make sure the API server is running.{Colors.ENDC}\n")
+        logger.log(f"\n{Colors.RED}❌ Connection Error: Could not connect to {base_url}{Colors.ENDC}")
+        logger.log(f"{Colors.YELLOW}Make sure the API server is running.{Colors.ENDC}\n")
     except requests.exceptions.Timeout:
-        print(f"\n{Colors.RED}❌ Timeout: Request took too long{Colors.ENDC}\n")
+        logger.log(f"\n{Colors.RED}❌ Timeout: Request took too long{Colors.ENDC}\n")
     except requests.exceptions.RequestException as e:
-        print(f"\n{Colors.RED}❌ Request Error: {e}{Colors.ENDC}\n")
+        logger.log(f"\n{Colors.RED}❌ Request Error: {e}{Colors.ENDC}\n")
     except KeyboardInterrupt:
-        print(f"\n\n{Colors.YELLOW}⚠️  Interrupted by user{Colors.ENDC}\n")
+        logger.log(f"\n\n{Colors.YELLOW}⚠️  Interrupted by user{Colors.ENDC}\n")
     except Exception as e:
-        print(f"\n{Colors.RED}❌ Unexpected Error: {e}{Colors.ENDC}\n")
+        logger.log(f"\n{Colors.RED}❌ Unexpected Error: {e}{Colors.ENDC}\n")
+    finally:
+        logger.close()
 
 
 if __name__ == "__main__":

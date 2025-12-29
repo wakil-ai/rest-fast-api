@@ -87,20 +87,3 @@ class Crews:
             process=Process.sequential,
             verbose=True,
         )
-
-    def answer_crew(self, assistant: str = "umumiy") -> Crew:
-        """Crew for final answer generation."""
-        if assistant == "soliq":
-            agent = self.agents_factory.final_answer_soliq()
-        else:
-            agent = self.agents_factory.final_answer_umumiy()
-            
-        task = self._create_task("final_answer_generation_task", agent)
-        
-        return Crew(
-            agents=[agent],
-            tasks=[task],
-            process=Process.sequential,
-            verbose=True,
-            stream=True
-        )

@@ -6,11 +6,9 @@ from typing import Any, Callable, Dict, List, Optional
 import yaml
 from crewai import Agent
 
-from app.orchestration.config.llms import main_llm, tiny_llm
+from app.orchestration.config.llms import tiny_llm
 from app.orchestration.tools import WebSearchTool
-from app.chains.prompts import SYSTEM_PROMPT, SOLIQ_ASSISTANT_PROMPT
 from app.core.config import settings
-
 
 class Agents:
     """
@@ -42,8 +40,6 @@ class Agents:
                 "retrieval_specialist": self._create_retrieval_specialist(),
                 "context_evaluator": self._create_context_evaluator(),
                 "web_search_summarizer": self._create_web_search_summarizer(),
-                "final_answer_umumiy": self._create_final_answer_umumiy(),
-                "final_answer_soliq": self._create_final_answer_soliq(),
             }
 
     def _create_agent(
@@ -122,28 +118,6 @@ class Agents:
             function_calling_llm=tiny_llm,
         )
 
-    def _create_final_answer_umumiy(self) -> Agent:
-        return self._create_agent(
-            name="final_answer",
-            llm=main_llm,
-            config_modifier=self._inject_system_prompt(SYSTEM_PROMPT),
-        )
-
-    def _create_final_answer_soliq(self) -> Agent:
-        return self._create_agent(
-            name="final_answer",
-            llm=main_llm,
-            config_modifier=self._inject_system_prompt(SOLIQ_ASSISTANT_PROMPT),
-        )
-
-    @staticmethod
-    def _inject_system_prompt(prompt: str) -> Callable[[Dict], Dict]:
-        """Inject system prompt into agent goal."""
-        def modifier(config: Dict) -> Dict:
-            config["goal"] = f"{prompt}\n\nQuery: {{query}}"
-            return config
-        return modifier
-
     def memory_summarizer(self) -> Agent:
         """Get cached memory summarizer agent."""
         return self._agents_cache["memory_summarizer"]
@@ -159,9 +133,3 @@ class Agents:
     def web_search_summarizer(self) -> Agent:
         """Get cached web search summarizer agent."""
         return self._agents_cache["web_search_summarizer"]
-
-    def final_answer_umumiy(self) -> Agent:
-        return self._agents_cache["final_answer_umumiy"]
-
-    def final_answer_soliq(self) -> Agent:
-        return self._agents_cache["final_answer_soliq"]

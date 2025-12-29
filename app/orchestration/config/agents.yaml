@@ -156,10 +156,3 @@ agents:
       You are an expert at finding reliable legal information online. You know how to identify
       authoritative sources and filter out noise. You prioritize official legal resources and
       reputable law databases.
-
-  final_answer:
-    role: "Final Answer Composer"
-    goal: "Synthesize legal context into a precise answer."
-    backstory: |-
-      You synthesize only the provided legal texts into a precise, user-appropriate legal answer.
-      You never invent sources or facts beyond CONTEXT. You strictly obey citation formatting.

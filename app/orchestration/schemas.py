@@ -10,6 +10,7 @@ class AgenticRAGState(BaseModel):
     query: str = Field(default="", description="User's legal question")
     user_id: str = Field(default="", description="User identifier")
     session_id: str = Field(default="default", description="Session identifier")
+    llm_model: str = Field(default="gpt-4.1", description="LLM model to use")
     
     # Intermediate outputs
     enriched_query: Optional[str] = Field(default=None, description="Query enriched with memory context")
