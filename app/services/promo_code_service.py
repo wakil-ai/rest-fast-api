@@ -1,7 +1,7 @@
 # app/services/promo_code_service.py
 
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from app.db.mongo_handler import MongoHandler
 from app.core.logger import logger
 
@@ -180,7 +180,7 @@ class PromoCodeService:
             logger.error(f"[PromoCodeService] Error deleting promo code {code}: {str(e)}")
             return False
     
-    def assign_promo_code_to_user(self, user_id: str, promo_code: str) -> bool:
+    def assign_promo_code_to_user(self, user_id: str, promo_code: str) -> Tuple[bool, int]:
         """
         Assign a promo code to a user for unlimited access.
         
@@ -190,17 +190,18 @@ class PromoCodeService:
             
         Returns:
             bool: True if assigned successfully
+            status_code: int 
         """
         try:
             # Verify promo code exists and is active
             promo = self.get_promo_code(promo_code)
             if not promo:
                 logger.warning(f"[PromoCodeService] Promo code '{promo_code}' not found")
-                return False
+                return False, 404
             
             if not promo.get("is_active", False):
                 logger.warning(f"[PromoCodeService] Promo code '{promo_code}' is not active")
-                return False
+                return False, 400
             
             # Check if user already has a promo code
             user_promo_collection = self.mongo_handler.db[self.USER_PROMO_CODE_COLLECTION]
@@ -230,7 +231,7 @@ class PromoCodeService:
                 user_promo_collection.insert_one(assignment_doc)
                 logger.info(f"[PromoCodeService] Assigned promo code '{promo_code}' to user {user_id}")
             
-            return True
+            return True, 200
             
         except Exception as e:
             logger.error(f"[PromoCodeService] Error assigning promo code to user: {str(e)}")

@@ -320,7 +320,7 @@ async def delete_promo_code(code: str):
         )
 
 
-# ================ User Promo Code Assignment Endpoints ================
+# User Promo Code Assignment Endpoints 
 
 @router.post("/promo-codes/assign", summary="Assign promo code to a user")
 async def assign_promo_code_to_user(request: UserPromoCode):
@@ -336,7 +336,7 @@ async def assign_promo_code_to_user(request: UserPromoCode):
     - message: Status message
     """
     try:
-        success = promo_code_service.assign_promo_code_to_user(
+        success, status_code = promo_code_service.assign_promo_code_to_user(
             user_id=request.user_id,
             promo_code=request.promo_code
         )
@@ -351,7 +351,7 @@ async def assign_promo_code_to_user(request: UserPromoCode):
             }
         else:
             raise HTTPException(
-                status_code=400,
+                status_code=status_code,
                 detail="Failed to assign promo code. Code may not exist or is inactive."
             )
     except HTTPException:
