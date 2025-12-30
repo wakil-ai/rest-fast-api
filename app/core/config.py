@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     
     # Memory Service API Key
     MEM0_API_KEY: str = None # Mem
+    MEM0_PROJECT_ID: str = None 
+    MEM0_ORG_ID: str = None
 
     # VECTOR DBs
     # Vector Database Configuration

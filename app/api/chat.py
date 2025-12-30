@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from app.models.chat import ChatRequest, ChatResponse, ModelInfoResponse, AgenticRAGRequest, AssistantType, AskFileRequest
 from app.services.chat_service import ChatService
 from app.services.chat_history_service import ChatHistoryService
+from app.services.rate_limit_service import RateLimitService
 from app.orchestration.flow import AgenticRAGFlow
 from app.utils.streaming import format_streaming_response, get_streaming_headers, format_progress_event
 from app.core.config import settings
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 agentic_rag_service = AgenticRAGFlow()
 chat_service = ChatService()
 chat_history_service = ChatHistoryService()
+rate_limit_service = RateLimitService()
 
 @router.post("/ask", summary="Ask a legal question")
 async def ask_question(request: ChatRequest):
@@ -29,6 +31,14 @@ async def ask_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
+        # Check rate limit (assistants use 20/day limit)
+        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=False)
+        if not is_allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
+            )
+        
         # Extract model name from enum if provided
         model_name = request.model.value if request.model else None
         
@@ -83,6 +93,14 @@ async def ask_soliq_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
+        # Check rate limit (assistants use 20/day limit)
+        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=False)
+        if not is_allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
+            )
+        
         # Extract model name from enum if provided
         model_name = request.model.value if request.model else None
         
@@ -150,6 +168,14 @@ async def ask_with_file(request: AskFileRequest):
     - model: Optional model to use for generation
     """
     try:
+        # Check rate limit (assistants use 20/day limit)
+        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=False)
+        if not is_allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
+            )
+        
         # Fetch file record from database
         file_record = chat_history_service.get_file_by_id(user_id=request.user_id, file_id=request.file_id)
         
@@ -215,6 +241,14 @@ async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
     """
     Execute legal QA flow end-to-end using agentic RAG approach.
     """
+    # Check rate limit (deepresearch uses 5/day limit)
+    is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=True)
+    if not is_allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
+        )
+    
     logger.info(f"Starting Legal QA Flow for query: {request.query[:100]}...")
     
     # Build initial state
@@ -249,6 +283,14 @@ async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
     - chunk: Final answer character chunks
     - end: Stream completion signal
     """
+    # Check rate limit (deepresearch uses 5/day limit)
+    is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=True)
+    if not is_allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
+        )
+    
     logger.info(f"Starting Streaming Legal QA Flow for query: {request.query[:100]}...")
     
     # Queue for progress events

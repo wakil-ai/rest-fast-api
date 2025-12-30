@@ -7,7 +7,9 @@ from app.core.logger import logger
 class ChatMemoryService:
     def __init__(self):
         self.db_manager = DBManager()
-        self.client = AsyncMemoryClient(api_key=settings.MEM0_API_KEY)
+        self.client = AsyncMemoryClient(api_key=settings.MEM0_API_KEY,
+                                        org_id=settings.MEM0_ORG_ID,
+                                        project_id=settings.MEM0_PROJECT_ID)
         
     async def get_session_memory(self, user_id: str, session_id: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Retrieve previous conversation memory for a user session."""
@@ -55,13 +57,8 @@ class ChatMemoryService:
     async def add_memory(self, user_id: str, messages: list):
         """Adds a list of messages to the memory for a given user."""
         try:
-            results = await self.client.add(messages, user_id=user_id, version="v2", output_format="v1.1")
-            memories = []
-            ids = []
-            for res in results.get("results", []):
-                memories.append(res['memory'])
-                ids.append(res['id'])
-            return {"memories": memories, "memory_ids": ids}
+            await self.client.add(messages, user_id=user_id, version="v2", output_format="v1.1")
+            return {"message": "Memory added successfully on background."}
         except Exception as e:
             logger.error(f"Could not add memories to mem0: {e}")
 
@@ -139,14 +136,3 @@ class ChatMemoryService:
                 memories_text += f"- {str(memory)}\n"
         
         return memories_text
-    
-    async def _save_interaction_to_memory(self, user_id: str, query: str, answer: str):
-        """Saves the user query and assistant answer to memory."""
-        try:
-            messages = [
-                {"role": "user", "content": query},
-                {"role": "assistant", "content": answer},
-            ]
-            return await self.add_memory(user_id, messages)
-        except Exception as e:
-            logger.error(f"[ChatService] Error saving memory: {e}")
