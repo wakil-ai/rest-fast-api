@@ -41,8 +41,19 @@ async def save_interaction(request: SaveInteractionRequest) -> SaveInteractionRe
     Save a user interaction (query and answer) to memory.
     """
     try:
-        results = await memory_service._save_interaction_to_memory(request.user_id, request.query, request.answer)
-        return {"message": "Interaction saved successfully.", **results}
+        messages = [
+            {"role": "user", "content": pair.query} for pair in request.messages
+        ] + [
+            {"role": "assistant", "content": pair.answer} for pair in request.messages
+        ]
+        result = await memory_service.add_memory(request.user_id, messages)
+        
+        return {"message": result.get("message", "Memory added successfully on background.")}
+    except Exception as e:
+        logger.error(f"[ChatMemoryService] Error saving memory: {e}")
+        return {"message": f"Failed to save memory: {str(e)}"}
+    try:
+        return await memory_service._save_interaction_to_memory(request.user_id, request.query, request.answer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     

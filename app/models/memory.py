@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import List
 
 class GetAllMemoriesResponse(BaseModel):
     user_id: str
@@ -6,16 +7,16 @@ class GetAllMemoriesResponse(BaseModel):
     categories: list
     memory_ids: list
     
-class SaveInteractionRequest(BaseModel):
-    user_id: str
+class InteractionsPair(BaseModel):
     query: str
     answer: str
     
+class SaveInteractionRequest(BaseModel):
+    user_id: str
+    messages: List[InteractionsPair]
     
 class SaveInteractionResponse(BaseModel):
     message: str
-    memories: list
-    memory_ids: list
     
 class UpdateMemoryRequest(BaseModel):
     text: str    
