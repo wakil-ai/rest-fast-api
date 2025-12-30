@@ -22,8 +22,10 @@ promo_code_service = PromoCodeService()
 
 class RateLimitResponse(BaseModel):
     user_id: str
-    remaining_requests: int
-    daily_limit: int
+    remaining_requests_assistant: int
+    remaining_requests_deepresearch: int
+    daily_limit_assistant: int
+    daily_limit_deepresearch: int
 
 
 class ResetLimitRequest(BaseModel):
@@ -34,20 +36,26 @@ class ResetLimitRequest(BaseModel):
 async def get_user_rate_limit(user_id: str):
     """
     Get the remaining requests for a user for today.
+    Shows separate limits for assistant endpoints (20/day) and deepresearch endpoints (5/day).
     
     Parameters:
     - user_id: User ID to check
     
     Returns:
-    - remaining_requests: Number of requests remaining today
-    - daily_limit: Total daily limit
+    - remaining_requests_assistant: Number of assistant requests remaining today
+    - remaining_requests_deepresearch: Number of deepresearch requests remaining today
+    - daily_limit_assistant: Total daily limit for assistants (20)
+    - daily_limit_deepresearch: Total daily limit for deepresearch (5)
     """
     try:
-        remaining = rate_limit_service.get_remaining_requests(user_id)
+        remaining_assistant = rate_limit_service.get_remaining_requests(user_id, is_deepresearch=False)
+        remaining_deepresearch = rate_limit_service.get_remaining_requests(user_id, is_deepresearch=True)
         return RateLimitResponse(
             user_id=user_id,
-            remaining_requests=remaining,
-            daily_limit=RateLimitService.DAILY_LIMIT
+            remaining_requests_assistant=remaining_assistant,
+            remaining_requests_deepresearch=remaining_deepresearch,
+            daily_limit_assistant=RateLimitService.DAILY_LIMIT_ASSISTANT,
+            daily_limit_deepresearch=RateLimitService.DAILY_LIMIT_DEEPRESEARCH
         )
     except Exception as e:
         logger.error(f"[AdminAPI] Error getting rate limit for user {user_id}: {str(e)}")
@@ -90,7 +98,7 @@ async def reset_user_rate_limit(request: ResetLimitRequest):
         )
 
 
-# ================ Promo Code Management Endpoints ================
+#  Promo Code Management Endpoints
 
 @router.post("/promo-codes", summary="Create a new promo code")
 async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin"):

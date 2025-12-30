@@ -31,8 +31,8 @@ async def ask_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
-        # Check rate limit
-        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id)
+        # Check rate limit (assistants use 20/day limit)
+        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=False)
         if not is_allowed:
             raise HTTPException(
                 status_code=429,
@@ -93,8 +93,8 @@ async def ask_soliq_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
-        # Check rate limit
-        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id)
+        # Check rate limit (assistants use 20/day limit)
+        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=False)
         if not is_allowed:
             raise HTTPException(
                 status_code=429,
@@ -168,8 +168,8 @@ async def ask_with_file(request: AskFileRequest):
     - model: Optional model to use for generation
     """
     try:
-        # Check rate limit
-        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id)
+        # Check rate limit (assistants use 20/day limit)
+        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=False)
         if not is_allowed:
             raise HTTPException(
                 status_code=429,
@@ -241,8 +241,8 @@ async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
     """
     Execute legal QA flow end-to-end using agentic RAG approach.
     """
-    # Check rate limit
-    is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id)
+    # Check rate limit (deepresearch uses 5/day limit)
+    is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=True)
     if not is_allowed:
         raise HTTPException(
             status_code=429,
@@ -283,8 +283,8 @@ async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
     - chunk: Final answer character chunks
     - end: Stream completion signal
     """
-    # Check rate limit
-    is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id)
+    # Check rate limit (deepresearch uses 5/day limit)
+    is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=True)
     if not is_allowed:
         raise HTTPException(
             status_code=429,
