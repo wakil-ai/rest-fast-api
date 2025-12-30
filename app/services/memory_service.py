@@ -7,7 +7,9 @@ from app.core.logger import logger
 class ChatMemoryService:
     def __init__(self):
         self.db_manager = DBManager()
-        self.client = AsyncMemoryClient(api_key=settings.MEM0_API_KEY)
+        self.client = AsyncMemoryClient(api_key=settings.MEM0_API_KEY,
+                                        org_id=settings.MEM0_ORG_ID,
+                                        project_id=settings.MEM0_PROJECT_ID)
         
     async def get_session_memory(self, user_id: str, session_id: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Retrieve previous conversation memory for a user session."""
