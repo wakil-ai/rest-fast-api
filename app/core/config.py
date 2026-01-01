@@ -158,6 +158,12 @@ class Settings(BaseSettings):
     # Web Scraping
     TAVILY_API_KEY: Optional[str] = None
     
+    # Credit System Configuration
+    DAILY_CREDITS_LIMIT: int = 100  # Total daily credits per user
+    CREDIT_COST_MAIN_ASSISTANT: int = 10  # Credits for main assistant (umumiy)
+    CREDIT_COST_SOLIQ_ASSISTANT: int = 15  # Credits for soliq specialized assistant
+    CREDIT_COST_DEEPRESEARCH: int = 25  # Credits for deep research / agentic RAG
+    
     # EMBEDDING DIM
     @property
     def EMBEDDING_DIM(self) -> int:

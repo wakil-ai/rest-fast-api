@@ -22,10 +22,9 @@ promo_code_service = PromoCodeService()
 
 class RateLimitResponse(BaseModel):
     user_id: str
-    remaining_requests_assistant: int
-    remaining_requests_deepresearch: int
-    daily_limit_assistant: int
-    daily_limit_deepresearch: int
+    remaining_credits: int
+    daily_credit_limit: int
+    credit_costs: dict  # Shows credit cost for each assistant type
 
 
 class ResetLimitRequest(BaseModel):

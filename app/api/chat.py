@@ -31,12 +31,15 @@ async def ask_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
-        # Check rate limit (assistants use 20/day limit)
-        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=False)
+        # Determine assistant type for credit calculation
+        assistant_type = "soliq" if request.assistant == AssistantType.SOLIQ else "main"
+        
+        # Check credit limit
+        is_allowed, credits_remaining, limit = rate_limit_service.check_and_decrement_credits(request.user_id, assistant_type)
         if not is_allowed:
             raise HTTPException(
                 status_code=429,
-                detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
+                detail=f"Insufficient credits. You have {credits_remaining}/{limit} credits remaining. This request requires {settings.CREDIT_COST_SOLIQ_ASSISTANT if assistant_type == 'soliq' else settings.CREDIT_COST_MAIN_ASSISTANT} credits."
             )
         
         # Extract model name from enum if provided
@@ -93,12 +96,12 @@ async def ask_soliq_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
-        # Check rate limit (assistants use 20/day limit)
-        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=False)
+        # Check credit limit for soliq assistant
+        is_allowed, credits_remaining, limit = rate_limit_service.check_and_decrement_credits(request.user_id, "soliq")
         if not is_allowed:
             raise HTTPException(
                 status_code=429,
-                detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
+                detail=f"Insufficient credits. You have {credits_remaining}/{limit} credits remaining. This request requires {settings.CREDIT_COST_SOLIQ_ASSISTANT} credits."
             )
         
         # Extract model name from enum if provided
@@ -153,100 +156,18 @@ async def get_model_info():
         temperature=settings.TEMPERATURE,
     )
 
-@router.post("/file", response_model=ChatResponse)
-async def ask_with_file(request: AskFileRequest):
-    """
-    Ask a question about a previously uploaded file using its file_id.
-    The file content (OCR result) is retrieved from the database.
-    
-    Parameters:
-    - user_id: User ID
-    - file_id: ID of the previously uploaded file
-    - query: The question to ask about the file
-    - stream: Whether to stream the response
-    - assistant: Assistant type ('main' or 'soliq') - determines which collection to use
-    - model: Optional model to use for generation
-    """
-    try:
-        # Check rate limit (assistants use 20/day limit)
-        is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=False)
-        if not is_allowed:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
-            )
-        
-        # Fetch file record from database
-        file_record = chat_history_service.get_file_by_id(user_id=request.user_id, file_id=request.file_id)
-        
-        if not file_record:
-            raise HTTPException(
-                status_code=404,
-                detail=f"File with file_id {request.file_id} not found for user {request.user_id}"
-            )
-        
-        # Get OCR result from the file record (already processed during upload)
-        ocr_result = file_record.get("ocr_result", "")
-        
-        if not ocr_result:
-            logger.warning(f"No OCR result found for file {request.file_id}")
-            raise HTTPException(
-                status_code=400,
-                detail="File does not have processed content. Please re-upload the file."
-            )
-        
-        # Extract model name from enum if provided
-        model_name = request.model.value if request.model else None
-        
-        # Determine collection based on assistant type
-        collection_name = settings.MILVUS_SOLIQ_ASSISTANT_NAME if request.assistant == AssistantType.SOLIQ else settings.MILVUS_MAIN_NAME
-        
-        logger.info(f"Processing file query for file_id: {request.file_id}, user: {request.user_id}")
-        
-        response = await chat_service.ask_question(
-            user_id=request.user_id,
-            query=request.query,
-            chat_history=[],
-            stream=request.stream,
-            file_context=ocr_result,
-            collection_name=collection_name,
-            model_name=model_name
-        )
-
-        if request.stream:
-            return StreamingResponse(
-                format_streaming_response(response),
-                media_type="text/event-stream",
-                headers=get_streaming_headers()
-            )
-        else:
-            # Handle development mode with debug data
-            if settings.DEVELOPMENT_MODE and isinstance(response, tuple):
-                answer, debug_data = response
-                return ChatResponse(
-                    answer=answer,
-                    retrieved_contents=debug_data.get("retrieved_contents"),
-                )
-            # Return JSON response
-            return ChatResponse(answer=response)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[AskFileAPI] Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to process file query. Please try again.")
 
 @router.post("/agent", summary="Ask a legal question via agentic RAG")
 async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
     """
     Execute legal QA flow end-to-end using agentic RAG approach.
     """
-    # Check rate limit (deepresearch uses 5/day limit)
-    is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=True)
+    # Check credit limit (deepresearch costs more credits)
+    is_allowed, credits_remaining, limit = rate_limit_service.check_and_decrement_credits(request.user_id, "deepresearch")
     if not is_allowed:
         raise HTTPException(
             status_code=429,
-            detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
+            detail=f"Insufficient credits. You have {credits_remaining}/{limit} credits remaining. This request requires {settings.CREDIT_COST_DEEPRESEARCH} credits."
         )
     
     logger.info(f"Starting Legal QA Flow for query: {request.query[:100]}...")
@@ -283,15 +204,13 @@ async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
     - chunk: Final answer character chunks
     - end: Stream completion signal
     """
-    # Check rate limit (deepresearch uses 5/day limit)
-    is_allowed, current_count, limit = rate_limit_service.check_and_increment_limit(request.user_id, is_deepresearch=True)
+    # Check credit limit (deepresearch costs more credits)
+    is_allowed, credits_remaining, limit = rate_limit_service.check_and_decrement_credits(request.user_id, "deepresearch")
     if not is_allowed:
         raise HTTPException(
             status_code=429,
-            detail=f"Daily request limit exceeded. You have used {current_count}/{limit} requests today. Please try again tomorrow."
+            detail=f"Insufficient credits. You have {credits_remaining}/{limit} credits remaining. This request requires {settings.CREDIT_COST_DEEPRESEARCH} credits."
         )
-    
-    logger.info(f"Starting Streaming Legal QA Flow for query: {request.query[:100]}...")
     
     # Queue for progress events
     progress_queue = asyncio.Queue()
