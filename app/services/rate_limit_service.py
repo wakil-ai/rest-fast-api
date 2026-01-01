@@ -49,7 +49,7 @@ class RateLimitService:
     def check_and_decrement_credits(self, user_id: str, assistant_type: AssistantType = "main") -> tuple[bool, int, int]:
         """
         Check if user has enough credits and decrement if available.
-        Users with valid promo codes have unlimited access.
+        Users with valid promo codes may have custom credit limits or unlimited access.
         
         Args:
             user_id: The user's unique identifier
@@ -62,13 +62,23 @@ class RateLimitService:
                 - daily_limit: The daily credit limit (or -1 for unlimited)
         """
         try:
-            # Check if user has unlimited access via promo code
-            if self.promo_code_service.user_has_unlimited_access(user_id):
-                logger.info(f"[RateLimitService] User {user_id} has unlimited access via promo code")
-                return True, -1, -1  # -1 indicates unlimited
+            # Check if user has a promo code and get their credit limit
+            has_promo, promo_credit_limit = self.promo_code_service.get_user_promo_status(user_id)
+            
+            if has_promo:
+                if promo_credit_limit is None:
+                    # Unlimited credits
+                    logger.info(f"[RateLimitService] User {user_id} has unlimited access via promo code")
+                    return True, -1, -1  # -1 indicates unlimited
+                else:
+                    # Use promo code credit limit instead of default
+                    daily_limit = promo_credit_limit
+                    logger.info(f"[RateLimitService] User {user_id} has promo code with {daily_limit} daily credits")
+            else:
+                # Use default credit limit
+                daily_limit = settings.DAILY_CREDITS_LIMIT
             
             credit_cost = self._get_credit_cost(assistant_type)
-            daily_limit = settings.DAILY_CREDITS_LIMIT
             
             today = self._get_today_date()
             collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
@@ -124,12 +134,20 @@ class RateLimitService:
             int: Number of remaining credits (-1 for unlimited)
         """
         try:
-            # Check if user has unlimited access via promo code
-            if self.promo_code_service.user_has_unlimited_access(user_id):
-                logger.info(f"[RateLimitService] User {user_id} has unlimited access")
-                return -1  # -1 indicates unlimited
+            # Check if user has a promo code and get their credit limit
+            has_promo, promo_credit_limit = self.promo_code_service.get_user_promo_status(user_id)
             
-            daily_limit = settings.DAILY_CREDITS_LIMIT
+            if has_promo:
+                if promo_credit_limit is None:
+                    # Unlimited credits
+                    logger.info(f"[RateLimitService] User {user_id} has unlimited access")
+                    return -1  # -1 indicates unlimited
+                else:
+                    # Use promo code credit limit
+                    daily_limit = promo_credit_limit
+            else:
+                # Use default credit limit
+                daily_limit = settings.DAILY_CREDITS_LIMIT
             
             today = self._get_today_date()
             collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]

@@ -119,7 +119,9 @@ async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin")
         success = promo_code_service.create_promo_code(
             code=request.code,
             created_by=created_by,
-            description=request.description
+            description=request.description,
+            expiration_date=request.expiration_date,
+            credit_amount=request.credit_amount
         )
         
         if success:
@@ -130,6 +132,8 @@ async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin")
                 "promo_code": {
                     "code": promo_code["code"],
                     "is_active": promo_code["is_active"],
+                    "expiration_date": promo_code.get("expiration_date"),
+                    "credit_amount": promo_code.get("credit_amount"),
                     "created_at": promo_code["created_at"],
                     "created_by": promo_code.get("created_by"),
                     "description": promo_code.get("description")
@@ -170,6 +174,8 @@ async def list_promo_codes(active_only: bool = False):
                 {
                     "code": pc["code"],
                     "is_active": pc["is_active"],
+                    "expiration_date": pc.get("expiration_date"),
+                    "credit_amount": pc.get("credit_amount"),
                     "created_at": pc["created_at"],
                     "created_by": pc.get("created_by"),
                     "description": pc.get("description")
@@ -209,6 +215,8 @@ async def get_promo_code(code: str):
         return {
             "code": promo_code["code"],
             "is_active": promo_code["is_active"],
+            "expiration_date": promo_code.get("expiration_date"),
+            "credit_amount": promo_code.get("credit_amount"),
             "created_at": promo_code["created_at"],
             "created_by": promo_code.get("created_by"),
             "description": promo_code.get("description")

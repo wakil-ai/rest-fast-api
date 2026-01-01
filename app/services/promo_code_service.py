@@ -18,7 +18,8 @@ class PromoCodeService:
     def __init__(self):
         self.mongo_handler = MongoHandler()
     
-    def create_promo_code(self, code: str, created_by: Optional[str] = None, description: Optional[str] = None) -> bool:
+    def create_promo_code(self, code: str, created_by: Optional[str] = None, description: Optional[str] = None, 
+                         expiration_date: Optional[datetime] = None, credit_amount: Optional[int] = None) -> bool:
         """
         Create a new promo code.
         
@@ -26,6 +27,8 @@ class PromoCodeService:
             code: The promo code string (must be unique)
             created_by: Admin user ID who created the code
             description: Optional description
+            expiration_date: Expiration date (None = forever)
+            credit_amount: Daily credit amount (None = unlimited)
             
         Returns:
             bool: True if created successfully, False if code already exists
@@ -43,13 +46,15 @@ class PromoCodeService:
             promo_code_doc = {
                 "code": code,
                 "is_active": True,
+                "expiration_date": expiration_date,
+                "credit_amount": credit_amount,
                 "created_at": datetime.now(timezone.utc),
                 "created_by": created_by,
                 "description": description
             }
             
             collection.insert_one(promo_code_doc)
-            logger.info(f"[PromoCodeService] Created promo code: {code}")
+            logger.info(f"[PromoCodeService] Created promo code: {code} (expires: {expiration_date or 'never'}, credits: {credit_amount or 'unlimited'})")
             return True
             
         except Exception as e:
@@ -279,6 +284,47 @@ class PromoCodeService:
             logger.error(f"[PromoCodeService] Error getting user promo code: {str(e)}")
             return None
     
+    def get_user_promo_status(self, user_id: str) -> Tuple[bool, Optional[int]]:
+        """
+        Check if a user has a valid promo code and get their daily credit limit.
+        
+        Args:
+            user_id: The user's unique identifier
+            
+        Returns:
+            Tuple[bool, Optional[int]]: (has_promo_code, daily_credit_limit)
+                - has_promo_code: True if user has a valid, non-expired promo code
+                - daily_credit_limit: None for unlimited, or specific credit amount
+        """
+        try:
+            # Get user's promo code assignment
+            assignment = self.get_user_promo_code(user_id)
+            if not assignment:
+                return False, None
+            
+            # Check if the promo code is still active
+            promo_code = assignment.get("promo_code")
+            if not promo_code:
+                return False, None
+            
+            promo = self.get_promo_code(promo_code)
+            if not promo or not promo.get("is_active", False):
+                return False, None
+            
+            # Check expiration date
+            expiration_date = promo.get("expiration_date")
+            if expiration_date and datetime.now(timezone.utc) > expiration_date:
+                logger.info(f"[PromoCodeService] Promo code '{promo_code}' expired for user {user_id}")
+                return False, None
+            
+            # Get credit amount (None = unlimited)
+            credit_amount = promo.get("credit_amount")
+            return True, credit_amount
+            
+        except Exception as e:
+            logger.error(f"[PromoCodeService] Error checking promo status for user: {str(e)}")
+            return False, None
+    
     def user_has_unlimited_access(self, user_id: str) -> bool:
         """
         Check if a user has unlimited access via a valid promo code.
@@ -287,28 +333,10 @@ class PromoCodeService:
             user_id: The user's unique identifier
             
         Returns:
-            bool: True if user has unlimited access
+            bool: True if user has unlimited access (promo code with no credit limit)
         """
-        try:
-            # Get user's promo code assignment
-            assignment = self.get_user_promo_code(user_id)
-            if not assignment:
-                return False
-            
-            # Check if the promo code is still active
-            promo_code = assignment.get("promo_code")
-            if not promo_code:
-                return False
-            
-            promo = self.get_promo_code(promo_code)
-            if not promo or not promo.get("is_active", False):
-                return False
-            
-            return assignment.get("has_unlimited_access", False)
-            
-        except Exception as e:
-            logger.error(f"[PromoCodeService] Error checking unlimited access for user: {str(e)}")
-            return False
+        has_promo, credit_limit = self.get_user_promo_status(user_id)
+        return has_promo and credit_limit is None
     
     def list_users_with_promo_codes(self) -> List[Dict[str, Any]]:
         """
