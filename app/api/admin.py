@@ -31,30 +31,31 @@ class ResetLimitRequest(BaseModel):
     user_id: str
 
 
-@router.get("/rate-limit/{user_id}", response_model=RateLimitResponse, summary="Get user's remaining requests")
+@router.get("/rate-limit/{user_id}", response_model=RateLimitResponse, summary="Get user's remaining credits")
 async def get_user_rate_limit(user_id: str):
     """
-    Get the remaining requests for a user for today.
-    Shows separate limits for assistant endpoints (20/day) and deepresearch endpoints (5/day).
+    Get rate limit information for a specific user.
     
     Parameters:
     - user_id: User ID to check
     
     Returns:
-    - remaining_requests_assistant: Number of assistant requests remaining today
-    - remaining_requests_deepresearch: Number of deepresearch requests remaining today
-    - daily_limit_assistant: Total daily limit for assistants (20)
-    - daily_limit_deepresearch: Total daily limit for deepresearch (5)
+    - remaining_credits: Number of credits remaining today
+    - daily_credit_limit: Total daily credit limit (100)
+    - credit_costs: Credit cost for each assistant type
     """
     try:
-        remaining_assistant = rate_limit_service.get_remaining_requests(user_id, is_deepresearch=False)
-        remaining_deepresearch = rate_limit_service.get_remaining_requests(user_id, is_deepresearch=True)
+        from app.core.config import settings
+        remaining = rate_limit_service.get_remaining_credits(user_id)
         return RateLimitResponse(
             user_id=user_id,
-            remaining_requests_assistant=remaining_assistant,
-            remaining_requests_deepresearch=remaining_deepresearch,
-            daily_limit_assistant=RateLimitService.DAILY_LIMIT_ASSISTANT,
-            daily_limit_deepresearch=RateLimitService.DAILY_LIMIT_DEEPRESEARCH
+            remaining_credits=remaining,
+            daily_credit_limit=settings.DAILY_CREDITS_LIMIT,
+            credit_costs={
+                "main": settings.CREDIT_COST_MAIN_ASSISTANT,
+                "soliq": settings.CREDIT_COST_SOLIQ_ASSISTANT,
+                "deepresearch": settings.CREDIT_COST_DEEPRESEARCH
+            }
         )
     except Exception as e:
         logger.error(f"[AdminAPI] Error getting rate limit for user {user_id}: {str(e)}")
