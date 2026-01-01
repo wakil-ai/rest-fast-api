@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
+from dateutil import parser as date_parser
 from app.db.mongo_handler import MongoHandler
 from app.core.logger import logger
 
@@ -300,29 +301,57 @@ class PromoCodeService:
             # Get user's promo code assignment
             assignment = self.get_user_promo_code(user_id)
             if not assignment:
+                logger.info(f"[PromoCodeService] No promo code assignment found for user {user_id}")
                 return False, None
             
             # Check if the promo code is still active
             promo_code = assignment.get("promo_code")
             if not promo_code:
+                logger.warning(f"[PromoCodeService] No promo code in assignment for user {user_id}")
                 return False, None
             
             promo = self.get_promo_code(promo_code)
-            if not promo or not promo.get("is_active", False):
+            if not promo:
+                logger.warning(f"[PromoCodeService] Promo code '{promo_code}' not found for user {user_id}")
+                return False, None
+                
+            if not promo.get("is_active", False):
+                logger.warning(f"[PromoCodeService] Promo code '{promo_code}' is not active for user {user_id}")
                 return False, None
             
             # Check expiration date
             expiration_date = promo.get("expiration_date")
-            if expiration_date and datetime.now(timezone.utc) > expiration_date:
-                logger.info(f"[PromoCodeService] Promo code '{promo_code}' expired for user {user_id}")
-                return False, None
+            if expiration_date:
+                try:
+                    # Ensure expiration_date is datetime object
+                    if isinstance(expiration_date, str):
+                        expiration_date = date_parser.parse(expiration_date)
+                    
+                    # Make timezone-aware if not already
+                    if not hasattr(expiration_date, 'tzinfo') or expiration_date.tzinfo is None:
+                        expiration_date = expiration_date.replace(tzinfo=timezone.utc)
+                    
+                    # Make current time timezone-aware
+                    now = datetime.now(timezone.utc)
+                    
+                    if now > expiration_date:
+                        logger.info(f"[PromoCodeService] Promo code '{promo_code}' expired for user {user_id} (now: {now}, exp: {expiration_date})")
+                        return False, None
+                    else:
+                        logger.info(f"[PromoCodeService] Promo code '{promo_code}' valid until {expiration_date}")
+                except Exception as e:
+                    logger.error(f"[PromoCodeService] Failed to compare expiration date for '{promo_code}': {str(e)}")
+                    return False, None
+            else:
+                logger.info(f"[PromoCodeService] Promo code '{promo_code}' has no expiration (valid forever)")
             
             # Get credit amount (None = unlimited)
             credit_amount = promo.get("credit_amount")
+            logger.info(f"[PromoCodeService] User {user_id} has valid promo code '{promo_code}' with {credit_amount or 'unlimited'} daily credits")
             return True, credit_amount
             
         except Exception as e:
-            logger.error(f"[PromoCodeService] Error checking promo status for user: {str(e)}")
+            logger.error(f"[PromoCodeService] Error checking promo status for user {user_id}: {str(e)}")
             return False, None
     
     def user_has_unlimited_access(self, user_id: str) -> bool:

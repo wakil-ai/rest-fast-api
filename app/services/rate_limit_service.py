@@ -65,18 +65,20 @@ class RateLimitService:
             # Check if user has a promo code and get their credit limit
             has_promo, promo_credit_limit = self.promo_code_service.get_user_promo_status(user_id)
             
+            # Calculate total daily limit
+            daily_limit = settings.DAILY_CREDITS_LIMIT  # Start with default (100)
+            
             if has_promo:
                 if promo_credit_limit is None:
                     # Unlimited credits
                     logger.info(f"[RateLimitService] User {user_id} has unlimited access via promo code")
                     return True, -1, -1  # -1 indicates unlimited
                 else:
-                    # Use promo code credit limit instead of default
-                    daily_limit = promo_credit_limit
-                    logger.info(f"[RateLimitService] User {user_id} has promo code with {daily_limit} daily credits")
+                    # ADD promo credits to default credits
+                    daily_limit = settings.DAILY_CREDITS_LIMIT + promo_credit_limit
+                    logger.info(f"[RateLimitService] User {user_id} has {settings.DAILY_CREDITS_LIMIT} default + {promo_credit_limit} promo = {daily_limit} total daily credits")
             else:
-                # Use default credit limit
-                daily_limit = settings.DAILY_CREDITS_LIMIT
+                logger.info(f"[RateLimitService] User {user_id} using default {daily_limit} daily credits")
             
             credit_cost = self._get_credit_cost(assistant_type)
             
@@ -137,17 +139,14 @@ class RateLimitService:
             # Check if user has a promo code and get their credit limit
             has_promo, promo_credit_limit = self.promo_code_service.get_user_promo_status(user_id)
             
+            daily_limit = settings.DAILY_CREDITS_LIMIT
             if has_promo:
                 if promo_credit_limit is None:
                     # Unlimited credits
                     logger.info(f"[RateLimitService] User {user_id} has unlimited access")
-                    return -1  # -1 indicates unlimited
+                    return -1 
                 else:
-                    # Use promo code credit limit
-                    daily_limit = promo_credit_limit
-            else:
-                # Use default credit limit
-                daily_limit = settings.DAILY_CREDITS_LIMIT
+                    daily_limit += promo_credit_limit
             
             today = self._get_today_date()
             collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
