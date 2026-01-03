@@ -181,6 +181,10 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: Optional[str] = None
     GOOGLE_REDIRECT_URI: Optional[str] = None
     AUTH_SECRET_KEY: str = "secret-key-change-me"
+    
+    # Paycom Payment Gateway
+    PAYCOM_MERCHANT_ID: Optional[str] = None
+    PAYCOM_MERCHANT_KEY: Optional[str] = None  # Key from password.paycom file
 
     model_config = ConfigDict(
         env_file=".env",
