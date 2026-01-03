@@ -12,7 +12,7 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
-from app.api import chat, retrieval, chat_history, count, memory, auth, ocr, speech_to_text, ws_stt, google_auth, admin, paycom
+from app.api import chat, retrieval, chat_history, count, memory, auth, ocr, speech_to_text, ws_stt, google_auth, admin, paycom, orders
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -170,6 +170,13 @@ def create_app() -> FastAPI:
     # Paycom router (no API key authentication - uses Basic Auth)
     app.include_router(
         paycom.router,
+    )
+    
+    # Orders router (with API key authentication)
+    app.include_router(
+        orders.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)]
     )
     
     # Health Check Route (no authentication required)

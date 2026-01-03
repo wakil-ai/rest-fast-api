@@ -14,8 +14,12 @@ from datetime import datetime
 
 from app.core.logger import logger
 from app.core.config import settings
+from app.services.order_service import OrderService
 
 router = APIRouter(tags=["Paycom"])
+
+# Initialize order service
+order_service = OrderService()
 
 
 class PaycomException(Exception):
@@ -177,7 +181,6 @@ async def check_perform_transaction(request_id: int, params: Dict[str, Any]) -> 
     account = params.get('account', {})
     amount = params.get('amount')
     
-    # TODO: Validate order exists and amount is correct
     order_id = account.get('order_id')
     
     if not order_id:
@@ -189,8 +192,16 @@ async def check_perform_transaction(request_id: int, params: Dict[str, Any]) -> 
     
     logger.info(f"CheckPerformTransaction: order_id={order_id}, amount={amount}")
     
-    # TODO: Add your business logic here to validate the order
-    # For now, just return allow=True
+    # Validate order exists and amount is correct
+    is_valid, error_message = order_service.validate_order(str(order_id), amount)
+    
+    if not is_valid:
+        logger.warning(f"Order validation failed: {error_message}")
+        raise PaycomException(
+            request_id,
+            error_message,
+            PaycomException.ERROR_INVALID_ACCOUNT
+        )
     
     return {'allow': True}
 
@@ -222,6 +233,17 @@ async def create_transaction(request_id: int, params: Dict[str, Any]) -> Dict[st
     
     logger.info(f"CreateTransaction: id={transaction_id}, order_id={order_id}, amount={amount}")
     
+    # Validate order exists and amount is correct
+    is_valid, error_message = order_service.validate_order(str(order_id), amount)
+    
+    if not is_valid:
+        logger.warning(f"Order validation failed: {error_message}")
+        raise PaycomException(
+            request_id,
+            error_message,
+            PaycomException.ERROR_INVALID_ACCOUNT
+        )
+    
     # TODO: Store transaction in database
     # For now, return a mock response
     
@@ -251,6 +273,15 @@ async def perform_transaction(request_id: int, params: Dict[str, Any]) -> Dict[s
     logger.info(f"PerformTransaction: id={transaction_id}")
     
     # TODO: Update transaction state to completed
+    # For now, we mark the order as paid if transaction_id matches order_id
+    # In a real implementation, you should store and retrieve transaction records
+    
+    # Try to mark the order as paid
+    order_service.update_order_status(
+        str(transaction_id), 
+        "paid", 
+        paid_at=datetime.utcnow()
+    )
     
     current_time_ms = int(time.time() * 1000)
     
