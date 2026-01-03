@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
+import hashlib
 from app.db.mongo_handler import MongoHandler
 from app.models.payment import Order, Transaction, OrderStatus, TransactionState
 from app.core.logger import logger
@@ -88,7 +89,6 @@ class PaymentService:
             collection = self.mongo_handler.db[self.ORDERS_COLLECTION]
             
             # Generate order ID (using timestamp + user_id hash)
-            import hashlib
             timestamp = int(datetime.now(timezone.utc).timestamp())
             hash_suffix = hashlib.md5(f"{user_id}{timestamp}".encode()).hexdigest()[:8]
             order_id = f"ORD-{timestamp}-{hash_suffix}"

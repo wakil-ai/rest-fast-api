@@ -2,7 +2,7 @@
 
 from typing import Optional
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import IntEnum
 
 
@@ -30,7 +30,7 @@ class Order(BaseModel):
     credit_amount: int = Field(..., description="Number of credits to be added upon payment")
     status: str = Field(default=OrderStatus.PENDING, description="Order status")
     description: Optional[str] = Field(default=None, description="Order description")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="When the order was created")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the order was created")
     updated_at: Optional[datetime] = Field(default=None, description="When the order was last updated")
     
     class Config:
