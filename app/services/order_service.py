@@ -1,6 +1,6 @@
 # app/services/order_service.py
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
 from app.db.mongo_handler import MongoHandler
 from app.core.logger import logger
@@ -138,7 +138,7 @@ class OrderService:
             logger.error(f"[OrderService] Error updating order {order_id}: {str(e)}")
             return False
     
-    def validate_order(self, order_id: str, amount: int) -> tuple[bool, Optional[str]]:
+    def validate_order(self, order_id: str, amount: int) -> Tuple[bool, Optional[str]]:
         """
         Validate that order exists and amount matches
         
