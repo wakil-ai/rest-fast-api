@@ -14,8 +14,13 @@ from datetime import datetime
 
 from app.core.logger import logger
 from app.core.config import settings
+from app.services.payment_service import PaymentService
+from app.models.payment import OrderCreate, OrderResponse
 
 router = APIRouter(tags=["Paycom"])
+
+# Initialize payment service
+payment_service = PaymentService()
 
 
 class PaycomException(Exception):
@@ -76,6 +81,60 @@ def authorize_request(authorization: Optional[str], merchant_key: str) -> bool:
             None,
             'Insufficient privilege to perform this method.',
             PaycomException.ERROR_INSUFFICIENT_PRIVILEGE
+        )
+
+
+@router.post("/paycom/create-order", response_model=OrderResponse)
+async def create_order(order: OrderCreate):
+    """
+    Create a new order for credit purchase
+    
+    Args:
+        order: Order details including user_id, amount, and credit_amount
+        
+    Returns:
+        OrderResponse: Created order details
+    """
+    try:
+        order_id = payment_service.create_order(
+            user_id=order.user_id,
+            amount=order.amount,
+            credit_amount=order.credit_amount,
+            description=order.description
+        )
+        
+        if not order_id:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to create order"
+            )
+        
+        # Get the created order
+        order_doc = payment_service.get_order(order_id)
+        
+        if not order_doc:
+            raise HTTPException(
+                status_code=500,
+                detail="Order created but could not be retrieved"
+            )
+        
+        return OrderResponse(
+            order_id=order_doc['order_id'],
+            user_id=order_doc['user_id'],
+            amount=order_doc['amount'],
+            credit_amount=order_doc['credit_amount'],
+            status=order_doc['status'],
+            description=order_doc.get('description'),
+            created_at=order_doc['created_at']
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating order: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create order: {str(e)}"
         )
 
 
@@ -177,7 +236,6 @@ async def check_perform_transaction(request_id: int, params: Dict[str, Any]) -> 
     account = params.get('account', {})
     amount = params.get('amount')
     
-    # TODO: Validate order exists and amount is correct
     order_id = account.get('order_id')
     
     if not order_id:
@@ -189,8 +247,16 @@ async def check_perform_transaction(request_id: int, params: Dict[str, Any]) -> 
     
     logger.info(f"CheckPerformTransaction: order_id={order_id}, amount={amount}")
     
-    # TODO: Add your business logic here to validate the order
-    # For now, just return allow=True
+    # Validate order exists and amount is correct
+    is_valid, error_message = payment_service.validate_order(str(order_id), amount)
+    
+    if not is_valid:
+        logger.warning(f"Order validation failed: {error_message}")
+        raise PaycomException(
+            request_id,
+            error_message or 'Invalid account.',
+            PaycomException.ERROR_INVALID_ACCOUNT
+        )
     
     return {'allow': True}
 
@@ -222,14 +288,44 @@ async def create_transaction(request_id: int, params: Dict[str, Any]) -> Dict[st
     
     logger.info(f"CreateTransaction: id={transaction_id}, order_id={order_id}, amount={amount}")
     
-    # TODO: Store transaction in database
-    # For now, return a mock response
+    # Validate order before creating transaction
+    is_valid, error_message = payment_service.validate_order(str(order_id), amount)
+    
+    if not is_valid:
+        logger.warning(f"Order validation failed: {error_message}")
+        raise PaycomException(
+            request_id,
+            error_message or 'Invalid account.',
+            PaycomException.ERROR_INVALID_ACCOUNT
+        )
+    
+    # Check if transaction already exists
+    existing_transaction = payment_service.get_transaction(transaction_id)
+    if existing_transaction:
+        # Transaction already exists, return existing details
+        logger.info(f"Transaction {transaction_id} already exists, returning existing details")
+        return {
+            'create_time': existing_transaction.get('create_time'),
+            'transaction': existing_transaction.get('order_id'),
+            'state': existing_transaction.get('state'),
+            'receivers': None
+        }
+    
+    # Create transaction in database
+    success = payment_service.create_transaction(transaction_id, str(order_id), amount, time_ms)
+    
+    if not success:
+        raise PaycomException(
+            request_id,
+            'Could not create transaction.',
+            PaycomException.ERROR_COULD_NOT_PERFORM
+        )
     
     current_time_ms = int(time.time() * 1000)
     
     return {
         'create_time': current_time_ms,
-        'transaction': str(order_id),  # Use order_id as transaction ID for now
+        'transaction': str(order_id),
         'state': 1,  # STATE_CREATED
         'receivers': None
     }
@@ -250,9 +346,26 @@ async def perform_transaction(request_id: int, params: Dict[str, Any]) -> Dict[s
     
     logger.info(f"PerformTransaction: id={transaction_id}")
     
-    # TODO: Update transaction state to completed
+    # Get transaction from database
+    transaction = payment_service.get_transaction(transaction_id)
     
+    if not transaction:
+        raise PaycomException(
+            request_id,
+            'Transaction not found.',
+            PaycomException.ERROR_TRANSACTION_NOT_FOUND
+        )
+    
+    # Perform the transaction
     current_time_ms = int(time.time() * 1000)
+    success = payment_service.perform_transaction(transaction_id, current_time_ms)
+    
+    if not success:
+        raise PaycomException(
+            request_id,
+            'Could not perform transaction.',
+            PaycomException.ERROR_COULD_NOT_PERFORM
+        )
     
     return {
         'transaction': transaction_id,
@@ -277,14 +390,35 @@ async def cancel_transaction(request_id: int, params: Dict[str, Any]) -> Dict[st
     
     logger.info(f"CancelTransaction: id={transaction_id}, reason={reason}")
     
-    # TODO: Cancel transaction in database
+    # Get transaction from database
+    transaction = payment_service.get_transaction(transaction_id)
     
+    if not transaction:
+        raise PaycomException(
+            request_id,
+            'Transaction not found.',
+            PaycomException.ERROR_TRANSACTION_NOT_FOUND
+        )
+    
+    # Cancel the transaction
     current_time_ms = int(time.time() * 1000)
+    success = payment_service.cancel_transaction(transaction_id, current_time_ms, reason)
+    
+    if not success:
+        raise PaycomException(
+            request_id,
+            'Could not cancel transaction.',
+            PaycomException.ERROR_COULD_NOT_PERFORM
+        )
+    
+    # Get updated transaction to determine state
+    updated_transaction = payment_service.get_transaction(transaction_id)
+    state = updated_transaction.get('state', -1)
     
     return {
         'transaction': transaction_id,
         'cancel_time': current_time_ms,
-        'state': -1  # STATE_CANCELLED
+        'state': state
     }
 
 
@@ -303,14 +437,24 @@ async def check_transaction(request_id: int, params: Dict[str, Any]) -> Dict[str
     
     logger.info(f"CheckTransaction: id={transaction_id}")
     
-    # TODO: Query transaction from database
-    # For now, return transaction not found
+    # Get transaction from database
+    transaction = payment_service.get_transaction(transaction_id)
     
-    raise PaycomException(
-        request_id,
-        'Transaction not found.',
-        PaycomException.ERROR_TRANSACTION_NOT_FOUND
-    )
+    if not transaction:
+        raise PaycomException(
+            request_id,
+            'Transaction not found.',
+            PaycomException.ERROR_TRANSACTION_NOT_FOUND
+        )
+    
+    return {
+        'create_time': transaction.get('create_time'),
+        'perform_time': transaction.get('perform_time'),
+        'cancel_time': transaction.get('cancel_time'),
+        'transaction': transaction.get('order_id'),
+        'state': transaction.get('state'),
+        'reason': transaction.get('reason')
+    }
 
 
 async def get_statement(request_id: int, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -329,8 +473,27 @@ async def get_statement(request_id: int, params: Dict[str, Any]) -> Dict[str, An
     
     logger.info(f"GetStatement: from={from_time}, to={to_time}")
     
-    # TODO: Query transactions from database
+    # Get transactions from database
+    transactions = payment_service.get_transactions_by_time_range(from_time, to_time)
+    
+    # Format transactions for response
+    formatted_transactions = []
+    for transaction in transactions:
+        formatted_transactions.append({
+            'id': transaction.get('transaction_id'),
+            'time': transaction.get('create_time'),
+            'amount': transaction.get('amount'),
+            'account': {
+                'order_id': transaction.get('order_id')
+            },
+            'create_time': transaction.get('create_time'),
+            'perform_time': transaction.get('perform_time'),
+            'cancel_time': transaction.get('cancel_time'),
+            'transaction': transaction.get('order_id'),
+            'state': transaction.get('state'),
+            'reason': transaction.get('reason')
+        })
     
     return {
-        'transactions': []
+        'transactions': formatted_transactions
     }
