@@ -76,7 +76,8 @@ def verify_payme_authorization(authorization: Optional[str], request_id: int) ->
         )
 
 
-@router.post("/payme")
+@router.post("/payme", include_in_schema=True)
+@router.post("/payme/", include_in_schema=False)
 async def payme_merchant_api(
     request: Request,
     payme_request: PaymeRequest,
@@ -97,7 +98,7 @@ async def payme_merchant_api(
         # Verify Payme authorization
         verify_payme_authorization(authorization, payme_request.id)
         
-        logger.info(f"Payme request: method={payme_request.method}, id={payme_request.id}")
+        logger.info(f"Payme {payme_request.method} - request_id={payme_request.id}")
         
         # Route to appropriate handler based on method
         if payme_request.method == PaymeMethod.CHECK_PERFORM_TRANSACTION:
@@ -144,7 +145,11 @@ async def payme_merchant_api(
             },
             "id": e.request_id or payme_request.id
         }
-        logger.error(f"Payme error: {error_response}")
+
+        if e.code == -31003 and payme_request.method == "CheckTransaction":
+            logger.info(f"Payme: CheckTransaction returned 'not found' (normal - transaction will be created next)")
+        else:
+            logger.error(f"Payme error: {error_response}")
         return JSONResponse(
             content=error_response,
             status_code=200  # Payme expects 200 even for errors

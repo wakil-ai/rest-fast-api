@@ -92,7 +92,7 @@ class PaymeService:
     
     def __init__(self):
         self.db = MongoHandler()
-        self.collection_name = "payme_transactions"
+        self.collection_name = "transactions"
     
     def check_perform_transaction(self, params: PaymeParams, request_id: int) -> PaymeCheckPerformTransactionResponse:
         """
@@ -115,6 +115,9 @@ class PaymeService:
         if not user_id:
             raise PaymeError(**self.ERRORS["UserNotFound"], request_id=request_id)
         
+        # 
+        
+        
         logger.info(f"Transaction can be performed for user {user_id}, amount: {amount_sum} sum")
         return PaymeCheckPerformTransactionResponse(allow=True)
     
@@ -129,6 +132,24 @@ class PaymeService:
         
         if not transaction:
             raise PaymeError(**self.ERRORS["TransactionNotFound"], request_id=request_id)
+        
+        # If transaction is pending, check for timeout
+        if transaction["state"] == TransactionState.PENDING:
+            current_time = int(time.time() * 1000)
+            time_diff_ms = current_time - transaction["create_time"]
+            
+            # If timeout exceeded (12 hours = 43,200,000 ms), cancel with reason 4
+            if time_diff_ms >= 43200000:
+                self.db.update_one(
+                    self.collection_name,
+                    {"id": params.id},
+                    {
+                        "state": TransactionState.PENDING_CANCELED,
+                        "reason": 4,
+                        "cancel_time": current_time
+                    }
+                )
+                raise PaymeError(**self.ERRORS["CantDoOperation"], request_id=request_id)
         
         return PaymeTransactionResponse(
             create_time=transaction["create_time"],
@@ -159,18 +180,19 @@ class PaymeService:
             if existing_transaction["state"] != TransactionState.PENDING:
                 raise PaymeError(**self.ERRORS["CantDoOperation"], request_id=request_id)
             
-            # Check if transaction is not expired (12 minutes)
+            # Check if transaction is not expired (12 hours = 43,200,000 milliseconds)
             current_time = int(time.time() * 1000)
-            expiration_time = (current_time - existing_transaction["create_time"]) / 60000 < 12
+            time_diff_ms = current_time - existing_transaction["create_time"]
+            expiration_time = time_diff_ms < 43200000  # 12 hours in milliseconds
             
             if not expiration_time:
-                # Cancel expired transaction
+                # Cancel expired transaction (timeout after 12 hours)
                 self.db.update_one(
                     self.collection_name,
                     {"id": params.id},
                     {
                         "state": TransactionState.PENDING_CANCELED,
-                        "reason": 4,
+                        "reason": 4,  # Timeout cancellation
                         "cancel_time": current_time
                     }
                 )
@@ -253,17 +275,18 @@ class PaymeService:
                 cancel_time=0
             )
         
-        # Check if transaction is not expired (12 minutes)
-        expiration_time = (current_time - transaction["create_time"]) / 60000 < 12
+        # Check if transaction is not expired (12 hours = 43,200,000 milliseconds)
+        time_diff_ms = current_time - transaction["create_time"]
+        expiration_time = time_diff_ms < 43200000  # 12 hours in milliseconds
         
         if not expiration_time:
-            # Cancel expired transaction
+            # Cancel expired transaction (timeout after 12 hours)
             self.db.update_one(
                 self.collection_name,
                 {"id": params.id},
                 {
                     "state": TransactionState.PENDING_CANCELED,
-                    "reason": 4,
+                    "reason": 4,  # Timeout cancellation
                     "cancel_time": current_time
                 }
             )
