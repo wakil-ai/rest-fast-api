@@ -164,6 +164,10 @@ class Settings(BaseSettings):
     CREDIT_COST_SOLIQ_ASSISTANT: int = 15  # Credits for soliq specialized assistant
     CREDIT_COST_DEEPRESEARCH: int = 25  # Credits for deep research / agentic RAG
     
+    # Payme Payment Configuration
+    PAYME_MERCHANT_ID: str = None  # Payme merchant ID
+    PAYME_MERCHANT_KEY: str = None  # Payme merchant key for authorization
+    
     # EMBEDDING DIM
     @property
     def EMBEDDING_DIM(self) -> int:

@@ -12,7 +12,7 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
 # Internal imports
-from app.api import chat, retrieval, chat_history, count, memory, auth, ocr, speech_to_text, ws_stt, google_auth, admin
+from app.api import chat, retrieval, chat_history, count, memory, auth, ocr, speech_to_text, ws_stt, google_auth, admin, payme
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -165,6 +165,15 @@ def create_app() -> FastAPI:
     app.include_router(
         google_auth.router,
         prefix=settings.API_PREFIX
+    )
+    # Payme payment routes
+    # Transaction endpoint (no API key - uses Payme merchant auth)
+    # Payment link creation endpoint (requires API key)
+    app.include_router(
+        payme.router,
+        prefix=f"{settings.API_PREFIX}/transaction",
+        tags=["Payme"],
+        # Only payment link creation requires API key, merchant API uses its own auth
     )
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"])

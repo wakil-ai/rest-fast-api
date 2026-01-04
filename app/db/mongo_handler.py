@@ -61,3 +61,34 @@ class MongoHandler:
             logger.info(f"[MongoHandler] Cleaned {result.deleted_count} documents from '{collection_name}' collection.")
         except Exception as e:
             logger.error(f"[MongoHandler] Error cleaning collection {collection_name}: {str(e)}")
+    
+    def find_one(self, collection_name: str, query: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Find a single document matching the query.
+        """
+        collection = self.db[collection_name]
+        return collection.find_one(query)
+    
+    def insert_one(self, collection_name: str, document: Dict[str, Any]) -> str:
+        """
+        Insert a single document and return its ID.
+        """
+        collection = self.db[collection_name]
+        result = collection.insert_one(document)
+        return str(result.inserted_id)
+    
+    def update_one(self, collection_name: str, query: Dict[str, Any], update: Dict[str, Any]) -> bool:
+        """
+        Update a single document matching the query.
+        """
+        collection = self.db[collection_name]
+        result = collection.update_one(query, {"$set": update})
+        return result.modified_count > 0
+    
+    def find_many(self, collection_name: str, query: Dict[str, Any], limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Find multiple documents matching the query.
+        """
+        collection = self.db[collection_name]
+        cursor = collection.find(query).limit(limit)
+        return list(cursor)
