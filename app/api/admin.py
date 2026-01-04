@@ -22,40 +22,40 @@ promo_code_service = PromoCodeService()
 
 class RateLimitResponse(BaseModel):
     user_id: str
-    remaining_requests_assistant: int
-    remaining_requests_deepresearch: int
-    daily_limit_assistant: int
-    daily_limit_deepresearch: int
+    remaining_credits: int
+    daily_credit_limit: int
+    credit_costs: dict  # Shows credit cost for each assistant type
 
 
 class ResetLimitRequest(BaseModel):
     user_id: str
 
 
-@router.get("/rate-limit/{user_id}", response_model=RateLimitResponse, summary="Get user's remaining requests")
+@router.get("/rate-limit/{user_id}", response_model=RateLimitResponse, summary="Get user's remaining credits")
 async def get_user_rate_limit(user_id: str):
     """
-    Get the remaining requests for a user for today.
-    Shows separate limits for assistant endpoints (20/day) and deepresearch endpoints (5/day).
+    Get rate limit information for a specific user.
     
     Parameters:
     - user_id: User ID to check
     
     Returns:
-    - remaining_requests_assistant: Number of assistant requests remaining today
-    - remaining_requests_deepresearch: Number of deepresearch requests remaining today
-    - daily_limit_assistant: Total daily limit for assistants (20)
-    - daily_limit_deepresearch: Total daily limit for deepresearch (5)
+    - remaining_credits: Number of credits remaining today
+    - daily_credit_limit: Total daily credit limit (100)
+    - credit_costs: Credit cost for each assistant type
     """
     try:
-        remaining_assistant = rate_limit_service.get_remaining_requests(user_id, is_deepresearch=False)
-        remaining_deepresearch = rate_limit_service.get_remaining_requests(user_id, is_deepresearch=True)
+        from app.core.config import settings
+        remaining = rate_limit_service.get_remaining_credits(user_id)
         return RateLimitResponse(
             user_id=user_id,
-            remaining_requests_assistant=remaining_assistant,
-            remaining_requests_deepresearch=remaining_deepresearch,
-            daily_limit_assistant=RateLimitService.DAILY_LIMIT_ASSISTANT,
-            daily_limit_deepresearch=RateLimitService.DAILY_LIMIT_DEEPRESEARCH
+            remaining_credits=remaining,
+            daily_credit_limit=settings.DAILY_CREDITS_LIMIT,
+            credit_costs={
+                "main": settings.CREDIT_COST_MAIN_ASSISTANT,
+                "soliq": settings.CREDIT_COST_SOLIQ_ASSISTANT,
+                "deepresearch": settings.CREDIT_COST_DEEPRESEARCH
+            }
         )
     except Exception as e:
         logger.error(f"[AdminAPI] Error getting rate limit for user {user_id}: {str(e)}")
@@ -119,7 +119,9 @@ async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin")
         success = promo_code_service.create_promo_code(
             code=request.code,
             created_by=created_by,
-            description=request.description
+            description=request.description,
+            expiration_date=request.expiration_date,
+            credit_amount=request.credit_amount
         )
         
         if success:
@@ -130,6 +132,8 @@ async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin")
                 "promo_code": {
                     "code": promo_code["code"],
                     "is_active": promo_code["is_active"],
+                    "expiration_date": promo_code.get("expiration_date"),
+                    "credit_amount": promo_code.get("credit_amount"),
                     "created_at": promo_code["created_at"],
                     "created_by": promo_code.get("created_by"),
                     "description": promo_code.get("description")
@@ -170,6 +174,8 @@ async def list_promo_codes(active_only: bool = False):
                 {
                     "code": pc["code"],
                     "is_active": pc["is_active"],
+                    "expiration_date": pc.get("expiration_date"),
+                    "credit_amount": pc.get("credit_amount"),
                     "created_at": pc["created_at"],
                     "created_by": pc.get("created_by"),
                     "description": pc.get("description")
@@ -209,6 +215,8 @@ async def get_promo_code(code: str):
         return {
             "code": promo_code["code"],
             "is_active": promo_code["is_active"],
+            "expiration_date": promo_code.get("expiration_date"),
+            "credit_amount": promo_code.get("credit_amount"),
             "created_at": promo_code["created_at"],
             "created_by": promo_code.get("created_by"),
             "description": promo_code.get("description")

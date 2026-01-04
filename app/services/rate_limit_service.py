@@ -1,22 +1,25 @@
 # app/services/rate_limit_service.py
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Literal
 from app.db.mongo_handler import MongoHandler
 from app.core.logger import logger
+from app.core.config import settings
+
+AssistantType = Literal["main", "soliq", "deepresearch"]
 
 class RateLimitService:
     """
-    Service to manage rate limiting for users.
-    Tracks daily request counts and enforces limits.
-    Different limits apply based on endpoint type:
-    - Agentic RAG (deepresearch): 5 requests per day
-    - Regular assistants (umumiy/soliq): 20 requests per day
+    Service to manage credit-based rate limiting for users.
+    Tracks daily credit usage and enforces limits.
+    Credit costs per assistant type:
+    - Main assistant (umumiy): 10 credits per request
+    - Soliq specialized assistant: 15 credits per request  
+    - Deep research / agentic RAG: 25 credits per request
+    Daily limit: 100 credits per user (configurable)
     """
     
     RATE_LIMIT_COLLECTION = "rate_limits"
-    DAILY_LIMIT_DEEPRESEARCH = 5  # For agentic RAG endpoints
-    DAILY_LIMIT_ASSISTANT = 20     # For regular assistant endpoints (umumiy/soliq)
     
     def __init__(self):
         self.mongo_handler = MongoHandler()
@@ -34,94 +37,116 @@ class RateLimitService:
         """Get today's date in YYYY-MM-DD format."""
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
-    def check_and_increment_limit(self, user_id: str, is_deepresearch: bool = False) -> tuple[bool, int, int]:
+    def _get_credit_cost(self, assistant_type: AssistantType) -> int:
+        """Get credit cost for a specific assistant type."""
+        cost_map = {
+            "main": settings.CREDIT_COST_MAIN_ASSISTANT,
+            "soliq": settings.CREDIT_COST_SOLIQ_ASSISTANT,
+            "deepresearch": settings.CREDIT_COST_DEEPRESEARCH
+        }
+        return cost_map[assistant_type]
+    
+    def check_and_decrement_credits(self, user_id: str, assistant_type: AssistantType = "main") -> tuple[bool, int, int]:
         """
-        Check if user has exceeded daily limit and increment counter if not.
-        Users with valid promo codes have unlimited access.
+        Check if user has enough credits and decrement if available.
+        Users with valid promo codes may have custom credit limits or unlimited access.
         
         Args:
             user_id: The user's unique identifier
-            is_deepresearch: True for agentic RAG endpoints (5/day limit), False for regular assistants (20/day limit)
+            assistant_type: Type of assistant being used ("main", "soliq", or "deepresearch")
             
         Returns:
-            tuple: (is_allowed: bool, current_count: int, limit: int)
-                - is_allowed: True if request is allowed, False if limit exceeded
-                - current_count: Number of requests made today (after increment if allowed)
-                - limit: The daily limit (or -1 for unlimited)
+            tuple: (is_allowed: bool, credits_remaining: int, daily_limit: int)
+                - is_allowed: True if request is allowed, False if insufficient credits
+                - credits_remaining: Credits remaining after deduction (if allowed)
+                - daily_limit: The daily credit limit (or -1 for unlimited)
         """
         try:
-            # Check if user has unlimited access via promo code
-            if self.promo_code_service.user_has_unlimited_access(user_id):
-                logger.info(f"[RateLimitService] User {user_id} has unlimited access via promo code")
-                return True, -1, -1  # -1 indicates unlimited
+            # Check if user has a promo code and get their credit limit
+            has_promo, promo_credit_limit = self.promo_code_service.get_user_promo_status(user_id)
             
-            # Determine which limit to use and which field to track
-            limit_type = "deepresearch" if is_deepresearch else "assistant"
-            daily_limit = self.DAILY_LIMIT_DEEPRESEARCH if is_deepresearch else self.DAILY_LIMIT_ASSISTANT
-            count_field = "count_deepresearch" if is_deepresearch else "count_assistant"
+            # Calculate total daily limit
+            daily_limit = settings.DAILY_CREDITS_LIMIT  # Start with default (100)
+            
+            if has_promo:
+                if promo_credit_limit is None:
+                    # Unlimited credits
+                    logger.info(f"[RateLimitService] User {user_id} has unlimited access via promo code")
+                    return True, -1, -1  # -1 indicates unlimited
+                else:
+                    # ADD promo credits to default credits
+                    daily_limit = settings.DAILY_CREDITS_LIMIT + promo_credit_limit
+                    logger.info(f"[RateLimitService] User {user_id} has {settings.DAILY_CREDITS_LIMIT} default + {promo_credit_limit} promo = {daily_limit} total daily credits")
+            else:
+                logger.info(f"[RateLimitService] User {user_id} using default {daily_limit} daily credits")
+            
+            credit_cost = self._get_credit_cost(assistant_type)
             
             today = self._get_today_date()
             collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
             
-            # Find or create user's rate limit document for today
+            # Find or create user's credit document for today
             query = {"user_id": user_id, "date": today}
             user_limit = collection.find_one(query)
             
             if user_limit:
-                current_count = user_limit.get(count_field, 0)
+                credits_used = user_limit.get("credits_used", 0)
+                credits_remaining = daily_limit - credits_used
                 
-                # Check if limit exceeded
-                if current_count >= daily_limit:
-                    logger.warning(f"[RateLimitService] User {user_id} exceeded {limit_type} daily limit: {current_count}/{daily_limit}")
-                    return False, current_count, daily_limit
+                # Check if user has enough credits
+                if credits_remaining < credit_cost:
+                    logger.warning(f"[RateLimitService] User {user_id} has insufficient credits for {assistant_type}: {credits_remaining}/{daily_limit} remaining, needs {credit_cost}")
+                    return False, credits_remaining, daily_limit
                 
-                # Increment counter for the specific limit type
+                # Deduct credits
                 collection.update_one(
                     query,
-                    {"$inc": {count_field: 1}, "$set": {"updated_at": datetime.now(timezone.utc)}}
+                    {"$inc": {"credits_used": credit_cost}, "$set": {"updated_at": datetime.now(timezone.utc)}}
                 )
-                new_count = current_count + 1
-                logger.info(f"[RateLimitService] User {user_id} {limit_type} request count: {new_count}/{daily_limit}")
-                return True, new_count, daily_limit
+                new_credits_remaining = credits_remaining - credit_cost
+                logger.info(f"[RateLimitService] User {user_id} used {credit_cost} credits for {assistant_type}: {new_credits_remaining}/{daily_limit} remaining")
+                return True, new_credits_remaining, daily_limit
             else:
-                # Create new rate limit entry for today with both counters
+                # Create new credit entry for today
                 collection.insert_one({
                     "user_id": user_id,
                     "date": today,
-                    "count_deepresearch": 1 if is_deepresearch else 0,
-                    "count_assistant": 0 if is_deepresearch else 1,
+                    "credits_used": credit_cost,
                     "created_at": datetime.now(timezone.utc),
                     "updated_at": datetime.now(timezone.utc)
                 })
-                logger.info(f"[RateLimitService] User {user_id} first {limit_type} request today: 1/{daily_limit}")
-                return True, 1, daily_limit
+                new_credits_remaining = daily_limit - credit_cost
+                logger.info(f"[RateLimitService] User {user_id} first request today, used {credit_cost} credits for {assistant_type}: {new_credits_remaining}/{daily_limit} remaining")
+                return True, new_credits_remaining, daily_limit
                 
         except Exception as e:
-            logger.error(f"[RateLimitService] Error checking rate limit for user {user_id}: {str(e)}")
+            logger.error(f"[RateLimitService] Error checking credits for user {user_id}: {str(e)}")
             # On error, allow the request (fail open)
-            daily_limit = self.DAILY_LIMIT_DEEPRESEARCH if is_deepresearch else self.DAILY_LIMIT_ASSISTANT
-            return True, 0, daily_limit
+            return True, settings.DAILY_CREDITS_LIMIT, settings.DAILY_CREDITS_LIMIT
     
-    def get_remaining_requests(self, user_id: str, is_deepresearch: bool = False) -> int:
+    def get_remaining_credits(self, user_id: str) -> int:
         """
-        Get the number of remaining requests for today.
+        Get the number of remaining credits for today.
         Returns -1 for users with unlimited access via promo code.
         
         Args:
             user_id: The user's unique identifier
-            is_deepresearch: True for agentic RAG endpoints, False for regular assistants
             
         Returns:
-            int: Number of remaining requests (-1 for unlimited)
+            int: Number of remaining credits (-1 for unlimited)
         """
         try:
-            # Check if user has unlimited access via promo code
-            if self.promo_code_service.user_has_unlimited_access(user_id):
-                logger.info(f"[RateLimitService] User {user_id} has unlimited access")
-                return -1  # -1 indicates unlimited
+            # Check if user has a promo code and get their credit limit
+            has_promo, promo_credit_limit = self.promo_code_service.get_user_promo_status(user_id)
             
-            daily_limit = self.DAILY_LIMIT_DEEPRESEARCH if is_deepresearch else self.DAILY_LIMIT_ASSISTANT
-            count_field = "count_deepresearch" if is_deepresearch else "count_assistant"
+            daily_limit = settings.DAILY_CREDITS_LIMIT
+            if has_promo:
+                if promo_credit_limit is None:
+                    # Unlimited credits
+                    logger.info(f"[RateLimitService] User {user_id} has unlimited access")
+                    return -1 
+                else:
+                    daily_limit += promo_credit_limit
             
             today = self._get_today_date()
             collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
@@ -130,17 +155,16 @@ class RateLimitService:
             user_limit = collection.find_one(query)
             
             if user_limit:
-                current_count = user_limit.get(count_field, 0)
-                remaining = max(0, daily_limit - current_count)
+                credits_used = user_limit.get("credits_used", 0)
+                remaining = max(0, daily_limit - credits_used)
             else:
                 remaining = daily_limit
             
             return remaining
             
         except Exception as e:
-            logger.error(f"[RateLimitService] Error getting remaining requests for user {user_id}: {str(e)}")
-            daily_limit = self.DAILY_LIMIT_DEEPRESEARCH if is_deepresearch else self.DAILY_LIMIT_ASSISTANT
-            return daily_limit
+            logger.error(f"[RateLimitService] Error getting remaining credits for user {user_id}: {str(e)}")
+            return settings.DAILY_CREDITS_LIMIT
     
     def reset_user_limit(self, user_id: str) -> bool:
         """
