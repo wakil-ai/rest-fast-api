@@ -1,428 +1,229 @@
-"""Payme payment service"""
-
-import time
-import base64
-from typing import Dict, Optional, List
-from app.models.payme import (
-    PaymeParams,
-    PaymeTransaction,
-    TransactionState,
-    PaymeTransactionResponse,
-    PaymeCheckPerformTransactionResponse,
-    PaymePaymentLink,
-    PaymePaymentLinkResponse
-)
-from app.core.config import settings
-from app.core.logger import logger
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorCollection
 from app.db.mongo_handler import MongoHandler
+from app.models.payme import PaymeError, PaymeData, TransactionState, TransactionError, TransactionModel
+import time
+from math import floor
 
-
-class PaymeError(Exception):
-    """Base Payme error"""
-    def __init__(self, code: int, message: Dict[str, str], data: Optional[str] = None, request_id: Optional[int] = None):
-        self.code = code
-        self.message = message
-        self.data = data
-        self.request_id = request_id
-        super().__init__(message.get("en", "Unknown error"))
-
-
-class PaymeService:
-    """Service for handling Payme payment operations"""
-    
-    # Error codes according to Payme documentation
-    ERRORS = {
-        "InvalidAmount": {
-            "code": -31001,
-            "message": {
-                "uz": "Noto'g'ri summa",
-                "ru": "Недопустимая сумма",
-                "en": "Invalid amount"
-            }
-        },
-        "UserNotFound": {
-            "code": -31050,
-            "message": {
-                "uz": "Biz sizning hisobingizni topolmadik.",
-                "ru": "Мы не нашли вашу учетную запись",
-                "en": "We couldn't find your account"
-            }
-        },
-        "CantDoOperation": {
-            "code": -31008,
-            "message": {
-                "uz": "Biz operatsiyani bajara olmaymiz",
-                "ru": "Мы не можем сделать операцию",
-                "en": "We can't do operation"
-            }
-        },
-        "TransactionNotFound": {
-            "code": -31003,
-            "message": {
-                "uz": "Tranzaksiya topilmadi",
-                "ru": "Транзакция не найдена",
-                "en": "Transaction not found"
-            }
-        },
-        "AlreadyDone": {
-            "code": -31060,
-            "message": {
-                "uz": "Buyurtma to'langan",
-                "ru": "Заказ оплачен",
-                "en": "Order already paid"
-            }
-        },
-        "Pending": {
-            "code": -31050,
-            "message": {
-                "uz": "Buyurtma to'lovni kutmoqda",
-                "ru": "Заказ ожидает оплаты",
-                "en": "Order is pending payment"
-            }
-        },
-        "InvalidAuthorization": {
-            "code": -32504,
-            "message": {
-                "uz": "Avtorizatsiya xatosi",
-                "ru": "Ошибка авторизации",
-                "en": "Authorization error"
-            }
-        }
-    }
-    
+class TransactionService:
     def __init__(self):
-        self.db = MongoHandler()
-        self.collection_name = "transactions"
+        self.db_handler = MongoHandler()
+        self.users_collection = 'users'
+        self.transaction_collection = 'transactions'
+        
+    async def check_perform_transaction(self, params, request_id):
+        account = params["account"]
+        amount = params["amount"]
+
+        amount = floor(amount / 100)
+
+        user = self.db_handler.find_documents(self.users_collection, {"user_id": account["user_id"]})
+        if not user:
+            raise TransactionError(PaymeError.UserNotFound, request_id, PaymeData.UserId)
+
     
-    def check_perform_transaction(self, params: PaymeParams, request_id: int) -> PaymeCheckPerformTransactionResponse:
-        """
-        Check if transaction can be performed
-        This is called before creating a transaction
-        """
-        logger.info(f"CheckPerformTransaction: {params}")
-        
-        # Validate amount
-        if not params.amount or params.amount <= 0:
-            raise PaymeError(**self.ERRORS["InvalidAmount"], request_id=request_id)
-        
-        # Convert from tiyin to sum
-        amount_sum = params.amount // 100
-        
-        # Validate user exists
-        user_id = params.account.user_id
-        # Here you would check if user exists in your system
-        # For now, we'll assume user exists if user_id is provided
-        if not user_id:
-            raise PaymeError(**self.ERRORS["UserNotFound"], request_id=request_id)
-        
-        # 
-        
-        
-        logger.info(f"Transaction can be performed for user {user_id}, amount: {amount_sum} sum")
-        return PaymeCheckPerformTransactionResponse(allow=True)
-    
-    def check_transaction(self, params: PaymeParams, request_id: int) -> PaymeTransactionResponse:
-        """Check transaction status"""
-        logger.info(f"CheckTransaction: {params}")
-        
-        transaction = self.db.find_one(
-            self.collection_name,
-            {"id": params.id}
-        )
-        
+    async def check_transaction(self, params, request_id):
+        transaction = self.db_handler.find_one(self.transaction_collection, {"id": params["id"]})
         if not transaction:
-            raise PaymeError(**self.ERRORS["TransactionNotFound"], request_id=request_id)
-        
-        # If transaction is pending, check for timeout
-        if transaction["state"] == TransactionState.PENDING:
+            raise TransactionError(PaymeError.TransactionNotFound, request_id)
+
+        # If transaction is pending, check for timeout (12 hours = 43,200,000 ms)
+        if transaction["state"] == TransactionState.Pending:
             current_time = int(time.time() * 1000)
             time_diff_ms = current_time - transaction["create_time"]
             
-            # If timeout exceeded (12 hours = 43,200,000 ms), cancel with reason 4
+            # If timeout exceeded, cancel with reason 4 (ONE TIME ONLY)
             if time_diff_ms >= 43200000:
-                self.db.update_one(
-                    self.collection_name,
-                    {"id": params.id},
+                self.db_handler.update_one(
+                    self.transaction_collection,
+                    {"id": params["id"]},
                     {
-                        "state": TransactionState.PENDING_CANCELED,
-                        "reason": 4,
-                        "cancel_time": current_time
-                    }
+                            "state": TransactionState.PendingCanceled,
+                            "reason": 4,
+                            "cancel_time": current_time,
+                    },
                 )
-                raise PaymeError(**self.ERRORS["CantDoOperation"], request_id=request_id)
-        
-        return PaymeTransactionResponse(
-            create_time=transaction["create_time"],
-            perform_time=transaction.get("perform_time", 0),
-            cancel_time=transaction.get("cancel_time", 0),
-            transaction=transaction["id"],
-            state=transaction["state"],
-            reason=transaction.get("reason")
-        )
-    
-    def create_transaction(self, params: PaymeParams, request_id: int) -> PaymeTransactionResponse:
-        """Create a new transaction"""
-        logger.info(f"CreateTransaction: {params}")
-        
-        # Check if transaction can be performed
-        self.check_perform_transaction(params, request_id)
-        
-        # Convert amount from tiyin to sum
-        amount_sum = params.amount // 100
-        
-        # Check if transaction already exists
-        existing_transaction = self.db.find_one(
-            self.collection_name,
-            {"id": params.id}
-        )
-        
-        if existing_transaction:
-            if existing_transaction["state"] != TransactionState.PENDING:
-                raise PaymeError(**self.ERRORS["CantDoOperation"], request_id=request_id)
-            
-            # Check if transaction is not expired (12 hours = 43,200,000 milliseconds)
-            current_time = int(time.time() * 1000)
-            time_diff_ms = current_time - existing_transaction["create_time"]
-            expiration_time = time_diff_ms < 43200000  # 12 hours in milliseconds
-            
-            if not expiration_time:
-                # Cancel expired transaction (timeout after 12 hours)
-                self.db.update_one(
-                    self.collection_name,
-                    {"id": params.id},
-                    {
-                        "state": TransactionState.PENDING_CANCELED,
-                        "reason": 4,  # Timeout cancellation
-                        "cancel_time": current_time
-                    }
-                )
-                raise PaymeError(**self.ERRORS["CantDoOperation"], request_id=request_id)
-            
-            return PaymeTransactionResponse(
-                create_time=existing_transaction["create_time"],
-                perform_time=0,
-                cancel_time=0,
-                transaction=existing_transaction["id"],
-                state=TransactionState.PENDING
-            )
-        
-        # Check for duplicate order
-        duplicate = self.db.find_one(
-            self.collection_name,
-            {
-                "user_id": params.account.user_id,
-                "order_id": params.account.order_id,
-                "provider": "payme"
-            }
-        )
-        
-        if duplicate:
-            if duplicate["state"] == TransactionState.PAID:
-                raise PaymeError(**self.ERRORS["AlreadyDone"], request_id=request_id)
-            if duplicate["state"] == TransactionState.PENDING:
-                raise PaymeError(**self.ERRORS["Pending"], request_id=request_id)
-        
-        # Create new transaction
-        new_transaction = PaymeTransaction(
-            id=params.id,
-            state=TransactionState.PENDING,
-            amount=amount_sum,
-            user_id=params.account.user_id,
-            order_id=params.account.order_id,
-            create_time=params.time,
-            provider="payme"
-        )
-        
-        self.db.insert_one(
-            self.collection_name,
-            new_transaction.model_dump()
-        )
-        
-        logger.info(f"Transaction created: {new_transaction.id}")
-        
-        return PaymeTransactionResponse(
-            transaction=new_transaction.id,
-            state=TransactionState.PENDING,
-            create_time=new_transaction.create_time,
-            perform_time=0,
-            cancel_time=0
-        )
-    
-    def perform_transaction(self, params: PaymeParams, request_id: int) -> PaymeTransactionResponse:
-        """Perform (complete) transaction"""
-        logger.info(f"PerformTransaction: {params}")
-        
-        current_time = int(time.time() * 1000)
-        
-        transaction = self.db.find_one(
-            self.collection_name,
-            {"id": params.id}
-        )
-        
-        if not transaction:
-            raise PaymeError(**self.ERRORS["TransactionNotFound"], request_id=request_id)
-        
-        if transaction["state"] != TransactionState.PENDING:
-            if transaction["state"] != TransactionState.PAID:
-                raise PaymeError(**self.ERRORS["CantDoOperation"], request_id=request_id)
-            
-            # Already paid, return existing response
-            return PaymeTransactionResponse(
-                perform_time=transaction["perform_time"],
-                transaction=transaction["id"],
-                state=TransactionState.PAID,
-                create_time=transaction["create_time"],
-                cancel_time=0
-            )
-        
-        # Check if transaction is not expired (12 hours = 43,200,000 milliseconds)
-        time_diff_ms = current_time - transaction["create_time"]
-        expiration_time = time_diff_ms < 43200000  # 12 hours in milliseconds
-        
-        if not expiration_time:
-            # Cancel expired transaction (timeout after 12 hours)
-            self.db.update_one(
-                self.collection_name,
-                {"id": params.id},
-                {
-                    "state": TransactionState.PENDING_CANCELED,
-                    "reason": 4,  # Timeout cancellation
-                    "cancel_time": current_time
-                }
-            )
-            raise PaymeError(**self.ERRORS["CantDoOperation"], request_id=request_id)
-        
-        # Perform transaction
-        self.db.update_one(
-            self.collection_name,
-            {"id": params.id},
-            {
-                "state": TransactionState.PAID,
-                "perform_time": current_time
-            }
-        )
-        
-        logger.info(f"Transaction performed: {params.id}")
-        
-        # Here you would add credits to user or perform other business logic
-        # await self.add_credits_to_user(transaction["user_id"], transaction["amount"])
-        
-        return PaymeTransactionResponse(
-            perform_time=current_time,
-            transaction=transaction["id"],
-            state=TransactionState.PAID,
-            create_time=transaction["create_time"],
-            cancel_time=0
-        )
-    
-    def cancel_transaction(self, params: PaymeParams, request_id: int) -> PaymeTransactionResponse:
-        """Cancel transaction"""
-        logger.info(f"CancelTransaction: {params}")
-        
-        transaction = self.db.find_one(
-            self.collection_name,
-            {"id": params.id}
-        )
-        
-        if not transaction:
-            raise PaymeError(**self.ERRORS["TransactionNotFound"], request_id=request_id)
-        
-        current_time = int(time.time() * 1000)
-        
-        # If transaction is in positive state, cancel it
-        if transaction["state"] > 0:
-            new_state = -abs(transaction["state"])
-            self.db.update_one(
-                self.collection_name,
-                {"id": params.id},
-                {
-                    "state": new_state,
-                    "reason": params.reason,
-                    "cancel_time": current_time
-                }
-            )
-            
-            # If transaction was paid, rollback credits
-            if transaction["state"] == TransactionState.PAID:
-                # await self.rollback_credits(transaction["user_id"], transaction["amount"])
-                pass
-        
-        return PaymeTransactionResponse(
-            cancel_time=transaction.get("cancel_time", current_time),
-            transaction=transaction["id"],
-            state=-abs(transaction["state"]),
-            create_time=transaction["create_time"],
-            perform_time=transaction.get("perform_time", 0),
-            reason=params.reason
-        )
-    
-    def get_statement(self, params: PaymeParams, request_id: int) -> List[Dict]:
-        """Get statement of transactions"""
-        logger.info(f"GetStatement: from={params.from_time}, to={params.to_time}")
-        
-        query = {
-            "create_time": {
-                "$gte": params.from_time,
-                "$lte": params.to_time
-            }
+                # Update local transaction object to return consistent state
+                transaction["state"] = TransactionState.PendingCanceled
+                transaction["reason"] = 4
+                transaction["cancel_time"] = current_time
+
+        return {
+            "create_time": transaction.get("create_time"),
+            "perform_time": transaction.get("perform_time", 0),
+            "cancel_time": transaction.get("cancel_time", 0),
+            "transaction": transaction["id"],
+            "state": transaction["state"],
+            "reason": transaction.get("reason"),
         }
-        
-        transactions = self.db.find_many(self.collection_name, query)
-        
-        result = []
-        for transaction in transactions:
-            result.append({
-                "id": transaction["id"],
-                "time": transaction["create_time"],
-                "amount": transaction["amount"] * 100,  # Convert to tiyin
-                "account": {
-                    "user_id": transaction["user_id"],
-                    "order_id": transaction.get("order_id")
-                },
+
+
+    async def create_transaction(self, params, request_id):
+        account = params["account"]
+        amount = floor(params["amount"] / 100)
+        time_ms = params["time"]
+
+        await self.check_perform_transaction(params, request_id)
+
+        transaction = self.db_handler.find_one(self.transaction_collection, {"id": params["id"]})
+        current_time = int(time.time() * 1000)
+
+        if transaction:
+            if transaction["state"] != TransactionState.Pending:
+                raise TransactionError(PaymeError.CantDoOperation, request_id)
+
+            # Check timeout: 12 hours = 43,200,000 milliseconds
+            time_diff_ms = current_time - transaction["create_time"]
+            if time_diff_ms >= 43200000:
+                self.db_handler.update_one(
+                    self.transaction_collection,
+                    {"id": params["id"]},
+                    {
+                        "state": TransactionState.PendingCanceled,
+                        "reason": 4,
+                        "cancel_time": current_time,
+                    },
+                )
+                raise TransactionError(PaymeError.CantDoOperation, request_id)
+
+            return {
+                "create_time": transaction["create_time"],
+                "transaction": transaction["id"],
+                "state": TransactionState.Pending,
+            }
+
+        existing = self.db_handler.find_one(self.transaction_collection, {
+            "user": account["user_id"],
+            "provider": "payme",
+        })
+
+        if existing:
+            if existing["state"] == TransactionState.Paid:
+                raise TransactionError(PaymeError.AlreadyDone, request_id)
+            if existing["state"] == TransactionState.Pending:
+                raise TransactionError(PaymeError.Pending, request_id)
+
+        new_transaction = {
+            "id": params["id"],
+            "state": TransactionState.Pending,
+            "amount": amount,
+            "user": account["user_id"],
+            "create_time": time_ms,
+            "provider": "payme",
+        }
+
+        self.db_handler.insert_one(self.transaction_collection, new_transaction)
+
+        return {
+            "transaction": params["id"],
+            "state": TransactionState.Pending,
+            "create_time": time_ms,
+        }
+
+    async def perform_transaction(self, params, request_id):
+        current_time = int(time.time() * 1000)
+
+        transaction = self.db_handler.find_one(self.transaction_collection, {"id": params["id"]})
+        if not transaction:
+            raise TransactionError(PaymeError.TransactionNotFound, request_id)
+
+        # If already paid, return existing perform_time (IDEMPOTENT)
+        if transaction["state"] == TransactionState.Paid:
+            return {
                 "create_time": transaction["create_time"],
                 "perform_time": transaction.get("perform_time", 0),
                 "cancel_time": transaction.get("cancel_time", 0),
                 "transaction": transaction["id"],
-                "state": transaction["state"],
+                "state": TransactionState.Paid,
                 "reason": transaction.get("reason")
+            }
+        
+        # If not pending, cannot perform
+        if transaction["state"] != TransactionState.Pending:
+            raise TransactionError(PaymeError.CantDoOperation, request_id)
+
+        # Check timeout: 12 hours = 43,200,000 milliseconds
+        time_diff_ms = current_time - transaction["create_time"]
+        if time_diff_ms >= 43200000:
+            self.db_handler.update_one(
+                self.transaction_collection,
+                {"id": params["id"]},
+                {
+                    "state": TransactionState.PendingCanceled,
+                    "reason": 4,
+                    "cancel_time": current_time,
+                },
+            )
+            raise TransactionError(PaymeError.CantDoOperation, request_id)
+        
+        # Perform the transaction
+        self.db_handler.update_one(
+            self.transaction_collection,
+            {"id": params["id"]},
+            {
+                "state": TransactionState.Paid,
+                "perform_time": current_time,
+            }
+        )
+        
+        # Return complete transaction details
+        return {
+            "create_time": transaction["create_time"],
+            "perform_time": current_time,
+            "cancel_time": 0,
+            "transaction": transaction["id"],
+            "state": TransactionState.Paid,
+            "reason": None
+        }
+
+
+    async def cancel_transaction(self, params, request_id):
+        transaction = self.db_handler.find_one(self.transaction_collection, {"id": params["id"]})
+        if not transaction:
+            raise TransactionError(PaymeError.TransactionNotFound, request_id)
+
+        current_time = int(time.time() * 1000)
+
+        if transaction["state"] > 0:
+            self.db_handler.update_one(
+                self.transaction_collection,
+                {"id": params["id"]},
+                {
+                    "state": -abs(transaction["state"]),
+                    "cancel_time": current_time,
+                    "reason": params.get("reason", 0),
+                },
+            )
+
+        return {
+            "cancel_time": transaction.get("cancel_time", current_time),
+            "transaction": transaction["id"],
+            "state": -abs(transaction["state"]),
+        }
+
+    async def get_statement(self, params):
+        cursor = self.db_handler.db[self.transaction_collection].find({
+            "create_time": {
+                "$gte": params["from"],
+                "$lte": params["to"],
+            }
+        }).sort("create_time", 1).limit(params.get("limit", 100))
+
+        result = []
+        for tx in cursor:  # Regular for loop (MongoHandler is synchronous)
+            result.append({
+                "id": tx["id"],
+                "time": tx["create_time"],
+                "amount": tx["amount"] * 100,  # Convert sum to tiyin
+                "account": {
+                    "user_id": tx["user"],
+                },
+                "create_time": tx["create_time"],
+                "perform_time": tx.get("perform_time", 0),
+                "cancel_time": tx.get("cancel_time", 0),
+                "transaction": tx["id"],
+                "state": tx["state"],
+                "reason": tx.get("reason"),
             })
-        
+
         return result
-    
-    def generate_payment_link(self, payment_data: PaymePaymentLink) -> str:
-        """
-        Generate Payme payment link
-        Format: https://checkout.paycom.uz/base64(m=merchant_id;ac.user_id=xxx;a=amount)
-        Returns the payment URL as a string
-        """
-        logger.info(f"Generating payment link for user {payment_data.user_id}")
-        
-        # Convert amount from sum to tiyin
-        amount_tiyin = payment_data.amount * 100
-        
-        # Build parameters
-        params_parts = [
-            f"m={settings.PAYME_MERCHANT_ID}",
-            f"ac.user_id={payment_data.user_id}"
-        ]
-        
-        if payment_data.order_id:
-            params_parts.append(f"ac.order_id={payment_data.order_id}")
-        
-        params_parts.append(f"a={amount_tiyin}")
-        
-        if payment_data.return_url:
-            params_parts.append(f"c={payment_data.return_url}")
-        
-        # Join parameters with semicolon
-        params_string = ";".join(params_parts)
-        
-        # Encode to base64
-        encoded_params = base64.b64encode(params_string.encode()).decode()
-        
-        # Build payment URL
-        payment_url = f"https://checkout.paycom.uz/{encoded_params}"
-        
-        logger.info(f"Payment link generated: {payment_url}")
-        
-        return payment_url
