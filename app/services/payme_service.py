@@ -1,8 +1,8 @@
-from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorCollection
+from app.core.config import settings
 from app.db.mongo_handler import MongoHandler
-from app.models.payme import PaymeError, PaymeData, TransactionState, TransactionError, TransactionModel
+from app.models.payme import PaymeError, PaymeData, TransactionState, TransactionError
 import time
+import base64
 from math import floor
 
 class TransactionService:
@@ -227,3 +227,19 @@ class TransactionService:
             })
 
         return result
+    
+    async def create_payment_link(self, amount: int, user_id: str, callback_url: str) -> str:
+        """
+        Create a Payme payment link for the specified amount and user.
+        """
+        user = self.db_handler.find_one(self.users_collection, {"user_id": user_id})
+        if not user:
+            raise ValueError("User not found")
+        
+        amount = amount * 100  # Convert to tiyin (smallest currency unit)
+        
+        raw_string = f"m={settings.PAYME_MERCHANT_ID};ac.user_id={user_id};a={amount};c={callback_url};"
+        
+        encoded = base64.b64encode(raw_string.encode()).decode()
+        
+        return f"{settings.PAYME_PAYMENT_LINK_BASE}{encoded}"

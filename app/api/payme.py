@@ -6,7 +6,8 @@ from fastapi.responses import JSONResponse
 from typing import Optional
 import secrets
 from app.models.payme import (
-    PaymeError as PaymeErrorModel,
+    PaymentLinkRequest,
+    PaymentLinkResponse,
     PaymeMethod,
     TransactionError,
 )
@@ -162,35 +163,29 @@ async def payme(request: Request):
         )
 
 
-# @router.post("/payme/create-link", response_model=PaymePaymentLinkResponse)
-# async def create_payment_link(
-#     payment_data: PaymePaymentLink,
-#     _: bool = Depends(verify_api_key)
-# ):
-#     """
-#     Create a Payme payment link
     
-#     This endpoint generates a payment URL that can be sent to users.
-#     Requires API key authentication via x-api-key header.
-#     """
-#     try:
-#         logger.info(f"Creating payment link for user_id={payment_data.user_id}, amount={payment_data.amount}")
+
+@router.post("/payme/callback", response_model=PaymentLinkResponse)
+async def create_payment_link(request: PaymentLinkRequest):
+    """
+    Create a Payme payment link
+    
+    This endpoint generates a payment URL that can be sent to users.
+    Requires API key authentication via x-api-key header.
+    """
+    try:
+        payment_link = await transaction_service.create_payment_link(
+            amount=request.amount,
+            user_id=request.user_id,
+            callback_url=request.callback_url
+        )
         
-#         # Generate payment URL (returns string)
-#         payment_url = payme_service.generate_payment_link(payment_data)
+        logger.info(f"Created payment link for user {request.user_id}: {payment_link}")
         
-#         # Create response object
-#         response = PaymePaymentLinkResponse(
-#             payment_url=payment_url,
-#             order_id=payment_data.order_id
-#         )
-        
-#         logger.info(f"Payment link created: {payment_url}")
-#         return response
-        
-#     except Exception as e:
-#         logger.exception(f"Error creating payment link: {e}")
-#         raise HTTPException(
-#             status_code=500,
-#             detail=f"Failed to create payment link: {str(e)}"
-#         )
+        return PaymentLinkResponse(link=payment_link)
+    except Exception as e:
+        logger.exception(f"Error creating payment link: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create payment link: {str(e)}"
+        )

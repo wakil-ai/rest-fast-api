@@ -167,7 +167,8 @@ class Settings(BaseSettings):
     # Payme Payment Configuration
     PAYME_MERCHANT_ID: str = None  # Payme merchant ID
     PAYME_MERCHANT_KEY: str = None  # Payme merchant key for authorization
-    
+    PAYME_PAYMENT_LINK_BASE: str = "https://checkout.paycom.uz/"  # Base URL for payment links
+     
     # EMBEDDING DIM
     @property
     def EMBEDDING_DIM(self) -> int:

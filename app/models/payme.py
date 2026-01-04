@@ -1,4 +1,5 @@
 from enum import IntEnum
+from pydantic import BaseModel
 
 # Methods
 class PaymeMethod:
@@ -158,3 +159,12 @@ class TransactionState(IntEnum):
     Paid = 2
     PendingCanceled = -1
     PaidCanceled = -2
+
+
+class PaymentLinkRequest(BaseModel):
+    amount: int  # Amount in smallest currency unit (e.g. cents)
+    user_id: str  # ID of the user for whom the link is created
+    callback_url: str  # URL to redirect after payment
+    
+class PaymentLinkResponse(BaseModel):
+    link: str  # Generated payment link URL
