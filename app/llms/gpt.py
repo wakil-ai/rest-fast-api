@@ -10,7 +10,7 @@ from app.core.logger import logger
 class ChatGPT(LLM):
     """ChatGPT models using OpenAI API."""
     
-    def __init__(self, model_name: str = None):
+    def __init__(self, model_name: str = 'gpt-4.1'):
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = model_name if model_name else settings.GPT_COMPLETION_MODEL
     

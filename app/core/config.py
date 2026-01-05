@@ -18,7 +18,7 @@ class VectorDBType(str, Enum):
 
 class LLMProvider(str, Enum):
     novita = "novita"
-    local = "local"
+    openai = "openai"
     
 class EmbeddingModel(str, Enum):
     qwen = "qwen"
@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     
     # LLM
     # Model Selection
-    LLM_PROVIDER: LLMProvider = LLMProvider.novita
+    LLM_PROVIDER: LLMProvider = LLMProvider.openai
 
     # OpenAI GPT
     OPENAI_API_KEY: Optional[str] = None

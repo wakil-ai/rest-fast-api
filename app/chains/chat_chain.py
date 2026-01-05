@@ -6,7 +6,6 @@ from app.llms.base import LLM
 from app.core.logger import logger
 from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
-from app.llms.local_vllm import LocalVLLM
 from app.llms.claude import Claude
 from app.services.memory_service import ChatMemoryService
 from app.chains.prompts import PROMPT, SOLIQ_PROMPT
@@ -21,7 +20,6 @@ class ChatChain:
 
     def __init__(self):
         self.retrieval_service = RetrievalService()
-        self.llm = self._get_default_llm()
         self.memory_service = ChatMemoryService()
         self.llm_fallback = ChatGPT()
 
@@ -32,12 +30,6 @@ class ChatChain:
         for old, new in replacements.items():
             text = text.replace(old, new)
         return text
-
-    def _get_default_llm(self) -> LLM:
-        """Return the default LLM based on settings.LLM_PROVIDER."""
-        providers = {"novita": Novita, "local": LocalVLLM}
-        provider_class = providers.get(settings.LLM_PROVIDER, Novita)
-        return provider_class()
 
     def _get_llm_by_model(self, model_name: str) -> LLM:
         """Factory to instantiate LLM based on model name."""
@@ -51,7 +43,7 @@ class ChatChain:
             return Claude(model_name=model_name)
 
         logger.warning(f"[ChatChain] Unknown model '{model_name}', using default provider")
-        return self._get_default_llm()
+        return self.llm_fallback
 
     async def _format_chat_history(self, chat_history: Optional[List]) -> str:
         """Format recent chat history for inclusion in prompt."""
@@ -83,7 +75,7 @@ class ChatChain:
                         llm: Optional[LLM] = None, 
                         debug_data: Dict[str, Any] = None):
         if llm is None:
-            llm = self.llm
+            llm = self.llm_fallback
         if stream:
             return self._stream_response(
                 llm, query, system_prompt, debug_data
@@ -112,7 +104,7 @@ class ChatChain:
         try:
             # Select LLM
             selected_llm = (
-                self._get_llm_by_model(model_name) if model_name else self.llm
+                self._get_llm_by_model(model_name) if model_name else self.llm_fallback
             )
             prompt_template = (
                 SOLIQ_PROMPT
