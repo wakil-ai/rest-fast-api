@@ -12,11 +12,34 @@ class TransactionService:
         self.transaction_collection = 'transactions'
         
     async def check_perform_transaction(self, params, request_id):
+        # Validate account parameter exists
+        if "account" not in params:
+            raise TransactionError(PaymeError.UserNotFound, request_id, PaymeData.UserId)
+        
         account = params["account"]
+        
+        # Validate user_id in account
+        if "user_id" not in account or not account["user_id"]:
+            raise TransactionError(PaymeError.UserNotFound, request_id, PaymeData.UserId)
+        
+        # Validate amount parameter exists and is valid
+        if "amount" not in params:
+            raise TransactionError(PaymeError.InvalidAmount, request_id)
+        
         amount = params["amount"]
-
+        
+        # Amount must be positive integer
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            raise TransactionError(PaymeError.InvalidAmount, request_id)
+        
+        # Convert from tiyin to sum (divide by 100)
         amount = floor(amount / 100)
+        
+        # Check if amount is within acceptable range (minimum 1 sum)
+        if amount < 1:
+            raise TransactionError(PaymeError.InvalidAmount, request_id)
 
+        # Check if user exists
         user = self.db_handler.find_documents(self.users_collection, {"user_id": account["user_id"]})
         if not user:
             raise TransactionError(PaymeError.UserNotFound, request_id, PaymeData.UserId)

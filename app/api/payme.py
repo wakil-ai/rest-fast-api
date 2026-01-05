@@ -11,7 +11,8 @@ from app.models.payme import (
     PaymeMethod,
     TransactionError,
 )
-from app.services.payme_service import TransactionService, PaymeError
+from app.services.payme_service import TransactionService
+from app.models.payme import PaymeError
 from app.core.config import settings
 from app.core.logger import logger
 
@@ -36,20 +37,16 @@ def verify_api_key(x_api_key: Optional[str] = Header(None)):
     return True
 
 
-def verify_payme_authorization(authorization: Optional[str], request_id: int) -> bool:
+def verify_payme_authorization(authorization: Optional[str]) -> bool:
     """Verify Payme authorization header"""
     if not authorization:
-        raise PaymeError(
-            request_id=request_id,
-            code=-32504,
-            message="Insufficient privilege to perform this method"
-        )
+        return False
     
     try:
         # Extract credentials from "Basic base64string"
         auth_type, credentials = authorization.split(" ", 1)
         if auth_type.lower() != "basic":
-            raise ValueError("Not Basic auth")
+            return False
         
         # Decode base64 credentials
         decoded = base64.b64decode(credentials).decode("utf-8")
@@ -57,21 +54,16 @@ def verify_payme_authorization(authorization: Optional[str], request_id: int) ->
         username, password = decoded.split(":", 1)
         
         if username != "Paycom":
-            raise ValueError("Invalid username")
+            return False
         
         # Compare with configured merchant key
         if not secrets.compare_digest(password, settings.PAYME_MERCHANT_KEY):
-            raise ValueError("Invalid merchant key")
+            return False
         
         return True
         
     except Exception as e:
-        logger.error(f"Authorization verification failed: {e}")
-        raise PaymeError(
-            request_id=request_id,
-            code=-32504,
-            message="Insufficient privilege to perform this method"
-        )
+        return False
 
 
 @router.post("/payme/")
@@ -84,7 +76,18 @@ async def payme(request: Request):
         
         # Verify authorization header
         authorization = request.headers.get("Authorization")
-        verify_payme_authorization(authorization, request_id)
+        if not verify_payme_authorization(authorization):
+            error = PaymeError.InvalidAuthorization
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "error": {
+                        "code": error["code"],
+                        "message": error["message"]
+                    },
+                    "id": request_id
+                }
+            )
 
         if method == PaymeMethod.CheckPerformTransaction:
             await transaction_service.check_perform_transaction(params, request_id)
