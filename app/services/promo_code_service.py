@@ -13,8 +13,8 @@ class PromoCodeService:
     Handles CRUD operations for promo codes and user-promo code assignments.
     """
     
-    PROMO_CODE_COLLECTION = "promo_codes"
-    USER_PROMO_CODE_COLLECTION = "user_promo_codes"
+    PROMO_CODE_COLLECTION = "promos"
+    USER_PROMO_CODE_COLLECTION = "user-promos"
     
     def __init__(self):
         self.mongo_handler = MongoHandler()
