@@ -78,15 +78,11 @@ def verify_api_key(api_key: str = Security(api_key_header)):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    port = 8080  # This should match the port in the Dockerfile
-    logger.info(
-        f"WakilAI API running at http://localhost:{port} and http://0.0.0.0:{port}"
-    )
-    logger.info(f"API documentation available at http://localhost:{port}/docs")
+    # Startup actions
+    logger.info("Starting WakilAI API application...")
 
     # Disable all OpenTelemetry (including CrewAI)
-    # os.environ['OTEL_SDK_DISABLED'] = 'true'
+    os.environ['OTEL_SDK_DISABLED'] = 'true'
     if settings.TRACING:
         os.environ["CREWAI_TRACING_ENABLED"] = "true"
 
