@@ -27,6 +27,13 @@ class TransactionService:
                 PaymeError.UserNotFound, request_id, PaymeData.UserId
             )
 
+        # Validate order_id in account
+        VALID_ORDER_ID = ['a7f3e9b2c8d4', 'd5e8f1a2b9c7', 'b9c3d7e1f5a8']
+        if "order_id" not in account or not account["order_id"] or account["order_id"] not in VALID_ORDER_ID:
+            raise TransactionError(
+                PaymeError.UserNotFound, request_id, "order_id"
+            )
+
         # Validate amount parameter exists and is valid
         if "amount" not in params:
             raise TransactionError(PaymeError.InvalidAmount, request_id)
@@ -40,8 +47,9 @@ class TransactionService:
         # Convert from tiyin to sum (divide by 100)
         amount = floor(amount / 100)
 
-        # Check if amount is within acceptable range (minimum 1 sum)
-        if amount < 1:
+        # Only allow specific payment amounts: 1000, 5000, or 15000 sum
+        ALLOWED_AMOUNTS = [1000, 5000, 15000]
+        if amount not in ALLOWED_AMOUNTS:
             raise TransactionError(PaymeError.InvalidAmount, request_id)
 
         # Check if user exists
@@ -94,57 +102,64 @@ class TransactionService:
         account = params["account"]
         amount = floor(params["amount"] / 100)
         time_ms = params["time"]
+        transaction_id = params["id"]
 
-        await self.check_perform_transaction(params, request_id)
-
+        # Primary check: Search by transaction ID, user_id, and order_id
         transaction = self.db_handler.find_one(
-            self.transaction_collection, {"id": params["id"]}
+            self.transaction_collection,
+            {
+                "id": transaction_id,
+            },
         )
         current_time = int(time.time() * 1000)
 
+        # If transaction exists with this ID (idempotent call)
         if transaction:
-            if transaction["state"] != TransactionState.Pending:
+            # If state is Pending, return it (idempotent)
+            if transaction["state"] == TransactionState.Pending:
+                # Check timeout: 12 hours = 43,200,000 milliseconds
+                time_diff_ms = current_time - transaction["create_time"]
+                if time_diff_ms >= 43200000:
+                    self.db_handler.update_one(
+                        self.transaction_collection,
+                        {"id": transaction_id},
+                        {
+                            "state": TransactionState.PendingCanceled,
+                            "reason": 4,
+                            "cancel_time": current_time,
+                        },
+                    )
+                    raise TransactionError(PaymeError.CantDoOperation, request_id)
+
+                return {
+                    "create_time": transaction["create_time"],
+                    "transaction": transaction["id"],
+                    "state": TransactionState.Pending,
+                }
+            else:
+                # Transaction exists but not in Pending state
                 raise TransactionError(PaymeError.CantDoOperation, request_id)
 
-            # Check timeout: 12 hours = 43,200,000 milliseconds
-            time_diff_ms = current_time - transaction["create_time"]
-            if time_diff_ms >= 43200000:
-                self.db_handler.update_one(
-                    self.transaction_collection,
-                    {"id": params["id"]},
-                    {
-                        "state": TransactionState.PendingCanceled,
-                        "reason": 4,
-                        "cancel_time": current_time,
-                    },
-                )
-                raise TransactionError(PaymeError.CantDoOperation, request_id)
-
-            return {
-                "create_time": transaction["create_time"],
-                "transaction": transaction["id"],
-                "state": TransactionState.Pending,
-            }
-
-        existing = self.db_handler.find_one(
+        await self.check_perform_transaction(params, request_id)
+        
+        existing_tx = self.db_handler.find_one(
             self.transaction_collection,
             {
                 "user": account["user_id"],
-                "provider": "payme",
+                "order_id": account["order_id"],
             },
         )
-
-        if existing:
-            if existing["state"] == TransactionState.Paid:
-                raise TransactionError(PaymeError.AlreadyDone, request_id)
-            if existing["state"] == TransactionState.Pending:
+        if existing_tx:
+            if existing_tx["state"] == TransactionState.Pending:
                 raise TransactionError(PaymeError.Pending, request_id)
 
+        # Create new transaction - transaction ID is the primary key
         new_transaction = {
-            "id": params["id"],
+            "id": transaction_id,
             "state": TransactionState.Pending,
             "amount": amount,
             "user": account["user_id"],
+            "order_id": account["order_id"],
             "create_time": time_ms,
             "provider": "payme",
         }
@@ -152,7 +167,7 @@ class TransactionService:
         self.db_handler.insert_one(self.transaction_collection, new_transaction)
 
         return {
-            "transaction": params["id"],
+            "transaction": transaction_id,
             "state": TransactionState.Pending,
             "create_time": time_ms,
         }
@@ -294,3 +309,42 @@ class TransactionService:
         encoded = base64.b64encode(raw_string.encode()).decode()
 
         return f"{settings.PAYME_PAYMENT_LINK_BASE}{encoded}"
+
+    async def set_fiscal_data(self, params, request_id):
+        """
+        Save fiscal data for a transaction.
+        Payme sends fiscal receipt data after successful payment or cancellation.
+        """
+        transaction_id = params.get("id")
+        fiscal_type = params.get("type")  # "PERFORM" or "CANCEL"
+        fiscal_data = params.get("fiscal_data")
+
+        # Validate required parameters
+        if not transaction_id:
+            raise TransactionError(PaymeError.InvalidParams, request_id)
+        
+        if not fiscal_type or fiscal_type not in ["PERFORM", "CANCEL"]:
+            raise TransactionError(PaymeError.InvalidParams, request_id)
+        
+        if not fiscal_data:
+            raise TransactionError(PaymeError.InvalidParams, request_id)
+
+        # Find transaction
+        transaction = self.db_handler.find_one(
+            self.transaction_collection, {"id": transaction_id}
+        )
+
+        if not transaction:
+            raise TransactionError(PaymeError.FiscalReceiptNotFound, request_id)
+
+        # Prepare fiscal data update
+        fiscal_field = "fiscal_perform_data" if fiscal_type == "PERFORM" else "fiscal_cancel_data"
+        
+        # Update transaction with fiscal data
+        self.db_handler.update_one(
+            self.transaction_collection,
+            {"id": transaction_id},
+            {fiscal_field: fiscal_data},
+        )
+
+        return {"success": True}

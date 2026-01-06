@@ -66,6 +66,8 @@ async def payme(request: Request):
         method = body.get("method")
         params = body.get("params")
         request_id = body.get("id")
+        
+        logger.info(f"Received Payme request: method={method}, id={request_id}, params={params}")
 
         # Verify authorization header
         authorization = request.headers.get("Authorization")
@@ -102,6 +104,10 @@ async def payme(request: Request):
         if method == PaymeMethod.GetStatement:
             result = await transaction_service.get_statement(params)
             return {"result": {"transactions": result}}
+
+        if method == PaymeMethod.SetFiscalData:
+            result = await transaction_service.set_fiscal_data(params, request_id)
+            return {"result": result, "id": request_id}
 
         return JSONResponse(
             status_code=400,

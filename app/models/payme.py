@@ -10,6 +10,7 @@ class PaymeMethod:
     PerformTransaction = "PerformTransaction"
     CancelTransaction = "CancelTransaction"
     GetStatement = "GetStatement"
+    SetFiscalData = "SetFiscalData"
 
 
 # Errors
@@ -152,6 +153,36 @@ class PaymeError:
         },
     }
 
+    FiscalReceiptNotFound = {
+        "name": "FiscalReceiptNotFound",
+        "code": -32001,
+        "message": {
+            "uz": "Chek bunday id bilan topilmadi",
+            "ru": "Чек с таким id не найден",
+            "en": "Receipt with this id not found",
+        },
+    }
+
+    InvalidJSON = {
+        "name": "InvalidJSON",
+        "code": -32700,
+        "message": {
+            "uz": "Yaroqsiz JSON ob'ekti yuborilgan",
+            "ru": "Отправлен не валидный JSON объект",
+            "en": "Invalid JSON object sent",
+        },
+    }
+
+    InvalidParams = {
+        "name": "InvalidParams",
+        "code": -32602,
+        "message": {
+            "uz": "Yaroqsiz parametrlar",
+            "ru": "Не валидные параметры",
+            "en": "Invalid parameters",
+        },
+    }
+
 
 # Payme Data Fields
 class PaymeData:
@@ -173,3 +204,19 @@ class PaymentLinkRequest(BaseModel):
 
 class PaymentLinkResponse(BaseModel):
     link: str  # Generated payment link URL
+
+
+class FiscalData(BaseModel):
+    receipt_id: int | str
+    status_code: int
+    message: str
+    terminal_id: str
+    fiscal_sign: str
+    qr_code_url: str
+    date: str
+
+
+class SetFiscalDataRequest(BaseModel):
+    id: str  # Transaction ID
+    type: str  # "PERFORM" or "CANCEL"
+    fiscal_data: FiscalData
