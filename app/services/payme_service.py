@@ -1,9 +1,10 @@
+import base64
+import time
+from math import floor
+
 from app.core.config import settings
 from app.db.mongo_handler import MongoHandler
-from app.models.payme import PaymeError, PaymeData, TransactionState, TransactionError
-import time
-import base64
-from math import floor
+from app.models.payme import PaymeData, PaymeError, TransactionError, TransactionState
 
 
 class TransactionService:
@@ -28,11 +29,13 @@ class TransactionService:
             )
 
         # Validate order_id in account
-        VALID_ORDER_ID = ['a7f3e9b2c8d4', 'd5e8f1a2b9c7', 'b9c3d7e1f5a8']
-        if "order_id" not in account or not account["order_id"] or account["order_id"] not in VALID_ORDER_ID:
-            raise TransactionError(
-                PaymeError.UserNotFound, request_id, "order_id"
-            )
+        VALID_ORDER_ID = ["a7f3e9b2c8d4", "d5e8f1a2b9c7", "b9c3d7e1f5a8"]
+        if (
+            "order_id" not in account
+            or not account["order_id"]
+            or account["order_id"] not in VALID_ORDER_ID
+        ):
+            raise TransactionError(PaymeError.UserNotFound, request_id, "order_id")
 
         # Validate amount parameter exists and is valid
         if "amount" not in params:
@@ -141,7 +144,7 @@ class TransactionService:
                 raise TransactionError(PaymeError.CantDoOperation, request_id)
 
         await self.check_perform_transaction(params, request_id)
-        
+
         existing_tx = self.db_handler.find_one(
             self.transaction_collection,
             {
@@ -322,10 +325,10 @@ class TransactionService:
         # Validate required parameters
         if not transaction_id:
             raise TransactionError(PaymeError.InvalidParams, request_id)
-        
+
         if not fiscal_type or fiscal_type not in ["PERFORM", "CANCEL"]:
             raise TransactionError(PaymeError.InvalidParams, request_id)
-        
+
         if not fiscal_data:
             raise TransactionError(PaymeError.InvalidParams, request_id)
 
@@ -338,8 +341,10 @@ class TransactionService:
             raise TransactionError(PaymeError.FiscalReceiptNotFound, request_id)
 
         # Prepare fiscal data update
-        fiscal_field = "fiscal_perform_data" if fiscal_type == "PERFORM" else "fiscal_cancel_data"
-        
+        fiscal_field = (
+            "fiscal_perform_data" if fiscal_type == "PERFORM" else "fiscal_cancel_data"
+        )
+
         # Update transaction with fiscal data
         self.db_handler.update_one(
             self.transaction_collection,

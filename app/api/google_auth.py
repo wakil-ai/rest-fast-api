@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Request, HTTPException
 from authlib.integrations.starlette_client import OAuth
+from fastapi import APIRouter, HTTPException, Request
+
 from app.core.config import settings
-from app.services.chat_history_service import ChatHistoryService
 from app.core.logger import logger
+from app.services.chat_history_service import ChatHistoryService
 
 router = APIRouter(prefix="/auth/google", tags=["Google Auth"])
 oauth = OAuth()

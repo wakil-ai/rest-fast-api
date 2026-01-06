@@ -1,4 +1,5 @@
 from crewai_tools import TavilySearchTool
+
 from app.core.config import settings
 
 # Crew AI default tools with config

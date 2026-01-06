@@ -1,6 +1,6 @@
-from collections.abc import AsyncGenerator
-import json
 import asyncio
+import json
+from collections.abc import AsyncGenerator
 
 
 async def format_streaming_response(

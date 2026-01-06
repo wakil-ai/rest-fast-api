@@ -1,7 +1,8 @@
-from typing import Any
 from collections.abc import AsyncGenerator
-from app.core.config import settings
+from typing import Any
+
 from app.chains.chat_chain import ChatChain
+from app.core.config import settings
 from app.models.chat import MessagePair
 
 

@@ -3,20 +3,20 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from app.core.config import settings
+from app.core.logger import logger
 from app.models.chat import (
+    AgenticRAGRequest,
+    AssistantType,
     ChatRequest,
     ChatResponse,
     ModelInfoResponse,
-    AgenticRAGRequest,
-    AssistantType,
 )
-from app.services.chat_service import ChatService
-from app.services.chat_history_service import ChatHistoryService
-from app.services.rate_limit_service import RateLimitService
 from app.orchestration.flow import AgenticRAGFlow
+from app.services.chat_history_service import ChatHistoryService
+from app.services.chat_service import ChatService
+from app.services.rate_limit_service import RateLimitService
 from app.utils.streaming import format_streaming_response, get_streaming_headers
-from app.core.config import settings
-from app.core.logger import logger
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 

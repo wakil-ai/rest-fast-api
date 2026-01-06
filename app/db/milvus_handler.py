@@ -1,16 +1,17 @@
+from collections.abc import Iterable
+from typing import Any
+
 from pymilvus import (
+    AnnSearchRequest,
     DataType,
-    MilvusClient,
     Function,
     FunctionType,
-    AnnSearchRequest,
+    MilvusClient,
     WeightedRanker,
 )
 
-from typing import Any
-from collections.abc import Iterable
-from app.core.logger import logger
 from app.core.config import settings
+from app.core.logger import logger
 from app.db.vector_db_handler import VectorDBHandler
 from app.utils.text_cleaning import extract_integers
 

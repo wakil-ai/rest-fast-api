@@ -1,8 +1,10 @@
 from typing import Any
+
 from mem0 import AsyncMemoryClient
-from app.db.db_manager import DBManager
+
 from app.core.config import settings
 from app.core.logger import logger
+from app.db.db_manager import DBManager
 
 
 class ChatMemoryService:

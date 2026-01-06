@@ -1,8 +1,9 @@
-from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
 import os
-from dotenv import load_dotenv
 from enum import Enum
+
+from dotenv import load_dotenv
+from pydantic import ConfigDict
+from pydantic_settings import BaseSettings
 
 # Manually load the .env file from the root project directory
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", ".env"))

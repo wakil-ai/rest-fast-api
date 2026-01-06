@@ -1,8 +1,9 @@
+from typing import Any
+
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
-from typing import Any
-from app.core.config import settings
 
+from app.core.config import settings
 from app.core.logger import logger
 
 

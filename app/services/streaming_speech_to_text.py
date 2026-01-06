@@ -1,11 +1,11 @@
 import asyncio
+import inspect
+import queue as _q
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 
 from app.core.config import settings
-import threading
-import queue as _q
-import inspect
 
 
 class StreamingSTTService(ABC):

@@ -1,15 +1,15 @@
-from typing import Any
 from collections.abc import AsyncGenerator
+from typing import Any
 
-from app.retrieval.retrieval_service import RetrievalService
+from app.chains.prompts import PROMPT, SOLIQ_PROMPT
 from app.core.config import settings
-from app.llms.base import LLM
 from app.core.logger import logger
+from app.llms.base import LLM
+from app.llms.claude import Claude
 from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
-from app.llms.claude import Claude
+from app.retrieval.retrieval_service import RetrievalService
 from app.services.memory_service import ChatMemoryService
-from app.chains.prompts import PROMPT, SOLIQ_PROMPT
 
 
 class ChatChain:

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class StreamChunk(BaseModel):
     """
     Individual chunk in streaming response.

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from app.services.memory_service import ChatMemoryService
+
 from app.core.logger import logger
 from app.models.memory import (
     GetAllMemoriesResponse,
@@ -8,6 +8,7 @@ from app.models.memory import (
     UpdateMemoryRequest,
     UpdateMemoryResponse,
 )
+from app.services.memory_service import ChatMemoryService
 
 router = APIRouter(prefix="/memory", tags=["Memory"])
 

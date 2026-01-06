@@ -1,15 +1,15 @@
 """Factory for creating and caching legal-assistant agents."""
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 import yaml
 from crewai import Agent
 
+from app.core.config import settings
 from app.orchestration.config.llms import tiny_llm
 from app.orchestration.tools import WebSearchTool
-from app.core.config import settings
 
 
 class Agents:

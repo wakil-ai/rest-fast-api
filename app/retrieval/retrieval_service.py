@@ -1,9 +1,10 @@
+import re
 from typing import Any
+
 from app.core.config import settings
 from app.core.logger import logger
 from app.db.db_manager import DBManager
 from app.retrieval.embedding_manager import EmbeddingManager
-import re
 
 
 class RetrievalService:

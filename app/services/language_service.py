@@ -1,5 +1,6 @@
-import fasttext
 from enum import Enum
+
+import fasttext
 from UzTransliterator import UzTransliterator
 
 

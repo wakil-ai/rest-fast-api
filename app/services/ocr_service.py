@@ -1,6 +1,8 @@
 from pathlib import Path
-from app.core.config import settings
+
 from datalab_sdk import AsyncDatalabClient
+
+from app.core.config import settings
 from app.core.logger import logger
 
 

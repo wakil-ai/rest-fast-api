@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.core.config import settings
 from app.models.auth import TelegramAuth
 from app.services.auth_service import validate_telegram_data
-from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Telegram Auth"])
 

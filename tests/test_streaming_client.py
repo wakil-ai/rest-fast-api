@@ -5,10 +5,11 @@ This script demonstrates how to consume the streaming endpoint
 and display progress updates in real-time.
 """
 
-import requests
 import json
 import sys
 from datetime import datetime
+
+import requests
 
 
 class Colors:

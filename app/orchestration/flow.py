@@ -1,23 +1,23 @@
 import json
 from typing import Any
 
-from crewai.flow.flow import Flow, listen, start, router
-from app.utils.streaming import format_progress_event
+from crewai.flow.flow import Flow, listen, router, start
 
+from app.chains.chat_chain import ChatChain
+from app.chains.prompts import PROMPT, SOLIQ_PROMPT
+from app.core.config import settings
+from app.core.logger import logger
 from app.orchestration.crews import Crews
 from app.orchestration.schemas import (
     AgenticRAGState,
-    MemoryAgentResponse,
-    RetrievalStrategyResponse,
     ContextEvaluationResponse,
-    WebSearchResponse,
+    MemoryAgentResponse,
     ProgressEventType,
+    RetrievalStrategyResponse,
+    WebSearchResponse,
 )
-from app.chains.chat_chain import ChatChain
-from app.chains.prompts import PROMPT, SOLIQ_PROMPT
 from app.services.memory_service import ChatMemoryService
-from app.core.config import settings
-from app.core.logger import logger
+from app.utils.streaming import format_progress_event
 
 
 class AgenticRAGFlow(Flow[AgenticRAGState]):

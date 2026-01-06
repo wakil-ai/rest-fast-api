@@ -1,8 +1,10 @@
-from langchain_openai import OpenAIEmbeddings
-from app.core.config import settings, EmbeddingModel
-from app.core.logger import logger
-import requests
 from urllib.parse import urljoin
+
+import requests
+from langchain_openai import OpenAIEmbeddings
+
+from app.core.config import EmbeddingModel, settings
+from app.core.logger import logger
 
 
 def get_instruction(query: str) -> str:

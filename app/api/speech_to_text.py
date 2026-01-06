@@ -1,7 +1,8 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from app.services.speech_to_text_service import get_speech_to_text_service
-from app.models.speech_to_text import TranscriptionResponse
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+
 from app.core.logger import logger
+from app.models.speech_to_text import TranscriptionResponse
+from app.services.speech_to_text_service import get_speech_to_text_service
 
 router = APIRouter(prefix="/speech-to-text", tags=["Speech-to-Text"])
 

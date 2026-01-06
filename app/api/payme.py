@@ -1,19 +1,21 @@
 """Payme payment API endpoints"""
 
 import base64
-from fastapi import APIRouter, Request, HTTPException, Header
-from fastapi.responses import JSONResponse
 import secrets
+
+from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
+
+from app.core.config import settings
+from app.core.logger import logger
 from app.models.payme import (
+    PaymeError,
+    PaymeMethod,
     PaymentLinkRequest,
     PaymentLinkResponse,
-    PaymeMethod,
     TransactionError,
 )
 from app.services.payme_service import TransactionService
-from app.models.payme import PaymeError
-from app.core.config import settings
-from app.core.logger import logger
 
 router = APIRouter()
 transaction_service = TransactionService()
@@ -66,8 +68,10 @@ async def payme(request: Request):
         method = body.get("method")
         params = body.get("params")
         request_id = body.get("id")
-        
-        logger.info(f"Received Payme request: method={method}, id={request_id}, params={params}")
+
+        logger.info(
+            f"Received Payme request: method={method}, id={request_id}, params={params}"
+        )
 
         # Verify authorization header
         authorization = request.headers.get("Authorization")

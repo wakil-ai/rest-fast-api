@@ -1,10 +1,12 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from pydantic import BaseModel
-from app.services.ocr_service import OCRService
-from app.models.ocr import OCRResponse
-from app.core.logger import logger
-import tempfile
 import os
+import tempfile
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from pydantic import BaseModel
+
+from app.core.logger import logger
+from app.models.ocr import OCRResponse
+from app.services.ocr_service import OCRService
 
 
 class OCRRequest(BaseModel):

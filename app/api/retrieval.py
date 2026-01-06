@@ -1,11 +1,12 @@
 from fastapi import APIRouter
+
 from app.core.config import settings
-from app.retrieval.retrieval_service import RetrievalService
 from app.models.retrieval_models import (
     MongoFullTextRequest,
     MongoMetadataRequest,
     VectorDBRequest,
 )
+from app.retrieval.retrieval_service import RetrievalService
 
 router = APIRouter(prefix="/retrieval", tags=["Retrieval"])
 

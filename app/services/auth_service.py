@@ -1,8 +1,8 @@
-from app.models.auth import TelegramAuth
-from app.models.auth import TelegramDataError, TelegramDataIsOutdated
 import hashlib
 import hmac
 import time
+
+from app.models.auth import TelegramAuth, TelegramDataError, TelegramDataIsOutdated
 
 
 def validate_telegram_data(telegram_bot_token: str, data: TelegramAuth) -> dict:

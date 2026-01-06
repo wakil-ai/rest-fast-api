@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+
 class GetAllMemoriesResponse(BaseModel):
     user_id: str
     memories: list

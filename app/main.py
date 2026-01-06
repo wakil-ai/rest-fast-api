@@ -3,31 +3,31 @@ import secrets
 
 # FastAPI imports
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, status, Depends, Security
-from fastapi.security import HTTPBasic, HTTPBasicCredentials, APIKeyHeader
+
+from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware
-from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
+from starlette.middleware.sessions import SessionMiddleware
 
 # Internal imports
 from app.api import (
+    admin,
+    auth,
     chat,
-    retrieval,
     chat_history,
     count,
+    google_auth,
     memory,
-    auth,
     ocr,
+    payme,
+    retrieval,
     speech_to_text,
     ws_stt,
-    google_auth,
-    admin,
-    payme,
 )
-from app.core.logger import logger
 from app.core.config import settings
-
+from app.core.logger import logger
 
 security = HTTPBasic()
 
@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting WakilAI API application...")
 
     # Disable all OpenTelemetry (including CrewAI)
-    os.environ['OTEL_SDK_DISABLED'] = 'true'
+    os.environ["OTEL_SDK_DISABLED"] = "true"
     if settings.TRACING:
         os.environ["CREWAI_TRACING_ENABLED"] = "true"
 

@@ -1,5 +1,7 @@
-from fastapi import HTTPException, status
 from functools import wraps
+
+from fastapi import HTTPException, status
+
 from app.core.logger import logger
 
 

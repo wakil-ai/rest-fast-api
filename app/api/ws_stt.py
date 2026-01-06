@@ -1,8 +1,9 @@
 import json
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, status
-from app.services.streaming_speech_to_text import get_streaming_stt_service
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+
 from app.core.config import settings
+from app.services.streaming_speech_to_text import get_streaming_stt_service
 
 router = APIRouter(prefix="/ws", tags=["Speech-to-Text (WS)"])
 

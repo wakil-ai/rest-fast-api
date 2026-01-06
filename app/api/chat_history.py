@@ -1,28 +1,28 @@
-from fastapi import APIRouter, status, HTTPException, UploadFile, File
+import datetime
+import os
+import tempfile
+import uuid
+
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
+
+from app.core.logger import logger
 from app.models.chat_history import (
-    UserCreateRequest,
-    UserCreateResponse,
-    SessionCreateResponse,
-    SessionCreateRequest,
-    SessionResponse,
-    MessageCreateRequest,
-    MessageResponse,
-    MessageCreateResponse,
     FeedbackCreateRequest,
     FeedbackCreateResponse,
     FileUploadResponse,
+    MessageCreateRequest,
+    MessageCreateResponse,
+    MessageResponse,
+    SessionCreateRequest,
+    SessionCreateResponse,
+    SessionResponse,
+    UserCreateRequest,
+    UserCreateResponse,
 )
 from app.services.chat_history_service import ChatHistoryService
 from app.services.ocr_service import OCRService
 from app.services.storage_service import StorageService
-from app.utils.user_management import serialize_mongo_id, handle_service_error
-from app.core.logger import logger
-
-import tempfile
-import uuid
-import datetime
-import os
-
+from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/history", tags=["Chat History"])
 

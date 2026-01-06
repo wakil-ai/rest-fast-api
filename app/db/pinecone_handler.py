@@ -1,6 +1,8 @@
 from typing import Any
-from app.core.config import settings
+
 from pinecone import Pinecone as OfficialPinecone
+
+from app.core.config import settings
 from app.core.logger import logger
 from app.db.vector_db_handler import VectorDBHandler
 
