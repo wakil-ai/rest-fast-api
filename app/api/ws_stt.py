@@ -1,7 +1,4 @@
-# app/api/ws_stt.py
 import json
-import struct
-from typing import List, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, status
 from app.services.streaming_speech_to_text import get_streaming_stt_service
@@ -51,13 +48,19 @@ async def stt_websocket(ws: WebSocket):
         # Wait for start
         first = await ws.receive()
         if "text" not in first:
-            await ws.send_text(json.dumps({"type": "error", "message": "First frame must be JSON 'start'"}))
+            await ws.send_text(
+                json.dumps(
+                    {"type": "error", "message": "First frame must be JSON 'start'"}
+                )
+            )
             await ws.close(code=1002)
             return
 
         start_msg = json.loads(first["text"])
         if not isinstance(start_msg, dict) or start_msg.get("event") != "start":
-            await ws.send_text(json.dumps({"type": "error", "message": "Expected event='start' JSON"}))
+            await ws.send_text(
+                json.dumps({"type": "error", "message": "Expected event='start' JSON"})
+            )
             await ws.close(code=1002)
             return
 
@@ -78,6 +81,7 @@ async def stt_websocket(ws: WebSocket):
                 await ws.send_text(json.dumps({"type": "error", "message": str(e)}))
 
         import asyncio
+
         pump_task = asyncio.create_task(result_pump())
 
         # Receive loop
@@ -93,7 +97,9 @@ async def stt_websocket(ws: WebSocket):
                 try:
                     payload = json.loads(msg["text"])
                 except Exception:
-                    await ws.send_text(json.dumps({"type": "error", "message": "Invalid JSON"}))
+                    await ws.send_text(
+                        json.dumps({"type": "error", "message": "Invalid JSON"})
+                    )
                     continue
 
                 if payload.get("event") == "stop":
@@ -102,7 +108,9 @@ async def stt_websocket(ws: WebSocket):
                     await ws.close(code=1000)
                     break
                 else:
-                    await ws.send_text(json.dumps({"type": "error", "message": "Unknown event"}))
+                    await ws.send_text(
+                        json.dumps({"type": "error", "message": "Unknown event"})
+                    )
                     continue
 
     except WebSocketDisconnect:

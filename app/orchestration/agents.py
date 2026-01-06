@@ -1,7 +1,8 @@
 """Factory for creating and caching legal-assistant agents."""
 
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
 import yaml
 from crewai import Agent
@@ -10,18 +11,19 @@ from app.orchestration.config.llms import tiny_llm
 from app.orchestration.tools import WebSearchTool
 from app.core.config import settings
 
+
 class Agents:
     """
     Agents are created once on first access and cached for reuse.
     """
 
-    _CONFIG: Dict[str, Dict] = {}
-    _agents_cache: Dict[str, Agent] = {}
+    _CONFIG: dict[str, dict] = {}
+    _agents_cache: dict[str, Agent] = {}
 
     def __init__(self) -> None:
         if not Agents._CONFIG:
             self._load_config()
-        
+
         self._initialize_agents()
 
     @classmethod
@@ -46,13 +48,13 @@ class Agents:
         self,
         name: str,
         llm: Any,
-        tools: Optional[List[Any]] = None,
-        function_calling_llm: Optional[Any] = None,
-        config_modifier: Optional[Callable[[Dict], Dict]] = None,
+        tools: list[Any] | None = None,
+        function_calling_llm: Any | None = None,
+        config_modifier: Callable[[dict], dict] | None = None,
     ) -> Agent:
         """
         Create an agent from configuration.
-        
+
         Args:
             name: Agent configuration key
             llm: Language model for the agent
@@ -66,7 +68,7 @@ class Agents:
                 f"Invalid agent config for '{name}': expected non-empty dict, got {type(config).__name__}: {config!r}. "
                 "Check app/orchestration/config/agents.yaml and any config_modifier functions."
             )
-        
+
         return Agent(
             config=config,
             llm=llm,
@@ -78,14 +80,14 @@ class Agents:
     def _get_agent_config(
         self,
         name: str,
-        config_modifier: Optional[Callable[[Dict], Dict]] = None,
-    ) -> Dict:
+        config_modifier: Callable[[dict], dict] | None = None,
+    ) -> dict:
         """Get agent configuration with optional modifications."""
         base_config = self._CONFIG[name].copy()
-        
+
         if config_modifier:
             return config_modifier(base_config)
-        
+
         return base_config
 
     def _create_memory_summarizer(self) -> Agent:
@@ -101,7 +103,7 @@ class Agents:
             name="retrieval_specialist",
             llm=tiny_llm,
         )
-    
+
     def _create_context_evaluator(self) -> Agent:
         """Create agent for evaluating context sufficiency."""
         return self._create_agent(
@@ -125,7 +127,7 @@ class Agents:
     def retrieval_specialist(self) -> Agent:
         """Get cached retrieval specialist agent."""
         return self._agents_cache["retrieval_specialist"]
-    
+
     def context_evaluator(self) -> Agent:
         """Get cached context evaluator agent."""
         return self._agents_cache["context_evaluator"]

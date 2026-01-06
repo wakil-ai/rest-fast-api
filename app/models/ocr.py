@@ -1,5 +1,3 @@
-# app/models/ocr.py
-
 from pydantic import BaseModel, Field
 
 class OCRResponse(BaseModel):

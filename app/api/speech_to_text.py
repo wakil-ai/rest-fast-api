@@ -1,12 +1,10 @@
-# app/api/speech_to_text.py
-
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from app.services.speech_to_text_service import get_speech_to_text_service
 from app.models.speech_to_text import TranscriptionResponse
 from app.core.logger import logger
-from typing import Optional
 
 router = APIRouter(prefix="/speech-to-text", tags=["Speech-to-Text"])
+
 
 @router.post("/transcribe", response_model=TranscriptionResponse)
 def transcribe_audio(
@@ -29,5 +27,5 @@ def transcribe_audio(
         logger.error(f"[SpeechToTextAPI] Error: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail="Failed to transcribe audio. Please try again later."
+            detail="Failed to transcribe audio. Please try again later.",
         )

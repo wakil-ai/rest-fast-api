@@ -1,4 +1,5 @@
-from typing import Union, AsyncGenerator, Optional, List, Any, Dict, Tuple
+from typing import Any
+from collections.abc import AsyncGenerator
 
 from app.retrieval.retrieval_service import RetrievalService
 from app.core.config import settings
@@ -42,15 +43,17 @@ class ChatChain:
         if model_name.startswith("claude-"):
             return Claude(model_name=model_name)
 
-        logger.warning(f"[ChatChain] Unknown model '{model_name}', using default provider")
+        logger.warning(
+            f"[ChatChain] Unknown model '{model_name}', using default provider"
+        )
         return self.llm_fallback
 
-    async def _format_chat_history(self, chat_history: Optional[List]) -> str:
+    async def _format_chat_history(self, chat_history: list | None) -> str:
         """Format recent chat history for inclusion in prompt."""
         if not chat_history:
             return ""
 
-        recent = chat_history[-settings.CHAT_HISTORY_LIMIT:]
+        recent = chat_history[-settings.CHAT_HISTORY_LIMIT :]
         lines = ["Previous Conversation History:"]
         for idx, entry in enumerate(recent, start=1):
             lines.append(f"{idx}. User: {entry.question}")
@@ -65,21 +68,20 @@ class ChatChain:
         prompt_template: Any = PROMPT,
     ) -> str:
         """Build system prompt with context and history."""
-        return prompt_template.format(
-            context=context, chat_history=chat_history_text
-        )
+        return prompt_template.format(context=context, chat_history=chat_history_text)
 
-    async def run(self, query: str, 
-                        system_prompt: str, 
-                        stream: bool = settings.STREAM,
-                        llm: Optional[LLM] = None, 
-                        debug_data: Dict[str, Any] = None):
+    async def run(
+        self,
+        query: str,
+        system_prompt: str,
+        stream: bool = settings.STREAM,
+        llm: LLM | None = None,
+        debug_data: dict[str, Any] = None,
+    ):
         if llm is None:
             llm = self.llm_fallback
         if stream:
-            return self._stream_response(
-                llm, query, system_prompt, debug_data
-            )
+            return self._stream_response(llm, query, system_prompt, debug_data)
         else:
             return await self._non_stream_response(
                 llm, query, system_prompt, debug_data
@@ -89,17 +91,17 @@ class ChatChain:
         self,
         user_id: str,
         query: str,
-        chat_history: Optional[List] = None,
+        chat_history: list | None = None,
         stream: bool = settings.STREAM,
-        file_context: Optional[str] = None,
+        file_context: str | None = None,
         collection_name: str = settings.MILVUS_MAIN_NAME,
-        model_name: Optional[str] = None,
-    ) -> Union[str, AsyncGenerator[str, None], Tuple[str, Dict[str, Any]]]:
+        model_name: str | None = None,
+    ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
         """
         Generate response using RAG.
         Falls back to ChatGPT if primary LLM fails.
         """
-        debug_data: Dict[str, Any] = {"retrieved_contents": []}
+        debug_data: dict[str, Any] = {"retrieved_contents": []}
 
         try:
             # Select LLM
@@ -114,16 +116,14 @@ class ChatChain:
 
             # Build query with optional file content
             merged_query = (
-                f"{query}\n\nFile Content: {file_context}"
-                if file_context
-                else query
+                f"{query}\n\nFile Content: {file_context}" if file_context else query
             )
 
             # Retrieve context
             context_result = await self.retrieval_service.retrieve_context(
                 query=merged_query,
                 top_k=settings.TOP_K,
-                collection_name=collection_name
+                collection_name=collection_name,
             )
 
             context = (
@@ -156,9 +156,9 @@ class ChatChain:
                 system_prompt=system_prompt,
                 stream=stream,
                 llm=selected_llm,
-                debug_data=debug_data
+                debug_data=debug_data,
             )
-            
+
         except Exception as e:
             logger.error(f"[ChatChain] Generation failed: {e}", exc_info=True)
             error_msg = "Sorry, I couldn't generate an answer at the moment."
@@ -174,7 +174,7 @@ class ChatChain:
         selected_llm: LLM,
         user_prompt: str,
         system_prompt: str,
-        debug_data: Dict[str, Any],
+        debug_data: dict[str, Any],
     ) -> AsyncGenerator[str, None]:
         """Stream response with fallback handling."""
         if settings.DEVELOPMENT_MODE:
@@ -188,7 +188,7 @@ class ChatChain:
             )
             async for chunk in self._yield_clean_chunks(response_gen):
                 yield chunk
-        except Exception as primary_error:
+        except Exception:
             logger.warning(
                 "[ChatChain] Primary LLM streaming failed, using fallback.",
                 exc_info=True,
@@ -201,7 +201,7 @@ class ChatChain:
                 )
                 async for chunk in self._yield_clean_chunks(fallback_gen):
                     yield chunk
-            except Exception as fallback_error:
+            except Exception:
                 logger.error("[ChatChain] Fallback LLM failed.", exc_info=True)
                 error_msg = "Sorry, I couldn't generate an answer at the moment."
                 async for char in error_msg:
@@ -212,8 +212,8 @@ class ChatChain:
         selected_llm: LLM,
         user_prompt: str,
         system_prompt: str,
-        debug_data: Dict[str, Any],
-    ) -> Union[str, Tuple[str, Dict[str, Any]]]:
+        debug_data: dict[str, Any],
+    ) -> str | tuple[str, dict[str, Any]]:
         """Non-streaming response with fallback handling."""
         try:
             response = await selected_llm.generate_response(
@@ -221,7 +221,7 @@ class ChatChain:
                 system_prompt=system_prompt,
                 stream=False,
             )
-        except Exception as primary_error:
+        except Exception:
             logger.warning(
                 "[ChatChain] Primary LLM failed, using fallback.", exc_info=True
             )
@@ -231,7 +231,7 @@ class ChatChain:
                     system_prompt=system_prompt,
                     stream=False,
                 )
-            except Exception as fallback_error:
+            except Exception:
                 logger.error("[ChatChain] Fallback failed.", exc_info=True)
                 raise
 
@@ -260,8 +260,8 @@ class ChatChain:
                 yield char
 
     async def _handle_error(
-        self, message: str, debug_data: Dict[str, Any], stream: bool
-    ) -> Union[str, Tuple[str, Dict[str, Any]], AsyncGenerator[str, None]]:
+        self, message: str, debug_data: dict[str, Any], stream: bool
+    ) -> str | tuple[str, dict[str, Any]] | AsyncGenerator[str, None]:
         """Return error message in appropriate format."""
         if settings.DEVELOPMENT_MODE and not stream:
             return message, debug_data

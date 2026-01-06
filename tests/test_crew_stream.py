@@ -19,7 +19,7 @@ async def main():
 
         headers = {
             "Content-Type": "application/json",
-            settings.API_KEY_NAME: settings.API_KEY
+            settings.API_KEY_NAME: settings.API_KEY,
         }
 
         async with session.post(api_url, json=payload, headers=headers) as resp:
@@ -37,7 +37,7 @@ async def main():
                 # Server-Sent Event lines start with "data:"
                 if line.startswith("data:"):
                     try:
-                        data = json.loads(line[len("data:"):].strip())
+                        data = json.loads(line[len("data:") :].strip())
                         if data.get("type") == "chunk":
                             print(data.get("chunk"), end="", flush=True)
                         elif data.get("type") == "done":

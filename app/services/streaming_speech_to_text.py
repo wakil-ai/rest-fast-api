@@ -1,10 +1,7 @@
-# app/services/streaming_speech_to_text.py
 import asyncio
-import io
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Iterable, List, Optional
+from collections.abc import AsyncGenerator
 
-from pydub import AudioSegment
 from app.core.config import settings
 import threading
 import queue as _q
@@ -17,9 +14,7 @@ class StreamingSTTService(ABC):
     """
 
     @abstractmethod
-    async def start(
-        self, language: str, hints: Optional[List[str]] = None
-    ) -> None:
+    async def start(self, language: str, hints: list[str] | None = None) -> None:
         """
         Prepare/initialize streaming with a language code and optional hints.
         """
@@ -47,6 +42,7 @@ class StreamingSTTService(ABC):
         """
         ...
 
+
 class GoogleStreamingSTTService(StreamingSTTService):
     """
     Google Cloud Speech-to-Text Streaming using streaming_recognize (gRPC).
@@ -54,21 +50,22 @@ class GoogleStreamingSTTService(StreamingSTTService):
 
     def __init__(self) -> None:
         from google.cloud import speech
+
         self._speech = speech
         self._client = speech.SpeechClient()
 
         # Queues
-        self._audio_q: "asyncio.Queue[Optional[bytes]]" = asyncio.Queue()
-        self._result_q: "asyncio.Queue[dict]" = asyncio.Queue()
+        self._audio_q: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self._result_q: asyncio.Queue[dict] = asyncio.Queue()
 
         # Task
-        self._producer_task: Optional[asyncio.Task] = None
+        self._producer_task: asyncio.Task | None = None
 
         # Config placeholders
         self._language = "en-US"
-        self._hints: List[str] = []
+        self._hints: list[str] = []
 
-    async def start(self, language: str, hints: Optional[List[str]] = None) -> None:
+    async def start(self, language: str, hints: list[str] | None = None) -> None:
         self._language = language
         self._hints = hints or []
         loop = asyncio.get_running_loop()
@@ -112,7 +109,9 @@ class GoogleStreamingSTTService(StreamingSTTService):
         # --- Generators ---
         async def _gen_with_config_first():
             # 1) send config in first request
-            yield self._speech.StreamingRecognizeRequest(streaming_config=streaming_config)
+            yield self._speech.StreamingRecognizeRequest(
+                streaming_config=streaming_config
+            )
             # 2) then audio chunks
             while True:
                 chunk = await self._audio_q.get()
@@ -129,7 +128,7 @@ class GoogleStreamingSTTService(StreamingSTTService):
                 yield self._speech.StreamingRecognizeRequest(audio_content=chunk)
 
         def _iter_from_async(async_gen):
-            q_out: "_q.Queue[object]" = _q.Queue(maxsize=32)
+            q_out: _q.Queue[object] = _q.Queue(maxsize=32)
             _STOP = object()
 
             async def _pump():
@@ -158,13 +157,15 @@ class GoogleStreamingSTTService(StreamingSTTService):
             use_two_args = False
             if len(params) >= 2:
                 # If first parameters look like (config, requests) or named 'config' is present
-                use_two_args = (param_names[0] in ("config", "streaming_config")) or ("config" in param_names)
+                use_two_args = (param_names[0] in ("config", "streaming_config")) or (
+                    "config" in param_names
+                )
 
             if use_two_args:
                 # v2 style: pass config separately, audio-only iterator
                 responses = self._client.streaming_recognize(
                     streaming_config,  # or config=streaming_config
-                    _iter_from_async(_gen_audio_only())
+                    _iter_from_async(_gen_audio_only()),
                 )
             else:
                 # v1 style: put config in first request
@@ -190,23 +191,25 @@ class AzureStreamingSTTService(StreamingSTTService):
     """
     Azure Cognitive Services Speech (Continuous Recognition + PushAudioInputStream).
     """
+
     def __init__(self) -> None:
         import azure.cognitiveservices.speech as speechsdk
+
         self._sdk = speechsdk
         self._speech_config = speechsdk.SpeechConfig(
             subscription=settings.AZURE_SPEECH_KEY,
             region=settings.AZURE_SPEECH_REGION,
         )
 
-        self._result_q: "asyncio.Queue[dict]" = asyncio.Queue()
+        self._result_q: asyncio.Queue[dict] = asyncio.Queue()
         self._push_stream = None
         self._audio_config = None
         self._recognizer = None
         self._started = False
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._closed_once = False
 
-    async def start(self, language: str, hints: Optional[List[str]] = None) -> None:
+    async def start(self, language: str, hints: list[str] | None = None) -> None:
         self._speech_config.speech_recognition_language = language
         self._loop = asyncio.get_running_loop()
 
@@ -229,7 +232,7 @@ class AzureStreamingSTTService(StreamingSTTService):
             except Exception:
                 pass
 
-        def _post(item: Optional[dict]):
+        def _post(item: dict | None):
             if self._loop is not None:
                 asyncio.run_coroutine_threadsafe(self._result_q.put(item), self._loop)
 
@@ -254,8 +257,10 @@ class AzureStreamingSTTService(StreamingSTTService):
 
         # IMPORTANT: start_continuous_recognition_async returns a ResultFuture -> call .get() off-loop
         loop = asyncio.get_running_loop()
+
         def _start_blocking():
             self._recognizer.start_continuous_recognition_async().get()
+
         await loop.run_in_executor(None, _start_blocking)
 
         self._started = True

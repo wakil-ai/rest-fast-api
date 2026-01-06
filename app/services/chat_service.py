@@ -1,9 +1,9 @@
-# app/services/chat_service.py
-
-from typing import List, Optional, AsyncGenerator, Union, Dict, Any, Tuple
+from typing import Any
+from collections.abc import AsyncGenerator
 from app.core.config import settings
 from app.chains.chat_chain import ChatChain
 from app.models.chat import MessagePair
+
 
 class ChatService:
     """
@@ -16,16 +16,16 @@ class ChatService:
     async def ask_question(
         self,
         user_id: str,
-        query: str, 
-        chat_history: Optional[List[MessagePair]] = None,
+        query: str,
+        chat_history: list[MessagePair] | None = None,
         stream: bool = settings.STREAM,
-        file_context: Optional[str] = None,
+        file_context: str | None = None,
         collection_name: str = settings.MILVUS_MAIN_NAME,
-        model_name: Optional[str] = None,
-    ) -> Union[str, AsyncGenerator[str, None], Tuple[str, Dict[str, Any]]]:
+        model_name: str | None = None,
+    ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
         """
         Handle the question by retrieving context and generating an answer.
-        
+
         Args:
             query (str): User's question
             top_k (int): Number of top documents to retrieve (default from settings)

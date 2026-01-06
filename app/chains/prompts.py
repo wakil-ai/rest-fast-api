@@ -1,4 +1,3 @@
-# app/chains/prompts.py
 from langchain.prompts import PromptTemplate
 
 SYSTEM_PROMPT = """

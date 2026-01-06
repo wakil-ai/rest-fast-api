@@ -92,7 +92,7 @@ Rate limits are stored in MongoDB with the following structure:
 The daily limit is configured in the `RateLimitService` class:
 
 ```python
-# app/services/rate_limit_service.py
+services/rate_limit_service.py
 class RateLimitService:
     DAILY_LIMIT = 5  # Change this value to adjust the limit
 ```

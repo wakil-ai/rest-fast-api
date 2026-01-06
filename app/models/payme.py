@@ -1,6 +1,7 @@
 from enum import IntEnum
 from pydantic import BaseModel
 
+
 # Methods
 class PaymeMethod:
     CheckPerformTransaction = "CheckPerformTransaction"
@@ -9,6 +10,7 @@ class PaymeMethod:
     PerformTransaction = "PerformTransaction"
     CancelTransaction = "CancelTransaction"
     GetStatement = "GetStatement"
+
 
 # Errors
 class TransactionError(Exception):
@@ -29,7 +31,8 @@ class TransactionError(Exception):
         if self.data:
             payload["data"] = self.data
         return payload
-    
+
+
 from datetime import datetime
 from bson import ObjectId
 
@@ -154,6 +157,7 @@ class PaymeError:
 class PaymeData:
     UserId = "user_id"
 
+
 class TransactionState(IntEnum):
     Pending = 1
     Paid = 2
@@ -165,6 +169,7 @@ class PaymentLinkRequest(BaseModel):
     amount: int  # Amount in smallest currency unit (e.g. cents)
     user_id: str  # ID of the user for whom the link is created
     callback_url: str  # URL to redirect after payment
-    
+
+
 class PaymentLinkResponse(BaseModel):
     link: str  # Generated payment link URL
