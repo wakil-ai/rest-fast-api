@@ -181,7 +181,8 @@ def create_app() -> FastAPI:
     )
 
     # Health Check Route (no authentication required)
-    @app.get("/", tags=["Health"])
+    @app.get("/", tags=["Health"], include_in_schema=False)
+    @app.get("/health", tags=["Health"])
     async def health_check():
         return {"status": "ok", "message": "WakilAI API is running 🚀"}
 
