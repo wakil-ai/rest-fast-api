@@ -1,5 +1,5 @@
 # Use lightweight python base
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 # Set workdir
 WORKDIR /app
@@ -28,8 +28,8 @@ RUN PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python pip install --upgrade pip && \
     PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python pip install --no-cache-dir --upgrade setuptools wheel && \
     PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
-COPY . .
+# Copy only app folder
+COPY app/ ./app/
 
 # Expose port
 EXPOSE 8080

@@ -1,7 +1,7 @@
-# app/core/logger.py
+import sys
 
 from loguru import logger as loguru_logger
-import sys
+
 from app.core.config import settings
 
 
@@ -16,11 +16,14 @@ def get_logger():
     )
 
     # Add console sink with color
-    loguru_logger.add(sys.stdout, 
-               format=log_format, 
-               level="DEBUG" if settings.DEBUG else "INFO", 
-               colorize=True)
+    loguru_logger.add(
+        sys.stdout,
+        format=log_format,
+        level="DEBUG" if settings.DEBUG else "INFO",
+        colorize=True,
+    )
 
     return loguru_logger
+
 
 logger = get_logger()

@@ -1,24 +1,30 @@
 from pydantic import BaseModel
 
+
 class GetAllMemoriesResponse(BaseModel):
     user_id: str
     memories: list
     categories: list
     memory_ids: list
-    
-class SaveInteractionRequest(BaseModel):
-    user_id: str
+
+
+class InteractionsPair(BaseModel):
     query: str
     answer: str
-    
-    
+
+
+class SaveInteractionRequest(BaseModel):
+    user_id: str
+    messages: list[InteractionsPair]
+
+
 class SaveInteractionResponse(BaseModel):
     message: str
-    memories: list
-    memory_ids: list
-    
+
+
 class UpdateMemoryRequest(BaseModel):
-    text: str    
+    text: str
+
 
 class UpdateMemoryResponse(BaseModel):
     message: str

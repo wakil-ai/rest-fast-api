@@ -1,202 +1,275 @@
-from typing import Union, AsyncGenerator, Optional, List, Any
-from app.retrieval.retrieval_service import RetrievalService
-from app.core.config import settings
-from app.llms.base import LLM
-from app.services.language_service import LanguageDetector
-from app.core.logger import logger
+from collections.abc import AsyncGenerator
+from typing import Any
 
-# Import all supported LLMs
+from app.chains.prompts import PROMPT, SOLIQ_PROMPT
+from app.core.config import settings
+from app.core.logger import logger
+from app.llms.base import LLM
+from app.llms.claude import Claude
 from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
-from app.llms.local_vllm import LocalVLLM
+from app.retrieval.retrieval_service import RetrievalService
 from app.services.memory_service import ChatMemoryService
-from app.chains.prompts import PROMPT
+
 
 class ChatChain:
     """
-    Main chain to handle retrieval-augmented generation (RAG):
-    1. Retrieve top documents from vector DB.
-    2. Generate final answer using selected LLM.
+    Main chain for retrieval-augmented generation (RAG):
+    1. Retrieve relevant documents from vector DB.
+    2. Generate answer using selected LLM.
     """
 
     def __init__(self):
         self.retrieval_service = RetrievalService()
-        self.llm = self._get_llm_provider()
-        self.mem_service = ChatMemoryService()
-        self.llm_fallback = ChatGPT() # Fallback to OpenAI GPT if needed
-        self.language_detector = LanguageDetector()
-        
-    def replace_punctuation(self, text: str) -> str:
-        """Replace special punctuation characters with standard ones."""
-        replacements = {
-            '【': '[',
-            '】': ']',
-        }
+        self.memory_service = ChatMemoryService()
+        self.llm_fallback = ChatGPT()
+
+    @staticmethod
+    def replace_punctuation(text: str) -> str:
+        """Replace special punctuation with standard equivalents."""
+        replacements = {"【": "[", "】": "]"}
         for old, new in replacements.items():
             text = text.replace(old, new)
         return text
 
-    def _get_llm_provider(self) -> LLM:
-        """Factory method to select and load the Gemma model based on settings."""
-        providers = {
-            "novita": Novita,
-            "local": LocalVLLM,
-        }
-        return providers.get(settings.LLM_PROVIDER, Novita)()
+    def _get_llm_by_model(self, model_name: str) -> LLM:
+        """Factory to instantiate LLM based on model name."""
+        logger.debug(f"[ChatChain] Selecting LLM for model: {model_name}")
 
-    async def _format_chat_history(self, chat_history: Optional[List]) -> str:
-        """Format chat history for use in prompt context."""
-        if not chat_history or len(chat_history) == 0:
+        if model_name.startswith("gemma-") or model_name.startswith("gpt-oss-"):
+            return Novita(model_name=model_name)
+        if model_name.startswith("gpt-"):
+            return ChatGPT(model_name=model_name)
+        if model_name.startswith("claude-"):
+            return Claude(model_name=model_name)
+
+        logger.warning(
+            f"[ChatChain] Unknown model '{model_name}', using default provider"
+        )
+        return self.llm_fallback
+
+    async def _format_chat_history(self, chat_history: list | None) -> str:
+        """Format recent chat history for inclusion in prompt."""
+        if not chat_history:
             return ""
 
-        recent_history = chat_history[-settings.CHAT_HISTORY_LIMIT:]
+        recent = chat_history[-settings.CHAT_HISTORY_LIMIT :]
+        lines = ["Previous Conversation History:"]
+        for idx, entry in enumerate(recent, start=1):
+            lines.append(f"{idx}. User: {entry.question}")
+            lines.append(f"   Assistant: {entry.answer}")
+        lines.append("Use the above conversation to maintain context.")
+        return "\n".join(lines)
 
-        formatted = "\n\nPrevious Conversation History:\n"
-        for idx, pair in enumerate(recent_history, start=1):
-            formatted += f"{idx}. User: {pair.question}\n   Assistant: {pair.answer}\n"
+    async def make_system_prompt(
+        self,
+        context: str,
+        chat_history_text: str,
+        prompt_template: Any = PROMPT,
+    ) -> str:
+        """Build system prompt with context and history."""
+        return prompt_template.format(context=context, chat_history=chat_history_text)
 
-        return formatted + "Use the above conversation to maintain context."
-    
-    async def make_system_prompt(self, context: str, 
-                                   chat_history_text: str, 
-                                   is_lawyer: bool, 
-                                   language_instruction: Optional[str]) -> str:
-        """Create the system prompt using the provided context and chat history."""
-        return PROMPT.format(
-            context=context,
-            chat_history=chat_history_text,
-            user_type="lawyer" if is_lawyer else "citizen",
-            language_instruction=language_instruction if language_instruction else ""
-        )
+    async def run(
+        self,
+        query: str,
+        system_prompt: str,
+        stream: bool = settings.STREAM,
+        llm: LLM | None = None,
+        debug_data: dict[str, Any] = None,
+    ):
+        if llm is None:
+            llm = self.llm_fallback
+        if stream:
+            return self._stream_response(llm, query, system_prompt, debug_data)
+        else:
+            return await self._non_stream_response(
+                llm, query, system_prompt, debug_data
+            )
 
     async def generate_answer(
         self,
         user_id: str,
         query: str,
-        is_lawyer: bool = False,
-        chat_history: Optional[List] = None,
-        stream: bool = settings.STREAM
-    ) -> Union[str, AsyncGenerator[str, None]]:
+        chat_history: list | None = None,
+        stream: bool = settings.STREAM,
+        file_context: str | None = None,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+        model_name: str | None = None,
+    ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
         """
-        Generate a response to the user's query using RAG approach.
-        Falls back to ChatGPT if the primary LLM fails.
+        Generate response using RAG.
+        Falls back to ChatGPT if primary LLM fails.
         """
+        debug_data: dict[str, Any] = {"retrieved_contents": []}
+
         try:
-            language = self.language_detector.detect_language(query)
-            instruction = self.language_detector.get_instruction(language)
-            context = await self.retrieval_service.retrieve_context(query=query)
-            
-            memory_text = await self.mem_service.search_memory(user_id, query)
-            
+            # Select LLM
+            selected_llm = (
+                self._get_llm_by_model(model_name) if model_name else self.llm_fallback
+            )
+            prompt_template = (
+                SOLIQ_PROMPT
+                if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME
+                else PROMPT
+            )
+
+            # Build query with optional file content
+            merged_query = (
+                f"{query}\n\nFile Content: {file_context}" if file_context else query
+            )
+
+            # Retrieve context
+            context_result = await self.retrieval_service.retrieve_context(
+                query=merged_query,
+                top_k=settings.TOP_K,
+                collection_name=collection_name,
+            )
+
+            context = (
+                f"{context_result}\nFile Content:\nUse the following extracted text from the uploaded file to answer the question:\n{file_context}"
+                if file_context
+                else context_result
+            )
+
+            if settings.DEVELOPMENT_MODE:
+                debug_data["retrieved_contents"] = context
+
+            # Memory and history
+            memory_text = await self.memory_service.search_memory(user_id, query)
             chat_history_text = await self._format_chat_history(chat_history)
-            
-            # Merge Chat History and Memory
+
             if chat_history_text and memory_text:
-                chat_history_text += memory_text
+                chat_history_text += "\n" + memory_text
             elif memory_text:
-                chat_history_text += memory_text
-                
+                chat_history_text = memory_text
+
             system_prompt = await self.make_system_prompt(
                 context=context,
                 chat_history_text=chat_history_text,
-                is_lawyer=is_lawyer,
-                language_instruction=instruction
+                prompt_template=prompt_template,
             )
-                
             logger.debug(f"[ChatChain] System Prompt: {system_prompt}")
 
-            if stream:
-                async def stream_generator() -> AsyncGenerator[str, None]:
-                    try:
-                        # Attempt primary LLM
-                        response_generator = await self.llm.generate_response(
-                            user_prompt=query,
-                            system_prompt=system_prompt,
-                            stream=stream
-                        )
-                        async for chunk in self._stream_response(response_generator, language, query, user_id):
-                            yield chunk
-                    except Exception as llm_error:
-                        logger.warning(f"[ChatChain] Primary LLM streaming failed, falling back to ChatGPT.", exc_info=True)
-                        try:
-                            # Attempt fallback LLM
-                            fallback_generator = await self.llm_fallback.generate_response(
-                                user_prompt=query,
-                                system_prompt=system_prompt,
-                                stream=stream
-                            )
-                            async for chunk in self._stream_response(fallback_generator, language, query, user_id):
-                                yield chunk
-                        except Exception as fallback_error:
-                            logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
-                            error_msg = "Sorry, I couldn't generate an answer at the moment."
-                            async for chunk in self._error_stream(error_msg):
-                                yield chunk
-                return stream_generator()
-            else:
-                # Non-streaming fallback logic
-                try:
-                    response = await self.llm.generate_response(
-                        user_prompt=query,
-                        system_prompt=system_prompt,
-                        stream=stream
-                    )
-                except Exception as llm_error:
-                    logger.warning(f"[ChatChain] Primary LLM failed, falling back to ChatGPT.", exc_info=True)
-                    try:
-                        response = await self.llm_fallback.generate_response(
-                            user_prompt=query,
-                            system_prompt=system_prompt,
-                            stream=stream
-                        )
-                    except Exception as fallback_error:
-                        logger.error(f"[ChatChain] Fallback LLM also failed.", exc_info=True)
-                        raise fallback_error # Re-raise to be caught by the outer handler
-
-                response = self.language_detector.correct_language(response, language)
-                response = self.replace_punctuation(response)
-                
-                logger.info(f"[DEBUG] LLM full response: {response}")
-                return response
+            return await self.run(
+                query=query,
+                system_prompt=system_prompt,
+                stream=stream,
+                llm=selected_llm,
+                debug_data=debug_data,
+            )
 
         except Exception as e:
             logger.error(f"[ChatChain] Generation failed: {e}", exc_info=True)
             error_msg = "Sorry, I couldn't generate an answer at the moment."
-            return await self._stream_or_return_error(error_msg)
+            if stream:
+                return self._error_generator(error_msg)
+            elif settings.DEVELOPMENT_MODE:
+                return error_msg, debug_data
+            else:
+                return error_msg
 
-    async def _stream_or_return_error(self, message: str) -> Union[str, AsyncGenerator]:
-        """Return either string or stream depending on STREAM setting."""
-        if settings.STREAM:
-            return self._error_stream(message)
-        else:
-            return message
+    async def _stream_response(
+        self,
+        selected_llm: LLM,
+        user_prompt: str,
+        system_prompt: str,
+        debug_data: dict[str, Any],
+    ) -> AsyncGenerator[str, None]:
+        """Stream response with fallback handling."""
+        if settings.DEVELOPMENT_MODE:
+            yield debug_data
 
-    async def _stream_response(self, response_generator: AsyncGenerator[str, None], language: str, query: str, user_id: str) -> AsyncGenerator[str, None]:
-        """Handle streaming response and save conversation when complete."""
-        full_response, buffer = "", ""
-        
-        logger.debug(f"[ChatChain] {language}")
-        
+        try:
+            response_gen = await selected_llm.generate_response(
+                user_prompt=user_prompt,
+                system_prompt=system_prompt,
+                stream=True,
+            )
+            async for chunk in self._yield_clean_chunks(response_gen):
+                yield chunk
+        except Exception:
+            logger.warning(
+                "[ChatChain] Primary LLM streaming failed, using fallback.",
+                exc_info=True,
+            )
+            try:
+                fallback_gen = await self.llm_fallback.generate_response(
+                    user_prompt=user_prompt,
+                    system_prompt=system_prompt,
+                    stream=True,
+                )
+                async for chunk in self._yield_clean_chunks(fallback_gen):
+                    yield chunk
+            except Exception:
+                logger.error("[ChatChain] Fallback LLM failed.", exc_info=True)
+                error_msg = "Sorry, I couldn't generate an answer at the moment."
+                async for char in error_msg:
+                    yield char
+
+    async def _non_stream_response(
+        self,
+        selected_llm: LLM,
+        user_prompt: str,
+        system_prompt: str,
+        debug_data: dict[str, Any],
+    ) -> str | tuple[str, dict[str, Any]]:
+        """Non-streaming response with fallback handling."""
+        try:
+            response = await selected_llm.generate_response(
+                user_prompt=user_prompt,
+                system_prompt=system_prompt,
+                stream=False,
+            )
+        except Exception:
+            logger.warning(
+                "[ChatChain] Primary LLM failed, using fallback.", exc_info=True
+            )
+            try:
+                response = await self.llm_fallback.generate_response(
+                    user_prompt=user_prompt,
+                    system_prompt=system_prompt,
+                    stream=False,
+                )
+            except Exception:
+                logger.error("[ChatChain] Fallback failed.", exc_info=True)
+                raise
+
+        response = self.replace_punctuation(response)
+        logger.info(f"[DEBUG] LLM full response: {response}")
+
+        if settings.DEVELOPMENT_MODE:
+            return response, debug_data
+        return response
+
+    async def _yield_clean_chunks(
+        self, response_generator: AsyncGenerator[str, None]
+    ) -> AsyncGenerator[str, None]:
+        """Yield individual characters after cleaning punctuation."""
+        buffer = ""
         async for chunk in response_generator:
             buffer += chunk
-            if buffer.endswith('\n'):
-                buffer = self.language_detector.correct_language(buffer, language)
-                buffer = self.replace_punctuation(buffer)
-                
-                for char in buffer:
+            if buffer.endswith("\n"):
+                cleaned = self.replace_punctuation(buffer)
+                for char in cleaned:
                     yield char
-                full_response += buffer
                 buffer = ""
-                
         if buffer:
-            buffer = self.language_detector.correct_language(buffer, language)
-            for char in buffer:
+            cleaned = self.replace_punctuation(buffer)
+            for char in cleaned:
                 yield char
-            full_response += buffer
 
-        logger.debug(f"[ChatChain] Full LLM Response: {full_response}")
-        
-    async def _error_stream(self, message: str) -> AsyncGenerator[str, None]:
-        """Yield error message as stream."""
+    async def _handle_error(
+        self, message: str, debug_data: dict[str, Any], stream: bool
+    ) -> str | tuple[str, dict[str, Any]] | AsyncGenerator[str, None]:
+        """Return error message in appropriate format."""
+        if settings.DEVELOPMENT_MODE and not stream:
+            return message, debug_data
+        if stream:
+            return self._error_generator(message)
+        return message
+
+    async def _error_generator(self, message: str) -> AsyncGenerator[str, None]:
+        """Yield error message character by character."""
         for char in message:
             yield char
