@@ -16,6 +16,8 @@ services:
     volumes:
       - ./app:/app/app
       - ./data:/app/data
+    networks:
+      - wakilai-bridge
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -23,3 +25,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+networks:
+  wakilai-bridge:
+    external: true
