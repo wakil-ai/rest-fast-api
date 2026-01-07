@@ -79,7 +79,7 @@ def verify_api_key(api_key: str = Security(api_key_header)):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup actions
-    logger.info("Starting WakilAI API application...")
+    logger.info("Started WakilAI API application...")
 
     # Disable all OpenTelemetry (including CrewAI)
     os.environ["OTEL_SDK_DISABLED"] = "true"
@@ -181,7 +181,8 @@ def create_app() -> FastAPI:
     )
 
     # Health Check Route (no authentication required)
-    @app.get("/", tags=["Health"])
+    @app.get("/", tags=["Health"], include_in_schema=False)
+    @app.get("/health", tags=["Health"])
     async def health_check():
         return {"status": "ok", "message": "WakilAI API is running 🚀"}
 
