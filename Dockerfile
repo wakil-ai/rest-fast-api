@@ -1,43 +1,50 @@
-# Use lightweight python base
-FROM python:3.10-slim
+# Multi-stage build for optimized image size
+FROM python:3.10-slim AS builder
 
-# Set workdir
 WORKDIR /app
 
-# Copy only requirements first for better caching
-COPY requirements.txt .
-
-# Install system dependencies needed for cryptography, database drivers, and Azure Speech SDK
-RUN apt-get update && apt-get install -y \
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    ffmpeg \
     pkg-config \
-    libasound2-dev \
-    alsa-utils \
-    libc6 \
-    libc6-dev \
     libssl-dev \
-    libasound2 \
-    wget \
-    curl \
-    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python packages with protobuf pure Python implementation
-RUN PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python pip install --upgrade pip && \
-    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python pip install --no-cache-dir --upgrade setuptools wheel && \
-    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python pip install --no-cache-dir -r requirements.txt
+# Copy and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
-# Copy only app folder
+# Runtime stage
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy wheels from builder and install
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/* && rm -rf /wheels
+
+# Copy application code
 COPY app/ ./app/
 
-# Expose port
-EXPOSE 8080
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 
-# Add environment variables for debugging
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
-ENV PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+EXPOSE ${PORT:-8080}
 
-# Start server with streaming-optimized configuration (single worker to avoid protobuf multiprocessing issues)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--loop", "asyncio", "--http", "httptools", "--timeout-keep-alive", "30"]
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
+
+# Run with optimized uvicorn settings using environment variables from .env
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --workers ${WORKERS:-4} --loop asyncio
