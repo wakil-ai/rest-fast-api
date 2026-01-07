@@ -1,12 +1,13 @@
-from typing import List, Optional
-from datetime import datetime
-from bson import ObjectId
 import uuid
+from datetime import datetime
+
+from bson import ObjectId
 from pydantic import BaseModel
 
-from app.db.db_manager import DBManager
-from app.core.logger import logger
 from app.core.config import settings
+from app.core.logger import logger
+from app.db.db_manager import DBManager
+
 
 class ChatHistoryService:
     def __init__(self):
@@ -20,7 +21,13 @@ class ChatHistoryService:
 
     def _init_collections(self):
         """Initialize necessary database collections."""
-        for collection in [self.users_collection, self.sessions_collection, self.messages_collection, self.feedback_collection, self.files_collection]:
+        for collection in [
+            self.users_collection,
+            self.sessions_collection,
+            self.messages_collection,
+            self.feedback_collection,
+            self.files_collection,
+        ]:
             self.db_manager.create_collection(collection)
 
     def _validate_user_id(self, user_id: str) -> None:
@@ -33,12 +40,19 @@ class ChatHistoryService:
         if not session_id or not session_id.strip():
             raise ValueError("Session ID cannot be empty")
 
-    def create_user(self, user_id: str, username: Optional[str] = None, 
-                    first_name: Optional[str] = None, last_name: Optional[str] = None, 
-                    picture: Optional[str] = None) -> dict:
+    def create_user(
+        self,
+        user_id: str,
+        username: str | None = None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        picture: str | None = None,
+    ) -> dict:
         """Create or retrieve an existing user."""
         self._validate_user_id(user_id)
-        existing_user = self.db_manager.find_documents(self.users_collection, {"user_id": user_id})
+        existing_user = self.db_manager.find_documents(
+            self.users_collection, {"user_id": user_id}
+        )
 
         if existing_user:
             logger.info(f"User with user_id {user_id} already exists.")
@@ -51,7 +65,7 @@ class ChatHistoryService:
             "last_name": last_name,
             "picture": picture,
             "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "updated_at": datetime.utcnow(),
         }
 
         result_ids = self.db_manager.insert_documents(self.users_collection, [user])
@@ -62,8 +76,13 @@ class ChatHistoryService:
         logger.info(f"Created new user with user_id: {user_id}")
         return user
 
-    def create_session(self, user_id: str, session_id: Optional[str] = None, 
-                      title: Optional[str] = None, tags: Optional[List[str]] = None) -> dict:
+    def create_session(
+        self,
+        user_id: str,
+        session_id: str | None = None,
+        title: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict:
         """Create or retrieve an existing session."""
         self._validate_user_id(user_id)
         session_id = session_id or str(uuid.uuid4())
@@ -74,7 +93,9 @@ class ChatHistoryService:
         )
 
         if existing_session:
-            logger.info(f"Session with session_id {session_id} already exists for user {user_id}.")
+            logger.info(
+                f"Session with session_id {session_id} already exists for user {user_id}."
+            )
             return existing_session[0]
 
         session = {
@@ -83,25 +104,33 @@ class ChatHistoryService:
             "title": title or "New Chat",
             "tags": tags or [],
             "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "updated_at": datetime.utcnow(),
         }
 
-        result_ids = self.db_manager.insert_documents(self.sessions_collection, [session])
+        result_ids = self.db_manager.insert_documents(
+            self.sessions_collection, [session]
+        )
         if not result_ids:
             raise ValueError("Failed to create session")
 
         session["_id"] = ObjectId(result_ids[0])
-        logger.info(f"Created new session with session_id: {session_id} for user {user_id}")
+        logger.info(
+            f"Created new session with session_id: {session_id} for user {user_id}"
+        )
         return session
 
-    def get_sessions(self, user_id: str, limit: int = 50) -> List[dict]:
+    def get_sessions(self, user_id: str, limit: int = 50) -> list[dict]:
         """Retrieve all sessions for a user."""
         self._validate_user_id(user_id)
-        sessions = self.db_manager.find_documents(self.sessions_collection, {"user_id": user_id}, limit=limit)
+        sessions = self.db_manager.find_documents(
+            self.sessions_collection, {"user_id": user_id}, limit=limit
+        )
         logger.info(f"Retrieved {len(sessions)} sessions for user {user_id}")
         return sessions
-    
-    def edit_session(self, session_id: str, title: Optional[str] = None, tags: Optional[List[str]] = None) -> dict:
+
+    def edit_session(
+        self, session_id: str, title: str | None = None, tags: list[str] | None = None
+    ) -> dict:
         """Edit a session's title or tags."""
         self._validate_session_id(session_id)
         update_fields = {}
@@ -114,15 +143,19 @@ class ChatHistoryService:
 
         update_fields["updated_at"] = datetime.utcnow()
         updated_count = self.db_manager.update_documents(
-            self.sessions_collection, {"session_id": session_id}, {"$set": update_fields}
+            self.sessions_collection,
+            {"session_id": session_id},
+            {"$set": update_fields},
         )
         if updated_count == 0:
             raise ValueError("Session not found or no changes made")
 
-        session = self.db_manager.find_documents(self.sessions_collection, {"session_id": session_id})
+        session = self.db_manager.find_documents(
+            self.sessions_collection, {"session_id": session_id}
+        )
         logger.info(f"Updated session with session_id: {session_id}")
         return session[0] if session else {}
-    
+
     def delete_session(self, user_id: str, session_id: str) -> None:
         """Delete a session and its messages."""
         self._validate_user_id(user_id)
@@ -137,10 +170,18 @@ class ChatHistoryService:
         self.db_manager.delete_documents(
             self.messages_collection, {"user_id": user_id, "session_id": session_id}
         )
-        logger.info(f"Deleted session with session_id: {session_id} and its messages for user {user_id}")
+        logger.info(
+            f"Deleted session with session_id: {session_id} and its messages for user {user_id}"
+        )
 
-    def add_message(self, user_id: str, session_id: str, message_id: str, 
-                    content: dict, metadata: Optional[dict] = None) -> dict:
+    def add_message(
+        self,
+        user_id: str,
+        session_id: str,
+        message_id: str,
+        content: dict,
+        metadata: dict | None = None,
+    ) -> dict:
         """Add a message to a session."""
         self._validate_user_id(user_id)
         self._validate_session_id(session_id)
@@ -148,11 +189,14 @@ class ChatHistoryService:
             raise ValueError("Message ID cannot be empty")
 
         existing_message = self.db_manager.find_documents(
-            self.messages_collection, {"user_id": user_id, "session_id": session_id, "message_id": message_id}
+            self.messages_collection,
+            {"user_id": user_id, "session_id": session_id, "message_id": message_id},
         )
 
         if existing_message:
-            logger.info(f"Message with message_id {message_id} already exists in session {session_id} for user {user_id}.")
+            logger.info(
+                f"Message with message_id {message_id} already exists in session {session_id} for user {user_id}."
+            )
             return existing_message[0]
 
         if isinstance(content, BaseModel):
@@ -165,10 +209,12 @@ class ChatHistoryService:
             "content": content,
             "metadata": metadata or {},
             "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "updated_at": datetime.utcnow(),
         }
 
-        result_ids = self.db_manager.insert_documents(self.messages_collection, [message])
+        result_ids = self.db_manager.insert_documents(
+            self.messages_collection, [message]
+        )
         if not result_ids:
             raise ValueError("Failed to add message")
 
@@ -176,33 +222,45 @@ class ChatHistoryService:
         self.db_manager.update_documents(
             self.sessions_collection,
             {"user_id": user_id, "session_id": session_id},
-            {"$set": {"updated_at": datetime.utcnow()}}
+            {"$set": {"updated_at": datetime.utcnow()}},
         )
-        logger.info(f"Added new message with message_id: {message_id} to session {session_id} for user {user_id}")
+        logger.info(
+            f"Added new message with message_id: {message_id} to session {session_id} for user {user_id}"
+        )
         return message
 
-    def get_messages(self, user_id: str, session_id: str, limit: int = 100) -> List[dict]:
+    def get_messages(
+        self, user_id: str, session_id: str, limit: int = 100
+    ) -> list[dict]:
         """Retrieve all messages for a session."""
         self._validate_user_id(user_id)
         self._validate_session_id(session_id)
         # Filter to only get actual messages (not feedback) by ensuring content field exists
         query = {
-            "user_id": user_id, 
+            "user_id": user_id,
             "session_id": session_id,
-            "content": {"$exists": True}
+            "content": {"$exists": True},
         }
         messages = self.db_manager.find_documents(
             self.messages_collection, query, limit=limit
         )
-        logger.info(f"Retrieved {len(messages)} messages from session {session_id} for user {user_id}")
+        logger.info(
+            f"Retrieved {len(messages)} messages from session {session_id} for user {user_id}"
+        )
         return messages
-    
-    def submit_feedback(self, user_id: str, session_id: str, message_id: str,
-                        feedback_type: str, comments: Optional[str] = None) -> dict:
+
+    def submit_feedback(
+        self,
+        user_id: str,
+        session_id: str,
+        message_id: str,
+        feedback_type: str,
+        comments: str | None = None,
+    ) -> dict:
         """Submit feedback for a message."""
         self._validate_user_id(user_id)
         self._validate_session_id(session_id)
-        
+
         if not message_id or not message_id.strip():
             raise ValueError("Message ID cannot be empty")
 
@@ -213,33 +271,48 @@ class ChatHistoryService:
             "feedback_type": feedback_type,
             "comments": comments or "",
             "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "updated_at": datetime.utcnow(),
         }
 
-        result_ids = self.db_manager.insert_documents(self.feedback_collection, [feedback])
+        result_ids = self.db_manager.insert_documents(
+            self.feedback_collection, [feedback]
+        )
         if not result_ids:
             raise ValueError("Failed to submit feedback")
 
         feedback["_id"] = ObjectId(result_ids[0])
-        logger.info(f"Submitted feedback for message_id: {message_id} in session {session_id} for user {user_id}")
+        logger.info(
+            f"Submitted feedback for message_id: {message_id} in session {session_id} for user {user_id}"
+        )
         return feedback
-    
-    def get_feedback(self, user_id: str, session_id: str, message_id: str) -> List[dict]:
+
+    def get_feedback(
+        self, user_id: str, session_id: str, message_id: str
+    ) -> list[dict]:
         """Retrieve feedback for a specific message."""
         self._validate_user_id(user_id)
         self._validate_session_id(session_id)
-        
+
         if not message_id or not message_id.strip():
             raise ValueError("Message ID cannot be empty")
 
         feedbacks = self.db_manager.find_documents(
-            self.feedback_collection, 
-            {"user_id": user_id, "session_id": session_id, "message_id": message_id}
+            self.feedback_collection,
+            {"user_id": user_id, "session_id": session_id, "message_id": message_id},
         )
-        logger.info(f"Retrieved {len(feedbacks)} feedback entries for message_id: {message_id} in session {session_id} for user {user_id}")
+        logger.info(
+            f"Retrieved {len(feedbacks)} feedback entries for message_id: {message_id} in session {session_id} for user {user_id}"
+        )
         return feedbacks
-    
-    def add_file_upload(self, user_id: str, file_id: str, file_url: str, ocr_result: str, file_metadata: dict) -> dict:
+
+    def add_file_upload(
+        self,
+        user_id: str,
+        file_id: str,
+        file_url: str,
+        ocr_result: str,
+        file_metadata: dict,
+    ) -> dict:
         """Add a file upload record to the database."""
         self._validate_user_id(user_id)
         if not file_id or not file_id.strip():
@@ -258,69 +331,75 @@ class ChatHistoryService:
             "ocr_result": ocr_result,
             "file_metadata": file_metadata,
             "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "updated_at": datetime.utcnow(),
         }
 
-        result_ids = self.db_manager.insert_documents(self.files_collection, [file_record])
+        result_ids = self.db_manager.insert_documents(
+            self.files_collection, [file_record]
+        )
         if not result_ids:
             raise ValueError("Failed to add file upload record")
 
         file_record["_id"] = ObjectId(result_ids[0])
-        logger.info(f"Added file upload record with file_id: {file_id} for user {user_id}")
+        logger.info(
+            f"Added file upload record with file_id: {file_id} for user {user_id}"
+        )
         return file_record
-    
-    def get_files(self, user_id: str, limit: int = 50) -> List[dict]:
+
+    def get_files(self, user_id: str, limit: int = 50) -> list[dict]:
         """Retrieve all files for a user."""
         self._validate_user_id(user_id)
-        
+
         query = {"user_id": user_id}
         files = self.db_manager.find_documents(
             self.files_collection, query, limit=limit
         )
         logger.info(f"Retrieved {len(files)} files for user {user_id}")
         return files
-    
-    def get_file_by_id(self, user_id: str, file_id: str) -> Optional[dict]:
+
+    def get_file_by_id(self, user_id: str, file_id: str) -> dict | None:
         """Retrieve a specific file by file_id."""
         self._validate_user_id(user_id)
-        
+
         if not file_id or not file_id.strip():
             raise ValueError("File ID cannot be empty")
-        
+
         files = self.db_manager.find_documents(
-            self.files_collection, 
-            {"user_id": user_id, "file_id": file_id}
+            self.files_collection, {"user_id": user_id, "file_id": file_id}
         )
-        
+
         if files:
             logger.info(f"Retrieved file with file_id: {file_id} for user {user_id}")
             return files[0]
-        
+
         logger.warning(f"File with file_id {file_id} not found for user {user_id}")
         return None
-    
+
     def delete_file_upload(self, user_id: str, file_id: str) -> dict:
         """Delete a file upload record from the database."""
         self._validate_user_id(user_id)
-        
+
         if not file_id or not file_id.strip():
             raise ValueError("File ID cannot be empty")
-        
+
         # Get file record first to return it
         file_record = self.get_file_by_id(user_id, file_id)
         if not file_record:
-            raise ValueError(f"File with file_id {file_id} not found for user {user_id}")
-        
+            raise ValueError(
+                f"File with file_id {file_id} not found for user {user_id}"
+            )
+
         # Delete from database
         deleted_count = self.db_manager.delete_documents(
-            self.files_collection,
-            {"user_id": user_id, "file_id": file_id}
+            self.files_collection, {"user_id": user_id, "file_id": file_id}
         ).deleted_count
-        
+
         if deleted_count == 0:
             raise ValueError("Failed to delete file record")
-        
-        logger.info(f"Deleted file upload record with file_id: {file_id} for user {user_id}")
+
+        logger.info(
+            f"Deleted file upload record with file_id: {file_id} for user {user_id}"
+        )
         return file_record
 
     def delete_file_upload(self, user_id: str, file_id: str) -> None:
@@ -334,4 +413,6 @@ class ChatHistoryService:
         )
         if deleted_count == 0:
             raise ValueError("File not found")
-        logger.info(f"Deleted file upload record with file_id: {file_id} for user {user_id}")
+        logger.info(
+            f"Deleted file upload record with file_id: {file_id} for user {user_id}"
+        )

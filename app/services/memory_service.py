@@ -1,17 +1,24 @@
-from typing import Any, List, Dict
+from typing import Any
+
 from mem0 import AsyncMemoryClient
-from app.db.db_manager import DBManager
+
 from app.core.config import settings
 from app.core.logger import logger
+from app.db.db_manager import DBManager
+
 
 class ChatMemoryService:
     def __init__(self):
         self.db_manager = DBManager()
-        self.client = AsyncMemoryClient(api_key=settings.MEM0_API_KEY,
-                                        org_id=settings.MEM0_ORG_ID,
-                                        project_id=settings.MEM0_PROJECT_ID)
-        
-    async def get_session_memory(self, user_id: str, session_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+        self.client = AsyncMemoryClient(
+            api_key=settings.MEM0_API_KEY,
+            org_id=settings.MEM0_ORG_ID,
+            project_id=settings.MEM0_PROJECT_ID,
+        )
+
+    async def get_session_memory(
+        self, user_id: str, session_id: str, limit: int = 5
+    ) -> list[dict[str, Any]]:
         """Retrieve previous conversation memory for a user session."""
         try:
             filter = {"user_id": user_id, "session_id": session_id}
@@ -20,7 +27,7 @@ class ChatMemoryService:
                 query=filter,
                 limit=limit,
             )
-            
+
             # Sort memories by created_at timestamp latest first
             session_memories.sort(key=lambda x: x.get("created_at", 0), reverse=True)
             content = []
@@ -32,32 +39,42 @@ class ChatMemoryService:
                 else:
                     dt_str = "Unknown"
 
-                content.append({
-                    "query": memory.get("content", "").get("query", ""),
-                    "response": memory.get("content", "").get("response", ""),
-                    "created_at": dt_str,
-                })
-            
+                content.append(
+                    {
+                        "query": memory.get("content", "").get("query", ""),
+                        "response": memory.get("content", "").get("response", ""),
+                        "created_at": dt_str,
+                    }
+                )
+
             return content
         except Exception as e:
-            logger.error(f"[RetrievalService] Failed to get session memory: {e}", exc_info=True)
-            return []     
+            logger.error(
+                f"[RetrievalService] Failed to get session memory: {e}", exc_info=True
+            )
+            return []
 
     async def search_memory(self, user_id: str, query: str):
         """Searches for memories for a given user."""
         try:
             filters = {"user_id": user_id}
-            results = await self.client.search(query=query, filters=filters, version="v2", output_format="v1.1")
+            results = await self.client.search(
+                query=query, filters=filters, version="v2", output_format="v1.1"
+            )
             results = results.get("results", [])
             return await self._format_memories(results)
         except Exception as e:
-            logger.error(f"[ChatMemoryService] Could not retrieve memories from mem0: {e}")
+            logger.error(
+                f"[ChatMemoryService] Could not retrieve memories from mem0: {e}"
+            )
             return []
 
     async def add_memory(self, user_id: str, messages: list):
         """Adds a list of messages to the memory for a given user."""
         try:
-            await self.client.add(messages, user_id=user_id, version="v2", output_format="v1.1")
+            await self.client.add(
+                messages, user_id=user_id, version="v2", output_format="v1.1"
+            )
             return {"message": "Memory added successfully on background."}
         except Exception as e:
             logger.error(f"Could not add memories to mem0: {e}")
@@ -68,7 +85,9 @@ class ChatMemoryService:
             memory = await self.client.get(memory_id)
             return memory
         except Exception as e:
-            logger.error(f"[ChatMemoryService] Could not retrieve memory from mem0: {e}")
+            logger.error(
+                f"[ChatMemoryService] Could not retrieve memory from mem0: {e}"
+            )
             return None
 
     async def get_all_memories(self, user_id: str):
@@ -84,14 +103,16 @@ class ChatMemoryService:
                     else:
                         categories = " "
                 ids = mem.get("id", " ")
-                
+
                 mems.append(memory)
                 cats.append(categories)
                 mem_ids.append(ids)
-                
+
             return {"memories": mems, "categories": cats, "memory_ids": mem_ids}
         except Exception as e:
-            logger.error(f"[ChatMemoryService] Could not retrieve memories from mem0: {e}")
+            logger.error(
+                f"[ChatMemoryService] Could not retrieve memories from mem0: {e}"
+            )
             return []
 
     async def update_memory(self, memory_id: str, text: str):
@@ -117,22 +138,26 @@ class ChatMemoryService:
         """Deletes all memories for a given user."""
         try:
             await self.client.delete_all(user_id=user_id)
-            logger.debug(f"[ChatMemoryService] Deleted all memories for user_id: {user_id}")
+            logger.debug(
+                f"[ChatMemoryService] Deleted all memories for user_id: {user_id}"
+            )
             return True
         except Exception as e:
-            logger.error(f"[ChatMemoryService] Could not delete all user memories from mem0: {e}")
+            logger.error(
+                f"[ChatMemoryService] Could not delete all user memories from mem0: {e}"
+            )
             return False
-        
-    async def _format_memories(self, memories: List[Any]) -> str:
+
+    async def _format_memories(self, memories: list[Any]) -> str:
         """Formats memories from mem0 into a string."""
         if not memories:
             return ""
-        
+
         memories_text = "\n\nRelevant Past Memories:\n"
         for memory in memories:
             if isinstance(memory, dict):
                 memories_text += f"- {memory.get('memory', str(memory))}\n"
             else:
                 memories_text += f"- {str(memory)}\n"
-        
+
         return memories_text

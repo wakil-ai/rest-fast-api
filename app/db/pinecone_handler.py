@@ -1,9 +1,11 @@
-# /app/db/pinecone_handler.py
-from typing import List, Dict, Any
-from app.core.config import settings
+from typing import Any
+
 from pinecone import Pinecone as OfficialPinecone
+
+from app.core.config import settings
 from app.core.logger import logger
 from app.db.vector_db_handler import VectorDBHandler
+
 
 class PineconeHandler(VectorDBHandler):
     """
@@ -16,13 +18,17 @@ class PineconeHandler(VectorDBHandler):
         self.index = self.pc.Index(settings.PINECONE_INDEX_NAME)
         self.namespace = settings.NAMESPACE_NAME
 
-    def upsert_vectors(self, documents: List[Dict[str, Any]], partition_name: str = None) -> None:
+    def upsert_vectors(
+        self, documents: list[dict[str, Any]], partition_name: str = None
+    ) -> None:
         vectors = []
 
         for doc in documents:
             dense_embedding = doc.get("embedding")
             if not dense_embedding:
-                logger.warning(f"[PineconeHandler] Missing dense embedding for document ID: {doc.get('id')}")
+                logger.warning(
+                    f"[PineconeHandler] Missing dense embedding for document ID: {doc.get('id')}"
+                )
                 continue
 
             metadata = doc.get("metadata", {})
@@ -41,31 +47,43 @@ class PineconeHandler(VectorDBHandler):
             return
 
         self.index.upsert(vectors=vectors, namespace=self.namespace)
-        logger.info(f"[PineconeHandler] Upserted {len(vectors)} vectors into namespace '{self.namespace}'.")
+        logger.info(
+            f"[PineconeHandler] Upserted {len(vectors)} vectors into namespace '{self.namespace}'."
+        )
 
-    def query_dense(self, dense_vector: List[float], top_k: int = settings.TOP_K) -> List[Dict[str, Any]]:
+    def query_dense(
+        self, dense_vector: list[float], top_k: int = settings.TOP_K
+    ) -> list[dict[str, Any]]:
         """Dense-only search."""
         response = self.index.query(
             namespace=self.namespace,
             vector=dense_vector,
             top_k=top_k,
             include_metadata=True,
-            include_values=False
+            include_values=False,
         )
         return self._parse_matches(response)
 
-    def query_sparse(self, text_query: str, top_k: int = settings.TOP_K) -> List[Dict[str, Any]]:
+    def query_sparse(
+        self, text_query: str, top_k: int = settings.TOP_K
+    ) -> list[dict[str, Any]]:
         """BM25-only text search."""
         response = self.index.query(
             namespace=self.namespace,
             text=text_query,
             top_k=top_k,
             include_metadata=True,
-            include_values=False
+            include_values=False,
         )
         return self._parse_matches(response)
 
-    def query_hybrid(self, dense_vector: List[float], text_query: str, top_k: int = settings.TOP_K, alpha: float = settings.ALPHA) -> List[Dict[str, Any]]:
+    def query_hybrid(
+        self,
+        dense_vector: list[float],
+        text_query: str,
+        top_k: int = settings.TOP_K,
+        alpha: float = settings.ALPHA,
+    ) -> list[dict[str, Any]]:
         """Hybrid search combining dense and BM25."""
         response = self.index.query(
             namespace=self.namespace,
@@ -75,11 +93,11 @@ class PineconeHandler(VectorDBHandler):
             alpha=alpha,
             top_k=top_k,
             include_metadata=True,
-            include_values=False
+            include_values=False,
         )
         return self._parse_matches(response)
 
-    def direct_query(self, query_params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def direct_query(self, query_params: dict[str, Any]) -> list[dict[str, Any]]:
         """
         Perform a direct custom query on Pinecone index.
         Useful for fallback debugging.
@@ -92,15 +110,19 @@ class PineconeHandler(VectorDBHandler):
             self.index.delete(delete_all=True, namespace=self.namespace)
             logger.info(f"[PineconeHandler] Deleted namespace: {self.namespace}")
         except Exception as e:
-            logger.error(f"[PineconeHandler] Error deleting namespace {self.namespace}: {str(e)}")
+            logger.error(
+                f"[PineconeHandler] Error deleting namespace {self.namespace}: {str(e)}"
+            )
 
-    def _parse_matches(self, response: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _parse_matches(self, response: dict[str, Any]) -> list[dict[str, Any]]:
         matches = response.get("matches", [])
         results = []
         for match in matches:
-            results.append({
-                "id": match.get("id"),
-                "score": match.get("score"),
-                "metadata": match.get("metadata", {})
-            })
+            results.append(
+                {
+                    "id": match.get("id"),
+                    "score": match.get("score"),
+                    "metadata": match.get("metadata", {}),
+                }
+            )
         return results

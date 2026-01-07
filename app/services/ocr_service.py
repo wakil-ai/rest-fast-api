@@ -1,7 +1,8 @@
-from pathlib import Path, PosixPath
-from typing import Union
-from app.core.config import settings
+from pathlib import Path
+
 from datalab_sdk import AsyncDatalabClient
+
+from app.core.config import settings
 from app.core.logger import logger
 
 
@@ -9,7 +10,7 @@ class OCRService:
     def __init__(self):
         self.client = AsyncDatalabClient(api_key=settings.DATALAB_API_KEY)
 
-    async def process_file(self, file: Union[Path, str]) -> str:
+    async def process_file(self, file: Path | str) -> str:
         """
         Sends the file to Datalab
         """

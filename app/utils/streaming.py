@@ -1,19 +1,21 @@
-from typing import AsyncGenerator
-import json
 import asyncio
+import json
+from collections.abc import AsyncGenerator
 
 
-async def format_streaming_response(response_generator: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
+async def format_streaming_response(
+    response_generator: AsyncGenerator[str, None],
+) -> AsyncGenerator[str, None]:
     """
     Format streaming response as Server-Sent Events.
     Supports both text chunks and debug data events.
-    
+
     Args:
         response_generator: AsyncGenerator that yields text chunks or dict with debug data
-        
+
     Yields:
         str: Formatted SSE data strings
-        
+
     Event types:
         - debug: Development mode debug data (sent once at start if available)
         - progress: Agentic RAG step progress updates
@@ -37,26 +39,28 @@ async def format_streaming_response(response_generator: AsyncGenerator[str, None
                     char_data = {"type": "chunk", "chunk": char}
                     yield f"data: {json.dumps(char_data)}\n\n"
                     await asyncio.sleep(0.0001)  # Yield control to event loop
-                        
+
         # Send completion signal
         end_signal = {"type": "end"}
         yield f"data: {json.dumps(end_signal)}\n\n"
-        
+
     except Exception as e:
         # Send error in streaming format
         error_data = {"type": "error", "error": str(e)}
         yield f"data: {json.dumps(error_data)}\n\n"
 
 
-async def format_progress_event(event_type: str, status: str, message: str, details: dict = None) -> dict:
+async def format_progress_event(
+    event_type: str, status: str, message: str, details: dict = None
+) -> dict:
     """
     Format a progress event for streaming.
-    
+
     Args:
         event_type: Type of event (memory_retrieval, retrieval_strategy, etc.)
         status: Status of the event (in_progress, completed, failed)
         message: User-friendly message describing the step
-        
+
     Returns:
         dict: Formatted progress event ready for streaming
     """
@@ -64,15 +68,16 @@ async def format_progress_event(event_type: str, status: str, message: str, deta
         "type": "progress",
         "event_type": event_type,
         "status": status,
-        "message": message
+        "message": message,
     }
 
     return event
 
+
 def get_streaming_headers() -> dict:
     """
     Get headers required for streaming response.
-    
+
     Returns:
         dict: Dictionary of headers for SSE streaming
     """
@@ -87,4 +92,4 @@ def get_streaming_headers() -> dict:
         "X-Accel-Buffering": "no",  # Disable nginx buffering
         "Transfer-Encoding": "chunked",  # Ensure chunked encoding
         "Content-Encoding": "identity",  # Disable compression
-    } 
+    }
