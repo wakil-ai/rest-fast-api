@@ -38,7 +38,6 @@ async def format_streaming_response(
                 for char in item:
                     char_data = {"type": "chunk", "chunk": char}
                     yield f"data: {json.dumps(char_data)}\n\n"
-                    await asyncio.sleep(0.0001)  # Yield control to event loop
 
         # Send completion signal
         end_signal = {"type": "end"}
