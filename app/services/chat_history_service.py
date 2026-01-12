@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.core.logger import logger
 from app.db.db_manager import DBManager
+from app.utils.user_management import generate_short_id
 
 
 class ChatHistoryService:
@@ -70,7 +71,7 @@ class ChatHistoryService:
             # Projects - query by user
             self.db_manager.mongo_handler.db[self.projects_collection].create_index([("user_id", 1)])
             
-            logger.info("[ChatHistoryService]Successfully created database indexes")
+            logger.info("[ChatHistoryService] Successfully created database indexes")
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
 
@@ -144,7 +145,7 @@ class ChatHistoryService:
     ) -> dict:
         """Create a new project. Uses project_id as _id."""
         self._validate_user_id(user_id)
-        project_id = project_id or str(uuid.uuid4())
+        project_id = project_id or generate_short_id("proj-")
         self._validate_project_id(project_id)
 
         # Check if project exists using _id
@@ -160,7 +161,8 @@ class ChatHistoryService:
             return existing_project[0]
 
         project = {
-            "_id": project_id,  # Use project_id as _id
+            "_id": project_id,
+            "project_id": project_id,  # Ensure project_id field is set to match _id
             "user_id": user_id,
             "title": title or "New Project",
             "created_at": datetime.utcnow(),
@@ -264,7 +266,7 @@ class ChatHistoryService:
     ) -> dict:
         """Create or retrieve an existing session. Uses session_id as _id."""
         self._validate_user_id(user_id)
-        session_id = session_id or str(uuid.uuid4())
+        session_id = session_id or generate_short_id("ses-")
         self._validate_session_id(session_id)
 
         # If project_id provided, validate it exists and user owns it
@@ -289,7 +291,8 @@ class ChatHistoryService:
             return existing_session[0]
 
         session = {
-            "_id": session_id,  # Use session_id as _id
+            "_id": session_id,
+            "session_id": session_id,  # Ensure session_id field is set to match _id
             "user_id": user_id,
             "project_id": project_id,  # Can be None for standalone chats
             "title": title or "New Chat",
@@ -418,7 +421,8 @@ class ChatHistoryService:
             content = content.model_dump()
 
         message = {
-            "_id": message_id,  # Use message_id as _id
+            "_id": message_id,
+            "message_id": message_id,  # Ensure message_id field is set to match _id
             "user_id": user_id,  # Auto-populated from session
             "session_id": session_id,
             "content": content,
@@ -482,6 +486,21 @@ class ChatHistoryService:
         message = self.get_message(message_id)
         if not message:
             raise ValueError(f"Message {message_id} not found")
+
+        # Get feedback whether it is already submitted
+        feedback = self.get_feedback(message_id)
+        if feedback:
+            # Check whether feedback type is same as submitted if same give error else update the type
+            if feedback["feedback_type"] == feedback_type:
+                raise ValueError(f"Feedback for message {message_id} already submitted")
+            else:
+                logger.info(f'Updated feedback type for message {message_id}')
+                self.db_manager.update_documents(
+                    self.feedback_collection,
+                    {"_id": feedback["_id"]},
+                    {"$set": {"feedback_type": feedback_type}},
+                )
+                return feedback
         
         user_id = message["user_id"]
         session_id = message["session_id"]
@@ -507,7 +526,7 @@ class ChatHistoryService:
         logger.info(f"Submitted feedback for message_id: {message_id}")
         return feedback
 
-    def get_feedback(self, message_id: str) -> list[dict]:
+    def get_feedback(self, message_id: str) -> dict | None:
         """Retrieve all feedback for a specific message."""
         if not message_id or not message_id.strip():
             raise ValueError("Message ID cannot be empty")
@@ -517,7 +536,7 @@ class ChatHistoryService:
             {"message_id": message_id},
         )
         logger.info(f"Retrieved {len(feedbacks)} feedback entries for message_id: {message_id}")
-        return feedbacks
+        return feedbacks[-1] if feedbacks else None
 
     # FILE MANAGEMENT
     def add_file_upload(

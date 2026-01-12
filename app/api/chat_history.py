@@ -282,13 +282,12 @@ def submit_feedback(request: FeedbackCreateRequest) -> FeedbackCreateResponse:
     return create_response(feedback_info, "Feedback submitted successfully")
 
 
-@router.get("/feedback/{message_id}", response_model=list[FeedbackCreateResponse])
+@router.get("/feedback/{message_id}")
 @handle_service_error
-def get_feedback(message_id: str) -> list[FeedbackCreateResponse]:
+def get_feedback(message_id: str):
     """Retrieve feedback for a message. Only message_id is required."""
-    feedbacks = chat_history_service.get_feedback(message_id=message_id)
-    return [create_response(feedback, "Feedback retrieved") for feedback in feedbacks]
-
+    feedback = chat_history_service.get_feedback(message_id=message_id)
+    return create_response(feedback, "Feedback retrieved")
 
 
 # FILE MANAGEMENT
