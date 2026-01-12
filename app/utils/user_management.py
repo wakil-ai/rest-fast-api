@@ -11,8 +11,8 @@ def serialize_mongo_id(data: dict) -> dict:
         return [serialize_mongo_id(item) for item in data]
     if isinstance(data, dict) and "_id" in data:
         data["mongo_id"] = str(data["_id"])
-        # Remove the original _id field to avoid confusion
-        del data["_id"]
+        # We also convert _id to string in place if it's not already
+        data["_id"] = str(data["_id"])
     return data
 
 

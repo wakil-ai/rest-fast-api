@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     MESSAGES_COLLECTION: str = "messages"
     FEEDBACK_COLLECTION: str = "feedbacks"
     FILES_COLLECTION: str = "files"
+    PROJECTS_COLLECTION: str = "projects"
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
