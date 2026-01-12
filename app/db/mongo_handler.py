@@ -11,9 +11,21 @@ class MongoHandler:
     """
     MongoDB handler for storing and querying documents.
     """
+    # Prevent multiple instances
+    _instance = None
+    _initialized = False
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(MongoHandler, cls).__new__(cls)
+        return cls._instance
 
     def __init__(self):
         try:
+            if self._initialized:
+                return
+            self._initialized = True
+
             self.client = MongoClient(
                 settings.MONGODB_URI,
                 serverSelectionTimeoutMS=5000,

@@ -10,7 +10,19 @@ from app.db.db_manager import DBManager
 
 
 class ChatHistoryService:
+    # Prevent multiple instances
+    _instance = None
+    _initialized = False
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ChatHistoryService, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
         self.db_manager = DBManager()
         self.users_collection = settings.USERS_COLLECTION
         self.sessions_collection = settings.SESSIONS_COLLECTION
@@ -58,7 +70,7 @@ class ChatHistoryService:
             # Projects - query by user
             self.db_manager.mongo_handler.db[self.projects_collection].create_index([("user_id", 1)])
             
-            logger.info("Successfully created database indexes")
+            logger.info("[ChatHistoryService]Successfully created database indexes")
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
 

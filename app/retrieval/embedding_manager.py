@@ -271,7 +271,7 @@ class EmbeddingManager:
 
         self.embedding = model_map.get(settings.EMBEDDING_MODEL, OpenAIEmbedding)()
         logger.info(
-            f"EmbeddingManager initialized with {settings.EMBEDDING_MODEL} model"
+            f"[EmbeddingManager] EmbeddingModel initialized with {settings.EMBEDDING_MODEL} model"
         )
         EmbeddingManager._initialized = True
 
