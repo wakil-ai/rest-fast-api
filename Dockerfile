@@ -38,13 +38,11 @@ COPY app/ ./app/
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
+    PORT=8080 \
+    WORKERS=4
 
-EXPOSE ${PORT:-8080}
+EXPOSE ${PORT}
 
-# Health check endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
-
-# Run with optimized uvicorn settings using environment variables from .env
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --workers ${WORKERS:-4} --loop asyncio
+# Run with optimized uvicorn settings
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers ${WORKERS} --loop asyncio

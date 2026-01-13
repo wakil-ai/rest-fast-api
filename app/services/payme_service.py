@@ -10,8 +10,8 @@ from app.models.payme import PaymeData, PaymeError, TransactionError, Transactio
 class TransactionService:
     def __init__(self):
         self.db_handler = MongoHandler()
-        self.users_collection = "users"
-        self.transaction_collection = "transactions"
+        self.users_collection = settings.USERS_COLLECTION
+        self.transaction_collection = settings.TRANSACTION_COLLECTION
 
     async def check_perform_transaction(self, params, request_id):
         # Validate account parameter exists
@@ -29,11 +29,9 @@ class TransactionService:
             )
 
         # Validate order_id in account
-        VALID_ORDER_ID = ["a7f3e9b2c8d4", "d5e8f1a2b9c7", "b9c3d7e1f5a8"]
         if (
             "order_id" not in account
             or not account["order_id"]
-            or account["order_id"] not in VALID_ORDER_ID
         ):
             raise TransactionError(PaymeError.UserNotFound, request_id, "order_id")
 
@@ -51,8 +49,7 @@ class TransactionService:
         amount = floor(amount / 100)
 
         # Only allow specific payment amounts: 1000, 5000, or 15000 sum
-        ALLOWED_AMOUNTS = [1000, 5000, 15000]
-        if amount not in ALLOWED_AMOUNTS:
+        if isinstance(amount, int) and amount > 0:
             raise TransactionError(PaymeError.InvalidAmount, request_id)
 
         # Check if user exists

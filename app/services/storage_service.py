@@ -255,18 +255,18 @@ class StorageService:
             return []
 
     @staticmethod
-    def generate_file_path(user_id: str, file_id: str, filename: str) -> str:
+    def generate_file_path(project_id: str, file_id: str, filename: str) -> str:
         """
         Generate a structured path for file storage.
 
         Args:
-            user_id: User ID
+            project_id: Project ID
             file_id: Unique file ID
             filename: Original filename
 
         Returns:
-            Structured path like: users/{user_id}/files/{file_id}/{filename}
+            Structured path like: projects/{project_id}/files/{file_id}/{filename}
         """
         # Sanitize filename to avoid issues
         safe_filename = filename.replace(" ", "_").replace("/", "_")
-        return f"users/{user_id}/files/{file_id}/{safe_filename}"
+        return f"projects/{project_id}/files/{file_id}/{safe_filename}"

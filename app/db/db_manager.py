@@ -40,8 +40,7 @@ class DBManager:
             return
 
         self.mongo_handler.db.create_collection(collection_name)
-        logger.info(f"[DBManager] Created MongoDB collection: {collection_name}")
-
+        
     # Initialize vector database handler
     def _initialize_vector_db(self) -> VectorDBHandler:
         """Create vector database handler based on configuration."""
@@ -147,6 +146,13 @@ class DBManager:
         else:
             # Return empty list
             return []
+
+    def upsert_vectors(self, documents: list[dict[str, Any]]) -> None:
+        """Upsert vectors into vector database."""
+        # Splitting logic here
+
+        # 
+        self.vector_handler.upsert_vectors(documents)
 
     def close_all_connections(self):
         """Close all database connections."""

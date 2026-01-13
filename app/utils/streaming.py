@@ -35,9 +35,8 @@ async def format_streaming_response(
                     yield f"data: {json.dumps(debug_event)}\n\n"
             # Handle text chunks
             else:
-                for char in item:
-                    char_data = {"type": "chunk", "chunk": char}
-                    yield f"data: {json.dumps(char_data)}\n\n"
+                chunk_data = {"type": "chunk", "chunk": item}
+                yield f"data: {json.dumps(chunk_data)}\n\n"
 
         # Send completion signal
         end_signal = {"type": "end"}

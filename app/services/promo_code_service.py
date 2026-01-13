@@ -5,6 +5,7 @@ from dateutil import parser as date_parser
 
 from app.core.logger import logger
 from app.db.mongo_handler import MongoHandler
+from app.core.config import settings
 
 
 class PromoCodeService:
@@ -13,8 +14,8 @@ class PromoCodeService:
     Handles CRUD operations for promo codes and user-promo code assignments.
     """
 
-    PROMO_CODE_COLLECTION = "promos"
-    USER_PROMO_CODE_COLLECTION = "user-promos"
+    PROMO_CODE_COLLECTION = settings.PROMO_CODE_COLLECTION
+    USER_PROMO_CODE_COLLECTION = settings.USER_PROMO_CODE_COLLECTION
 
     def __init__(self):
         self.mongo_handler = MongoHandler()
