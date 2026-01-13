@@ -1,8 +1,17 @@
+import random
+import string
 from functools import wraps
 
 from fastapi import HTTPException, status
 
 from app.core.logger import logger
+
+
+def generate_short_id(prefix: str = "", length: int = 8) -> str:
+    """Generate a random short ID with an optional prefix."""
+    chars = string.ascii_lowercase + string.digits
+    unique_id = "".join(random.choice(chars) for _ in range(length))
+    return f"{prefix}{unique_id}" if prefix else unique_id
 
 
 def serialize_mongo_id(data: dict) -> dict:

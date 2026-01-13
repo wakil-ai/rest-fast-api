@@ -10,8 +10,8 @@ from app.models.payme import PaymeData, PaymeError, TransactionError, Transactio
 class TransactionService:
     def __init__(self):
         self.db_handler = MongoHandler()
-        self.users_collection = "users"
-        self.transaction_collection = "transactions"
+        self.users_collection = settings.USERS_COLLECTION
+        self.transaction_collection = settings.TRANSACTION_COLLECTION
 
     async def check_perform_transaction(self, params, request_id):
         # Validate account parameter exists

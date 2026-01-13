@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.core.logger import logger
 from app.db.db_manager import DBManager
+from app.utils.user_management import generate_short_id
 
 
 class ChatHistoryService:
@@ -70,7 +71,7 @@ class ChatHistoryService:
             # Projects - query by user
             self.db_manager.mongo_handler.db[self.projects_collection].create_index([("user_id", 1)])
             
-            logger.info("[ChatHistoryService]Successfully created database indexes")
+            logger.info("[ChatHistoryService] Successfully created database indexes")
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
 
@@ -144,7 +145,7 @@ class ChatHistoryService:
     ) -> dict:
         """Create a new project. Uses project_id as _id."""
         self._validate_user_id(user_id)
-        project_id = project_id or str(uuid.uuid4())
+        project_id = project_id or generate_short_id("proj-")
         self._validate_project_id(project_id)
 
         # Check if project exists using _id
@@ -160,7 +161,8 @@ class ChatHistoryService:
             return existing_project[0]
 
         project = {
-            "_id": project_id,  # Use project_id as _id
+            "_id": project_id,
+            "project_id": project_id,  # Ensure project_id field is set to match _id
             "user_id": user_id,
             "title": title or "New Project",
             "created_at": datetime.utcnow(),
@@ -264,7 +266,7 @@ class ChatHistoryService:
     ) -> dict:
         """Create or retrieve an existing session. Uses session_id as _id."""
         self._validate_user_id(user_id)
-        session_id = session_id or str(uuid.uuid4())
+        session_id = session_id or generate_short_id("ses-")
         self._validate_session_id(session_id)
 
         # If project_id provided, validate it exists and user owns it
@@ -289,7 +291,8 @@ class ChatHistoryService:
             return existing_session[0]
 
         session = {
-            "_id": session_id,  # Use session_id as _id
+            "_id": session_id,
+            "session_id": session_id,  # Ensure session_id field is set to match _id
             "user_id": user_id,
             "project_id": project_id,  # Can be None for standalone chats
             "title": title or "New Chat",
@@ -418,7 +421,8 @@ class ChatHistoryService:
             content = content.model_dump()
 
         message = {
-            "_id": message_id,  # Use message_id as _id
+            "_id": message_id,
+            "message_id": message_id,  # Ensure message_id field is set to match _id
             "user_id": user_id,  # Auto-populated from session
             "session_id": session_id,
             "content": content,
@@ -454,7 +458,88 @@ class ChatHistoryService:
         messages = self.db_manager.find_documents(
             self.messages_collection, query, limit=limit
         )
-        logger.info(f"Retrieved {len(messages)} messages from session {session_id}")
+        
+        # Optimize: Fetch all feedback for this session in one query
+        feedbacks = self.db_manager.find_documents(
+            self.feedback_collection, {"session_id": session_id}
+        )
+        
+        # Create a map of message_id -> feedback stats
+        feedback_map = {}
+        for f in feedbacks:
+            msg_id = f.get("message_id")
+            if not msg_id:
+                continue
+                
+            if msg_id not in feedback_map:
+                feedback_map[msg_id] = {
+                    "total_likes": 0,
+                    "total_dislikes": 0,
+                    "user_feedback": None
+                }
+            
+            f_type = f.get("feedback_type")
+            if f_type == "like":
+                feedback_map[msg_id]["total_likes"] += 1
+            elif f_type == "dislike":
+                feedback_map[msg_id]["total_dislikes"] += 1
+                
+            # Check if this feedback belongs to the current user (if we knew the current user)
+            # Since get_messages doesn't take the requesting user_id explicitly as an argument 
+            # (it takes session_id which implies user), we'll have to rely on logic in the 
+            # route handler or just return all feedback.
+            # However, looking at frontend logic: it checks `user_id` against `f.user_id`.
+            # For now, let's just attach the raw feedback info or the stats we calculated.
+            # The frontend expects { total_likes, total_dislikes, user_feedback }
+            
+            # NOTE: We can't easily determine "user_feedback" here without the acting user_id context 
+            # passed into this method. But `get_messages` is usually called by the owner of the session.
+            # Let's assume the session owner is the one viewing.
+            
+            # The session object has the owner's user_id.
+            # Let's quickly get the session to know the owner user_id.
+        
+        # Get session to know the user_id for "user_feedback" context
+        session = self.get_session(session_id)
+        current_user_id = session.get("user_id") if session else None
+        
+        # Re-populate feedback map with user context
+        feedback_map = {}
+        for f in feedbacks:
+            msg_id = f.get("message_id")
+            if not msg_id:
+                continue
+                
+            if msg_id not in feedback_map:
+                feedback_map[msg_id] = {
+                    "total_likes": 0,
+                    "total_dislikes": 0,
+                    "user_feedback": None
+                }
+            
+            f_type = f.get("feedback_type")
+            if f_type == "like":
+                feedback_map[msg_id]["total_likes"] += 1
+            elif f_type == "dislike":
+                feedback_map[msg_id]["total_dislikes"] += 1
+            
+            # If this feedback is from the session owner, set user_feedback
+            if current_user_id and str(f.get("user_id")) == str(current_user_id):
+                feedback_map[msg_id]["user_feedback"] = f_type
+
+        # Attach feedback to messages
+        for msg in messages:
+            msg_id = msg.get("message_id") or str(msg.get("_id"))
+            if msg_id in feedback_map:
+                msg["feedback"] = feedback_map[msg_id]
+            else:
+                msg["feedback"] = {
+                    "total_likes": 0,
+                    "total_dislikes": 0,
+                    "user_feedback": None
+                }
+
+        logger.info(f"Retrieved {len(messages)} messages from session {session_id} with feedback")
         return messages
 
     def get_message(self, message_id: str) -> dict | None:
@@ -507,7 +592,7 @@ class ChatHistoryService:
         logger.info(f"Submitted feedback for message_id: {message_id}")
         return feedback
 
-    def get_feedback(self, message_id: str) -> list[dict]:
+    def get_feedback(self, message_id: str) -> dict | None:
         """Retrieve all feedback for a specific message."""
         if not message_id or not message_id.strip():
             raise ValueError("Message ID cannot be empty")
@@ -517,7 +602,7 @@ class ChatHistoryService:
             {"message_id": message_id},
         )
         logger.info(f"Retrieved {len(feedbacks)} feedback entries for message_id: {message_id}")
-        return feedbacks
+        return feedbacks[-1] if feedbacks else None
 
     # FILE MANAGEMENT
     def add_file_upload(
@@ -631,4 +716,106 @@ class ChatHistoryService:
         if deleted_count == 0:
             raise ValueError("File not found")
             
-        logger.info(f"Deleted file upload record with file_id: {file_id}")
+
+    # SYNC MANAGEMENT
+    def get_sync_data(self, user_id: str, months: int = 3) -> dict:
+        """
+        Retrieve all sessions and messages for a user from the last N months.
+        Used for bulk synchronization to client.
+        """
+        self._validate_user_id(user_id)
+        days = months * 30
+        start_date = datetime.utcnow().timestamp() - (days * 24 * 60 * 60)
+        cutoff_date = datetime.fromtimestamp(start_date)
+
+        logger.info(f"Syncing data for user {user_id} since {cutoff_date}")
+
+        # 1. Get recent sessions
+        query = {
+            "user_id": user_id,
+            "updated_at": {"$gte": cutoff_date}
+        }
+        sessions = self.db_manager.find_documents(
+            self.sessions_collection, query, limit=1000 # Reasonable limit
+        )
+        
+        if not sessions:
+            return {"sessions": [], "messages": {}}
+
+        # 2. Get messages for these sessions
+        session_ids = [s["_id"] for s in sessions]
+        
+        messages_query = {
+            "session_id": {"$in": session_ids},
+            "content": {"$exists": True}
+        }
+        
+        all_messages = self.db_manager.find_documents(
+            self.messages_collection, messages_query, limit=10000 
+        )
+        
+        # 3. Get all feedback for these sessions
+        feedback_query = {
+             "session_id": {"$in": session_ids}
+        }
+        all_feedbacks = self.db_manager.find_documents(
+            self.feedback_collection, feedback_query, limit=5000
+        )
+        
+        # 4. Map feedback to messages
+        feedback_map = {}
+        for f in all_feedbacks:
+            msg_id = f.get("message_id")
+            if not msg_id: continue
+            
+            if msg_id not in feedback_map:
+                feedback_map[msg_id] = {
+                    "total_likes": 0,
+                    "total_dislikes": 0,
+                    "user_feedback": None
+                }
+            
+            f_type = f.get("feedback_type")
+            if f_type == "like":
+                feedback_map[msg_id]["total_likes"] += 1
+            elif f_type == "dislike":
+                feedback_map[msg_id]["total_dislikes"] += 1
+            
+            if str(f.get("user_id")) == str(user_id):
+                feedback_map[msg_id]["user_feedback"] = f_type
+
+        # 5. Org messages by session and attach feedback
+        messages_by_session = {}
+        
+        for msg in all_messages:
+            s_id = msg.get("session_id")
+            if s_id not in messages_by_session:
+                messages_by_session[s_id] = []
+            
+            msg_id = msg.get("message_id") or str(msg.get("_id"))
+            
+            # Attach feedback
+            if msg_id in feedback_map:
+                msg["feedback"] = feedback_map[msg_id]
+            else:
+                msg["feedback"] = {
+                    "total_likes": 0,
+                    "total_dislikes": 0,
+                    "user_feedback": None
+                }
+                
+            messages_by_session[s_id].append(msg)
+            
+        # 6. Filter empty sessions
+        # Only return sessions that have at least one message
+        non_empty_sessions = []
+        for session in sessions:
+            if session["_id"] in messages_by_session and len(messages_by_session[session["_id"]]) > 0:
+                non_empty_sessions.append(session)
+            
+        logger.info(f"Sync complete: {len(non_empty_sessions)} sessions, {len(all_messages)} messages")
+        
+        return {
+            "sessions": non_empty_sessions,
+            "messages": messages_by_session
+        }

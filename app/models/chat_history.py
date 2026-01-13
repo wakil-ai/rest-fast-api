@@ -47,11 +47,13 @@ class ProjectCreateRequest(BaseModel):
 
 class ProjectResponse(BaseModel):
     """Response model for project data"""
-    project_id: str = Field(..., description="Project ID (stored as _id)")
+    project_id: str = Field(..., description="Project ID (stored as _id)", alias="_id")
     user_id: str = Field(..., description="User ID who owns the project")
     title: str = Field(default="New Project")
     created_at: datetime
     updated_at: datetime
+    
+    model_config = {"populate_by_name": True}
 
 
 class ProjectCreateResponse(BaseModel):
@@ -74,13 +76,14 @@ class SessionCreateRequest(BaseModel):
 
 class SessionResponse(BaseModel):
     """Response model for session data"""
-    session_id: str = Field(..., description="Session ID (stored as _id)")
+    session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
     user_id: str = Field(..., description="User ID")
     project_id: str | None = Field(None, description="Project ID (null for standalone chats)")
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    model_config = {"populate_by_name": True}
 
 
 class SessionCreateResponse(BaseModel):
@@ -101,20 +104,22 @@ class MessageContent(BaseModel):
 
 class MessageCreateRequest(BaseModel):
     session_id: str = Field(..., description="Session ID (only field required)")
-    message_id: str = Field(..., description="Message ID")
+    message_id: str | None = Field(None, description="Optional Message ID (auto-generated if missing)")
     content: MessageContent = Field(..., description="Message content")
     metadata: dict[str, Any] | None = Field(None, description="Optional metadata")
 
 
 class MessageResponse(BaseModel):
     """Response model for message data"""
-    message_id: str = Field(..., description="Message ID (stored as _id)")
+    message_id: str = Field(..., description="Message ID (stored as _id)", alias="_id")
     user_id: str = Field(..., description="User ID (auto-populated from session)")
     session_id: str = Field(..., description="Session ID")
     content: MessageContent
     metadata: dict[str, Any] | None = None
+    feedback: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
+    model_config = {"populate_by_name": True}
 
 
 class MessageCreateResponse(BaseModel):
@@ -144,7 +149,7 @@ class FeedbackCreateRequest(BaseModel):
 
 class FeedbackResponse(BaseModel):
     """Response model for feedback data"""
-    feedback_id: str = Field(..., description="Feedback ID (ObjectId)")
+    feedback_id: str = Field(..., description="Feedback ID (ObjectId)", alias="_id")
     user_id: str = Field(..., description="User ID (auto-populated from message)")
     session_id: str = Field(..., description="Session ID (auto-populated from message)")
     message_id: str = Field(..., description="Message ID")
@@ -152,6 +157,8 @@ class FeedbackResponse(BaseModel):
     comments: str | None = None
     created_at: datetime
     updated_at: datetime
+    
+    model_config = {"populate_by_name": True}
 
 
 class FeedbackCreateResponse(BaseModel):
@@ -166,7 +173,7 @@ class FeedbackCreateResponse(BaseModel):
 
 class FileUploadResponse(BaseModel):
     """Response model for file upload data"""
-    file_id: str = Field(..., description="File ID (stored as _id)")
+    file_id: str = Field(..., description="File ID (stored as _id)", alias="_id")
     project_id: str = Field(..., description="Project ID the file belongs to")
     file_url: str = Field(..., description="API endpoint to access the file")
     file_metadata: dict[str, Any] = Field(..., description="File metadata (name, type, size, gcs_path)")
@@ -174,6 +181,7 @@ class FileUploadResponse(BaseModel):
     status: str = Field(..., description="Processing status: processing/completed/failed")
     created_at: datetime
     updated_at: datetime
+    model_config = {"populate_by_name": True}
 
 
 class FileStatusUpdateRequest(BaseModel):
