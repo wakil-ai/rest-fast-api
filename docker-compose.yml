@@ -54,12 +54,12 @@ services:
       - ${MILVUS_CACHE_DIR}/volumes/milvus:/var/lib/milvus:rw
       - ${MILVUS_CACHE_DIR}/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml:rw
       - ${MILVUS_CACHE_DIR}/user.yaml:/milvus/configs/user.yaml:rw
-    command: ["milvus", "run", "standalone"]
+    command: [ "milvus", "run", "standalone" ]
     networks:
       - wakilai-bridge
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9091/healthz || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:9091/healthz || exit 1" ]
       interval: 30s
       timeout: 20s
       retries: 5
