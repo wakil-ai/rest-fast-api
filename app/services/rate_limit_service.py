@@ -19,7 +19,7 @@ class RateLimitService:
     Daily limit: 100 credits per user (configurable)
     """
 
-    RATE_LIMIT_COLLECTION = "creditusage"
+    RATE_LIMIT_COLLECTION = settings.RATE_LIMIT_COLLECTION
 
     def __init__(self):
         self.mongo_handler = MongoHandler()
