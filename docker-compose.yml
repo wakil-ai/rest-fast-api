@@ -8,8 +8,8 @@ services:
     env_file:
       - .env
     environment:
-      - MONGODB_URI=mongodb://nlp:nlp123@mongodb:27017/
-      - MILVUS_URI=${MILVUS_URI}
+      - MONGODB_URI=mongodb://nlp:nlp123@mongodb:27017/?authSource=admin
+      - MILVUS_URI=http://milvus-standalone:19530/
       - PYTHONUNBUFFERED=1
       - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     networks:
@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
     depends_on:
       - mongodb
-      - milvus
+      - milvus-standalone
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
       interval: 30s
@@ -40,19 +40,30 @@ services:
     restart: unless-stopped
 
   milvus-standalone:
-    image: milvusdb/milvus:latest
+    image: milvusdb/milvus:v2.5.14
     ports:
       - "19530:19530"
       - "9091:9091"
       - "2379:2379"
+    environment:
+      - ETCD_USE_EMBED=true
+      - ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml
+      - ETCD_DATA_DIR=/var/lib/milvus/etcd
+      - COMMON_STORAGETYPE=local
     volumes:
       - ${MILVUS_CACHE_DIR}/volumes/milvus:/var/lib/milvus:rw
-      - ${MILVUS_CACHE_DIR}/volumes/minio:/minio_data:rw
       - ${MILVUS_CACHE_DIR}/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml:rw
       - ${MILVUS_CACHE_DIR}/user.yaml:/milvus/configs/user.yaml:rw
+    command: ["milvus", "run", "standalone"]
     networks:
       - wakilai-bridge
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9091/healthz || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 90s
 
 networks:
   wakilai-bridge:

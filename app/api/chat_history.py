@@ -1,8 +1,3 @@
-import datetime
-import os
-import tempfile
-import uuid
-
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from app.core.logger import logger
@@ -23,16 +18,14 @@ from app.models.chat_history import (
     UserCreateResponse,
 )
 from app.services.chat_history_service import ChatHistoryService
-from app.services.ocr_service import OCRService
-from app.services.storage_service import StorageService
+from app.services.file_management import FileManager
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/history", tags=["Chat History"])
 
 # Services used
 chat_history_service = ChatHistoryService()
-ocr_service = OCRService()
-storage_service = StorageService()
+file_manager = FileManager()
 
 
 def create_response(data: dict, message: str) -> dict:
@@ -291,105 +284,37 @@ def get_feedback(message_id: str):
 
 
 # FILE MANAGEMENT
-
+file_manager = FileManager()
 
 @router.post(
     "/files/{project_id}",
     status_code=status.HTTP_201_CREATED,
     response_model=FileUploadResponse,
 )
-async def create_file_upload(
-    project_id: str, file: UploadFile = File(...)
-) -> FileUploadResponse:
-    """Upload a file to a project."""
-    temp_file_path = None
-    try:
-        # Verify project exists
-        project = chat_history_service.get_project(project_id)
-        if not project:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Project {project_id} not found"
-            )
+async def upload_file(project_id: str, file: UploadFile = File(...)) -> FileUploadResponse:
+    """
+    Upload file to project with OCR processing and storage
+    """
+    status_code, result = await file_manager.upload_file_to_project(file, project_id)
 
-        # Read file content
-        content = await file.read()
+    if status_code == 200:
+        return result
 
-        # Create temporary file for OCR processing
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=f"_{file.filename}"
-        ) as temp_file:
-            temp_file.write(content)
-            temp_file_path = temp_file.name
-
-        # Process file with OCR
-        ocr_result = await ocr_service.process_file(temp_file_path)
-
-        # Generate unique file ID
-        file_id = str(uuid.uuid4())
-
-        #`` Upload file to Google Cloud Storage
-        gcs_path = storage_service.generate_file_path(project_id, file_id, file.filename)
-        file_url = storage_service.upload_file(
-            file_content=content,
-            destination_path=gcs_path,
-            content_type=file.content_type or "application/octet-stream",
-        )
-
-        # Create file metadata
-        file_metadata = {
-            "file_name": file.filename,
-            "file_type": file.content_type or "application/octet-stream",
-            "file_size": len(content),
-            "gcs_path": gcs_path,
-        }
-
-        # Save to database
-        file_record = chat_history_service.add_file_upload(
-            project_id=project_id,
-            file_id=file_id,
-            file_url=file_url,
-            ocr_result=ocr_result,
-            file_metadata=file_metadata,
-            status="completed",
-        )
-
-        # Return response
-        response = FileUploadResponse(
-            project_id=project_id,
-            file_id=file_id,
-            file_url=f"/api/history/files/{file_id}/view",
-            file_metadata=file_metadata,
-            ocr_result=ocr_result,
-            status="completed",
-            created_at=file_record["created_at"],
-            updated_at=file_record["updated_at"],
-        )
-
-        logger.info(f"File uploaded successfully to project {project_id}")
-        return response
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating file upload: {str(e)}")
+    if status_code == 404:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create file upload: {str(e)}",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=result
         )
 
-    finally:
-        # Clean up temporary file
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except Exception as cleanup_error:
-                logger.warning(f"Failed to cleanup temp file: {str(cleanup_error)}")
-
+    # 500 + unexpected cases
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"Failed to upload file: {result}"
+    )
 
 @router.get("/files/project/{project_id}", response_model=list[FileUploadResponse])
 @handle_service_error
-def get_project_files(project_id: str, limit: int = 50) -> list[FileUploadResponse]:
+def get_project_files(project_id: str, limit: int = 100) -> list[FileUploadResponse]:
     """Retrieve all files for a project."""
     files = chat_history_service.get_files(project_id=project_id, limit=limit)
     return [serialize_mongo_id(file) for file in files]

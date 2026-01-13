@@ -567,21 +567,6 @@ class ChatHistoryService:
         message = self.get_message(message_id)
         if not message:
             raise ValueError(f"Message {message_id} not found")
-
-        # # Get feedback whether it is already submitted
-        # feedback = self.get_feedback(message_id)
-        # if feedback:
-        #     # Check whether feedback type is same as submitted if same give error else update the type
-        #     if feedback["feedback_type"] == feedback_type:
-        #         raise ValueError(f"Feedback for message {message_id} already submitted")
-        #     else:
-        #         logger.info(f'Updated feedback type for message {message_id}')
-        #         self.db_manager.update_documents(
-        #             self.feedback_collection,
-        #             {"_id": feedback["_id"]},
-        #             {"$set": {"feedback_type": feedback_type}},
-        #         )
-        #         return feedback
         
         user_id = message["user_id"]
         session_id = message["session_id"]
@@ -739,13 +724,8 @@ class ChatHistoryService:
         Used for bulk synchronization to client.
         """
         self._validate_user_id(user_id)
-        
-        # Calculate cutoff date
-        # approximate 30 days per month
         days = months * 30
         start_date = datetime.utcnow().timestamp() - (days * 24 * 60 * 60)
-        # Convert back to datetime if needed, but mongo stores datetime objects usually
-        # Let's ensure we use the correct format matching how we insert (datetime.utcnow())
         cutoff_date = datetime.fromtimestamp(start_date)
 
         logger.info(f"Syncing data for user {user_id} since {cutoff_date}")
@@ -764,11 +744,6 @@ class ChatHistoryService:
 
         # 2. Get messages for these sessions
         session_ids = [s["_id"] for s in sessions]
-        
-        # Optimize: fetch all messages for these sessions in few queries
-        # We can't easily do one giant $in query if there are too many sessions, 
-        # but for 3 months activity it might be okay. 
-        # Let's batch it if needed, but for now simple $in is likely fine for < 1000 sessions.
         
         messages_query = {
             "session_id": {"$in": session_ids},

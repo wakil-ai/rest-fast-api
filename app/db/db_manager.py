@@ -147,6 +147,13 @@ class DBManager:
             # Return empty list
             return []
 
+    def upsert_vectors(self, documents: list[dict[str, Any]]) -> None:
+        """Upsert vectors into vector database."""
+        # Splitting logic here
+
+        # 
+        self.vector_handler.upsert_vectors(documents)
+
     def close_all_connections(self):
         """Close all database connections."""
         self.mongo_handler.close_connection()
