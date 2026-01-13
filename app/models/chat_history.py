@@ -116,6 +116,7 @@ class MessageResponse(BaseModel):
     session_id: str = Field(..., description="Session ID")
     content: MessageContent
     metadata: dict[str, Any] | None = None
+    feedback: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}

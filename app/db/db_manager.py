@@ -40,8 +40,7 @@ class DBManager:
             return
 
         self.mongo_handler.db.create_collection(collection_name)
-        logger.info(f"[DBManager] Created MongoDB collection: {collection_name}")
-
+        
     # Initialize vector database handler
     def _initialize_vector_db(self) -> VectorDBHandler:
         """Create vector database handler based on configuration."""

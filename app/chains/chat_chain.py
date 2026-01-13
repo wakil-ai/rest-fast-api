@@ -204,8 +204,7 @@ class ChatChain:
             except Exception:
                 logger.error("[ChatChain] Fallback LLM failed.", exc_info=True)
                 error_msg = "Sorry, I couldn't generate an answer at the moment."
-                async for char in error_msg:
-                    yield char
+                yield error_msg
 
     async def _non_stream_response(
         self,
@@ -245,19 +244,12 @@ class ChatChain:
     async def _yield_clean_chunks(
         self, response_generator: AsyncGenerator[str, None]
     ) -> AsyncGenerator[str, None]:
-        """Yield individual characters after cleaning punctuation."""
-        buffer = ""
+        """Yield cleaned chunks immediately."""
         async for chunk in response_generator:
-            buffer += chunk
-            if buffer.endswith("\n"):
-                cleaned = self.replace_punctuation(buffer)
-                for char in cleaned:
-                    yield char
-                buffer = ""
-        if buffer:
-            cleaned = self.replace_punctuation(buffer)
-            for char in cleaned:
-                yield char
+            if chunk:
+                # Clean punctuation on the chunk level
+                cleaned = self.replace_punctuation(chunk)
+                yield cleaned
 
     async def _handle_error(
         self, message: str, debug_data: dict[str, Any], stream: bool
@@ -270,6 +262,5 @@ class ChatChain:
         return message
 
     async def _error_generator(self, message: str) -> AsyncGenerator[str, None]:
-        """Yield error message character by character."""
-        for char in message:
-            yield char
+        """Yield error message as a single chunk."""
+        yield message

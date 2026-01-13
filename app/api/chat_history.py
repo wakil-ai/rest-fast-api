@@ -490,3 +490,27 @@ def delete_file_upload(file_id: str) -> None:
     # Delete from database
     chat_history_service.delete_file_upload(file_id=file_id)
     return
+
+
+@router.get("/sync/{user_id}")
+@handle_service_error
+def sync_user_data(user_id: str, months: int = 3):
+    """
+    Get all sessions and messages for a user for the last N months.
+    Used for bulk synchronization to client.
+    """
+    data = chat_history_service.get_sync_data(user_id=user_id, months=months)
+    
+    # Serialize mongo IDs
+    data["sessions"] = [serialize_mongo_id(s) for s in data["sessions"]]
+    
+    # Serialize messages map
+    # MessageResponse serializer expected a list, but here we have a dict of lists
+    # We need to manually serialize the list of dicts
+    serialized_messages = {}
+    for session_id, msgs in data["messages"].items():
+        serialized_messages[session_id] = [serialize_mongo_id(m) for m in msgs]
+        
+    data["messages"] = serialized_messages
+    
+    return data

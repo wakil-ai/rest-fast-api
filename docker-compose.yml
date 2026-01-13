@@ -1,31 +1,64 @@
-
 services:
   api:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${PORT:-8080}:8080"
+      - 8080:8080
     env_file:
       - .env
     environment:
-      - MONGODB_URI=${MONGODB_URI}
+      - MONGODB_URI=mongodb://nlp:nlp123@mongodb:27017/
       - MILVUS_URI=${MILVUS_URI}
       - PYTHONUNBUFFERED=1
       - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
-    volumes:
-      - ./app:/app/app
-      - ./data:/app/data
     networks:
       - wakilai-bridge
     restart: unless-stopped
+    depends_on:
+      - mongodb
+      - milvus
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=nlp
+      - MONGO_INITDB_ROOT_PASSWORD=nlp123
+    networks:
+      - wakilai-bridge
+    restart: unless-stopped
+
+  milvus-standalone:
+    image: milvusdb/milvus:latest
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+      - "2379:2379"
+    volumes:
+      - ${MILVUS_CACHE_DIR}/volumes/milvus:/var/lib/milvus:rw
+      - ${MILVUS_CACHE_DIR}/volumes/minio:/minio_data:rw
+      - ${MILVUS_CACHE_DIR}/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml:rw
+      - ${MILVUS_CACHE_DIR}/user.yaml:/milvus/configs/user.yaml:rw
+    networks:
+      - wakilai-bridge
+    restart: unless-stopped
+
 networks:
   wakilai-bridge:
-    external: true
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+  milvus_data:
