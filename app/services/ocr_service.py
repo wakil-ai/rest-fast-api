@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from datalab_sdk import AsyncDatalabClient
+from datalab_sdk import AsyncDatalabClient, ConvertOptions
 
 from app.core.config import settings
 from app.core.logger import logger
@@ -8,6 +8,12 @@ from app.core.logger import logger
 
 class OCRService:
     def __init__(self):
+        self.options = ConvertOptions(
+            output_format="chunks",  # "markdown", "html", "json", "chunks"
+            mode="balanced",           # "fast", "balanced", "accurate"
+            paginate=True,             # Add page delimiters
+            page_range="0-10",         # Process specific pages (0-indexed)
+        )
         self.client = AsyncDatalabClient(api_key=settings.DATALAB_API_KEY)
 
     async def process_file(self, file: Path | str) -> str:

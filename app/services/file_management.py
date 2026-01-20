@@ -5,6 +5,8 @@ import tempfile
 import os
 
 from app.core.logger import logger
+from app.core.config import settings
+
 from app.db.db_manager import DBManager
 from app.services.storage_service import StorageService
 from app.services.ocr_service import OCRService
@@ -19,6 +21,7 @@ class FileManager:
         self.ocr = OCRService()
         self.db = DBManager()
         self.history = ChatHistoryService()
+        self.vector_db_collection = settings.MILVUS_PROJECT_FILES
 
     async def upload_file_to_project(
         self,
@@ -79,7 +82,10 @@ class FileManager:
 
     def _upsert_to_vector_db(self, content: str, metadata: dict) -> None:
         """Upsert document to vector database"""
-        self.db.upsert_to_vector_db(content, metadata)
+        # TODO splitting logic for the content
+        
+
+        self.db.upsert_vectors(document, collection_name=self.vector_db_collection)
 
     def _create_temp_file(self, content: bytes, original_filename: str) -> str:
         """Create temporary file and return its path"""

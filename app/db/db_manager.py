@@ -147,12 +147,11 @@ class DBManager:
             # Return empty list
             return []
 
-    def upsert_vectors(self, documents: list[dict[str, Any]]) -> None:
+    def upsert_vectors(self, documents: list[dict[str, Any]], 
+                             collection_name: str = settings.MILVUS_MAIN_NAME
+                             partition_name: str = None) -> None:
         """Upsert vectors into vector database."""
-        # Splitting logic here
-
-        # 
-        self.vector_handler.upsert_vectors(documents)
+        self.vector_handler.upsert_vectors(documents=documents, collection_name=collection_name, partition_name=partition_name)
 
     def close_all_connections(self):
         """Close all database connections."""

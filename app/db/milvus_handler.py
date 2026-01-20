@@ -22,6 +22,7 @@ class MilvusHandler(VectorDBHandler):
         self.milvus_collections = [
             settings.MILVUS_MAIN_NAME,
             settings.MILVUS_SOLIQ_ASSISTANT_NAME,
+            settings.MILVUS_PROJECT_FILES
         ]
         self.client = MilvusClient(
             uri=settings.MILVUS_URI,
