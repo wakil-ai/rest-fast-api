@@ -301,7 +301,21 @@ class RetrievalService:
         if url := metadata.get("chunk_url"):
             if not is_buxgalter_uz:
                 entry.append(f"Source URL: {url}\n")
+        else:
+            if filename := metadata.get("file_name"):
+                # Remove .md at the end
+                filename = filename.replace(".md", "")
+                suffix = "https://lex.uz/docs/"
+                if await self._is_valid_id(filename):
+                    entry.append(f"Source: {suffix + filename}\n")
+                else:
+                    entry.append(f"Source: WakilAI ichki hujjatlari")
         if document_number := metadata.get("document_number"):
             entry.append(f"Document Number: {document_number}\n")
 
         return "\n".join(entry)
+
+    async def _is_valid_id(self, s: str) -> bool:
+        if not isinstance(s, str):
+            return False
+        return re.fullmatch(r"-?\d+", s) is not None
