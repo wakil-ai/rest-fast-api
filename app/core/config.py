@@ -139,12 +139,12 @@ class Settings(BaseSettings):
 
     # SECURITY
     # Docs User
-    DOCS_USER: str  # Default user for accessing docs
-    DOCS_PASSWORD: str  # Default password for accessing docs
+    DOCS_USER: str = "admin"
+    DOCS_PASSWORD: str = "admin"
 
     # API Key Authentication
-    API_KEY_NAME: str
-    API_KEY: str
+    API_KEY_NAME: str = "admin"
+    API_KEY: str = "admin"
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
@@ -161,8 +161,8 @@ class Settings(BaseSettings):
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
 
     # Auth (For Telegram Login)
-    TELEGRAM_BOT_TOKEN: str
-    TELEGRAM_BOT_LOGIN: str
+    TELEGRAM_BOT_TOKEN: str = None
+    TELEGRAM_BOT_LOGIN: str = None
     TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3  # 3 day in seconds
 
     # Web Scraping
