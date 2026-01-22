@@ -19,6 +19,7 @@ from app.api import (
     chat_history,
     count,
     google_auth,
+    health,
     memory,
     ocr,
     payme,
@@ -165,6 +166,8 @@ def create_app() -> FastAPI:
     app.include_router(
         admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
     )
+    # Health check router (no authentication required)
+    app.include_router(health.router, prefix=settings.API_PREFIX)
     # Auth routers without API prefix
     app.include_router(
         auth.router,
