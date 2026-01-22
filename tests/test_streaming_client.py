@@ -6,6 +6,7 @@ and display progress updates in real-time.
 """
 
 import json
+import re
 import sys
 from datetime import datetime
 
@@ -49,9 +50,6 @@ class DualLogger:
 
     def close(self):
         self.log_file.close()
-
-
-import re
 
 
 def print_progress(
@@ -230,8 +228,8 @@ def stream_agentic_rag(
                     "events": "See 'streaming_trace.txt' for event log",
                 }
                 json.dump(trace_data, f, indent=2, ensure_ascii=False)
-                logger.log(f"\nSaved simplified trace to frontend_trace.json")
-                logger.log(f"Saved detailed log to streaming_trace.txt")
+                logger.log("\nSaved simplified trace to frontend_trace.json")
+                logger.log("Saved detailed log to streaming_trace.txt")
 
     except requests.exceptions.ConnectionError:
         logger.log(

@@ -29,10 +29,7 @@ class TransactionService:
             )
 
         # Validate order_id in account
-        if (
-            "order_id" not in account
-            or not account["order_id"]
-        ):
+        if "order_id" not in account or not account["order_id"]:
             raise TransactionError(PaymeError.UserNotFound, request_id, "order_id")
 
         # Validate amount parameter exists and is valid

@@ -225,7 +225,9 @@ class RetrievalService:
             )
             return await self._format_results(search_results)
         except Exception as e:
-            logger.error(f"[RetrievalService] Project retrieval failed: {e}", exc_info=True)
+            logger.error(
+                f"[RetrievalService] Project retrieval failed: {e}", exc_info=True
+            )
             return "No relevant documents found in the project files."
 
     def search_specific(
@@ -330,11 +332,11 @@ class RetrievalService:
         if url := metadata.get("chunk_url"):
             if not is_buxgalter_uz:
                 entry.append(f"Source URL: {url}\n")
-        elif project_id := metadata.get("project_id"):
+        elif metadata.get("project_id"):  # if project id is there
             if filename := metadata.get("file_name"):
                 entry.append(f"Source: Project File - {filename}\n")
             else:
-                entry.append(f"Source: Project Document\n")
+                entry.append("Source: Project Document\n")
         else:
             if filename := metadata.get("file_name"):
                 # Remove .md at the end
@@ -343,7 +345,7 @@ class RetrievalService:
                 if await self._is_valid_id(filename):
                     entry.append(f"Source: {suffix + filename}\n")
                 else:
-                    entry.append(f"Source: WakilAI ichki hujjatlari")
+                    entry.append("Source: WakilAI ichki hujjatlari")
         if document_number := metadata.get("document_number"):
             entry.append(f"Document Number: {document_number}\n")
 

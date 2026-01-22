@@ -1,5 +1,7 @@
+from datetime import datetime
 from enum import IntEnum
 
+from bson import ObjectId
 from pydantic import BaseModel
 
 
@@ -33,11 +35,6 @@ class TransactionError(Exception):
         if self.data:
             payload["data"] = self.data
         return payload
-
-
-from datetime import datetime
-
-from bson import ObjectId
 
 
 class TransactionModel:

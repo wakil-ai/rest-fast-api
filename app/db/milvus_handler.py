@@ -22,7 +22,7 @@ class MilvusHandler(VectorDBHandler):
         self.milvus_collections = [
             settings.MILVUS_MAIN_NAME,
             settings.MILVUS_SOLIQ_ASSISTANT_NAME,
-            settings.MILVUS_PROJECT_FILES
+            settings.MILVUS_PROJECT_FILES,
         ]
         self.client = MilvusClient(
             uri=settings.MILVUS_URI,
@@ -73,8 +73,10 @@ class MilvusHandler(VectorDBHandler):
         collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> None:
         milvus_data = []
-        
-        if partition_name and not self.client.has_partition(collection_name=collection_name, partition_name=partition_name):
+
+        if partition_name and not self.client.has_partition(
+            collection_name=collection_name, partition_name=partition_name
+        ):
             partition_name = self.create_partition(partition_name)
 
         for doc in documents:

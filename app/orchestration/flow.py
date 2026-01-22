@@ -195,28 +195,36 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
             # Check if we have project_id for dual retrieval
             project_id = self.state.project_id
-            
+
             if project_id:
                 # Use multilingual retrieval for main context but with half top_k
-                main_docs_list = await self.chat_chain.retrieval_service.retrieve_multilingual(
-                    query_translations=query_translations,
-                    top_k=settings.TOP_K // 2,
-                    search_type=strategy,
-                    collection_name=collection_name,
+                main_docs_list = (
+                    await self.chat_chain.retrieval_service.retrieve_multilingual(
+                        query_translations=query_translations,
+                        top_k=settings.TOP_K // 2,
+                        search_type=strategy,
+                        collection_name=collection_name,
+                    )
                 )
-                
+
                 # Fetch project-specific context
-                # Note: retrieve_project_context currently doesn't support multilingual query_translations, 
+                # Note: retrieve_project_context currently doesn't support multilingual query_translations,
                 # we use the rewritten query for now or could iterate.
-                project_context = await self.chat_chain.retrieval_service.retrieve_project_context(
-                    query=self.state.rewritten_query,
-                    project_id=project_id,
-                    user_id=self.state.user_id,
-                    top_k=settings.TOP_K // 2
+                project_context = (
+                    await self.chat_chain.retrieval_service.retrieve_project_context(
+                        query=self.state.rewritten_query,
+                        project_id=project_id,
+                        user_id=self.state.user_id,
+                        top_k=settings.TOP_K // 2,
+                    )
                 )
-                
-                main_docs_formatted = await self.chat_chain.retrieval_service._format_results(main_docs_list)
-                
+
+                main_docs_formatted = (
+                    await self.chat_chain.retrieval_service._format_results(
+                        main_docs_list
+                    )
+                )
+
                 self.state.retrieval_docs = f"PROJECT FILES:\n{project_context}\n\nGENERAL LAWS:\n{main_docs_formatted}"
             else:
                 # Standard retrieval
@@ -231,13 +239,15 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
                 # Format documents into string for state
                 self.state.retrieval_docs = (
-                    await self.chat_chain.retrieval_service._format_results(documents_list)
+                    await self.chat_chain.retrieval_service._format_results(
+                        documents_list
+                    )
                 )
 
             await self._emit_progress(
                 ProgressEventType.DOCUMENT_RETRIEVAL,
                 "completed",
-                f"Retrieved relevant documents from knowledge base",
+                "Retrieved relevant documents from knowledge base",
             )
 
         except Exception as error:
@@ -339,24 +349,24 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
             # Determine prompt template based on project_id
             from app.chains.prompts import PROJECT_FILE_PROMPT
-            
+
             if self.state.project_id:
                 # Extract project and main context for the PROJECT_FILE_PROMPT
                 # Split the retrieval_docs back or just re-fetch for formatting if needed
                 # For now, we'll assume they are combined in state.retrieval_docs
                 # but it's better to pass them separately to the template if possible.
                 # However, generate_answer in ChatChain already does a similar split.
-                
+
                 # For agentic flow, we'll manually format it to match what the prompt expects
                 # since we already combined them in fetch_documents
                 parts = self.state.retrieval_docs.split("\n\nGENERAL LAWS:\n")
                 project_ctx = parts[0].replace("PROJECT FILES:\n", "")
                 main_ctx = parts[1] if len(parts) > 1 else ""
-                
+
                 system_prompt = PROJECT_FILE_PROMPT.format(
                     project_context=project_ctx,
                     main_context=main_ctx,
-                    chat_history=self.state.memory_docs
+                    chat_history=self.state.memory_docs,
                 )
             else:
                 system_prompt = await self.chat_chain.make_system_prompt(

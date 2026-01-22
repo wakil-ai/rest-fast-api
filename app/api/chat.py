@@ -97,6 +97,7 @@ async def ask_question(request: ChatRequest):
             status_code=500, detail="Failed to generate answer. Please try again later."
         )
 
+
 @router.get(
     "/model-info",
     response_model=ModelInfoResponse,

@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from app.chains.prompts import PROMPT, SOLIQ_PROMPT
+from app.chains.prompts import PROJECT_FILE_PROMPT, PROMPT, SOLIQ_PROMPT
 from app.core.config import settings
 from app.core.logger import logger
 from app.llms.base import LLM
@@ -109,10 +109,7 @@ class ChatChain:
             selected_llm = (
                 self._get_llm_by_model(model_name) if model_name else self.llm_fallback
             )
-            
-            # Determine Prompt Template
-            from app.chains.prompts import PROJECT_FILE_PROMPT
-            
+
             if project_id:
                 prompt_template = PROJECT_FILE_PROMPT
             else:
@@ -134,7 +131,7 @@ class ChatChain:
                     query=query,
                     project_id=project_id,
                     user_id=user_id,
-                    top_k=settings.TOP_K // 2
+                    top_k=settings.TOP_K // 2,
                 )
                 main_context = await self.retrieval_service.retrieve_context(
                     query=query,
@@ -169,7 +166,7 @@ class ChatChain:
                 system_prompt = prompt_template.format(
                     project_context=project_context,
                     main_context=main_context,
-                    chat_history=chat_history_text
+                    chat_history=chat_history_text,
                 )
             else:
                 system_prompt = await self.make_system_prompt(
@@ -177,7 +174,7 @@ class ChatChain:
                     chat_history_text=chat_history_text,
                     prompt_template=prompt_template,
                 )
-                
+
             logger.debug(f"[ChatChain] System Prompt: {system_prompt}")
 
             return await self.run(

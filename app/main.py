@@ -188,15 +188,15 @@ def create_app() -> FastAPI:
 
     # Documentation endpoints (Basic Auth protected)
     @app.get("/docs")
-    async def get_documentation(username: str = Depends(get_current_username)):
+    async def docs(username: str = Depends(get_current_username)):
         return get_swagger_ui_html(openapi_url="/openapi.json", title="docs")
 
     @app.get("/redoc")
-    async def get_documentation(username: str = Depends(get_current_username)):
+    async def redoc(username: str = Depends(get_current_username)):
         return get_redoc_html(openapi_url="/openapi.json", title="redocs")
 
     @app.get("/swagger-ui.html")
-    async def get_documentation(username: str = Depends(get_current_username)):
+    async def swagger_ui(username: str = Depends(get_current_username)):
         return get_swagger_ui_html(openapi_url="/openapi.json", title="docs")
 
     @app.get("/openapi.json")

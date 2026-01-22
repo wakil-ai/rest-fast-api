@@ -4,8 +4,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-
 # USER MODELS
 
 
@@ -19,6 +17,7 @@ class UserCreateRequest(BaseModel):
 
 class UserResponse(BaseModel):
     """Response model for user data"""
+
     user_id: str = Field(..., description="User ID (stored as _id)", alias="_id")
     username: str | None = None
     first_name: str | None = None
@@ -31,9 +30,9 @@ class UserResponse(BaseModel):
 
 class UserCreateResponse(BaseModel):
     """Standardized response for user operations"""
+
     info: UserResponse
     message: str = Field(default="User operation successful")
-
 
 
 # PROJECT MODELS
@@ -41,26 +40,30 @@ class UserCreateResponse(BaseModel):
 
 class ProjectCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID who owns the project")
-    project_id: str | None = Field(None, description="Optional custom project ID (UUID auto-generated if not provided)")
+    project_id: str | None = Field(
+        None,
+        description="Optional custom project ID (UUID auto-generated if not provided)",
+    )
     title: str | None = Field("New Project", description="Project title")
 
 
 class ProjectResponse(BaseModel):
     """Response model for project data"""
+
     project_id: str = Field(..., description="Project ID (stored as _id)", alias="_id")
     user_id: str = Field(..., description="User ID who owns the project")
     title: str = Field(default="New Project")
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = {"populate_by_name": True}
 
 
 class ProjectCreateResponse(BaseModel):
     """Standardized response for project operations"""
+
     info: ProjectResponse
     message: str = Field(default="Project operation successful")
-
 
 
 # SESSION MODELS
@@ -68,17 +71,27 @@ class ProjectCreateResponse(BaseModel):
 
 class SessionCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID who owns the session")
-    session_id: str | None = Field(None, description="Optional custom session ID (UUID auto-generated if not provided)")
-    project_id: str | None = Field(None, description="Optional project ID for project-based chats")
+    session_id: str | None = Field(
+        None,
+        description="Optional custom session ID (UUID auto-generated if not provided)",
+    )
+    project_id: str | None = Field(
+        None, description="Optional project ID for project-based chats"
+    )
     title: str | None = Field("New Chat", description="Session title")
-    tags: list[str] = Field(default_factory=list, description="Optional tags for categorization")
+    tags: list[str] = Field(
+        default_factory=list, description="Optional tags for categorization"
+    )
 
 
 class SessionResponse(BaseModel):
     """Response model for session data"""
+
     session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
     user_id: str = Field(..., description="User ID")
-    project_id: str | None = Field(None, description="Project ID (null for standalone chats)")
+    project_id: str | None = Field(
+        None, description="Project ID (null for standalone chats)"
+    )
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
     created_at: datetime
@@ -88,9 +101,9 @@ class SessionResponse(BaseModel):
 
 class SessionCreateResponse(BaseModel):
     """Standardized response for session operations"""
+
     info: SessionResponse
     message: str = Field(default="Session operation successful")
-
 
 
 # MESSAGE MODELS
@@ -98,19 +111,23 @@ class SessionCreateResponse(BaseModel):
 
 class MessageContent(BaseModel):
     """Message content structure"""
+
     query: str | None = None
     response: str | None = None
 
 
 class MessageCreateRequest(BaseModel):
     session_id: str = Field(..., description="Session ID (only field required)")
-    message_id: str | None = Field(None, description="Optional Message ID (auto-generated if missing)")
+    message_id: str | None = Field(
+        None, description="Optional Message ID (auto-generated if missing)"
+    )
     content: MessageContent = Field(..., description="Message content")
     metadata: dict[str, Any] | None = Field(None, description="Optional metadata")
 
 
 class MessageResponse(BaseModel):
     """Response model for message data"""
+
     message_id: str = Field(..., description="Message ID (stored as _id)", alias="_id")
     user_id: str = Field(..., description="User ID (auto-populated from session)")
     session_id: str = Field(..., description="Session ID")
@@ -124,9 +141,9 @@ class MessageResponse(BaseModel):
 
 class MessageCreateResponse(BaseModel):
     """Standardized response for message operations"""
+
     info: MessageResponse
     message: str = Field(default="Message operation successful")
-
 
 
 # FEEDBACK MODELS
@@ -134,6 +151,7 @@ class MessageCreateResponse(BaseModel):
 
 class FeedbackType(str, Enum):
     """Feedback type enumeration"""
+
     POSITIVE = "positive"
     NEGATIVE = "negative"
     LIKE = "like"
@@ -142,13 +160,17 @@ class FeedbackType(str, Enum):
 
 class FeedbackCreateRequest(BaseModel):
     """Request model for submitting message feedback (only message_id required)"""
+
     message_id: str = Field(..., description="Message ID (only field required)")
     feedback_type: FeedbackType = Field(..., description="Type of feedback")
-    comments: str | None = Field(None, max_length=500, description="Optional feedback comment")
+    comments: str | None = Field(
+        None, max_length=500, description="Optional feedback comment"
+    )
 
 
 class FeedbackResponse(BaseModel):
     """Response model for feedback data"""
+
     feedback_id: str = Field(..., description="Feedback ID (ObjectId)", alias="_id")
     user_id: str = Field(..., description="User ID (auto-populated from message)")
     session_id: str = Field(..., description="Session ID (auto-populated from message)")
@@ -157,15 +179,15 @@ class FeedbackResponse(BaseModel):
     comments: str | None = None
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = {"populate_by_name": True}
 
 
 class FeedbackCreateResponse(BaseModel):
     """Standardized response for feedback operations"""
+
     info: FeedbackResponse
     message: str = Field(default="Feedback operation successful")
-
 
 
 # FILE MODELS
@@ -173,12 +195,17 @@ class FeedbackCreateResponse(BaseModel):
 
 class FileUploadResponse(BaseModel):
     """Response model for file upload data"""
+
     file_id: str = Field(..., description="File ID (stored as _id)", alias="_id")
     project_id: str = Field(..., description="Project ID the file belongs to")
     file_url: str = Field(..., description="API endpoint to access the file")
-    file_metadata: dict[str, Any] = Field(..., description="File metadata (name, type, size, gcs_path)")
+    file_metadata: dict[str, Any] = Field(
+        ..., description="File metadata (name, type, size, gcs_path)"
+    )
     ocr_result: str = Field(..., description="OCR extracted text")
-    status: str = Field(..., description="Processing status: processing/completed/failed")
+    status: str = Field(
+        ..., description="Processing status: processing/completed/failed"
+    )
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
@@ -186,9 +213,9 @@ class FileUploadResponse(BaseModel):
 
 class FileStatusUpdateRequest(BaseModel):
     """Request model for updating file status"""
+
     status: str = Field(..., description="New status: processing/completed/failed")
     ocr_result: str | None = Field(None, description="Optional OCR result")
-
 
 
 # BACKWARD COMPATIBILITY (DEPRECATED)
@@ -196,10 +223,12 @@ class FileStatusUpdateRequest(BaseModel):
 
 class MessagesFetchRequest(BaseModel):
     """DEPRECATED: Use GET /messages/{session_id} instead"""
+
     session_id: str = Field(..., description="Session ID")
     limit: int = Field(100, ge=1, le=500)
 
 
 class FeedbackFetchRequest(BaseModel):
     """DEPRECATED: Use GET /feedback/{message_id} instead"""
+
     message_id: str = Field(..., description="Message ID")
