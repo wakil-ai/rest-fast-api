@@ -94,6 +94,7 @@ class ChatChain:
         chat_history: list | None = None,
         stream: bool = settings.STREAM,
         file_context: str | None = None,
+        project_id: str | None = None,
         collection_name: str = settings.MILVUS_MAIN_NAME,
         model_name: str | None = None,
     ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
@@ -108,29 +109,47 @@ class ChatChain:
             selected_llm = (
                 self._get_llm_by_model(model_name) if model_name else self.llm_fallback
             )
-            prompt_template = (
-                SOLIQ_PROMPT
-                if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME
-                else PROMPT
-            )
+            
+            # Determine Prompt Template
+            from app.chains.prompts import PROJECT_FILE_PROMPT
+            
+            if project_id:
+                prompt_template = PROJECT_FILE_PROMPT
+            else:
+                prompt_template = (
+                    SOLIQ_PROMPT
+                    if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME
+                    else PROMPT
+                )
 
-            # Build query with optional file content
+            # Build query with optional file content (legacy support)
             merged_query = (
                 f"{query}\n\nFile Content: {file_context}" if file_context else query
             )
 
             # Retrieve context
-            context_result = await self.retrieval_service.retrieve_context(
-                query=merged_query,
-                top_k=settings.TOP_K,
-                collection_name=collection_name,
-            )
-
-            context = (
-                f"{context_result}\nFile Content:\nUse the following extracted text from the uploaded file to answer the question:\n{file_context}"
-                if file_context
-                else context_result
-            )
+            if project_id:
+                # Dual context retrieval
+                project_context = await self.retrieval_service.retrieve_project_context(
+                    query=query,
+                    project_id=project_id,
+                    user_id=user_id,
+                    top_k=settings.TOP_K // 2
+                )
+                main_context = await self.retrieval_service.retrieve_context(
+                    query=query,
+                    top_k=settings.TOP_K // 2,
+                    collection_name=collection_name,
+                )
+                context = f"PROJECT FILES:\n{project_context}\n\nGENERAL LAWS:\n{main_context}"
+            else:
+                context = await self.retrieval_service.retrieve_context(
+                    query=merged_query,
+                    top_k=settings.TOP_K,
+                    collection_name=collection_name,
+                )
+                if file_context:
+                    context = f"{context}\nFile Content:\n{file_context}"
 
             if settings.DEVELOPMENT_MODE:
                 debug_data["retrieved_contents"] = context
@@ -144,11 +163,21 @@ class ChatChain:
             elif memory_text:
                 chat_history_text = memory_text
 
-            system_prompt = await self.make_system_prompt(
-                context=context,
-                chat_history_text=chat_history_text,
-                prompt_template=prompt_template,
-            )
+            # Prepare System Prompt
+            if project_id:
+                # Use PROJECT_FILE_PROMPT format
+                system_prompt = prompt_template.format(
+                    project_context=project_context,
+                    main_context=main_context,
+                    chat_history=chat_history_text
+                )
+            else:
+                system_prompt = await self.make_system_prompt(
+                    context=context,
+                    chat_history_text=chat_history_text,
+                    prompt_template=prompt_template,
+                )
+                
             logger.debug(f"[ChatChain] System Prompt: {system_prompt}")
 
             return await self.run(

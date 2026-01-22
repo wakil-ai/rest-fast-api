@@ -61,6 +61,9 @@ class ChatRequest(BaseModel):
     assistant: AssistantType | None = Field(
         default=AssistantType.MAIN, description="Assistant type: main or soliq"
     )
+    project_id: str | None = Field(
+        default=None, description="Optional project ID to search within project files"
+    )
 
 
 class ChatResponse(BaseModel):
@@ -136,3 +139,4 @@ class AgenticRAGRequest(BaseModel):
     )
     user_id: str = Field(default="user_123", description="User identifier")
     session_id: str = Field(default="default", description="Session identifier")
+    project_id: str | None = Field(default=None, description="Optional project ID")

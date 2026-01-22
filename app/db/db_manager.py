@@ -102,10 +102,11 @@ class DBManager:
         dense_vector: list[float],
         top_k: int = settings.TOP_K,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """Dense-only search."""
         return self.vector_handler.query_dense(
-            dense_vector, top_k, collection_name=collection_name
+            dense_vector, top_k, collection_name=collection_name, expr=expr
         )
 
     def search_sparse(
@@ -126,10 +127,11 @@ class DBManager:
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """Hybrid search (dense + sparse)."""
         return self.vector_handler.query_hybrid(
-            dense_vector, text_query, top_k, alpha, collection_name=collection_name
+            dense_vector, text_query, top_k, alpha, collection_name=collection_name, expr=expr
         )
 
     def search_specific(
@@ -148,7 +150,7 @@ class DBManager:
             return []
 
     def upsert_vectors(self, documents: list[dict[str, Any]], 
-                             collection_name: str = settings.MILVUS_MAIN_NAME
+                             collection_name: str = settings.MILVUS_MAIN_NAME,
                              partition_name: str = None) -> None:
         """Upsert vectors into vector database."""
         self.vector_handler.upsert_vectors(documents=documents, collection_name=collection_name, partition_name=partition_name)

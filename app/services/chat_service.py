@@ -21,6 +21,7 @@ class ChatService:
         chat_history: list[MessagePair] | None = None,
         stream: bool = settings.STREAM,
         file_context: str | None = None,
+        project_id: str | None = None,
         collection_name: str = settings.MILVUS_MAIN_NAME,
         model_name: str | None = None,
     ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
@@ -45,6 +46,7 @@ class ChatService:
             chat_history=chat_history,
             stream=stream,
             file_context=file_context,
+            project_id=project_id,
             collection_name=collection_name,
             model_name=model_name,
         )

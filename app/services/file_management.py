@@ -12,6 +12,7 @@ from app.services.storage_service import StorageService
 from app.services.ocr_service import OCRService
 from app.services.chat_history_service import ChatHistoryService
 from app.models.chat_history import FileUploadResponse
+from app.retrieval.embedding_manager import EmbeddingManager
 
 class FileManager:
     """Handles file upload, OCR processing, storage and metadata persistence."""
@@ -21,6 +22,7 @@ class FileManager:
         self.ocr = OCRService()
         self.db = DBManager()
         self.history = ChatHistoryService()
+        self.embedding_manager = EmbeddingManager()
         self.vector_db_collection = settings.MILVUS_PROJECT_FILES
 
     async def upload_file_to_project(
@@ -42,7 +44,7 @@ class FileManager:
         temp_path = self._create_temp_file(content, file.filename)
 
         try:
-            ocr_result = self.ocr.process_file(temp_path)
+            ocr_result = await self.ocr.process_file(temp_path)
 
             gcs_path = self.storage.generate_file_path(project_id, file_id, file.filename)
             file_url = self.storage.upload_file(
@@ -62,6 +64,16 @@ class FileManager:
                 status="completed"
             )
 
+            # Ingest into Vector DB with project and user metadata
+            user_id = project.get("user_id")
+            self._upsert_to_vector_db(
+                content=ocr_result,
+                project_id=project_id,
+                user_id=user_id,
+                file_id=file_id,
+                file_name=file.filename
+            )
+
             response = self._build_success_response(
                 project_id=project_id,
                 file_id=file_id,
@@ -70,22 +82,66 @@ class FileManager:
                 record=record
             )
 
-            logger.info("File uploaded successfully: %s → %s", file.filename, project_id)
+            logger.info("File uploaded and ingested successfully: %s → %s", file.filename, project_id)
             return 200, response
 
         except Exception as e:
-            logger.error("File upload failed: %s - %s", file.filename, str(e))
+            logger.error("File upload failed: %s - %s", file.filename, str(e), exc_info=True)
             return 500, str(e)
 
         finally:
             self._safe_remove_temp_file(temp_path)
 
-    def _upsert_to_vector_db(self, content: str, metadata: dict) -> None:
-        """Upsert document to vector database"""
-        # TODO splitting logic for the content
-        
+    def _upsert_to_vector_db(
+        self,
+        content: str,
+        project_id: str,
+        user_id: str,
+        file_id: str,
+        file_name: str
+    ) -> None:
+        """Chunk content and upsert to vector database with metadata."""
+        if not content:
+            logger.warning("Empty OCR result for file_id: %s, skipping ingestion", file_id)
+            return
 
-        self.db.upsert_vectors(document, collection_name=self.vector_db_collection)
+        # Simple chunking logic (could be improved with a dedicated splitter)
+        chunk_size = 1000
+        overlap = 100
+        chunks = []
+        
+        for i in range(0, len(content), chunk_size - overlap):
+            chunk_text = content[i:i + chunk_size]
+            if chunk_text:
+                chunks.append(chunk_text)
+
+        if not chunks:
+            return
+
+        # Generate embeddings and prepare documents for Milvus
+        embeddings = self.embedding_manager.embed_batch(chunks)
+        
+        documents = []
+        for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
+            doc_id = f"{file_id}_{idx}"
+            documents.append({
+                "id": doc_id,
+                "text": chunk_text,
+                "embedding": embedding,
+                "metadata": {
+                    "project_id": project_id,
+                    "user_id": user_id,
+                    "file_id": file_id,
+                    "file_name": file_name,
+                    "chunk_index": idx
+                }
+            })
+
+        try:
+            self.db.upsert_vectors(documents, collection_name=self.vector_db_collection)
+            logger.info("Successfully ingested %d chunks for file_id: %s", len(documents), file_id)
+        except Exception as e:
+            logger.error("Failed to ingest file into Vector DB: %s", str(e))
 
     def _create_temp_file(self, content: bytes, original_filename: str) -> str:
         """Create temporary file and return its path"""

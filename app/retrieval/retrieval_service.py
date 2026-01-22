@@ -48,6 +48,7 @@ class RetrievalService:
                 alpha=alpha,
                 search_type=search_type,
                 collection_name=collection_name,
+                expr=None,
             )
             return await self._format_results(search_results)
         except Exception as e:
@@ -61,6 +62,7 @@ class RetrievalService:
         alpha: float = settings.ALPHA,
         search_type: str = "hybrid",
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """Retrieve raw documents without formatting."""
         if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME:
@@ -86,6 +88,7 @@ class RetrievalService:
                 top_k=top_k,
                 alpha=alpha,
                 collection_name=collection_name,
+                expr=expr,
             )
 
     async def retrieve_multilingual(
@@ -188,6 +191,7 @@ class RetrievalService:
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """Perform hybrid search combining dense vectors and BM25 keyword relevance using Milvus."""
         embedding = self.embedding_manager.embed_query(text_query)
@@ -197,7 +201,32 @@ class RetrievalService:
             top_k=top_k,
             alpha=alpha,
             collection_name=collection_name,
+            expr=expr,
         )
+
+    async def retrieve_project_context(
+        self,
+        query: str,
+        project_id: str,
+        user_id: str,
+        top_k: int = settings.TOP_K,
+        alpha: float = settings.ALPHA,
+    ) -> str:
+        """Retrieve and format documents from a specific project."""
+        try:
+            expr = f'metadata["project_id"] == "{project_id}" and metadata["user_id"] == "{user_id}"'
+            search_results = await self._retrieve_raw_documents(
+                query=query,
+                top_k=top_k,
+                alpha=alpha,
+                search_type="hybrid",
+                collection_name=settings.MILVUS_PROJECT_FILES,
+                expr=expr,
+            )
+            return await self._format_results(search_results)
+        except Exception as e:
+            logger.error(f"[RetrievalService] Project retrieval failed: {e}", exc_info=True)
+            return "No relevant documents found in the project files."
 
     def search_specific(
         self,
@@ -301,6 +330,11 @@ class RetrievalService:
         if url := metadata.get("chunk_url"):
             if not is_buxgalter_uz:
                 entry.append(f"Source URL: {url}\n")
+        elif project_id := metadata.get("project_id"):
+            if filename := metadata.get("file_name"):
+                entry.append(f"Source: Project File - {filename}\n")
+            else:
+                entry.append(f"Source: Project Document\n")
         else:
             if filename := metadata.get("file_name"):
                 # Remove .md at the end
