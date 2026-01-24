@@ -1,8 +1,10 @@
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
+
 from app.retrieval.embedding_manager import (
-    get_instruction,
     SiliconFlowEmbedding,
+    get_instruction,
 )
 
 
