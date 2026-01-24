@@ -524,8 +524,10 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         parts = self.state.retrieval_docs.split("\n\nGENERAL LAWS:\n")
         project_ctx = parts[0].replace("PROJECT FILES:\n", "")
         main_ctx = parts[1] if len(parts) > 1 else ""
+        
+        template = self._get_assistant_prompt_template('project_file')
 
-        return PROJECT_FILE_PROMPT.format(
+        return template.format(
             project_context=project_ctx,
             main_context=main_ctx,
             chat_history=self.state.memory_docs,
@@ -533,14 +535,16 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
     def _build_standard_system_prompt(self) -> str:
         """Build standard system prompt."""
-        prompt_template = (
-            PROMPT if self.state.selected_assistant == "umumiy" else SOLIQ_PROMPT
-        )
+        prompt_template = self._get_assistant_prompt_template(self.state.selected_assistant)
 
         return prompt_template.format(
             context=self.state.retrieval_docs,
             chat_history=self.state.memory_docs,
         )
+        
+    def _get_assistant_prompt_template(self, assistant_name: str) -> str:
+        """Get prompt template for a specific assistant."""
+        return AssistantConfig.get_assistant_prompt_template(assistant_name)
 
     def _create_chat_context(self, system_prompt: str, debug_data: dict) -> Any:
         """Create GenerationContext object for chat chain."""

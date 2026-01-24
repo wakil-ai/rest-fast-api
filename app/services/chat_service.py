@@ -120,7 +120,7 @@ class ChatService:
         stream: bool = settings.STREAM,
         file_context: str | None = None,
         project_id: str | None = None,
-        collection_name: str = settings.MILVUS_MAIN_NAME,
+        assistant: str = 'main',
         model_name: str | None = None,
     ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
         """
@@ -133,7 +133,7 @@ class ChatService:
             stream: Enable streaming response
             file_context: Additional file context
             project_id: Project identifier
-            collection_name: Milvus collection name
+            assistant: Assistant name
             model_name: Optional model name for generation
 
         Returns:
@@ -152,7 +152,7 @@ class ChatService:
                 stream=stream,
                 file_context=file_context,
                 project_id=project_id,
-                collection_name=collection_name,
+                assistant=assistant,
                 model_name=model_name,
             )
             return answer

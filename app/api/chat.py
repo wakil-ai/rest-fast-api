@@ -39,7 +39,7 @@ async def ask_question(request: ChatRequest):
             request.assistant.value if request.assistant else None
         )
 
-        credit_cost, collection_name = chat_service.extract_assistant_config(
+        credit_cost, _ = chat_service.extract_assistant_config(
             assistant_name
         )
 
@@ -58,7 +58,7 @@ async def ask_question(request: ChatRequest):
             chat_history=request.chat_history,
             stream=should_stream,
             project_id=request.project_id,
-            collection_name=collection_name,
+            assistant=assistant_name,
             model_name=model_name,
         )
 
