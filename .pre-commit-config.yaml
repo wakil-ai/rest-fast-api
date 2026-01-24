@@ -97,12 +97,6 @@ repos:
       - id: gitleaks
         name: "🔐 gitleaks - Detect secrets in git history"
 
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.5.0
-    hooks:
-      - id: detect-secrets
-        name: "🔐 detect-secrets - Detect secrets in code"
-
   # --- Python ---
   - repo: https://github.com/psf/black
     rev: 25.1.0
