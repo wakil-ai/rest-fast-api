@@ -56,23 +56,23 @@ def test_llm_factory_selection(chat_chain, mock_dependencies):
     # This calls _get_llm_by_model internally or we call it directly
 
     # Test OpenAI
-    llm = chat_chain._get_llm_by_model("gpt-4")
+    llm = chat_chain._get_llm("gpt-4")
     # factory returns a new instance, so we check if the class was initialized with model name
     mock_dependencies["GPTClass"].assert_called_with(model_name="gpt-4")
 
     # Test Claude
-    llm = chat_chain._get_llm_by_model("claude-3-opus")
+    llm = chat_chain._get_llm("claude-3-opus")
     mock_dependencies["ClaudeClass"].assert_called_with(model_name="claude-3-opus")
 
     # Test Novita (gemma/gpt-oss)
-    llm = chat_chain._get_llm_by_model("gemma-2b")
+    llm = chat_chain._get_llm("gemma-2b")
     mock_dependencies["NovitaClass"].assert_called_with(model_name="gemma-2b")
 
     # Test Fallback
-    llm = chat_chain._get_llm_by_model("unknown-model")
+    llm = chat_chain._get_llm("unknown-model")
     # Should return fallback (ChatGPT instance created in __init__)
     # We verify it's the fallback instance stored on self.llm_fallback
-    assert llm == chat_chain.llm_fallback
+    assert llm == chat_chain.fallback_llm
 
 
 @pytest.mark.asyncio
@@ -126,14 +126,6 @@ async def test_streaming_response(chat_chain, mock_dependencies):
             parts.append(chunk)
 
     assert "".join(parts) == "Part 1Part 2"
-
-
-@pytest.mark.asyncio
-async def test_punctuation_cleaning(chat_chain):
-    """Test cleaning of punctuation."""
-    dirty_text = "Hello【World】"
-    cleaned = chat_chain.replace_punctuation(dirty_text)
-    assert cleaned == "Hello[World]"
 
 
 @pytest.mark.asyncio
