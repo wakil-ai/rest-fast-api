@@ -120,7 +120,7 @@ class ChatService:
         stream: bool = settings.STREAM,
         file_context: str | None = None,
         project_id: str | None = None,
-        assistant: str = 'main',
+        assistant: str = "main",
         model_name: str | None = None,
     ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
         """

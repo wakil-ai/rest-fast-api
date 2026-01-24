@@ -5,7 +5,6 @@ from crewai.flow.flow import Flow, listen, router, start
 
 from app.chains.chat_chain import ChatChain
 from app.chains.chat_chain import GenerationContext
-from app.chains.prompts import PROMPT, SOLIQ_PROMPT, PROJECT_FILE_PROMPT
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger
@@ -524,8 +523,8 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         parts = self.state.retrieval_docs.split("\n\nGENERAL LAWS:\n")
         project_ctx = parts[0].replace("PROJECT FILES:\n", "")
         main_ctx = parts[1] if len(parts) > 1 else ""
-        
-        template = self._get_assistant_prompt_template('project_file')
+
+        template = self._get_assistant_prompt_template("project_file")
 
         return template.format(
             project_context=project_ctx,
@@ -535,13 +534,15 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
     def _build_standard_system_prompt(self) -> str:
         """Build standard system prompt."""
-        prompt_template = self._get_assistant_prompt_template(self.state.selected_assistant)
+        prompt_template = self._get_assistant_prompt_template(
+            self.state.selected_assistant
+        )
 
         return prompt_template.format(
             context=self.state.retrieval_docs,
             chat_history=self.state.memory_docs,
         )
-        
+
     def _get_assistant_prompt_template(self, assistant_name: str) -> str:
         """Get prompt template for a specific assistant."""
         return AssistantConfig.get_assistant_prompt_template(assistant_name)

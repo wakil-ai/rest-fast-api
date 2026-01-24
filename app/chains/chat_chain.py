@@ -45,7 +45,7 @@ class ChatChain:
         stream: bool = settings.STREAM,
         file_context: Optional[str] = None,
         project_id: Optional[str] = None,
-        assistant: str = 'main',
+        assistant: str = "main",
         model_name: Optional[str] = None,
     ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
         """
@@ -66,7 +66,7 @@ class ChatChain:
         """
         try:
             collection_name = AssistantConfig.get_collection_name(assistant)
-            
+
             # Prepare context
             gen_context = await self._prepare_generation_context(
                 user_id=user_id,

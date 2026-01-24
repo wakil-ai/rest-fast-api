@@ -39,9 +39,7 @@ async def ask_question(request: ChatRequest):
             request.assistant.value if request.assistant else None
         )
 
-        credit_cost, _ = chat_service.extract_assistant_config(
-            assistant_name
-        )
+        credit_cost, _ = chat_service.extract_assistant_config(assistant_name)
 
         await chat_service.verify_user_credits(
             user_id=request.user_id,

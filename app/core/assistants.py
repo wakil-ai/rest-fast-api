@@ -76,7 +76,7 @@ class AssistantConfig:
         """Get prompt template for a specific assistant."""
         prompts = {
             "main": PROMPT,
-            "umumiy": PROMPT, # TODO: Need to make 'umumiy' alias to 'main'
+            "umumiy": PROMPT,  # TODO: Need to make 'umumiy' alias to 'main'
             "soliq": SOLIQ_PROMPT,
             "project_file": PROJECT_FILE_PROMPT,
         }
