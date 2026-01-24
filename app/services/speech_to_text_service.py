@@ -20,7 +20,6 @@ class SpeechToTextService(ABC):
         """
         Transcribes the given audio file to text.
         """
-        pass
 
 
 class GoogleSpeechToTextService(SpeechToTextService):

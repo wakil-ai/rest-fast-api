@@ -39,6 +39,13 @@ class AssistantType(str, Enum):
     MAIN = "main"
     SOLIQ = "soliq"
 
+    @classmethod
+    def get_available_types(cls):
+        """Get all available assistant types from configuration."""
+        from app.core.assistants import AssistantConfig
+
+        return AssistantConfig.get_assistant_names()
+
 
 class ChatRequest(BaseModel):
     """

@@ -5,6 +5,7 @@ from crewai.flow.flow import Flow, listen, router, start
 
 from app.chains.chat_chain import ChatChain
 from app.chains.prompts import PROMPT, SOLIQ_PROMPT
+from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger
 from app.orchestration.crews import Crews
@@ -180,12 +181,12 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             if not query_translations:
                 query_translations = {"original": self.state.rewritten_query}
 
-            # Map assistant to collection name
-            collection_name = (
-                settings.MILVUS_SOLIQ_ASSISTANT_NAME
-                if assistant == "soliq"
-                else settings.MILVUS_MAIN_NAME
-            )
+            # Get collection name from assistant configuration
+            try:
+                collection_name = AssistantConfig.get_collection_name(assistant)
+            except ValueError:
+                # Fallback to main collection if assistant not found
+                collection_name = settings.MILVUS_MAIN_NAME
 
             # If specific strategy, always use main collection
             if strategy == "specific":
@@ -512,10 +513,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
         sources_str = "; ".join(sources)
 
-        return (
-            f"Found {len(docs)} web document(s) as additional sources: "
-            f"{sources_str}"
-        )
+        return f"Found {len(docs)} web document(s) as additional sources: {sources_str}"
 
     async def _parse_structured_output(self, output: Any, schema_class: type) -> Any:
         """Parse structured output using Pydantic schema."""

@@ -5,7 +5,7 @@ from app.core.config import settings
 from app.core.logger import logger
 from app.db.mongo_handler import MongoHandler
 
-AssistantType = Literal["main", "soliq", "deepresearch"]
+RateLimitAssistantType = Literal["main", "soliq", "deepresearch"]
 
 
 class RateLimitService:
@@ -38,7 +38,7 @@ class RateLimitService:
         """Get today's date in YYYY-MM-DD format."""
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    def _get_credit_cost(self, assistant_type: AssistantType) -> int:
+    def _get_credit_cost(self, assistant_type: RateLimitAssistantType) -> int:
         """Get credit cost for a specific assistant type."""
         cost_map = {
             "main": settings.CREDIT_COST_MAIN_ASSISTANT,
@@ -48,7 +48,7 @@ class RateLimitService:
         return cost_map[assistant_type]
 
     def check_and_decrement_credits(
-        self, user_id: str, assistant_type: AssistantType = "main"
+        self, user_id: str, assistant_type: RateLimitAssistantType = "main"
     ) -> tuple[bool, int, int]:
         """
         Check if user has enough credits and decrement if available.
@@ -83,9 +83,6 @@ class RateLimitService:
                 else:
                     # ADD promo credits to default credits
                     daily_limit = settings.DAILY_CREDITS_LIMIT + promo_credit_limit
-                    logger.info(
-                        f"[RateLimitService] User {user_id} has {settings.DAILY_CREDITS_LIMIT} default + {promo_credit_limit} promo = {daily_limit} total daily credits"
-                    )
             else:
                 logger.info(
                     f"[RateLimitService] User {user_id} using default {daily_limit} daily credits"
@@ -107,7 +104,7 @@ class RateLimitService:
                 # Check if user has enough credits
                 if credits_remaining < credit_cost:
                     logger.warning(
-                        f"[RateLimitService] User {user_id} has insufficient credits for {assistant_type}: {credits_remaining}/{daily_limit} remaining, needs {credit_cost}"
+                        f"[RateLimitService] User {user_id} has insufficient credits for {assistant_type}."
                     )
                     return False, credits_remaining, daily_limit
 
@@ -120,9 +117,6 @@ class RateLimitService:
                     },
                 )
                 new_credits_remaining = credits_remaining - credit_cost
-                logger.info(
-                    f"[RateLimitService] User {user_id} used {credit_cost} credits for {assistant_type}: {new_credits_remaining}/{daily_limit} remaining"
-                )
                 return True, new_credits_remaining, daily_limit
             else:
                 # Create new credit entry for today
@@ -136,9 +130,6 @@ class RateLimitService:
                     }
                 )
                 new_credits_remaining = daily_limit - credit_cost
-                logger.info(
-                    f"[RateLimitService] User {user_id} first request today, used {credit_cost} credits for {assistant_type}: {new_credits_remaining}/{daily_limit} remaining"
-                )
                 return True, new_credits_remaining, daily_limit
 
         except Exception as e:

@@ -122,6 +122,7 @@ class Settings(BaseSettings):
 
     # EMBEDDING MODEL
     EMBEDDING_MODEL: EmbeddingModel = EmbeddingModel.qwen
+    EMBEDDING_DIM: int = 2560
 
     SPEECH_TO_TEXT_PROVIDER: SpeechToTextProvider = SpeechToTextProvider.azure
     AZURE_SPEECH_KEY: str | None = None
@@ -155,6 +156,7 @@ class Settings(BaseSettings):
     TEMPERATURE: float = 0.1
     CHAT_HISTORY_LIMIT: int = 5
     OUTPUT_MAX_TOKENS: int = 4096
+    MAX_QUERY_LENGTH: int = 2000
 
     LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
@@ -181,22 +183,6 @@ class Settings(BaseSettings):
         "https://checkout.paycom.uz/"  # Base URL for payment links
     )
 
-    # EMBEDDING DIM
-    @property
-    def EMBEDDING_DIM(self) -> int:
-        if (
-            EmbeddingModel.qwen == self.EMBEDDING_MODEL
-            or EmbeddingModel.deepinfra == self.EMBEDDING_MODEL
-            or EmbeddingModel.siliconflow == self.EMBEDDING_MODEL
-        ):  # Qwen3-Embedding-4B
-            return 2560
-        elif EmbeddingModel.openai == self.EMBEDDING_MODEL:  # Text-Embedding-Ada-002
-            return 1536
-        elif EmbeddingModel.novita_qwen == self.EMBEDDING_MODEL:  # Qwen3-Embedding-8B
-            return 4096
-        else:
-            raise ValueError(f"Unknown embedding model: {self.EMBEDDING_MODEL}")
-
     # Google Auth
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_CLIENT_SECRET: str | None = None
@@ -208,6 +194,28 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="allow",  # Allow extra fields in the environment
     )
+
+    def model_post_init(self, __context) -> None:
+        # Build assistants using the already-defined variables
+        self.ASSISTANTS = {
+            "main": {
+                "name": "main",
+                "collection_name": self.MILVUS_MAIN_NAME,
+                "credit_cost": self.CREDIT_COST_MAIN_ASSISTANT,
+                "description": "General legal assistant",
+            },
+            "soliq": {
+                "name": "soliq",
+                "collection_name": self.MILVUS_SOLIQ_ASSISTANT_NAME,
+                "credit_cost": self.CREDIT_COST_SOLIQ_ASSISTANT,
+                "description": "Tax specialized assistant",
+            },
+            "deepresearch": {
+                "name": "deepresearch",
+                "credit_cost": self.CREDIT_COST_DEEPRESEARCH,
+                "description": "Deep research assistant with agentic RAG",
+            },
+        }
 
 
 settings = Settings()
