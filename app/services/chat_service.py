@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -9,7 +8,6 @@ from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.exceptions import (
     ChatGenerationException,
-    FlowExecutionException,
     InsufficientCreditsException,
     QueryTooLongException,
 )
@@ -113,45 +111,6 @@ class ChatService:
             media_type="text/event-stream",
             headers=get_streaming_headers(),
         )
-
-    @staticmethod
-    async def handle_flow_execution(
-        flow_task: asyncio.Task, progress_queue: asyncio.Queue
-    ) -> AsyncGenerator:
-        """Handle flow execution and stream progress events."""
-        flow_complete = False
-
-        try:
-            while not (flow_complete and progress_queue.empty()):
-                if flow_task.done() and not flow_complete:
-                    flow_complete = True
-                    try:
-                        await flow_task
-                    except Exception as e:
-                        logger.error("Flow execution error", exc_info=True)
-                        yield {
-                            "type": "error",
-                            "message": f"Flow execution failed: {str(e)}",
-                        }
-                        raise FlowExecutionException(f"Flow execution failed: {str(e)}")
-
-                try:
-                    event = await asyncio.wait_for(progress_queue.get(), timeout=60)
-                    yield event
-                except asyncio.TimeoutError:
-                    continue
-                except Exception as e:
-                    logger.error(f"Error retrieving progress event: {e}")
-                    yield {
-                        "type": "error",
-                        "message": f"Progress streaming failed: {str(e)}",
-                    }
-                    break
-        except FlowExecutionException:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in flow execution: {e}")
-            raise FlowExecutionException("Unexpected error during flow execution.")
 
     async def ask_question(
         self,

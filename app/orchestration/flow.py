@@ -4,7 +4,8 @@ from typing import Any
 from crewai.flow.flow import Flow, listen, router, start
 
 from app.chains.chat_chain import ChatChain
-from app.chains.prompts import PROMPT, SOLIQ_PROMPT
+from app.chains.chat_chain import GenerationContext
+from app.chains.prompts import PROMPT, SOLIQ_PROMPT, PROJECT_FILE_PROMPT
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger
@@ -54,6 +55,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         self.evaluation_crew = crews_factory.evaluation_crew()
         self.web_search_crew = crews_factory.web_search_crew()
 
+    # Progress Management
     async def _emit_progress(
         self, event_type: str, status: str, message: str, details: dict = None
     ) -> None:
@@ -62,6 +64,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             event = await format_progress_event(event_type, status, message, details)
             await self.progress_callback(event)
 
+    # Flow Steps
     @start()
     async def start_memory_retrieval(self) -> None:
         """Retrieve and summarize session and personal memory."""
@@ -129,7 +132,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         )
 
         try:
-            # Build query input for retrieval crew
             query_input = {"query": self.state.enriched_query or self.state.query}
             result = await self.retrieval_strategy_crew.kickoff_async(
                 inputs=query_input,
@@ -182,67 +184,16 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                 query_translations = {"original": self.state.rewritten_query}
 
             # Get collection name from assistant configuration
-            try:
-                collection_name = AssistantConfig.get_collection_name(assistant)
-            except ValueError:
-                # Fallback to main collection if assistant not found
-                collection_name = settings.MILVUS_MAIN_NAME
+            collection_name = self._get_collection_name(assistant, strategy)
 
-            # If specific strategy, always use main collection
-            if strategy == "specific":
-                collection_name = (
-                    settings.MILVUS_MAIN_NAME
-                )  # because specific means main collection
-
-            # Check if we have project_id for dual retrieval
-            project_id = self.state.project_id
-
-            if project_id:
-                # Use multilingual retrieval for main context but with half top_k
-                main_docs_list = (
-                    await self.chat_chain.retrieval_service.retrieve_multilingual(
-                        query_translations=query_translations,
-                        top_k=settings.TOP_K // 2,
-                        search_type=strategy,
-                        collection_name=collection_name,
-                    )
+            # Retrieve documents
+            if self.state.project_id:
+                self.state.retrieval_docs = await self._retrieve_project_documents(
+                    query_translations, strategy, collection_name
                 )
-
-                # Fetch project-specific context
-                # Note: retrieve_project_context currently doesn't support multilingual query_translations,
-                # we use the rewritten query for now or could iterate.
-                project_context = (
-                    await self.chat_chain.retrieval_service.retrieve_project_context(
-                        query=self.state.rewritten_query,
-                        project_id=project_id,
-                        user_id=self.state.user_id,
-                        top_k=settings.TOP_K // 2,
-                    )
-                )
-
-                main_docs_formatted = (
-                    await self.chat_chain.retrieval_service._format_results(
-                        main_docs_list
-                    )
-                )
-
-                self.state.retrieval_docs = f"PROJECT FILES:\n{project_context}\n\nGENERAL LAWS:\n{main_docs_formatted}"
             else:
-                # Standard retrieval
-                documents_list = (
-                    await self.chat_chain.retrieval_service.retrieve_multilingual(
-                        query_translations=query_translations,
-                        top_k=settings.TOP_K,
-                        search_type=strategy,
-                        collection_name=collection_name,
-                    )
-                )
-
-                # Format documents into string for state
-                self.state.retrieval_docs = (
-                    await self.chat_chain.retrieval_service._format_results(
-                        documents_list
-                    )
+                self.state.retrieval_docs = await self._retrieve_standard_documents(
+                    query_translations, strategy, collection_name
                 )
 
             await self._emit_progress(
@@ -265,7 +216,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         )
 
         try:
-            # Build formatted input for evaluation crew
             evaluation_input = {
                 "query": self.state.query,
                 "context": self.state.retrieval_docs or "No context retrieved.",
@@ -280,13 +230,10 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             )
             self.state.context_evaluation_output = evaluation_response.model_dump()
 
-            # If sufficient, go to answer generation
-            # If insufficient, trigger parallel retry
             return "sufficient" if evaluation_response.is_sufficient else "insufficient"
 
         except Exception as error:
             await self._handle_error("Context evaluation", error)
-            # Default to sufficient if evaluation fails
             self.state.context_evaluation_output = {
                 "is_sufficient": True,
                 "reasoning": "Evaluation failed, proceeding with available context",
@@ -301,7 +248,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
     @listen("insufficient")
     async def perform_web_search(self) -> None:
-        """Perform web search in parallel when context is insufficient."""
+        """Perform web search when context is insufficient."""
         await self._emit_progress(
             ProgressEventType.CONTEXT_EVALUATION,
             "in_progress",
@@ -316,7 +263,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
         try:
             web_response = await self._execute_web_search()
-
             await self._merge_web_documents(web_response)
 
             message = await self._format_web_search_message(web_response)
@@ -335,102 +281,14 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     @listen(perform_web_search)
     async def generate_final_answer(self) -> str:
         """Generate comprehensive answer from all retrieved context."""
-        await self._emit_progress(
-            ProgressEventType.ANSWER_GENERATION,
-            "in_progress",
-            "Generating final answer...",
-        )
-
-        try:
-            query = (
-                self.state.query
-                + "\n Resolved Query which may help you to clarify question: "
-                + self.state.resolved_query
-            )
-
-            # Determine prompt template based on project_id
-            from app.chains.prompts import PROJECT_FILE_PROMPT
-
-            if self.state.project_id:
-                # Extract project and main context for the PROJECT_FILE_PROMPT
-                # Split the retrieval_docs back or just re-fetch for formatting if needed
-                # For now, we'll assume they are combined in state.retrieval_docs
-                # but it's better to pass them separately to the template if possible.
-                # However, generate_answer in ChatChain already does a similar split.
-
-                # For agentic flow, we'll manually format it to match what the prompt expects
-                # since we already combined them in fetch_documents
-                parts = self.state.retrieval_docs.split("\n\nGENERAL LAWS:\n")
-                project_ctx = parts[0].replace("PROJECT FILES:\n", "")
-                main_ctx = parts[1] if len(parts) > 1 else ""
-
-                system_prompt = PROJECT_FILE_PROMPT.format(
-                    project_context=project_ctx,
-                    main_context=main_ctx,
-                    chat_history=self.state.memory_docs,
-                )
-            else:
-                system_prompt = await self.chat_chain.make_system_prompt(
-                    context=self.state.retrieval_docs,
-                    chat_history_text=self.state.memory_docs,
-                    prompt_template=(
-                        PROMPT
-                        if self.state.selected_assistant == "umumiy"
-                        else SOLIQ_PROMPT
-                    ),
-                )
-
-            debug_data = {
-                "retrieval_docs": self.state.retrieval_docs,
-            }
-
-            llm = self.chat_chain._get_llm_by_model(self.state.llm_model)
-
-            response = await self.chat_chain.run(
-                query=query,
-                system_prompt=system_prompt,
-                stream=True if self.enable_progress_stream else False,
-                llm=llm,
-                debug_data=debug_data,
-            )
-
-            if self.enable_progress_stream:
-                # If streaming, we iterate over the generator and build the answer
-                # while emitting chunk events
-                full_answer = ""
-                async for chunk in response:
-                    if isinstance(chunk, dict):
-                        continue
-
-                    full_answer += chunk
-                    await self._emit_progress("chunk", "in_progress", chunk)
-                self.state.answer = full_answer
-                return full_answer
-            else:
-                if isinstance(response, tuple):
-                    answer, _ = response
-                    self.state.answer = answer
-                    return answer
-                else:
-                    self.state.answer = response
-                    return response
-
-        except Exception as error:
-            await self._handle_error("Answer generation", error)
-            self.state.answer = "Error generating answer. Please try again."
-            await self._emit_progress(
-                ProgressEventType.ANSWER_GENERATION,
-                "failed",
-                f"Answer generation failed: {str(error)}",
-            )
-
-        return self.state.answer
+        return await self._generate_answer()
 
     @listen("sufficient")
     async def generate_final_answer_sufficient(self) -> str:
         """Generate answer when context is sufficient."""
-        return await self.generate_final_answer()
+        return await self._generate_answer()
 
+    # Memory Operations
     async def _fetch_memories(self) -> tuple[Any, dict]:
         """Fetch session and personal memories concurrently."""
         session_memory = await self.memory_service.get_session_memory(
@@ -451,21 +309,13 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         self, session_memory: Any, personal_memory: dict
     ) -> MemoryAgentResponse:
         """Summarize memory using cached agent."""
-        memory_input = await self._build_memory_input(session_memory, personal_memory)
-        result = await self.memory_crew.kickoff_async(
-            inputs=memory_input,
-        )
-        return await self._parse_structured_output(result, MemoryAgentResponse)
-
-    async def _build_memory_input(
-        self, session_memory: Any, personal_memory: dict
-    ) -> dict:
-        """Build input for memory crew."""
-        return {
+        memory_input = {
             "query": self.state.query,
             "session_memory": json.dumps(session_memory, ensure_ascii=False),
             "personal_memory": json.dumps(personal_memory, ensure_ascii=False),
         }
+        result = await self.memory_crew.kickoff_async(inputs=memory_input)
+        return await self._parse_structured_output(result, MemoryAgentResponse)
 
     async def _apply_memory_response(
         self, memory_response: MemoryAgentResponse
@@ -473,17 +323,110 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         """Apply memory response to state."""
         self.state.memory_output = memory_response.model_dump()
         self.state.memory_docs = await self._format_memory_context(memory_response)
-        # Use original query if resolved_query is None
         self.state.resolved_query = memory_response.resolved_query or self.state.query
 
-    async def _execute_web_search(self) -> WebSearchResponse:
-        """Execute web search using web search crew and return structured response."""
-        inputs = {"query": self.state.rewritten_query}
-        result = await self.web_search_crew.kickoff_async(
-            inputs=inputs,
+    async def _set_default_memory(self) -> None:
+        """Set default empty memory."""
+        default_response = MemoryAgentResponse(
+            session_notes="", personal_notes="", resolved_query=self.state.query
         )
-        web_response = await self._parse_structured_output(result, WebSearchResponse)
+        self.state.memory_output = default_response.model_dump()
+        self.state.memory_docs = ""
+        self.state.resolved_query = self.state.query
 
+    async def _format_memory_context(self, memory_response: MemoryAgentResponse) -> str:
+        """Format memory response for context inclusion."""
+        return f"""
+            Session Context:
+            {memory_response.session_notes}
+
+            User Preferences:
+            {memory_response.personal_notes}
+        """.strip()
+
+    async def _enrich_query_with_memory(self, base_query: str) -> str:
+        """Enrich query with resolved memory context if available."""
+        if not self._should_enrich_query():
+            return base_query
+        return f"{base_query} Resolved Query from memory: {self.state.resolved_query}".strip()
+
+    def _should_enrich_query(self) -> bool:
+        """Check if query should be enriched with memory context."""
+        return (
+            self.state.resolved_query and self.state.resolved_query != self.state.query
+        )
+
+    # Document Retrieval
+    def _get_collection_name(self, assistant: str, strategy: str) -> str:
+        """Get collection name based on assistant and strategy."""
+        try:
+            collection_name = AssistantConfig.get_collection_name(assistant)
+        except ValueError:
+            collection_name = settings.MILVUS_MAIN_NAME
+
+        # If specific strategy, always use main collection
+        if strategy == "specific":
+            collection_name = settings.MILVUS_MAIN_NAME
+
+        return collection_name
+
+    async def _retrieve_project_documents(
+        self, query_translations: dict, strategy: str, collection_name: str
+    ) -> str:
+        """Retrieve documents for project context (dual retrieval)."""
+        # Main context with multilingual support
+        main_docs_list = await self.chat_chain.retrieval_service.retrieve_multilingual(
+            query_translations=query_translations,
+            top_k=settings.TOP_K // 2,
+            search_type=strategy,
+            collection_name=collection_name,
+        )
+
+        # Project-specific context
+        project_context = (
+            await self.chat_chain.retrieval_service.retrieve_project_context(
+                query=self.state.rewritten_query,
+                project_id=self.state.project_id,
+                user_id=self.state.user_id,
+                top_k=settings.TOP_K // 2,
+            )
+        )
+
+        main_docs_formatted = await self.chat_chain.retrieval_service._format_results(
+            main_docs_list
+        )
+
+        return (
+            f"PROJECT FILES:\n{project_context}\n\nGENERAL LAWS:\n{main_docs_formatted}"
+        )
+
+    async def _retrieve_standard_documents(
+        self, query_translations: dict, strategy: str, collection_name: str
+    ) -> str:
+        """Retrieve standard documents."""
+        documents_list = await self.chat_chain.retrieval_service.retrieve_multilingual(
+            query_translations=query_translations,
+            top_k=settings.TOP_K,
+            search_type=strategy,
+            collection_name=collection_name,
+        )
+
+        return await self.chat_chain.retrieval_service._format_results(documents_list)
+
+    async def _set_default_retrieval_strategy(self) -> None:
+        """Set default retrieval strategy."""
+        default_response = RetrievalStrategyResponse(
+            strategy="hybrid", query_rewrite=self.state.query, assistant="umumiy"
+        )
+        self.state.retrieval_output = default_response.model_dump()
+        self.state.selected_assistant = "umumiy"
+
+    # Web Search
+    async def _execute_web_search(self) -> WebSearchResponse:
+        """Execute web search using web search crew."""
+        inputs = {"query": self.state.rewritten_query}
+        result = await self.web_search_crew.kickoff_async(inputs=inputs)
+        web_response = await self._parse_structured_output(result, WebSearchResponse)
         self.state.web_search_output = web_response.model_dump()
         return web_response
 
@@ -501,20 +444,137 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         self.state.retrieval_docs = combined_docs
 
     async def _format_web_search_message(self, web_response: WebSearchResponse) -> str:
+        """Format web search results message."""
         docs = web_response.docs
         if not docs:
             return "No relevant web documents found"
 
-        sources = []
-        for doc in docs:
-            sources.append(
-                f"Title: {doc.title}\n Url:({doc.url})\n Content: ({doc.content})\n\n"
-            )
-
+        sources = [
+            f"Title: {doc.title}\n Url:({doc.url})\n Content: ({doc.content})\n\n"
+            for doc in docs
+        ]
         sources_str = "; ".join(sources)
 
         return f"Found {len(docs)} web document(s) as additional sources: {sources_str}"
 
+    # Answer Generation
+    async def _generate_answer(self) -> str:
+        """Generate comprehensive answer from all retrieved context."""
+        await self._emit_progress(
+            ProgressEventType.ANSWER_GENERATION,
+            "in_progress",
+            "Generating final answer...",
+        )
+
+        try:
+            # Build enhanced query
+            query = self._build_enhanced_query()
+
+            # Build system prompt
+            system_prompt = self._build_system_prompt()
+
+            # Get LLM
+            llm = self.chat_chain._get_llm(self.state.llm_model)
+
+            # Generate response
+            debug_data = {"retrieval_docs": self.state.retrieval_docs}
+
+            # Handle streaming vs non-streaming
+            if self.enable_progress_stream:
+                response = self.chat_chain._generate_stream(
+                    llm=llm,
+                    query=query,
+                    gen_context=self._create_chat_context(system_prompt, debug_data),
+                )
+                return await self._handle_streaming_response(response)
+            else:
+                response = await self.chat_chain._generate_non_stream(
+                    llm=llm,
+                    query=query,
+                    gen_context=self._create_chat_context(system_prompt, debug_data),
+                )
+                return self._handle_non_streaming_response(response)
+
+        except Exception as error:
+            await self._handle_error("Answer generation", error)
+            self.state.answer = "Error generating answer. Please try again."
+            await self._emit_progress(
+                ProgressEventType.ANSWER_GENERATION,
+                "failed",
+                f"Answer generation failed: {str(error)}",
+            )
+            return self.state.answer
+
+    def _build_enhanced_query(self) -> str:
+        """Build query with resolved context."""
+        base_query = self.state.query
+        if self.state.resolved_query and self.state.resolved_query != base_query:
+            return f"{base_query}\nResolved Query which may help you to clarify question: {self.state.resolved_query}"
+        return base_query
+
+    def _build_system_prompt(self) -> str:
+        """Build system prompt based on context type."""
+        if self.state.project_id:
+            return self._build_project_system_prompt()
+        else:
+            return self._build_standard_system_prompt()
+
+    def _build_project_system_prompt(self) -> str:
+        """Build system prompt for project context."""
+        parts = self.state.retrieval_docs.split("\n\nGENERAL LAWS:\n")
+        project_ctx = parts[0].replace("PROJECT FILES:\n", "")
+        main_ctx = parts[1] if len(parts) > 1 else ""
+
+        return PROJECT_FILE_PROMPT.format(
+            project_context=project_ctx,
+            main_context=main_ctx,
+            chat_history=self.state.memory_docs,
+        )
+
+    def _build_standard_system_prompt(self) -> str:
+        """Build standard system prompt."""
+        prompt_template = (
+            PROMPT if self.state.selected_assistant == "umumiy" else SOLIQ_PROMPT
+        )
+
+        return prompt_template.format(
+            context=self.state.retrieval_docs,
+            chat_history=self.state.memory_docs,
+        )
+
+    def _create_chat_context(self, system_prompt: str, debug_data: dict) -> Any:
+        """Create GenerationContext object for chat chain."""
+        return GenerationContext(
+            context=self.state.retrieval_docs,
+            system_prompt=system_prompt,
+            chat_history=self.state.memory_docs,
+            debug_data=debug_data,
+        )
+
+    async def _handle_streaming_response(self, response) -> str:
+        """Handle streaming response and emit chunks."""
+        full_answer = ""
+        async for chunk in response:
+            if isinstance(chunk, dict):
+                continue
+
+            full_answer += chunk
+            await self._emit_progress("chunk", "in_progress", chunk)
+
+        self.state.answer = full_answer
+        return full_answer
+
+    def _handle_non_streaming_response(self, response) -> str:
+        """Handle non-streaming response."""
+        if isinstance(response, tuple):
+            answer, _ = response
+            self.state.answer = answer
+            return answer
+        else:
+            self.state.answer = response
+            return response
+
+    # Utilities
     async def _parse_structured_output(self, output: Any, schema_class: type) -> Any:
         """Parse structured output using Pydantic schema."""
         output_str = output.raw if hasattr(output, "raw") else str(output)
@@ -528,7 +588,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
     async def _parse_json_output(self, output_str: str) -> dict[str, Any]:
         """Parse JSON from string with fallback handling."""
-        # Replace None/null with proper JSON null first
         output_str = output_str.replace(": None", ": null")
 
         if parsed := await self._try_direct_json_parse(output_str):
@@ -561,47 +620,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
         return None
 
-    async def _format_memory_context(self, memory_response: MemoryAgentResponse) -> str:
-        """Format memory response for context inclusion."""
-        return f"""
-            Session Context:
-            {memory_response.session_notes}
-
-            User Preferences:
-            {memory_response.personal_notes}
-        """.strip()
-
-    async def _set_default_memory(self) -> None:
-        """Set default empty memory."""
-        default_response = MemoryAgentResponse(
-            session_notes="", personal_notes="", resolved_query=self.state.query
-        )
-        self.state.memory_output = default_response.model_dump()
-        self.state.memory_docs = ""
-        self.state.resolved_query = self.state.query
-
-    async def _set_default_retrieval_strategy(self) -> None:
-        """Set default retrieval strategy."""
-        default_response = RetrievalStrategyResponse(
-            strategy="hybrid", query_rewrite=self.state.query, assistant="umumiy"
-        )
-        self.state.retrieval_output = default_response.model_dump()
-        self.state.selected_assistant = "umumiy"
-
     async def _handle_error(self, operation: str, error: Exception) -> None:
         """Log error and add to state."""
         logger.error(f"✗ {operation} failed: {error}", exc_info=True)
         self.state.errors.append(f"{operation} error: {str(error)}")
-
-    async def _enrich_query_with_memory(self, base_query: str) -> str:
-        """Enrich query with resolved memory context if available."""
-        if not await self._should_enrich_query():
-            return base_query
-
-        return f"{base_query} Resolved Query from memory: {self.state.resolved_query}".strip()
-
-    async def _should_enrich_query(self) -> bool:
-        """Check if query should be enriched with memory context."""
-        return (
-            self.state.resolved_query and self.state.resolved_query != self.state.query
-        )

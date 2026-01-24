@@ -1,6 +1,7 @@
 import asyncio
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
@@ -18,6 +19,7 @@ from app.models.chat import (
 )
 from app.orchestration.flow import AgenticRAGFlow
 from app.services.chat_service import ChatService
+from app.utils.streaming import format_streaming_response, get_streaming_headers
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -143,10 +145,41 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
         )
 
         initial_state = chat_service.build_agentic_state(request)
-        flow_task = asyncio.create_task(flow.kickoff_async(initial_state))
 
-        return chat_service.create_streaming_response(
-            chat_service.handle_flow_execution(flow_task, progress_queue)
+        async def response_generator():
+            flow_task = asyncio.create_task(flow.kickoff_async(initial_state))
+
+            flow_complete = False
+            while not (flow_complete and progress_queue.empty()):
+                # Check if flow is done
+                if flow_task.done() and not flow_complete:
+                    flow_complete = True
+                    # Await the result to catch any exceptions
+                    try:
+                        await flow_task
+                    except Exception as e:
+                        logger.error("Flow execution error", exc_info=True)
+                        yield {
+                            "type": "error",
+                            "message": f"An error occurred: {str(e)}",
+                        }
+                        break
+
+                # Try to get events from queue
+                try:
+                    event = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
+                    yield event
+                except asyncio.TimeoutError:
+                    # No events available, continue loop
+                    continue
+                except Exception as e:
+                    logger.error(f"Error getting progress event: {e}")
+                    break
+
+        return StreamingResponse(
+            format_streaming_response(response_generator()),
+            media_type="text/event-stream",
+            headers=get_streaming_headers(),
         )
 
     except ChatException:
