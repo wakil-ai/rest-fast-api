@@ -51,3 +51,12 @@ async def list_user_files(user_id: str):
     """
     files = chat_history_service.get_files_by_user(user_id)
     return files
+
+
+@router.get("/message/{message_id}", summary="Get file processing status")
+async def get_message_file_status(message_id: str):
+    """
+    Get the processing status of files associated with a specific message.
+    """
+    files = chat_history_service.get_files_by_message(message_id)
+    return files

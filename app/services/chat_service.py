@@ -78,6 +78,7 @@ class ChatService:
             "query": request.query,
             "user_id": request.user_id,
             "session_id": request.session_id,
+            "file_ids": request.file_ids,
         }
 
     @staticmethod

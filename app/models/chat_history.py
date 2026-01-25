@@ -197,7 +197,10 @@ class FileUploadResponse(BaseModel):
     """Response model for file upload data"""
 
     file_id: str = Field(..., description="File ID (stored as _id)", alias="_id")
-    project_id: str = Field(..., description="Project ID the file belongs to")
+    project_id: str | None = Field(
+        default=None,
+        description="Project ID the file belongs to (null for message attachments)",
+    )
     file_url: str = Field(..., description="API endpoint to access the file")
     file_metadata: dict[str, Any] = Field(
         ..., description="File metadata (name, type, size, gcs_path)"

@@ -142,6 +142,7 @@ class FileManager:
                 metadata=metadata,
                 ocr_result=ocr_result,
                 record=record,
+                project_id=None,
             )
 
             logger.info(
@@ -152,9 +153,7 @@ class FileManager:
 
         except Exception as e:
             logger.error(
-                "Message file upload failed: %s - %s",
-                file.filename,
-                str(e),
+                f"Message file upload failed: {file.filename} - {str(e)}",
                 exc_info=True,
             )
             return 500, str(e)

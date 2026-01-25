@@ -150,3 +150,6 @@ class AgenticRAGRequest(BaseModel):
     user_id: str = Field(default="user_123", description="User identifier")
     session_id: str = Field(default="default", description="Session identifier")
     project_id: str | None = Field(default=None, description="Optional project ID")
+    file_ids: list[str] | None = Field(
+        default=None, description="List of file IDs attached to the current message"
+    )

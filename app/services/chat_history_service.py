@@ -647,7 +647,7 @@ class ChatHistoryService:
         if scope == "project" and not project_id:
             raise ValueError("Project ID is required for project-scoped files")
         if scope == "message" and not message_id:
-            raise ValueError("Message ID is required for message-scoped files")
+            message_id = None  # Allow message_id to be None initially
 
         # Check if file exists using _id
         existing_file = self.db_manager.find_documents(
@@ -713,6 +713,18 @@ class ChatHistoryService:
             self.files_collection, query, limit=limit
         )
         logger.info(f"Retrieved {len(files)} message files for user {user_id}")
+        return files
+
+    def get_files_by_message(self, message_id: str, limit: int = 50) -> list[dict]:
+        """Retrieve all files associated with a specific message."""
+        if not message_id or not message_id.strip():
+            raise ValueError("Message ID cannot be empty")
+
+        query = {"message_id": message_id}
+        files = self.db_manager.find_documents(
+            self.files_collection, query, limit=limit
+        )
+        logger.info(f"Retrieved {len(files)} files for message {message_id}")
         return files
 
     def get_file_by_id(self, file_id: str) -> dict | None:
