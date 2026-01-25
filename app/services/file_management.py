@@ -26,10 +26,10 @@ class FileManager:
         self.vector_db_collection = settings.MILVUS_PROJECT_FILES
 
     async def upload_file_to_project(
-        self, file: UploadFile, project_id: str
+        self, file: UploadFile, project_id: str, user_id: str
     ) -> tuple[int, FileUploadResponse | str]:
         """
-        Process file upload: validate → OCR → store → save metadata
+        Process file upload for a project: validate → OCR → store → save metadata
         Returns: (status_code, response_or_error_message)
         """
         project = self.history.get_project(project_id)
@@ -44,7 +44,7 @@ class FileManager:
         try:
             ocr_result = await self.ocr.process_file(temp_path)
 
-            gcs_path = self.storage.generate_file_path(
+            gcs_path = self.storage.generate_project_file_path(
                 project_id, file_id, file.filename
             )
             file_url = self.storage.upload_file(
@@ -56,16 +56,16 @@ class FileManager:
             metadata = self._create_file_metadata(file, content, gcs_path)
 
             record = self.history.add_file_upload(
-                project_id=project_id,
+                user_id=user_id,
                 file_id=file_id,
                 file_url=file_url,
                 ocr_result=ocr_result,
                 file_metadata=metadata,
                 status="completed",
+                scope="project",
+                project_id=project_id,
             )
 
-            # Ingest into Vector DB with project and user metadata
-            user_id = project.get("user_id")
             self._upsert_to_vector_db(
                 content=ocr_result,
                 project_id=project_id,
@@ -98,11 +98,81 @@ class FileManager:
         finally:
             self._safe_remove_temp_file(temp_path)
 
+    async def upload_message_file(
+        self, file: UploadFile, user_id: str
+    ) -> tuple[int, FileUploadResponse | str]:
+        """
+        Process file upload for a message: validate → OCR → store → save metadata
+        Returns: (status_code, response_or_error_message)
+        """
+        content = await file.read()
+        file_id = str(uuid.uuid4())
+
+        temp_path = self._create_temp_file(content, file.filename)
+
+        try:
+            ocr_result = await self.ocr.process_file(temp_path)
+
+            gcs_path = self.storage.generate_message_file_path(
+                user_id, file_id, file.filename
+            )
+            file_url = self.storage.upload_file(
+                file_content=content,
+                destination_path=gcs_path,
+                content_type=file.content_type or "application/octet-stream",
+            )
+
+            metadata = self._create_file_metadata(file, content, gcs_path)
+
+            record = self.history.add_file_upload(
+                user_id=user_id,
+                file_id=file_id,
+                file_url=file_url,
+                ocr_result=ocr_result,
+                file_metadata=metadata,
+                status="pending",  # Pending association with a message
+                scope="message",
+            )
+
+            # Note: Vector ingestion can be triggered here or after association
+            # For now, we'll skip it until the file is associated with a message
+
+            response = self._build_success_response(
+                file_id=file_id,
+                metadata=metadata,
+                ocr_result=ocr_result,
+                record=record,
+            )
+
+            logger.info(
+                "File uploaded successfully, pending message association: %s",
+                file.filename,
+            )
+            return 200, response
+
+        except Exception as e:
+            logger.error(
+                "Message file upload failed: %s - %s",
+                file.filename,
+                str(e),
+                exc_info=True,
+            )
+            return 500, str(e)
+
+        finally:
+            self._safe_remove_temp_file(temp_path)
+
     def _upsert_to_vector_db(
-        self, content: str, project_id: str, user_id: str, file_id: str, file_name: str
+        self,
+        content: str,
+        user_id: str,
+        file_id: str,
+        file_name: str,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Chunk content and upsert to vector database with metadata."""
-        if not content:
+        if not content or not project_id:  # Require project_id for vector ingestion
             logger.warning(
                 "Empty OCR result for file_id: %s, skipping ingestion", file_id
             )
@@ -114,7 +184,7 @@ class FileManager:
         chunks = []
 
         for i in range(0, len(content), chunk_size - overlap):
-            chunk_text = content[i : i + chunk_size]
+            chunk_text = content[i:i + chunk_size]
             if chunk_text:
                 chunks.append(chunk_text)
 
@@ -127,18 +197,23 @@ class FileManager:
         documents = []
         for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
             doc_id = f"{file_id}_{idx}"
+            metadata = {
+                "user_id": user_id,
+                "file_id": file_id,
+                "file_name": file_name,
+                "chunk_index": idx,
+            }
+            if project_id:
+                metadata["project_id"] = project_id
+            if session_id:
+                metadata["session_id"] = session_id
+
             documents.append(
                 {
                     "id": doc_id,
                     "text": chunk_text,
                     "embedding": embedding,
-                    "metadata": {
-                        "project_id": project_id,
-                        "user_id": user_id,
-                        "file_id": file_id,
-                        "file_name": file_name,
-                        "chunk_index": idx,
-                    },
+                    "metadata": metadata,
                 }
             )
 
@@ -163,11 +238,11 @@ class FileManager:
 
     def _build_success_response(
         self,
-        project_id: str,
         file_id: str,
         metadata: dict,
         ocr_result: str,
         record: dict,
+        project_id: str | None = None,
     ) -> FileUploadResponse:
         """Construct consistent response object"""
         return FileUploadResponse(

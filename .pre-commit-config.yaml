@@ -97,14 +97,6 @@ repos:
       - id: gitleaks
         name: "🔐 gitleaks - Detect secrets in git history"
 
-  # --- Python ---
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-        name: "🐍 black - Format python code"
-        files: \.pyi?$
-
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.20.0
     hooks:

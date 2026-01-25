@@ -118,8 +118,8 @@ class ChatService:
         query: str,
         chat_history: list[MessagePair] | None = None,
         stream: bool = settings.STREAM,
-        file_context: str | None = None,
         project_id: str | None = None,
+        file_ids: list[str] | None = None,
         assistant: str = "main",
         model_name: str | None = None,
     ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
@@ -131,8 +131,8 @@ class ChatService:
             query: User's question
             chat_history: Previous conversation history
             stream: Enable streaming response
-            file_context: Additional file context
             project_id: Project identifier
+            file_ids: List of file IDs to use as context
             assistant: Assistant name
             model_name: Optional model name for generation
 
@@ -150,8 +150,8 @@ class ChatService:
                 query=query,
                 chat_history=chat_history,
                 stream=stream,
-                file_context=file_context,
                 project_id=project_id,
+                file_ids=file_ids,
                 assistant=assistant,
                 model_name=model_name,
             )

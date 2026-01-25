@@ -18,6 +18,7 @@ from app.api import (
     chat,
     chat_history,
     count,
+    files,
     google_auth,
     health,
     memory,
@@ -148,6 +149,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         ocr.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        files.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)],
     )
     app.include_router(
         count.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]

@@ -45,22 +45,10 @@ run_service_tests() {
 
     print_header "🧪 Running $service_name tests..."
 
-    if pytest tests/ -v -m "$marker" --cov=app --cov-report=term-missing; then
+    if PYTHONPATH=. pytest tests/test_$marker.py -v; then
         print_status "✅ $service_name tests passed"
     else
         print_error "❌ $service_name tests failed"
-        return 1
-    fi
-}
-
-# Run health endpoint tests
-run_health_tests() {
-    print_header "🏥 Running Health Endpoint tests..."
-
-    if pytest tests/test_health.py -v --cov=app.api.health --cov-report=term-missing; then
-        print_status "✅ Health endpoint tests passed"
-    else
-        print_error "❌ Health endpoint tests failed"
         return 1
     fi
 }
@@ -74,7 +62,7 @@ run_service_tests "Embedding Service" "embedding"
 echo ""
 run_service_tests "Milvus Vector DB" "milvus"
 echo ""
-run_service_tests "OpenAI LLM" "openai"
+run_service_tests "OpenAI LLM" "gpt"
 echo ""
 run_service_tests "MongoDB" "mongodb"
 echo ""
@@ -82,8 +70,9 @@ run_service_tests "GCP Storage" "gcp_storage"
 echo ""
 run_service_tests "OCR Service" "ocr"
 echo ""
-run_health_tests
+run_service_tests "Chat Chain main" "chat_chain"
 echo ""
+
 
 # Run all unit tests
 print_header "🔬 Running All Unit Tests"

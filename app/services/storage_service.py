@@ -254,18 +254,19 @@ class StorageService:
             return []
 
     @staticmethod
-    def generate_file_path(project_id: str, file_id: str, filename: str) -> str:
+    def generate_project_file_path(project_id: str, file_id: str, filename: str) -> str:
         """
-        Generate a structured path for file storage.
-
-        Args:
-            project_id: Project ID
-            file_id: Unique file ID
-            filename: Original filename
-
-        Returns:
-            Structured path like: projects/{project_id}/files/{file_id}/{filename}
+        Generate a structured path for a project file.
+        e.g., projects/{project_id}/files/{file_id}/{filename}
         """
-        # Sanitize filename to avoid issues
         safe_filename = filename.replace(" ", "_").replace("/", "_")
         return f"projects/{project_id}/files/{file_id}/{safe_filename}"
+
+    @staticmethod
+    def generate_message_file_path(user_id: str, file_id: str, filename: str) -> str:
+        """
+        Generate a structured path for a message file.
+        e.g., messages/{user_id}/{file_id}/{filename}
+        """
+        safe_filename = filename.replace(" ", "_").replace("/", "_")
+        return f"messages/{user_id}/{file_id}/{safe_filename}"

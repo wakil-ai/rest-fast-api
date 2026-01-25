@@ -1,5 +1,5 @@
 from collections.abc import AsyncGenerator
-from typing import Any, Optional
+from typing import Any
 from dataclasses import dataclass
 
 from app.core.assistants import AssistantConfig
@@ -10,6 +10,7 @@ from app.llms.claude import Claude
 from app.llms.gpt import ChatGPT
 from app.llms.novita import Novita
 from app.retrieval.retrieval_service import RetrievalService
+from app.services.chat_history_service import ChatHistoryService
 from app.services.memory_service import ChatMemoryService
 
 
@@ -34,6 +35,7 @@ class ChatChain:
     def __init__(self):
         self.retrieval_service = RetrievalService()
         self.memory_service = ChatMemoryService()
+        self.chat_history_service = ChatHistoryService()
         self.fallback_llm = ChatGPT()
 
     # Public API
@@ -41,12 +43,12 @@ class ChatChain:
         self,
         user_id: str,
         query: str,
-        chat_history: Optional[list] = None,
+        chat_history: list | None = None,
         stream: bool = settings.STREAM,
-        file_context: Optional[str] = None,
-        project_id: Optional[str] = None,
+        file_ids: list[str] | None = None,
+        project_id: str | None = None,
         assistant: str = "main",
-        model_name: Optional[str] = None,
+        model_name: str | None = None,
     ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
         """
         Generate response using RAG with automatic fallback.
@@ -56,7 +58,7 @@ class ChatChain:
             query: User's question
             chat_history: Previous conversation messages
             stream: Whether to stream the response
-            file_context: Optional file content (legacy support)
+            file_ids: Optional list of file IDs to use as context
             project_id: Optional project ID for dual-context retrieval
             collection_name: Vector DB collection to query
             model_name: Specific model to use
@@ -72,7 +74,7 @@ class ChatChain:
                 user_id=user_id,
                 query=query,
                 chat_history=chat_history,
-                file_context=file_context,
+                file_ids=file_ids,
                 project_id=project_id,
                 collection_name=collection_name,
             )
@@ -114,18 +116,20 @@ class ChatChain:
         self,
         user_id: str,
         query: str,
-        chat_history: Optional[list],
-        file_context: Optional[str],
-        project_id: Optional[str],
+        chat_history: list | None,
+        file_ids: list[str] | None,
+        project_id: str | None,
         collection_name: str,
     ) -> GenerationContext:
         """Prepare all context needed for generation."""
         debug_data = {"retrieved_contents": []}
+        file_context = ""
 
-        # Build query with optional file content
-        merged_query = (
-            f"{query}\n\nFile Content: {file_context}" if file_context else query
-        )
+        if file_ids:
+            for file_id in file_ids:
+                file = self.chat_history_service.get_file_by_id(file_id)
+                if file:
+                    file_context += f"\n\nFile: {file['file_metadata']['file_name']}\n{file['ocr_result']}"
 
         # Retrieve document context
         if project_id:
@@ -134,9 +138,12 @@ class ChatChain:
             )
         else:
             context = await self._retrieve_standard_context(
-                merged_query, collection_name, file_context
+                query, collection_name, file_context
             )
             project_ctx = main_ctx = None
+
+        if file_context:
+            context = f"{file_context}\n\n{context}"
 
         if settings.DEVELOPMENT_MODE:
             debug_data["retrieved_contents"] = context
@@ -190,7 +197,7 @@ class ChatChain:
         return combined, project_context, main_context
 
     async def _retrieve_standard_context(
-        self, query: str, collection_name: str, file_context: Optional[str]
+        self, query: str, collection_name: str, file_context: str | None
     ) -> str:
         """Retrieve standard context from vector DB."""
         context = await self.retrieval_service.retrieve_context(
@@ -204,12 +211,12 @@ class ChatChain:
 
         return context
 
-    def _format_chat_history(self, chat_history: Optional[list]) -> str:
+    def _format_chat_history(self, chat_history: list | None) -> str:
         """Format recent chat history for inclusion in prompt."""
         if not chat_history:
             return ""
 
-        recent = chat_history[-settings.CHAT_HISTORY_LIMIT :]
+        recent = chat_history[-settings.CHAT_HISTORY_LIMIT:]
         lines = ["Previous Conversation History:"]
 
         for idx, entry in enumerate(recent, start=1):
@@ -221,12 +228,12 @@ class ChatChain:
 
     def _build_system_prompt(
         self,
-        project_id: Optional[str],
+        project_id: str | None,
         collection_name: str,
         context: str,
         chat_history: str,
-        project_context: Optional[str] = None,
-        main_context: Optional[str] = None,
+        project_context: str | None = None,
+        main_context: str | None = None,
     ) -> str:
         """Build system prompt from template and context."""
         # Get appropriate template

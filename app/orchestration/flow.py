@@ -185,15 +185,19 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             # Get collection name from assistant configuration
             collection_name = self._get_collection_name(assistant, strategy)
 
-            # Retrieve documents
+            # Main context with multilingual support
+            self.state.retrieval_docs = await self._retrieve_standard_documents(
+                query_translations, strategy, collection_name
+            )
+
+            # Retrieve additional user uploaded documents
             if self.state.project_id:
-                self.state.retrieval_docs = await self._retrieve_project_documents(
-                    query_translations, strategy, collection_name
-                )
-            else:
-                self.state.retrieval_docs = await self._retrieve_standard_documents(
-                    query_translations, strategy, collection_name
-                )
+                project_context = await self._retrieve_project_documents()
+                self.state.retrieval_docs += "\n\nPROJECT FILES:\n" + project_context
+
+            if self.state.file_ids:
+                file_context = await self._get_file_id_context()
+                self.state.retrieval_docs += file_context
 
             await self._emit_progress(
                 ProgressEventType.DOCUMENT_RETRIEVAL,
@@ -369,18 +373,8 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
         return collection_name
 
-    async def _retrieve_project_documents(
-        self, query_translations: dict, strategy: str, collection_name: str
-    ) -> str:
+    async def _retrieve_project_documents(self) -> str:
         """Retrieve documents for project context (dual retrieval)."""
-        # Main context with multilingual support
-        main_docs_list = await self.chat_chain.retrieval_service.retrieve_multilingual(
-            query_translations=query_translations,
-            top_k=settings.TOP_K // 2,
-            search_type=strategy,
-            collection_name=collection_name,
-        )
-
         # Project-specific context
         project_context = (
             await self.chat_chain.retrieval_service.retrieve_project_context(
@@ -391,13 +385,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             )
         )
 
-        main_docs_formatted = await self.chat_chain.retrieval_service._format_results(
-            main_docs_list
-        )
-
-        return (
-            f"PROJECT FILES:\n{project_context}\n\nGENERAL LAWS:\n{main_docs_formatted}"
-        )
+        return project_context
 
     async def _retrieve_standard_documents(
         self, query_translations: dict, strategy: str, collection_name: str
@@ -411,6 +399,16 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         )
 
         return await self.chat_chain.retrieval_service._format_results(documents_list)
+
+    async def _get_file_id_context(self) -> str:
+        """Retrieve documents for provided file IDs."""
+        file_context = ""
+        for file_id in self.state.file_ids:
+            file = self.chat_chain.chat_history_service.get_file_by_id(file_id)
+            if file:
+                file_context += f"\n\nFile: {file['file_metadata']['file_name']}\n{file['ocr_result']}"
+
+        return file_context
 
     async def _set_default_retrieval_strategy(self) -> None:
         """Set default retrieval strategy."""

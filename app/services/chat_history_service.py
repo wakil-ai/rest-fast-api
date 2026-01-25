@@ -16,7 +16,7 @@ class ChatHistoryService:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(ChatHistoryService, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
@@ -68,9 +68,15 @@ class ChatHistoryService:
                 [("message_id", 1)]
             )
 
-            # Files - query by project
+            # Files - query by project, message, user
             self.db_manager.mongo_handler.db[self.files_collection].create_index(
                 [("project_id", 1)]
+            )
+            self.db_manager.mongo_handler.db[self.files_collection].create_index(
+                [("message_id", 1)]
+            )
+            self.db_manager.mongo_handler.db[self.files_collection].create_index(
+                [("user_id", 1)]
             )
 
             # Projects - query by user
@@ -387,6 +393,11 @@ class ChatHistoryService:
             self.feedback_collection, {"session_id": session_id}
         )
 
+        # Delete associated message files
+        self.db_manager.delete_documents(
+            self.files_collection, {"session_id": session_id, "scope": "message"}
+        )
+
         logger.info(f"Deleted session with session_id: {session_id} and its messages")
 
     # MESSAGE MANAGEMENT
@@ -612,15 +623,18 @@ class ChatHistoryService:
     # FILE MANAGEMENT
     def add_file_upload(
         self,
-        project_id: str,
+        user_id: str,
         file_id: str,
         file_url: str,
         ocr_result: str,
         file_metadata: dict,
-        status: str = "completed",
+        status: str,
+        scope: str,
+        project_id: str | None = None,
+        message_id: str | None = None,
     ) -> dict:
-        """Add a file upload record to a project. Uses file_id as _id."""
-        self._validate_project_id(project_id)
+        """Add a file upload record. Uses file_id as _id."""
+        self._validate_user_id(user_id)
 
         if not file_id or not file_id.strip():
             raise ValueError("File ID cannot be empty")
@@ -628,11 +642,12 @@ class ChatHistoryService:
             raise ValueError("File URL cannot be empty")
         if not file_metadata or not isinstance(file_metadata, dict):
             raise ValueError("File metadata must be a valid dictionary")
-
-        # Verify project exists
-        project = self.get_project(project_id)
-        if not project:
-            raise ValueError(f"Project {project_id} not found")
+        if scope not in ["project", "message"]:
+            raise ValueError("Scope must be either 'project' or 'message'")
+        if scope == "project" and not project_id:
+            raise ValueError("Project ID is required for project-scoped files")
+        if scope == "message" and not message_id:
+            raise ValueError("Message ID is required for message-scoped files")
 
         # Check if file exists using _id
         existing_file = self.db_manager.find_documents(
@@ -644,8 +659,12 @@ class ChatHistoryService:
             return existing_file[0]
 
         file_record = {
-            "_id": file_id,  # Use file_id as _id
+            "_id": file_id,
+            "file_id": file_id,
+            "user_id": user_id,
             "project_id": project_id,
+            "message_id": message_id,
+            "scope": scope,
             "file_url": file_url,
             "ocr_result": ocr_result,
             "file_metadata": file_metadata,
@@ -661,15 +680,39 @@ class ChatHistoryService:
         except Exception as e:
             raise ValueError(f"Failed to add file upload record: {str(e)}")
 
-    def get_files(self, project_id: str, limit: int = 50) -> list[dict]:
-        """Retrieve all files for a project."""
-        self._validate_project_id(project_id)
+    def get_files_by_scope(
+        self,
+        project_id: str | None = None,
+        message_ids: list[str] | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Retrieve files by project or message scope."""
+        if not project_id and not message_ids:
+            raise ValueError("Either project_id or message_ids must be provided")
 
-        query = {"project_id": project_id}
+        query = {}
+        if project_id:
+            query["project_id"] = project_id
+            query["scope"] = "project"
+        elif message_ids:
+            query["message_id"] = {"$in": message_ids}
+            query["scope"] = "message"
+
         files = self.db_manager.find_documents(
             self.files_collection, query, limit=limit
         )
-        logger.info(f"Retrieved {len(files)} files for project {project_id}")
+        logger.info(f"Retrieved {len(files)} files")
+        return files
+
+    def get_files_by_user(self, user_id: str, limit: int = 50) -> list[dict]:
+        """Retrieve all message-scoped files for a user."""
+        self._validate_user_id(user_id)
+
+        query = {"user_id": user_id, "scope": "message"}
+        files = self.db_manager.find_documents(
+            self.files_collection, query, limit=limit
+        )
+        logger.info(f"Retrieved {len(files)} message files for user {user_id}")
         return files
 
     def get_file_by_id(self, file_id: str) -> dict | None:
@@ -709,6 +752,24 @@ class ChatHistoryService:
         file = self.get_file_by_id(file_id)
         logger.info(f"Updated file status for file_id: {file_id} to {status}")
         return file
+
+    def update_file_message_id(self, file_id: str, message_id: str) -> None:
+        """Associate a file with a message."""
+        if not file_id or not file_id.strip():
+            raise ValueError("File ID cannot be empty")
+        if not message_id or not message_id.strip():
+            raise ValueError("Message ID cannot be empty")
+
+        updated_count = self.db_manager.update_documents(
+            self.files_collection,
+            {"_id": file_id},
+            {"$set": {"message_id": message_id, "updated_at": datetime.utcnow()}},
+        )
+
+        if updated_count == 0:
+            raise ValueError("File not found or no changes made")
+
+        logger.info(f"Associated file {file_id} with message {message_id}")
 
     def delete_file_upload(self, file_id: str) -> None:
         """Delete a file upload record."""
