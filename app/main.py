@@ -14,19 +14,14 @@ from starlette.middleware.sessions import SessionMiddleware
 # Internal imports
 from app.api import (
     admin,
-    auth,
     chat,
     chat_history,
-    count,
-    files,
-    google_auth,
     health,
     memory,
-    ocr,
     payme,
     retrieval,
     speech_to_text,
-    ws_stt,
+    auth,
 )
 from app.core.config import settings
 from app.core.logger import logger
@@ -148,22 +143,6 @@ def create_app() -> FastAPI:
         dependencies=[Depends(verify_api_key)],
     )
     app.include_router(
-        ocr.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
-    app.include_router(
-        files.router,
-        prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
-    )
-    app.include_router(
-        count.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
-    app.include_router(
-        ws_stt.router,
-        prefix=settings.API_PREFIX,
-    )
-
-    app.include_router(
         memory.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)],
@@ -172,21 +151,14 @@ def create_app() -> FastAPI:
         admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
     )
     # Health check router (no authentication required)
-    app.include_router(health.router, prefix=settings.API_PREFIX)
+    app.include_router(
+        health.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)],
+    )
     # Auth routers without API prefix
-    app.include_router(
-        auth.router,
-    )
-    app.include_router(google_auth.router, prefix=settings.API_PREFIX)
-    # Payme payment routes
-    # Transaction endpoint (no API key - uses Payme merchant auth)
-    # Payment link creation endpoint (requires API key)
-    app.include_router(
-        payme.router,
-        prefix=f"{settings.API_PREFIX}/transaction",
-        tags=["Payme"],
-        # Only payment link creation requires API key, merchant API uses its own auth
-    )
+    app.include_router(auth.router, prefix=settings.API_PREFIX)
+    app.include_router(payme.router, prefix=settings.API_PREFIX)
 
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"], include_in_schema=False)

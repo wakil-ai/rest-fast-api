@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # General
     # App settings
     APP_NAME: str = "WakilAI Chatbot"
-    API_PREFIX: str = "/api"
+    API_PREFIX: str = "/api/v2"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
     DEVELOPMENT_MODE: bool = (

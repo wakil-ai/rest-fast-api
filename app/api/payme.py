@@ -17,7 +17,7 @@ from app.models.payme import (
 )
 from app.services.payme_service import TransactionService
 
-router = APIRouter()
+router = APIRouter(prefix="/transaction", tags=["Payme"])
 transaction_service = TransactionService()
 
 

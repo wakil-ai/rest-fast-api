@@ -309,7 +309,7 @@ class RetrievalService:
 
         is_buxgalter_uz = True if url and "buxgalter.uz" in url else False
         text = await self.clean_text(text) if is_buxgalter_uz else text
-        entry = [f"{'-'*50}", f"Document Content: {self.remove_header_lines(text)}\n"]
+        entry = [f"{'-' * 50}", f"Document Content: {self.remove_header_lines(text)}\n"]
 
         # Add citation
         if hierarchy := metadata.get("hierarchy_path"):

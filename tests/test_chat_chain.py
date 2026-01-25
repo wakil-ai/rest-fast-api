@@ -7,14 +7,13 @@ from app.chains.chat_chain import ChatChain
 
 @pytest.fixture
 def mock_dependencies():
-    with patch("app.chains.chat_chain.RetrievalService") as mock_ret, patch(
-        "app.chains.chat_chain.ChatMemoryService"
-    ) as mock_mem, patch("app.chains.chat_chain.ChatGPT") as mock_gpt, patch(
-        "app.chains.chat_chain.Claude"
-    ) as mock_claude, patch(
-        "app.chains.chat_chain.Novita"
-    ) as mock_novita:
-
+    with (
+        patch("app.chains.chat_chain.RetrievalService") as mock_ret,
+        patch("app.chains.chat_chain.ChatMemoryService") as mock_mem,
+        patch("app.chains.chat_chain.ChatGPT") as mock_gpt,
+        patch("app.chains.chat_chain.Claude") as mock_claude,
+        patch("app.chains.chat_chain.Novita") as mock_novita,
+    ):
         # Setup Instances
         mock_ret_instance = mock_ret.return_value
         mock_mem_instance = mock_mem.return_value

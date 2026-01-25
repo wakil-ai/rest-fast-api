@@ -810,7 +810,9 @@ class ChatHistoryService:
         # 1. Get recent sessions
         query = {"user_id": user_id, "updated_at": {"$gte": cutoff_date}}
         sessions = self.db_manager.find_documents(
-            self.sessions_collection, query, limit=1000  # Reasonable limit
+            self.sessions_collection,
+            query,
+            limit=1000,  # Reasonable limit
         )
 
         if not sessions:

@@ -58,9 +58,9 @@ def test_check_collections_size(handler):
     for col_name in [settings.MILVUS_MAIN_NAME, settings.MILVUS_SOLIQ_ASSISTANT_NAME]:
         res = client.query(collection_name=col_name, output_fields=["count(*)"])
         count = res[0]["count(*)"]
-        assert (
-            count > 50000
-        ), f"Collection {col_name} has {count} rows, expected > 50000"
+        assert count > 50000, (
+            f"Collection {col_name} has {count} rows, expected > 50000"
+        )
 
 
 def test_query_hybrid(handler):
