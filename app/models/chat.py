@@ -38,6 +38,8 @@ class AssistantType(str, Enum):
 
     MAIN = "main"
     SOLIQ = "soliq"
+    MAMURIY_SUD = "mamuriy_sud"
+    SHARTNOMA = "shartnoma"
 
     @classmethod
     def get_available_types(cls):

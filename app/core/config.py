@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     MILVUS_MAIN_NAME: str = "lexuz"
     MILVUS_SOLIQ_ASSISTANT_NAME: str = "soliq"
     MILVUS_PROJECT_FILES: str = "project_files"
+    MILVUS_MAMURIY_SUD: str = "mamuriy_sud"
+    MILVUS_SHARTNOMA: str = "shartnoma"
     MILVUS_URI: str = "http://localhost:19530"
     MILVUS_USER: str | None = None
     MILVUS_PASSWORD: str | None = None
@@ -174,6 +176,8 @@ class Settings(BaseSettings):
     DAILY_CREDITS_LIMIT: int = 100  # Total daily credits per user
     CREDIT_COST_MAIN_ASSISTANT: int = 10  # Credits for main assistant (umumiy)
     CREDIT_COST_SOLIQ_ASSISTANT: int = 15  # Credits for soliq specialized assistant
+    CREDIT_COST_SUD_ASSISTANT: int = 20  # Credits for sud specialized assistant
+    CREDIT_COST_SHARTNOMA_ASSISTANT: int = 20  # Credits for shartnoma specialized assistant
     CREDIT_COST_DEEPRESEARCH: int = 25  # Credits for deep research / agentic RAG
 
     # Payme Payment Configuration
@@ -209,6 +213,18 @@ class Settings(BaseSettings):
                 "collection_name": self.MILVUS_SOLIQ_ASSISTANT_NAME,
                 "credit_cost": self.CREDIT_COST_SOLIQ_ASSISTANT,
                 "description": "Tax specialized assistant",
+            },
+            "mamuriy_sud": {
+                "name": "mamuriy_sud",
+                "collection_name": self.MILVUS_MAMURIY_SUD,
+                "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
+                "description": "Administrative court specialized assistant",
+            },
+            "shartnoma": {
+                "name": "shartnoma",
+                "collection_name": self.MILVUS_SHARTNOMA,
+                "credit_cost": self.CREDIT_COST_SHARTNOMA_ASSISTANT,
+                "description": "Contract specialized assistant",
             },
             "deepresearch": {
                 "name": "deepresearch",

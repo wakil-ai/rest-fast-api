@@ -261,10 +261,13 @@ class ChatChain:
         if settings.DEVELOPMENT_MODE:
             yield gen_context.debug_data
 
+        buffer: list[str] = []
+
         try:
             async for chunk in self._stream_from_llm(
                 llm, query, gen_context.system_prompt
             ):
+                buffer.append(chunk)
                 yield chunk
         except Exception:
             logger.warning(
@@ -278,6 +281,12 @@ class ChatChain:
             except Exception:
                 logger.error("[ChatChain] Fallback LLM failed", exc_info=True)
                 yield "Sorry, I couldn't generate an answer at the moment."
+
+        # Log full response for debugging
+        full_response = "".join(buffer)
+        logger.debug(
+            f"[ChatChain][FINAL_STREAM_RESPONSE]\n {full_response}",
+        )
 
     async def _generate_non_stream(
         self, llm: LLM, query: str, gen_context: GenerationContext

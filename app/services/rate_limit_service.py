@@ -5,7 +5,7 @@ from app.core.config import settings
 from app.core.logger import logger
 from app.db.mongo_handler import MongoHandler
 
-RateLimitAssistantType = Literal["main", "soliq", "deepresearch"]
+RateLimitAssistantType = Literal["main", "soliq", "deepresearch", "mamuriy_sud", "shartnoma"]
 
 
 class RateLimitService:
@@ -40,10 +40,13 @@ class RateLimitService:
 
     def _get_credit_cost(self, assistant_type: RateLimitAssistantType) -> int:
         """Get credit cost for a specific assistant type."""
+        # TODO replace with AssistantConfig method
         cost_map = {
             "main": settings.CREDIT_COST_MAIN_ASSISTANT,
             "soliq": settings.CREDIT_COST_SOLIQ_ASSISTANT,
             "deepresearch": settings.CREDIT_COST_DEEPRESEARCH,
+            "mamuriy_sud": settings.CREDIT_COST_SUD_ASSISTANT,
+            "shartnoma": settings.CREDIT_COST_SUD_ASSISTANT,
         }
         return cost_map[assistant_type]
 
