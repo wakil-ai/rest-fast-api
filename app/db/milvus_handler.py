@@ -23,6 +23,8 @@ class MilvusHandler(VectorDBHandler):
             settings.MILVUS_MAIN_NAME,
             settings.MILVUS_SOLIQ_ASSISTANT_NAME,
             settings.MILVUS_PROJECT_FILES,
+            settings.MILVUS_MAMURIY_SUD,
+            settings.MILVUS_SHARTNOMA,
         ]
         self.client = MilvusClient(
             uri=settings.MILVUS_URI,
