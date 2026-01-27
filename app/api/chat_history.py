@@ -278,7 +278,7 @@ file_manager = FileManager()
 
 
 @router.post(
-    "/files/{project_id}",
+    "/upload/files/project/{project_id}",
     status_code=status.HTTP_201_CREATED,
     response_model=FileUploadResponse,
 )
@@ -408,7 +408,7 @@ def delete_file_upload(file_id: str) -> None:
     return
 
 
-@router.post("files/upload", summary="Upload a file")
+@router.post("/upload/files/message", summary="Upload a file")
 async def upload_file_message(
     file: UploadFile = File(...),
     user_id: str = Form(...),
@@ -427,7 +427,7 @@ async def upload_file_message(
     return {"file_id": response.file_id}
 
 
-@router.patch("files/{file_id}/message", summary="Associate a file with a message")
+@router.patch("/files/{file_id}/message", summary="Associate a file with a message")
 async def associate_file_with_message(
     file_id: str,
     message_id: str = Body(..., embed=True),
