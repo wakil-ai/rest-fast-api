@@ -274,21 +274,23 @@ def get_feedback(message_id: str):
 
 
 # FILE MANAGEMENT
-file_manager = FileManager()
-
-
 @router.post(
     "/upload/files/project/{project_id}",
     status_code=status.HTTP_201_CREATED,
     response_model=FileUploadResponse,
 )
 async def upload_file(
-    project_id: str, file: UploadFile = File(...)
+    project_id: str,
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
 ) -> FileUploadResponse:
     """
     Upload file to project with OCR processing and storage
     """
-    status_code, result = await file_manager.upload_file_to_project(file, project_id)
+    # FileManager.upload_file_to_project requires `user_id`; accept it via multipart form
+    status_code, result = await file_manager.upload_file_to_project(
+        file=file, project_id=project_id, user_id=user_id
+    )
 
     if status_code == 200:
         return result
@@ -412,7 +414,7 @@ def delete_file_upload(file_id: str) -> None:
 async def upload_file_message(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-):
+) -> FileUploadResponse:
     """
     Upload a file to be associated with a message later.
     """
@@ -424,7 +426,8 @@ async def upload_file_message(
     if status != 200:
         raise HTTPException(status_code=status, detail=response)
 
-    return {"file_id": response.file_id}
+    # Return the full FileUploadResponse model so frontend gets all metadata
+    return response
 
 
 @router.patch("/files/{file_id}/message", summary="Associate a file with a message")
@@ -443,7 +446,7 @@ async def associate_file_with_message(
     return {"message": "File associated with message successfully"}
 
 
-@router.get("files/user/{user_id}", summary="List user's uploaded files")
+@router.get("/files/user/{user_id}", summary="List user's uploaded files")
 async def list_user_files(user_id: str):
     """
     Retrieve a list of files uploaded by a specific user.
@@ -452,7 +455,7 @@ async def list_user_files(user_id: str):
     return files
 
 
-@router.get("files/message/{message_id}", summary="Get file processing status")
+@router.get("/files/message/{message_id}", summary="Get file processing status")
 async def get_message_file_status(message_id: str):
     """
     Get the processing status of files associated with a specific message.
