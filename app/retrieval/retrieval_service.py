@@ -39,17 +39,43 @@ class RetrievalService:
         alpha: float = settings.ALPHA,
         search_type: str = "hybrid",
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        file_context: str | None = None,
     ) -> str:
         """Retrieve and format top documents by combining hybrid search and metadata reranking results."""
         try:
-            search_results = await self._retrieve_raw_documents(
-                query=query,
-                top_k=top_k,
-                alpha=alpha,
-                search_type=search_type,
-                collection_name=collection_name,
-                expr=None,
-            )
+            if file_context:
+                half_k = top_k // 2
+                query_results = await self._retrieve_raw_documents(
+                    query=query,
+                    top_k=half_k,
+                    alpha=alpha,
+                    search_type=search_type,
+                    collection_name=collection_name,
+                    expr=None,
+                )
+                file_context_results = await self._retrieve_raw_documents(
+                    query=file_context,
+                    top_k=top_k - half_k,
+                    alpha=alpha,
+                    search_type=search_type,
+                    collection_name=collection_name,
+                    expr=None,
+                )
+                combined_results = query_results + file_context_results
+                unique_results = self._deduplicate_documents(combined_results)
+                # Sort by score descending and take top_k
+                search_results = sorted(
+                    unique_results, key=lambda x: x.get("score", 0), reverse=True
+                )[:top_k]
+            else:
+                search_results = await self._retrieve_raw_documents(
+                    query=query,
+                    top_k=top_k,
+                    alpha=alpha,
+                    search_type=search_type,
+                    collection_name=collection_name,
+                    expr=None,
+                )
             return await self._format_results(search_results)
         except Exception as e:
             logger.error(f"[RetrievalService] Retrieval failed: {e}", exc_info=True)

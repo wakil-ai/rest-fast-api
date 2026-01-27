@@ -129,12 +129,12 @@ class ChatChain:
             for file_id in file_ids:
                 file = self.chat_history_service.get_file_by_id(file_id)
                 if file:
-                    file_context += f"\n\nFile: {file['file_metadata']['file_name']}\n{file['ocr_result']}"
+                    file_context += f"\n\nFile Context\n{file['ocr_result']}"
 
         # Retrieve document context
         if project_id:
             context, project_ctx, main_ctx = await self._retrieve_project_context(
-                query, project_id, user_id, collection_name
+                query, project_id, user_id, collection_name, file_context
             )
         else:
             context = await self._retrieve_standard_context(
@@ -177,7 +177,7 @@ class ChatChain:
         )
 
     async def _retrieve_project_context(
-        self, query: str, project_id: str, user_id: str, collection_name: str
+        self, query: str, project_id: str, user_id: str, collection_name: str, file_context: str | None = None
     ) -> tuple[str, str, str]:
         """Retrieve context from both project files and general knowledge."""
         project_context = await self.retrieval_service.retrieve_project_context(
@@ -191,6 +191,7 @@ class ChatChain:
             query=query,
             top_k=settings.TOP_K,
             collection_name=collection_name,
+            file_context=file_context if file_context else None,
         )
 
         combined = f"PROJECT FILES:\n{project_context}\n\nGENERAL LAWS:\n{main_context}"
@@ -204,6 +205,7 @@ class ChatChain:
             query=query,
             top_k=settings.TOP_K,
             collection_name=collection_name,
+            file_context=file_context if file_context else None,
         )
 
         if file_context:
