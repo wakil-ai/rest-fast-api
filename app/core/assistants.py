@@ -1,11 +1,7 @@
 from typing import Any
 
 from app.core.config import settings
-from app.chains.prompts import (
-    PROJECT_FILE_PROMPT,
-    PROMPT,
-    SOLIQ_PROMPT,
-)
+from app.chains.prompts import *
 
 
 class AssistantConfig:
@@ -78,7 +74,7 @@ class AssistantConfig:
             "main": PROMPT,
             "umumiy": PROMPT,  # TODO: Need to make 'umumiy' alias to 'main'
             "soliq": SOLIQ_PROMPT,
-            "mamuriy_sud": PROMPT,  # TODO:  Add specialized prompt for 'mamuriy_sud' assistant
+            "mamuriy_sud": MAMURIY_ASSISTANT_PROMPT,
             "shartnoma": PROMPT,  # TODO:  Add specialized prompt for 'shartnoma' assistant
             "project_file": PROJECT_FILE_PROMPT,
         }

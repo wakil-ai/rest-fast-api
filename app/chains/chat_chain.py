@@ -67,8 +67,6 @@ class ChatChain:
             String response, async generator, or tuple with debug data
         """
         try:
-            collection_name = AssistantConfig.get_collection_name(assistant)
-
             # Prepare context
             gen_context = await self._prepare_generation_context(
                 user_id=user_id,
@@ -76,7 +74,7 @@ class ChatChain:
                 chat_history=chat_history,
                 file_ids=file_ids,
                 project_id=project_id,
-                collection_name=collection_name,
+                assistant=assistant,
             )
 
             # Select LLM
@@ -119,10 +117,11 @@ class ChatChain:
         chat_history: list | None,
         file_ids: list[str] | None,
         project_id: str | None,
-        collection_name: str,
+        assistant: str,
     ) -> GenerationContext:
         """Prepare all context needed for generation."""
         debug_data = {"retrieved_contents": []}
+        collection_name = AssistantConfig.get_collection_name(assistant)
         file_context = ""
 
         if file_ids:
@@ -160,7 +159,7 @@ class ChatChain:
         # Build system prompt
         system_prompt = self._build_system_prompt(
             project_id,
-            collection_name,
+            assistant,
             context,
             chat_history_text,
             project_ctx,
@@ -231,7 +230,7 @@ class ChatChain:
     def _build_system_prompt(
         self,
         project_id: str | None,
-        collection_name: str,
+        assistant: str,
         context: str,
         chat_history: str,
         project_context: str | None = None,
@@ -247,12 +246,7 @@ class ChatChain:
                 chat_history=chat_history,
             )
 
-        assistant_type = (
-            "soliq"
-            if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME
-            else "main"
-        )
-        template = AssistantConfig.get_assistant_prompt_template(assistant_type)
+        template = AssistantConfig.get_assistant_prompt_template(assistant)
         return template.format(context=context, chat_history=chat_history)
 
     # Response Generation
