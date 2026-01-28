@@ -5,6 +5,8 @@ from app.core.config import settings
 from app.core.logger import logger
 from app.db.db_manager import DBManager
 from app.retrieval.embedding_manager import EmbeddingManager
+from app.services.storage_service import StorageService
+from app.utils.encoding import token_store
 
 
 class RetrievalService:
@@ -13,6 +15,9 @@ class RetrievalService:
     def __init__(self):
         self.db_manager = DBManager()
         self.embedding_manager = EmbeddingManager()
+        self.gcp_service = StorageService()
+        
+        self.max_characters_preview = 2000  # Max characters to preview from GCP files
 
     async def clean_text(self, text: str) -> str:
         # Remove markdown bold (**) and italics (*)
@@ -55,7 +60,7 @@ class RetrievalService:
                 )
                 file_context_results = await self._retrieve_raw_documents(
                     query=file_context,
-                    top_k=top_k - half_k,
+                    top_k=top_k,
                     alpha=alpha,
                     search_type=search_type,
                     collection_name=collection_name,
@@ -76,6 +81,10 @@ class RetrievalService:
                     collection_name=collection_name,
                     expr=None,
                 )
+            
+            if collection_name == settings.MILVUS_SHARTNOMA:
+                return await self._format_contract_results(search_results)
+            
             return await self._format_results(search_results)
         except Exception as e:
             logger.error(f"[RetrievalService] Retrieval failed: {e}", exc_info=True)
@@ -298,6 +307,43 @@ class RetrievalService:
             }
             for doc in documents
         ]
+        
+    async def _download_gcp_file(self, blob_path: str) -> str:
+        """Download file content from GCP given its URL."""
+        gcp_content = self.gcp_service.download_file(blob_path)
+        if gcp_content:
+            return gcp_content.decode("utf-8")[:self.max_characters_preview]  # Limit to first 1000 chars
+        return ""
+        
+    async def _format_contract_results(self, documents: list[dict[str, Any]]) -> str:
+        """Format contract documents into a readable string."""
+        formatted_entries = []
+        seen_content = set()
+
+        for doc in documents[:5]:  # Limit to top 5 documents
+            entry = f"{'-' * 50}\n"
+            metadata = doc.get("metadata", {})
+            if not metadata.get("owner") == "wakilai":
+                continue 
+            
+            entry += f"Summary:\n" + metadata.get("text", "") 
+            
+            # Add Preview
+            gcp_url = metadata.get("gcs_md_path", "")
+            preview_content = await self._download_gcp_file(gcp_url)
+            
+            signed_url = self.gcp_service.get_signed_url(gcp_url)
+            url = f"{settings.HOST_URL}/contracts/{token_store.encode(signed_url)}"
+            
+            entry += f"\n\Preview:\n {preview_content}\n"
+            entry += f"\n\nSource URL: {url}\n"
+
+            if entry not in seen_content:
+                seen_content.add(entry)
+                formatted_entries.append(entry)
+
+        return "\n".join(formatted_entries)
+        
 
     async def _format_results(self, documents: list[dict[str, Any]]) -> str:
         """Format documents into a readable string."""

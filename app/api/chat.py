@@ -57,7 +57,6 @@ async def ask_question(request: ChatRequest):
             query=request.query,
             chat_history=request.chat_history,
             stream=should_stream,
-            project_id=request.project_id,
             file_ids=request.file_ids,
             assistant=assistant_name,
             model_name=model_name,

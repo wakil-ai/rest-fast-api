@@ -17,12 +17,9 @@ from app.services.memory_service import ChatMemoryService
 @dataclass
 class GenerationContext:
     """Encapsulates all context needed for response generation."""
-
     context: str
     system_prompt: str
     chat_history: str
-    debug_data: dict[str, Any]
-
 
 class ChatChain:
     """
@@ -46,7 +43,6 @@ class ChatChain:
         chat_history: list | None = None,
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
-        project_id: str | None = None,
         assistant: str = "main",
         model_name: str | None = None,
     ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
@@ -59,7 +55,6 @@ class ChatChain:
             chat_history: Previous conversation messages
             stream: Whether to stream the response
             file_ids: Optional list of file IDs to use as context
-            project_id: Optional project ID for dual-context retrieval
             collection_name: Vector DB collection to query
             model_name: Specific model to use
 
@@ -73,7 +68,6 @@ class ChatChain:
                 query=query,
                 chat_history=chat_history,
                 file_ids=file_ids,
-                project_id=project_id,
                 assistant=assistant,
             )
 
@@ -116,54 +110,36 @@ class ChatChain:
         query: str,
         chat_history: list | None,
         file_ids: list[str] | None,
-        project_id: str | None,
         assistant: str,
     ) -> GenerationContext:
         """Prepare all context needed for generation."""
-        debug_data = {"retrieved_contents": []}
+        # Get collection name with assistant config
         collection_name = AssistantConfig.get_collection_name(assistant)
+        
+        # Collect file context if any
         file_context = ""
-
         if file_ids:
             for file_id in file_ids:
                 file = self.chat_history_service.get_file_by_id(file_id)
                 if file:
                     file_context += f"\n\nFile Context\n{file['ocr_result']}"
 
-        # Retrieve document context
-        if project_id:
-            context, project_ctx, main_ctx = await self._retrieve_project_context(
-                query, project_id, user_id, collection_name, file_context
-            )
-        else:
-            context = await self._retrieve_standard_context(
-                query, collection_name, file_context
-            )
-            project_ctx = main_ctx = None
-
-        if file_context:
-            context = f"{file_context}\n\n{context}"
-
-        if settings.DEVELOPMENT_MODE:
-            debug_data["retrieved_contents"] = context
+        context = await self._retrieve_context(
+            query=query,
+            collection_name=collection_name,
+            file_context=file_context,
+        )
 
         # Build chat history with memory
         chat_history_text = self._format_chat_history(chat_history)
         memory_text = await self.memory_service.search_memory(user_id, query)
-
-        if chat_history_text and memory_text:
-            chat_history_text = f"{chat_history_text}\n{memory_text}"
-        elif memory_text:
-            chat_history_text = memory_text
+        history_text = "\n".join(filter(None, [chat_history_text, memory_text]))
 
         # Build system prompt
         system_prompt = self._build_system_prompt(
-            project_id,
             assistant,
             context,
-            chat_history_text,
-            project_ctx,
-            main_ctx,
+            history_text,        
         )
 
         logger.debug(f"[ChatChain] System Prompt: {system_prompt}")
@@ -172,34 +148,12 @@ class ChatChain:
             context=context,
             system_prompt=system_prompt,
             chat_history=chat_history_text,
-            debug_data=debug_data,
         )
 
-    async def _retrieve_project_context(
-        self, query: str, project_id: str, user_id: str, collection_name: str, file_context: str | None = None
-    ) -> tuple[str, str, str]:
-        """Retrieve context from both project files and general knowledge."""
-        project_context = await self.retrieval_service.retrieve_project_context(
-            query=query,
-            project_id=project_id,
-            user_id=user_id,
-            top_k=settings.TOP_K // 2,
-        )
-
-        main_context = await self.retrieval_service.retrieve_context(
-            query=query,
-            top_k=settings.TOP_K,
-            collection_name=collection_name,
-            file_context=file_context if file_context else None,
-        )
-
-        combined = f"PROJECT FILES:\n{project_context}\n\nGENERAL LAWS:\n{main_context}"
-        return combined, project_context, main_context
-
-    async def _retrieve_standard_context(
+    async def _retrieve_context(
         self, query: str, collection_name: str, file_context: str | None
     ) -> str:
-        """Retrieve standard context from vector DB."""
+        """Retrieve context from vector DB."""
         context = await self.retrieval_service.retrieve_context(
             query=query,
             top_k=settings.TOP_K,
@@ -229,23 +183,11 @@ class ChatChain:
 
     def _build_system_prompt(
         self,
-        project_id: str | None,
         assistant: str,
         context: str,
         chat_history: str,
-        project_context: str | None = None,
-        main_context: str | None = None,
     ) -> str:
         """Build system prompt from template and context."""
-        # Get appropriate template
-        if project_id:
-            template = AssistantConfig.get_assistant_prompt_template("project_file")
-            return template.format(
-                project_context=project_context,
-                main_context=main_context,
-                chat_history=chat_history,
-            )
-
         template = AssistantConfig.get_assistant_prompt_template(assistant)
         return template.format(context=context, chat_history=chat_history)
 
@@ -254,9 +196,6 @@ class ChatChain:
         self, llm: LLM, query: str, gen_context: GenerationContext
     ) -> AsyncGenerator[str, None]:
         """Generate streaming response with fallback."""
-        if settings.DEVELOPMENT_MODE:
-            yield gen_context.debug_data
-
         buffer: list[str] = []
 
         try:
@@ -305,8 +244,6 @@ class ChatChain:
         response = self._clean_text(response)
         logger.info(f"[DEBUG] LLM full response: {response}")
 
-        if settings.DEVELOPMENT_MODE:
-            return response, gen_context.debug_data
         return response
 
     async def _stream_from_llm(
@@ -342,14 +279,11 @@ class ChatChain:
             text = text.replace(old, new)
         return text
 
-    def _create_error_response(
-        self, stream: bool, debug_data: dict[str, Any]
-    ) -> str | AsyncGenerator[str, None]:
+    def _create_error_response(self, stream: bool) -> str | AsyncGenerator[str, None]:
         """Create error response in appropriate format."""
         error_msg = "Sorry, I couldn't generate an answer at the moment."
 
         if stream:
-
             async def error_gen():
                 yield error_msg
 

@@ -41,9 +41,8 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v2"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
-    DEVELOPMENT_MODE: bool = (
-        False  # Enable development mode to send retrieved contents and logs to UI
-    )
+    DEVELOPMENT_MODE: bool = False
+    HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Enable tracing for agents and crews
 
     # Memory Service API Key

@@ -119,7 +119,6 @@ class ChatService:
         query: str,
         chat_history: list[MessagePair] | None = None,
         stream: bool = settings.STREAM,
-        project_id: str | None = None,
         file_ids: list[str] | None = None,
         assistant: str = "main",
         model_name: str | None = None,
@@ -132,7 +131,6 @@ class ChatService:
             query: User's question
             chat_history: Previous conversation history
             stream: Enable streaming response
-            project_id: Project identifier
             file_ids: List of file IDs to use as context
             assistant: Assistant name
             model_name: Optional model name for generation
@@ -151,7 +149,6 @@ class ChatService:
                 query=query,
                 chat_history=chat_history,
                 stream=stream,
-                project_id=project_id,
                 file_ids=file_ids,
                 assistant=assistant,
                 model_name=model_name,

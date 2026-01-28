@@ -70,9 +70,6 @@ class ChatRequest(BaseModel):
     assistant: AssistantType | None = Field(
         default=AssistantType.MAIN, description="Assistant type: main or soliq"
     )
-    project_id: str | None = Field(
-        default=None, description="Optional project ID to search within project files"
-    )
     file_ids: list[str] | None = Field(
         default=None, description="Optional list of file IDs to use as context"
     )
