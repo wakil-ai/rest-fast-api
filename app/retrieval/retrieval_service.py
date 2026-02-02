@@ -9,7 +9,6 @@ from app.core.logger import logger
 from app.db.db_manager import DBManager
 from app.retrieval.embedding_manager import EmbeddingManager
 from app.services.storage_service import StorageService
-from app.utils.encoding import token_store
 
 
 class RetrievalService:
@@ -312,15 +311,6 @@ class RetrievalService:
             }
             for doc in documents
         ]
-
-    async def _download_gcp_file(self, blob_path: str) -> str:
-        """Download file content from GCP given its URL."""
-        gcp_content = self.gcp_service.download_file(blob_path)
-        if gcp_content:
-            return gcp_content.decode("utf-8")[
-                : self.max_characters_preview
-            ]  # Limit to first 1000 chars
-        return ""
     
     async def md_path_to_docx_gcs_path(self, md_path: str) -> str:
         """
@@ -358,7 +348,7 @@ class RetrievalService:
 
         Notes:
         - The LLM should NOT see previews or links.
-        - The client should receive up to 3 docx links as attachments.
+        - The client should receive up to 5 docx links as attachments.
         """
 
         formatted_entries: list[str] = []
@@ -366,7 +356,7 @@ class RetrievalService:
         seen_entries: set[str] = set()
         seen_docx_paths: set[str] = set()
 
-        for doc in documents[:3]:
+        for doc in documents[:5]: # TODO: get it from settings config
             metadata = doc.get("metadata", {})
             hierarchy_path = metadata.get("hierarchy_path", "")
             if metadata.get("owner") != "wakilai":
