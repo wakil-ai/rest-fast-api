@@ -85,6 +85,11 @@ class ChatResponse(BaseModel):
         default=None, description="Retrieved documents (dev mode only)"
     )
 
+    attachments: list[dict[str, str]] | None = Field(
+        default=None,
+        description="Optional attachments (e.g., shartnoma docx links)",
+    )
+
 
 class ModelInfoResponse(BaseModel):
     """

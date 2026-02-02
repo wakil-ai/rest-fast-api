@@ -404,13 +404,14 @@ class ChatHistoryService:
     def add_message(
         self,
         session_id: str,
-        message_id: str,
-        content: dict,
+        message_id: str | None,
+        content: dict | BaseModel,
         metadata: dict | None = None,
     ) -> dict:
         """Add a message to a session. Uses message_id as _id."""
         self._validate_session_id(session_id)
-        if not message_id or not message_id.strip():
+        message_id = message_id or generate_short_id("msg-")
+        if not message_id.strip():
             raise ValueError("Message ID cannot be empty")
 
         # Get session to retrieve user_id

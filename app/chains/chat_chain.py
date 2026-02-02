@@ -17,9 +17,12 @@ from app.services.memory_service import ChatMemoryService
 @dataclass
 class GenerationContext:
     """Encapsulates all context needed for response generation."""
+
     context: str
     system_prompt: str
     chat_history: str
+    attachments: list[dict[str, Any]]
+
 
 class ChatChain:
     """
@@ -76,9 +79,11 @@ class ChatChain:
 
             # Generate response
             if stream:
-                return self._generate_stream(llm, query, gen_context)
+                return self._generate_stream(llm, query, gen_context, assistant)
             else:
-                return await self._generate_non_stream(llm, query, gen_context)
+                return await self._generate_non_stream(
+                    llm, query, gen_context, assistant
+                )
 
         except Exception as e:
             logger.error(f"[ChatChain] Generation failed: {e}", exc_info=True)
@@ -115,7 +120,7 @@ class ChatChain:
         """Prepare all context needed for generation."""
         # Get collection name with assistant config
         collection_name = AssistantConfig.get_collection_name(assistant)
-        
+
         # Collect file context if any
         file_context = ""
         if file_ids:
@@ -124,7 +129,7 @@ class ChatChain:
                 if file:
                     file_context += f"\n\nFile Context\n{file['ocr_result']}"
 
-        context = await self._retrieve_context(
+        context, attachments = await self._retrieve_context(
             query=query,
             collection_name=collection_name,
             file_context=file_context,
@@ -139,7 +144,7 @@ class ChatChain:
         system_prompt = self._build_system_prompt(
             assistant,
             context,
-            history_text,        
+            history_text,
         )
 
         logger.debug(f"[ChatChain] System Prompt: {system_prompt}")
@@ -148,13 +153,14 @@ class ChatChain:
             context=context,
             system_prompt=system_prompt,
             chat_history=chat_history_text,
+            attachments=attachments,
         )
 
     async def _retrieve_context(
         self, query: str, collection_name: str, file_context: str | None
-    ) -> str:
+    ) -> tuple[str, list[dict[str, Any]]]:
         """Retrieve context from vector DB."""
-        context = await self.retrieval_service.retrieve_context(
+        context, attachments = await self.retrieval_service.retrieve_context(
             query=query,
             top_k=settings.TOP_K,
             collection_name=collection_name,
@@ -164,14 +170,14 @@ class ChatChain:
         if file_context:
             context = f"{context}\nFile Content:\n{file_context}"
 
-        return context
+        return context, attachments
 
     def _format_chat_history(self, chat_history: list | None) -> str:
         """Format recent chat history for inclusion in prompt."""
         if not chat_history:
             return ""
 
-        recent = chat_history[-settings.CHAT_HISTORY_LIMIT:]
+        recent = chat_history[-settings.CHAT_HISTORY_LIMIT :]
         lines = ["Previous Conversation History:"]
 
         for idx, entry in enumerate(recent, start=1):
@@ -193,7 +199,7 @@ class ChatChain:
 
     # Response Generation
     async def _generate_stream(
-        self, llm: LLM, query: str, gen_context: GenerationContext
+        self, llm: LLM, query: str, gen_context: GenerationContext, assistant: str
     ) -> AsyncGenerator[str, None]:
         """Generate streaming response with fallback."""
         buffer: list[str] = []
@@ -223,9 +229,13 @@ class ChatChain:
             f"[ChatChain][FINAL_STREAM_RESPONSE]\n {full_response}",
         )
 
+        # For shartnoma assistant, emit docx links at the end (separate from the text stream).
+        if assistant == "shartnoma" and gen_context.attachments:
+            yield {"type": "attachments", "attachments": gen_context.attachments}
+
     async def _generate_non_stream(
-        self, llm: LLM, query: str, gen_context: GenerationContext
-    ) -> str | tuple[str, dict[str, Any]]:
+        self, llm: LLM, query: str, gen_context: GenerationContext, assistant: str
+    ) -> tuple[str, dict[str, Any]]:
         """Generate non-streaming response with fallback."""
         try:
             response = await self._get_response(llm, query, gen_context.system_prompt)
@@ -244,7 +254,14 @@ class ChatChain:
         response = self._clean_text(response)
         logger.info(f"[DEBUG] LLM full response: {response}")
 
-        return response
+        meta: dict[str, Any] = {
+            "attachments": gen_context.attachments if assistant == "shartnoma" else [],
+        }
+
+        if settings.DEVELOPMENT_MODE:
+            meta["retrieved_contents"] = gen_context.context
+
+        return response, meta
 
     async def _stream_from_llm(
         self, llm: LLM, user_prompt: str, system_prompt: str
@@ -284,6 +301,7 @@ class ChatChain:
         error_msg = "Sorry, I couldn't generate an answer at the moment."
 
         if stream:
+
             async def error_gen():
                 yield error_msg
 

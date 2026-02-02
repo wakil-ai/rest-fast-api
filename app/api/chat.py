@@ -65,11 +65,14 @@ async def ask_question(request: ChatRequest):
         if should_stream:
             return chat_service.create_streaming_response(response)
 
-        if settings.DEVELOPMENT_MODE and isinstance(response, tuple):
-            answer, debug_data = response
+        if isinstance(response, tuple):
+            answer, meta = response
             return ChatResponse(
                 answer=answer,
-                retrieved_contents=debug_data.get("retrieved_contents"),
+                retrieved_contents=meta.get("retrieved_contents")
+                if settings.DEVELOPMENT_MODE
+                else None,
+                attachments=meta.get("attachments") or None,
             )
 
         return ChatResponse(answer=response)

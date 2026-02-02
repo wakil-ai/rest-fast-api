@@ -211,6 +211,18 @@ def delete_session(session_id: str) -> None:
 @handle_service_error
 def add_message(request: MessageCreateRequest) -> MessageCreateResponse:
     """Add a message to a session. Only session_id is required."""
+    # Ensure the session exists (some clients post messages before explicitly creating a session).
+    if not chat_history_service.get_session(session_id=request.session_id):
+        user_id = (
+            request.user_id
+            or (request.metadata or {}).get("user_id")
+            or (request.metadata or {}).get("userId")
+            or "anonymous"
+        )
+        chat_history_service.create_session(
+            user_id=user_id, session_id=request.session_id
+        )
+
     message_info = chat_history_service.add_message(
         session_id=request.session_id,
         message_id=request.message_id,

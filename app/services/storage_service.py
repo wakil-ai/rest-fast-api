@@ -95,7 +95,11 @@ class StorageService:
             logger.error(f"[StorageService] Failed to upload file: {str(e)}")
             raise
 
-    def get_signed_url(self, file_path: str, expiration_minutes: int = 60) -> str:
+    def get_signed_url(
+        self,
+        file_path: str,
+        expiration_minutes: int = 60,
+    ) -> str:
         """
         Generate a signed URL for private file access.
 
@@ -111,12 +115,19 @@ class StorageService:
             url = blob.generate_signed_url(
                 version="v4",
                 expiration=timedelta(minutes=expiration_minutes),
-                method="GET",
+                method="GET"
             )
             return url
         except Exception as e:
             logger.error(f"[StorageService] Failed to generate signed URL: {str(e)}")
             raise
+
+    def get_public_url(self, file_path: str) -> str:
+        """Return the public URL form for an object path.
+
+        Note: Access still depends on bucket/object permissions.
+        """
+        return f"https://storage.googleapis.com/{self.bucket.name}/{file_path}"
 
     def delete_file(self, file_path: str) -> bool:
         """

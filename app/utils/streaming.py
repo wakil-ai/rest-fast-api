@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncGenerator
+from typing import Optional
 
 
 async def format_streaming_response(
@@ -26,8 +27,8 @@ async def format_streaming_response(
         async for item in response_generator:
             # Handle debug data (sent as dict)
             if isinstance(item, dict):
-                # Check if this is a progress or chunk event
-                if item.get("type") in ["progress", "chunk"]:
+                # Pass through supported structured events.
+                if item.get("type") in ["progress", "chunk", "attachments"]:
                     yield f"data: {json.dumps(item)}\n\n"
                 else:
                     debug_event = {"type": "debug", "data": item}
@@ -48,7 +49,7 @@ async def format_streaming_response(
 
 
 async def format_progress_event(
-    event_type: str, status: str, message: str, details: dict = None
+    event_type: str, status: str, message: str, details: Optional[dict] = None
 ) -> dict:
     """
     Format a progress event for streaming.

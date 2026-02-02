@@ -21,8 +21,7 @@ from app.api import (
     payme,
     retrieval,
     speech_to_text,
-    auth,
-    utils
+    auth
 )
 from app.core.config import settings
 from app.core.logger import logger
@@ -160,7 +159,6 @@ def create_app() -> FastAPI:
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
     app.include_router(payme.router, prefix=settings.API_PREFIX)
-    app.include_router(utils.router) # /contracts/{file_id}
 
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"], include_in_schema=False)

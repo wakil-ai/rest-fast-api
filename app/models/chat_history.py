@@ -117,6 +117,10 @@ class MessageContent(BaseModel):
 
 
 class MessageCreateRequest(BaseModel):
+    user_id: str | None = Field(
+        None,
+        description="Optional user_id to auto-create the session if it doesn't exist",
+    )
     session_id: str = Field(..., description="Session ID (only field required)")
     message_id: str | None = Field(
         None, description="Optional Message ID (auto-generated if missing)"

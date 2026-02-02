@@ -75,7 +75,7 @@ class AssistantConfig:
             "umumiy": PROMPT,  # TODO: Need to make 'umumiy' alias to 'main'
             "soliq": SOLIQ_PROMPT,
             "mamuriy_sud": MAMURIY_ASSISTANT_PROMPT,
-            "shartnoma": PROMPT,  # TODO:  Add specialized prompt for 'shartnoma' assistant
+            "shartnoma": SHARTNOMA_PROMPT,
             "project_file": PROJECT_FILE_PROMPT,
         }
         if assistant_name not in prompts:

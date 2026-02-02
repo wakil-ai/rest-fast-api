@@ -27,7 +27,7 @@ docker volume create mongodb_data
 
 # 3 Run the MongoDB Container:
 docker run -d \
-  --name adliya-mongodb \
+  --name wakilai-mongodb \
   -p 27017:27017 \
   -v mongodb_data:/data/db \
   -e MONGO_INITDB_ROOT_USERNAME=nlp \

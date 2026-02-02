@@ -1,5 +1,8 @@
 import re
+
 from typing import Any
+from pathlib import Path
+import unicodedata
 
 from app.core.config import settings
 from app.core.logger import logger
@@ -16,7 +19,7 @@ class RetrievalService:
         self.db_manager = DBManager()
         self.embedding_manager = EmbeddingManager()
         self.gcp_service = StorageService()
-        
+
         self.max_characters_preview = 2000  # Max characters to preview from GCP files
 
     async def clean_text(self, text: str) -> str:
@@ -45,7 +48,7 @@ class RetrievalService:
         search_type: str = "hybrid",
         collection_name: str = settings.MILVUS_MAIN_NAME,
         file_context: str | None = None,
-    ) -> str:
+    ) -> tuple[str, list[dict[str, Any]]]:
         """Retrieve and format top documents by combining hybrid search and metadata reranking results."""
         try:
             if file_context:
@@ -81,14 +84,16 @@ class RetrievalService:
                     collection_name=collection_name,
                     expr=None,
                 )
-            
+
             if collection_name == settings.MILVUS_SHARTNOMA:
                 return await self._format_contract_results(search_results)
-            
-            return await self._format_results(search_results)
+
+            return (await self._format_results(search_results), [])
         except Exception as e:
             logger.error(f"[RetrievalService] Retrieval failed: {e}", exc_info=True)
-            return "No relevant documents found."
+            if collection_name == settings.MILVUS_SHARTNOMA:
+                return ("", [])
+            return ("No relevant documents found.", [])
 
     async def _retrieve_raw_documents(
         self,
@@ -97,7 +102,7 @@ class RetrievalService:
         alpha: float = settings.ALPHA,
         search_type: str = "hybrid",
         collection_name: str = settings.MILVUS_MAIN_NAME,
-        expr: str = None,
+        expr: str | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieve raw documents without formatting."""
         if collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME:
@@ -226,7 +231,7 @@ class RetrievalService:
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
         collection_name: str = settings.MILVUS_MAIN_NAME,
-        expr: str = None,
+        expr: str | None = None,
     ) -> list[dict[str, Any]]:
         """Perform hybrid search combining dense vectors and BM25 keyword relevance using Milvus."""
         embedding = self.embedding_manager.embed_query(text_query)
@@ -236,7 +241,7 @@ class RetrievalService:
             top_k=top_k,
             alpha=alpha,
             collection_name=collection_name,
-            expr=expr,
+            expr=expr or "",
         )
 
     async def retrieve_project_context(
@@ -307,43 +312,90 @@ class RetrievalService:
             }
             for doc in documents
         ]
-        
+
     async def _download_gcp_file(self, blob_path: str) -> str:
         """Download file content from GCP given its URL."""
         gcp_content = self.gcp_service.download_file(blob_path)
         if gcp_content:
-            return gcp_content.decode("utf-8")[:self.max_characters_preview]  # Limit to first 1000 chars
+            return gcp_content.decode("utf-8")[
+                : self.max_characters_preview
+            ]  # Limit to first 1000 chars
         return ""
-        
-    async def _format_contract_results(self, documents: list[dict[str, Any]]) -> str:
-        """Format contract documents into a readable string."""
-        formatted_entries = []
-        seen_content = set()
+    
+    async def md_path_to_docx_gcs_path(self, md_path: str) -> str:
+        """
+        Convert markdown contract path to normalized GCS DOCX path.
 
-        for doc in documents[:5]:  # Limit to top 5 documents
-            entry = f"{'-' * 50}\n"
+        Example:
+        input:
+        shartnomalar/.../Ўзб/.../тўғрисида.md
+
+        output:
+        shartnomalar-docx/shartnomalar/.../Ўзб/.../тўғрисида.docx
+        """
+
+        # Normalize unicode (fix Uzbek Cyrillic combining characters)
+        normalized = unicodedata.normalize("NFC", md_path)
+
+        # Convert extension
+        p = Path(normalized)
+
+        if p.suffix.lower() != ".md":
+            raise ValueError("Input must be .md file")
+
+        docx_path = p.with_suffix(".docx")
+
+        # Add docx bucket prefix
+        final_path = Path("shartnomalar-docx") / docx_path
+
+        # Return POSIX path (important for GCS)
+        return final_path.as_posix()
+
+    async def _format_contract_results(
+        self, documents: list[dict[str, Any]]
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Format contract documents for shartnoma assistant.
+
+        Notes:
+        - The LLM should NOT see previews or links.
+        - The client should receive up to 3 docx links as attachments.
+        """
+
+        formatted_entries: list[str] = []
+        attachments: list[dict[str, Any]] = []
+        seen_entries: set[str] = set()
+        seen_docx_paths: set[str] = set()
+
+        for doc in documents[:3]:
             metadata = doc.get("metadata", {})
-            if not metadata.get("owner") == "wakilai":
-                continue 
-            
-            entry += f"Summary:\n" + metadata.get("text", "") 
-            
-            # Add Preview
-            gcp_url = metadata.get("gcs_md_path", "")
-            preview_content = await self._download_gcp_file(gcp_url)
-            
-            signed_url = self.gcp_service.get_signed_url(gcp_url)
-            url = f"{settings.HOST_URL}/contracts/{token_store.encode(signed_url)}"
-            
-            entry += f"\n\Preview:\n {preview_content}\n"
-            entry += f"\n\nSource URL: {url}\n"
+            hierarchy_path = metadata.get("hierarchy_path", "")
+            if metadata.get("owner") != "wakilai":
+                continue
 
-            if entry not in seen_content:
-                seen_content.add(entry)
-                formatted_entries.append(entry)
+            summary = (metadata.get("text") or "").strip()
+            if summary:
+                entry = f"{'-' * 50}\nSummary:\n{summary}\n"
+                if entry not in seen_entries:
+                    seen_entries.add(entry)
+                    formatted_entries.append(entry)
 
-        return "\n".join(formatted_entries)
-        
+            md_blob_path = metadata.get("gcs_md_path", "")
+            docx_blob_path = await self.md_path_to_docx_gcs_path(md_blob_path)
+            
+            public_url = self.gcp_service.get_signed_url(docx_blob_path)
+            
+            attachments.append(
+                {
+                    "name": hierarchy_path.split("/")[-1] + ".docx",
+                    "url": public_url,
+                    "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                }
+            )
+            seen_docx_paths.add(docx_blob_path)
+            if len(attachments) >= 3:
+                break
+
+        return ("\n".join(formatted_entries).strip(), attachments)
 
     async def _format_results(self, documents: list[dict[str, Any]]) -> str:
         """Format documents into a readable string."""
