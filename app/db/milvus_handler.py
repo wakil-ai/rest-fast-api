@@ -112,6 +112,29 @@ class MilvusHandler(VectorDBHandler):
             except Exception as e:
                 logger.error(f"Error upserting to Milvus: {str(e)}")
                 raise
+            
+    def query(
+        self,
+        filter: str = str,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> list[dict[str, Any]]:
+        """
+        Perform direct search using filter
+        """
+        results = self.client.query(
+            collection_name=collection_name,
+            filter=filter,
+            output_fields=["text", "metadata"],
+        )
+        
+        format_results = []
+        for res in results:
+            format_results.append({
+                "metadata": res.get("metadata", {}),
+                "text": res.get("text", "")
+            })
+            
+        return format_results
 
     def query_hybrid(
         self,
