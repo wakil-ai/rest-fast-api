@@ -12,6 +12,7 @@ from app.llms.novita import Novita
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.chat_history_service import ChatHistoryService
 from app.services.memory_service import ChatMemoryService
+from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 
 @dataclass
@@ -139,6 +140,18 @@ class ChatChain:
         chat_history_text = self._format_chat_history(chat_history)
         memory_text = await self.memory_service.search_memory(user_id, query)
         history_text = "\n".join(filter(None, [chat_history_text, memory_text]))
+
+        # Ensure context token limit
+        total_tokens = count_tokens(context + history_text)
+        if total_tokens > settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT:
+            logger.warning(
+                f"[ChatChain] Retrieved context exceeds token limit of "
+                f"{settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT} tokens. Truncating context."
+            )
+            context = truncate_to_token_limit(
+                context,
+                settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT - count_tokens(history_text),
+            )
 
         # Build system prompt
         system_prompt = self._build_system_prompt(

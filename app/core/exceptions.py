@@ -74,3 +74,14 @@ class StreamingException(ChatException):
         super().__init__(
             detail=detail, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+class TooLongFileContentException(ChatException):
+    """Raised when the content of the uploaded file is too long."""
+
+    def __init__(self, file_name: str, content_length: int, max_length: int):
+        detail = (
+            f"Content of the file '{file_name}' is too long. "
+            f"Maximum {max_length} characters allowed, got {content_length} characters."
+        )
+        super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)

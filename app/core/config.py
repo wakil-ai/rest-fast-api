@@ -131,6 +131,8 @@ class Settings(BaseSettings):
 
     # OCR Service
     DATALAB_API_KEY: str | None = None
+    FILE_CONTENT_TOKEN_LIMIT: int = 10_000  # Max tokens for file content extraction
+    MAX_RETRIEVAL_DOCS_TOKEN_LIMIT: int = 200_000  # Max tokens for retrieved documents
 
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
@@ -157,7 +159,7 @@ class Settings(BaseSettings):
     TEMPERATURE: float = 0.1
     CHAT_HISTORY_LIMIT: int = 5
     OUTPUT_MAX_TOKENS: int = 4096
-    MAX_QUERY_LENGTH: int = 2000
+    MAX_QUERY_LENGTH: int = 5000
 
     LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
