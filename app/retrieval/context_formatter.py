@@ -139,7 +139,10 @@ class DocumentFormatter:
                     formatted_entries.append(entry)
 
             # Create attachment if not at limit
-            if len(attachments) < max_attachments and metadata.get("owner") == "wakilai":
+            if (
+                len(attachments) < max_attachments
+                and metadata.get("owner") == "wakilai"
+            ):
                 attachment = await self._create_contract_attachment(metadata)
                 if attachment and attachment["url"] not in seen_docx_paths:
                     attachments.append(attachment)

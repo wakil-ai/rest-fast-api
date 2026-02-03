@@ -112,7 +112,7 @@ class MilvusHandler(VectorDBHandler):
             except Exception as e:
                 logger.error(f"Error upserting to Milvus: {str(e)}")
                 raise
-            
+
     def query(
         self,
         filter: str = str,
@@ -126,14 +126,13 @@ class MilvusHandler(VectorDBHandler):
             filter=filter,
             output_fields=["text", "metadata"],
         )
-        
+
         format_results = []
         for res in results:
-            format_results.append({
-                "metadata": res.get("metadata", {}),
-                "text": res.get("text", "")
-            })
-            
+            format_results.append(
+                {"metadata": res.get("metadata", {}), "text": res.get("text", "")}
+            )
+
         return format_results
 
     def query_hybrid(

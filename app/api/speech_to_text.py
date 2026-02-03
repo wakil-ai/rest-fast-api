@@ -14,9 +14,9 @@ from fastapi import (
 from app.core.logger import logger
 from app.models.speech_to_text import TranscriptionResponse
 from app.services.speech_to_text_service import get_speech_to_text_service
-from app.services.streaming_speech_to_text import (
+from app.services.streaming_speech_to_text import (  # for WS STT
     get_streaming_stt_service,
-)  # for WS STT
+)
 
 router = APIRouter(prefix="/speech-to-text", tags=["Speech-to-Text"])
 
