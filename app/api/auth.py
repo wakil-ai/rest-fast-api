@@ -1,13 +1,11 @@
-from fastapi import APIRouter
-from fastapi import HTTPException, Request, Depends
 from authlib.integrations.starlette_client import OAuth
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.config import settings
 from app.core.logger import logger
-
-from app.services.chat_history_service import ChatHistoryService
 from app.models.auth import TelegramAuth
 from app.services.auth_service import validate_telegram_data
+from app.services.chat_history_service import ChatHistoryService
 
 router = APIRouter(prefix="/auth", tags=["Auth for Login"])
 

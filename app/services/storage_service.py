@@ -17,10 +17,10 @@ class StorageService:
     """
     Service for handling file uploads to Google Cloud Storage.
     """
-    
+
     _instance = None
     _initialized = False
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(StorageService, cls).__new__(cls)
@@ -30,7 +30,7 @@ class StorageService:
         """Initialize Google Cloud Storage client."""
         if self._initialized:
             return
-        
+
         try:
             if settings.GCS_CREDENTIALS_PATH and os.path.exists(
                 settings.GCS_CREDENTIALS_PATH
@@ -127,7 +127,7 @@ class StorageService:
             url = blob.generate_signed_url(
                 version="v4",
                 expiration=timedelta(minutes=expiration_minutes),
-                method="GET"
+                method="GET",
             )
             return url
         except Exception as e:

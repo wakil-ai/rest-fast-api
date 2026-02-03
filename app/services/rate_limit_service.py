@@ -5,7 +5,9 @@ from app.core.config import settings
 from app.core.logger import logger
 from app.db.mongo_handler import MongoHandler
 
-RateLimitAssistantType = Literal["main", "soliq", "deepresearch", "mamuriy_sud", "shartnoma"]
+RateLimitAssistantType = Literal[
+    "main", "soliq", "deepresearch", "mamuriy_sud", "shartnoma"
+]
 
 
 class RateLimitService:

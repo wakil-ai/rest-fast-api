@@ -134,7 +134,7 @@ class MilvusHandler(VectorDBHandler):
         dense_search = AnnSearchRequest(
             data=[dense_vector],
             anns_field="text_dense",
-            param={"metric_type": "COSINE", "nprobe": 30},
+            param={"metric_type": "COSINE"},
             limit=top_k,
             expr=expr,
         )

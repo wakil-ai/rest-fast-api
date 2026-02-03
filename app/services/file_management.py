@@ -183,7 +183,7 @@ class FileManager:
         chunks = []
 
         for i in range(0, len(content), chunk_size - overlap):
-            chunk_text = content[i:i + chunk_size]
+            chunk_text = content[i : i + chunk_size]
             if chunk_text:
                 chunks.append(chunk_text)
 

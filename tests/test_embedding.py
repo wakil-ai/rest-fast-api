@@ -2,10 +2,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from app.retrieval.embedding_manager import (
-    SiliconFlowEmbedding,
-    get_instruction,
-)
+from app.retrieval.embedding_manager import SiliconFlowEmbedding, get_instruction
 
 
 # Unit tests for functions

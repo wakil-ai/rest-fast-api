@@ -1,6 +1,6 @@
 from collections.abc import AsyncGenerator
-from typing import Any
 from dataclasses import dataclass
+from typing import Any
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings

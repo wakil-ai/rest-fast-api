@@ -1,7 +1,13 @@
 from typing import Any
 
+from app.chains.prompts import (
+    MAMURIY_ASSISTANT_PROMPT,
+    PROJECT_FILE_PROMPT,
+    PROMPT,
+    SHARTNOMA_PROMPT,
+    SOLIQ_PROMPT,
+)
 from app.core.config import settings
-from app.chains.prompts import *
 
 
 class AssistantConfig:

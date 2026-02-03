@@ -8,8 +8,10 @@ from app.core.logger import logger
 
 
 def get_instruction(query: str) -> str:
-    instruction = f"Instruct: Given a legal question from Uzbek Law, retrieve the most relevant legal documents \
+    instruction = (
+        f"Instruct: Given a legal question from Uzbek Law, retrieve the most relevant legal documents \
         and semantically similar documents to answer the question. \nQuery: {query}"
+    )
     return instruction
 
 

@@ -3,8 +3,7 @@ from typing import Any
 
 from crewai.flow.flow import Flow, listen, router, start
 
-from app.chains.chat_chain import ChatChain
-from app.chains.chat_chain import GenerationContext
+from app.chains.chat_chain import ChatChain, GenerationContext
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger

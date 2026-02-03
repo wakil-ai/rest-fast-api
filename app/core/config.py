@@ -176,7 +176,9 @@ class Settings(BaseSettings):
     CREDIT_COST_MAIN_ASSISTANT: int = 10  # Credits for main assistant (umumiy)
     CREDIT_COST_SOLIQ_ASSISTANT: int = 15  # Credits for soliq specialized assistant
     CREDIT_COST_SUD_ASSISTANT: int = 20  # Credits for sud specialized assistant
-    CREDIT_COST_SHARTNOMA_ASSISTANT: int = 20  # Credits for shartnoma specialized assistant
+    CREDIT_COST_SHARTNOMA_ASSISTANT: int = (
+        20  # Credits for shartnoma specialized assistant
+    )
     CREDIT_COST_DEEPRESEARCH: int = 25  # Credits for deep research / agentic RAG
 
     # Payme Payment Configuration

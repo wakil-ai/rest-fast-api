@@ -69,9 +69,11 @@ async def ask_question(request: ChatRequest):
             answer, meta = response
             return ChatResponse(
                 answer=answer,
-                retrieved_contents=meta.get("retrieved_contents")
-                if settings.DEVELOPMENT_MODE
-                else None,
+                retrieved_contents=(
+                    meta.get("retrieved_contents")
+                    if settings.DEVELOPMENT_MODE
+                    else None
+                ),
                 attachments=meta.get("attachments") or None,
             )
 

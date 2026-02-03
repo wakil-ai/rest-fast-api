@@ -14,6 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 # Internal imports
 from app.api import (
     admin,
+    auth,
     chat,
     chat_history,
     health,
@@ -21,7 +22,6 @@ from app.api import (
     payme,
     retrieval,
     speech_to_text,
-    auth
 )
 from app.core.config import settings
 from app.core.logger import logger
