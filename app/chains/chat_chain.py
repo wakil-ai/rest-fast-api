@@ -22,7 +22,7 @@ class GenerationContext:
     context: str
     system_prompt: str
     chat_history: str
-    attachments: list[dict[str, Any]]
+    attachments: list[dict[str, Any]] = None
 
 
 class ChatChain:

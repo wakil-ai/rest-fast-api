@@ -44,6 +44,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         """Initialize all required services."""
         self.chat_chain = ChatChain()
         self.memory_service = ChatMemoryService()
+        self.formatter = self.chat_chain.retrieval_service.formatter
 
     def _initialize_crews(self) -> None:
         """Initialize and cache all crews once."""
@@ -188,11 +189,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             self.state.retrieval_docs = await self._retrieve_standard_documents(
                 query_translations, strategy, collection_name
             )
-
-            # Retrieve additional user uploaded documents
-            if self.state.project_id:
-                project_context = await self._retrieve_project_documents()
-                self.state.retrieval_docs += "\n\nPROJECT FILES:\n" + project_context
 
             if self.state.file_ids:
                 file_context = await self._get_file_id_context()
@@ -397,7 +393,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             collection_name=collection_name,
         )
 
-        return await self.chat_chain.retrieval_service._format_results(documents_list)
+        return await self.formatter.format_results(documents_list, collection_name)
 
     async def _get_file_id_context(self) -> str:
         """Retrieve documents for provided file IDs."""
@@ -472,22 +468,22 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             # Get LLM
             llm = self.chat_chain._get_llm(self.state.llm_model)
 
-            # Generate response
-            debug_data = {"retrieval_docs": self.state.retrieval_docs}
 
             # Handle streaming vs non-streaming
             if self.enable_progress_stream:
                 response = self.chat_chain._generate_stream(
                     llm=llm,
                     query=query,
-                    gen_context=self._create_chat_context(system_prompt, debug_data),
+                    gen_context=self._create_chat_context(system_prompt),
+                    assistant=self.state.selected_assistant,
                 )
                 return await self._handle_streaming_response(response)
             else:
                 response = await self.chat_chain._generate_non_stream(
                     llm=llm,
                     query=query,
-                    gen_context=self._create_chat_context(system_prompt, debug_data),
+                    gen_context=self._create_chat_context(system_prompt),
+                    assistant=self.state.selected_assistant,
                 )
                 return self._handle_non_streaming_response(response)
 
@@ -544,13 +540,12 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         """Get prompt template for a specific assistant."""
         return AssistantConfig.get_assistant_prompt_template(assistant_name)
 
-    def _create_chat_context(self, system_prompt: str, debug_data: dict) -> Any:
+    def _create_chat_context(self, system_prompt: str) -> Any:
         """Create GenerationContext object for chat chain."""
         return GenerationContext(
             context=self.state.retrieval_docs,
             system_prompt=system_prompt,
             chat_history=self.state.memory_docs,
-            debug_data=debug_data,
         )
 
     async def _handle_streaming_response(self, response) -> str:
