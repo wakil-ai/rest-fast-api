@@ -153,6 +153,8 @@ class ChatChain:
                 settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT - count_tokens(history_text),
             )
 
+        logger.debug(f"[ChatChain] Total tokens in context + history: {total_tokens}")
+
         # Build system prompt
         system_prompt = self._build_system_prompt(
             assistant,

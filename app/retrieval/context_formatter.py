@@ -3,8 +3,8 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Optional
 
-from app.core.logger import logger
 from app.core.config import settings
+from app.core.logger import logger
 from app.services.storage_service import StorageService
 
 
@@ -99,8 +99,10 @@ class DocumentFormatter:
         self.storage_service = StorageService()
         self.text_cleaner = TextCleaner()
         self.path_converter = PathConverter()
-        
-    async def format_results(self, documents: list[dict[str, Any]], collection_name: str) -> Any:
+
+    async def format_results(
+        self, documents: list[dict[str, Any]], collection_name: str
+    ) -> Any:
         """Format documents based on collection type."""
         if collection_name == settings.MILVUS_SHARTNOMA:
             return await self.format_contract_results(documents)
@@ -108,7 +110,7 @@ class DocumentFormatter:
             return await self.format_sud_results(documents)
         else:
             return await self.format_standard_results(documents)
-        
+
     async def format_standard_results(self, documents: list[dict[str, Any]]) -> str:
         """Format standard documents into readable string."""
         formatted_entries = []
@@ -159,9 +161,8 @@ class DocumentFormatter:
                     seen_docx_paths.add(attachment["url"])
 
         return ("\n".join(formatted_entries).strip(), attachments)
-    
-    async def format_sud_results(
-        self, documents: list[dict[str, Any]]) -> str:
+
+    async def format_sud_results(self, documents: list[dict[str, Any]]) -> str:
         """Format sud documents into readable string."""
         formatted_entries = []
         seen_content = set()
@@ -169,20 +170,20 @@ class DocumentFormatter:
         for doc in documents:
             metadata = doc.get("metadata", {})
             title = metadata.get("hierarchy", "")
-            
+
             entry_parts = [
                 f"{'-' * 50}",
                 f"Title: {title}",
                 f"Document Content: {doc.get('text', '')}\n",
             ]
             entry = "\n".join(entry_parts)
-        
+
             if entry not in seen_content:
                 seen_content.add(entry)
                 formatted_entries.append(entry)
 
         return "\n".join(formatted_entries)
-        
+
     async def _create_contract_attachment(
         self, metadata: dict[str, Any]
     ) -> Optional[dict[str, Any]]:
