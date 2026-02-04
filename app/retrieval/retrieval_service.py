@@ -62,11 +62,8 @@ class RetrievalService:
                 search_results = await self._retrieve_raw_documents(query, config)
 
             # Format results based on collection type
-            if collection_name == settings.MILVUS_SHARTNOMA:
-                return await self.formatter.format_contract_results(search_results)
-
-            formatted_text = await self.formatter.format_standard_results(
-                search_results
+            formatted_text = await self.formatter.format_results(
+                search_results, collection_name
             )
             return (formatted_text, [])
 
