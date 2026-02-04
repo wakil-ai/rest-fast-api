@@ -158,7 +158,7 @@ class Settings(BaseSettings):
     # TEMPERATURE
     TEMPERATURE: float = 0.1
     CHAT_HISTORY_LIMIT: int = 5
-    OUTPUT_MAX_TOKENS: int = 4096
+    OUTPUT_MAX_TOKENS: int = 8192
     MAX_QUERY_LENGTH: int = 5000
 
     LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
