@@ -37,6 +37,12 @@ async def ask_question(request: ChatRequest):
     Response format automatically adapts based on STREAM config:
     """
     try:
+        # Check whether user_id exists, if not raise error
+        if chat_history_service.get_user(request.user_id) is None:
+            raise HTTPException(
+                status_code=400, detail="User ID must be registered"
+            )
+        
         # Determine assistant type for credit calculation
         assistant_type = "soliq" if request.assistant == AssistantType.SOLIQ else "main"
 
@@ -120,6 +126,12 @@ async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
     """
     Execute legal QA flow end-to-end using agentic RAG approach.
     """
+    # Check whether user_id exists, if not raise error
+    if chat_history_service.get_user(request.user_id) is None:
+        raise HTTPException(
+            status_code=400, detail="User ID must be registered"
+        )
+        
     # Check credit limit (deepresearch costs more credits)
     is_allowed, credits_remaining, limit = (
         rate_limit_service.check_and_decrement_credits(request.user_id, "deepresearch")
@@ -169,6 +181,12 @@ async def stream_agentic_rag(request: AgenticRAGRequest) -> StreamingResponse:
     - chunk: Final answer character chunks
     - end: Stream completion signal
     """
+    # Check whether user_id exists, if not raise error
+    if chat_history_service.get_user(request.user_id) is None:
+        raise HTTPException(
+            status_code=400, detail="User ID must be registered"
+        )
+        
     # Check credit limit (deepresearch costs more credits)
     is_allowed, credits_remaining, limit = (
         rate_limit_service.check_and_decrement_credits(request.user_id, "deepresearch")
