@@ -62,10 +62,14 @@ class RetrievalService:
                 search_results = await self._retrieve_raw_documents(query, config)
 
             # Format results based on collection type
-            formatted_text = await self.formatter.format_results(
+            formatted_result = await self.formatter.format_results(
                 search_results, collection_name
             )
-            return (formatted_text, [])
+            
+            if isinstance(formatted_result, dict):
+                return formatted_result["formatted_text"], formatted_result["attachments"]
+            else:
+                return (formatted_result, [])
 
         except Exception as e:
             logger.error(f"Retrieval failed: {e}", exc_info=True)

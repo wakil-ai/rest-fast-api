@@ -160,9 +160,12 @@ class DocumentFormatter:
                     attachments.append(attachment)
                     seen_docx_paths.add(attachment["url"])
 
-        return ("\n".join(formatted_entries).strip(), attachments)
+        return {
+            "formatted_text": "\n".join(formatted_entries),
+            "attachments": attachments,
+        }
 
-    async def format_sud_results(self, documents: list[dict[str, Any]]) -> str:
+    async def format_sud_results(self, documents: list[dict[str, Any]]) -> tuple[str, None]:
         """Format sud documents into readable string."""
         formatted_entries = []
         seen_content = set()
