@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile, status
 
 from app.core.logger import logger
 from app.models.chat_history import (
@@ -19,6 +19,7 @@ from app.models.chat_history import (
 )
 from app.services.chat_history_service import ChatHistoryService
 from app.services.file_management import FileManager
+from app.services.storage_service import StorageService
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/history", tags=["Chat History"])
@@ -26,12 +27,12 @@ router = APIRouter(prefix="/history", tags=["Chat History"])
 # Services used
 chat_history_service = ChatHistoryService()
 file_manager = FileManager()
+storage_service = StorageService()
 
 
 def create_response(data: dict, message: str) -> dict:
     """Create a standardized API response."""
     return {"info": serialize_mongo_id(data), "message": message}
-
 
 
 # USER MANAGEMENT
@@ -62,11 +63,9 @@ def get_user(user_id: str) -> UserCreateResponse:
     user = chat_history_service.get_user(user_id=user_id)
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User {user_id} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found"
         )
     return create_response(user, "User retrieved successfully")
-
 
 
 # PROJECT MANAGEMENT
@@ -104,12 +103,11 @@ def get_project(user_id: str, project_id: str) -> ProjectResponse:
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Project {project_id} not found"
+            detail=f"Project {project_id} not found",
         )
     if project.get("user_id") != user_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
     return serialize_mongo_id(project)
 
@@ -118,19 +116,18 @@ def get_project(user_id: str, project_id: str) -> ProjectResponse:
 @handle_service_error
 def edit_project(project_id: str, title: str) -> ProjectResponse:
     """Edit a project's title."""
-    project_info = chat_history_service.edit_project(
-        project_id=project_id, title=title
-    )
+    project_info = chat_history_service.edit_project(project_id=project_id, title=title)
     return serialize_mongo_id(project_info)
 
 
-@router.delete("/projects/{user_id}/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/projects/{user_id}/{project_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 @handle_service_error
 def delete_project(user_id: str, project_id: str) -> None:
     """Delete a project and all its associated data."""
     chat_history_service.delete_project(user_id=user_id, project_id=project_id)
     return
-
 
 
 # SESSION MANAGEMENT
@@ -157,9 +154,7 @@ def create_session(request: SessionCreateRequest) -> SessionCreateResponse:
 @router.get("/sessions/{user_id}", response_model=list[SessionResponse])
 @handle_service_error
 def get_sessions(
-    user_id: str, 
-    project_id: str | None = None, 
-    limit: int = 50
+    user_id: str, project_id: str | None = None, limit: int = 50
 ) -> list[SessionResponse]:
     """Retrieve user sessions, optionally filtered by project."""
     sessions = chat_history_service.get_sessions(
@@ -176,12 +171,11 @@ def get_session(user_id: str, session_id: str) -> SessionResponse:
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Session {session_id} not found"
+            detail=f"Session {session_id} not found",
         )
     if session.get("user_id") != user_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
     return serialize_mongo_id(session)
 
@@ -206,7 +200,6 @@ def delete_session(session_id: str) -> None:
     return
 
 
-
 # MESSAGE MANAGEMENT
 
 
@@ -218,6 +211,18 @@ def delete_session(session_id: str) -> None:
 @handle_service_error
 def add_message(request: MessageCreateRequest) -> MessageCreateResponse:
     """Add a message to a session. Only session_id is required."""
+    # Ensure the session exists (some clients post messages before explicitly creating a session).
+    if not chat_history_service.get_session(session_id=request.session_id):
+        user_id = (
+            request.user_id
+            or (request.metadata or {}).get("user_id")
+            or (request.metadata or {}).get("userId")
+            or "anonymous"
+        )
+        chat_history_service.create_session(
+            user_id=user_id, session_id=request.session_id
+        )
+
     message_info = chat_history_service.add_message(
         session_id=request.session_id,
         message_id=request.message_id,
@@ -231,9 +236,7 @@ def add_message(request: MessageCreateRequest) -> MessageCreateResponse:
 @handle_service_error
 def get_messages(session_id: str, limit: int = 100) -> list[MessageResponse]:
     """Retrieve messages from a session. Only session_id is required."""
-    messages = chat_history_service.get_messages(
-        session_id=session_id, limit=limit
-    )
+    messages = chat_history_service.get_messages(session_id=session_id, limit=limit)
     return [serialize_mongo_id(message) for message in messages]
 
 
@@ -245,15 +248,14 @@ def get_message(session_id: str, message_id: str) -> MessageResponse:
     if not message:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Message {message_id} not found"
+            detail=f"Message {message_id} not found",
         )
     if message.get("session_id") != session_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Message does not belong to this session"
+            detail="Message does not belong to this session",
         )
     return serialize_mongo_id(message)
-
 
 
 # FEEDBACK MANAGEMENT
@@ -284,33 +286,36 @@ def get_feedback(message_id: str):
 
 
 # FILE MANAGEMENT
-file_manager = FileManager()
-
 @router.post(
-    "/files/{project_id}",
+    "/upload/files/project/{project_id}",
     status_code=status.HTTP_201_CREATED,
     response_model=FileUploadResponse,
 )
-async def upload_file(project_id: str, file: UploadFile = File(...)) -> FileUploadResponse:
+async def upload_file(
+    project_id: str,
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+) -> FileUploadResponse:
     """
     Upload file to project with OCR processing and storage
     """
-    status_code, result = await file_manager.upload_file_to_project(file, project_id)
+    # FileManager.upload_file_to_project requires `user_id`; accept it via multipart form
+    status_code, result = await file_manager.upload_file_to_project(
+        file=file, project_id=project_id, user_id=user_id
+    )
 
     if status_code == 200:
         return result
 
     if status_code == 404:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=result
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result)
 
     # 500 + unexpected cases
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=f"Failed to upload file: {result}"
+        detail=f"Failed to upload file: {result}",
     )
+
 
 @router.get("/files/project/{project_id}", response_model=list[FileUploadResponse])
 @handle_service_error
@@ -417,6 +422,60 @@ def delete_file_upload(file_id: str) -> None:
     return
 
 
+@router.post("/upload/files/message", summary="Upload a file")
+async def upload_file_message(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+) -> FileUploadResponse:
+    """
+    Upload a file to be associated with a message later.
+    """
+    status, response = await file_manager.upload_message_file(
+        file=file,
+        user_id=user_id,
+    )
+
+    if status != 200:
+        raise HTTPException(status_code=status, detail=response)
+
+    # Return the full FileUploadResponse model so frontend gets all metadata
+    return response
+
+
+@router.patch("/files/{file_id}/message", summary="Associate a file with a message")
+async def associate_file_with_message(
+    file_id: str,
+    message_id: str = Body(..., embed=True),
+):
+    """
+    Associate an uploaded file with a message.
+    """
+    try:
+        chat_history_service.update_file_message_id(file_id, message_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"message": "File associated with message successfully"}
+
+
+@router.get("/files/user/{user_id}", summary="List user's uploaded files")
+async def list_user_files(user_id: str):
+    """
+    Retrieve a list of files uploaded by a specific user.
+    """
+    files = chat_history_service.get_files_by_user(user_id)
+    return files
+
+
+@router.get("/files/message/{message_id}", summary="Get file processing status")
+async def get_message_file_status(message_id: str):
+    """
+    Get the processing status of files associated with a specific message.
+    """
+    files = chat_history_service.get_files_by_message(message_id)
+    return files
+
+
 @router.get("/sync/{user_id}")
 @handle_service_error
 def sync_user_data(user_id: str, months: int = 3):
@@ -425,17 +484,17 @@ def sync_user_data(user_id: str, months: int = 3):
     Used for bulk synchronization to client.
     """
     data = chat_history_service.get_sync_data(user_id=user_id, months=months)
-    
+
     # Serialize mongo IDs
     data["sessions"] = [serialize_mongo_id(s) for s in data["sessions"]]
-    
+
     # Serialize messages map
     # MessageResponse serializer expected a list, but here we have a dict of lists
     # We need to manually serialize the list of dicts
     serialized_messages = {}
     for session_id, msgs in data["messages"].items():
         serialized_messages[session_id] = [serialize_mongo_id(m) for m in msgs]
-        
+
     data["messages"] = serialized_messages
-    
+
     return data

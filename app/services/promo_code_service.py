@@ -3,9 +3,9 @@ from typing import Any
 
 from dateutil import parser as date_parser
 
+from app.core.config import settings
 from app.core.logger import logger
 from app.db.mongo_handler import MongoHandler
-from app.core.config import settings
 
 
 class PromoCodeService:

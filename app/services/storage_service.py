@@ -1,10 +1,5 @@
-import warnings
-
-warnings.filterwarnings(
-    "ignore", category=FutureWarning, module="google.api_core._python_version_support"
-)
-
 import os
+import warnings
 from datetime import datetime, timedelta
 
 from google.cloud import storage
@@ -13,14 +8,29 @@ from google.oauth2 import service_account
 from app.core.config import settings
 from app.core.logger import logger
 
+warnings.filterwarnings(
+    "ignore", category=FutureWarning, module="google.api_core._python_version_support"
+)
+
 
 class StorageService:
     """
     Service for handling file uploads to Google Cloud Storage.
     """
 
+    _instance = None
+    _initialized = False
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(StorageService, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
         """Initialize Google Cloud Storage client."""
+        if self._initialized:
+            return
+
         try:
             if settings.GCS_CREDENTIALS_PATH and os.path.exists(
                 settings.GCS_CREDENTIALS_PATH
@@ -44,6 +54,7 @@ class StorageService:
         except Exception as e:
             logger.error(f"[StorageService] Failed to initialize GCS client: {str(e)}")
             raise
+        StorageService._initialized = True
 
     def upload_file(
         self,
@@ -89,14 +100,18 @@ class StorageService:
                 # Note: Files are NOT made public automatically. You need to set bucket/object permissions.
                 public_url = blob.public_url
                 logger.warning(
-                    f"[StorageService] Returning public URL. Ensure proper permissions are set."
+                    "[StorageService] Returning public URL. Ensure proper permissions are set."
                 )
                 return public_url
         except Exception as e:
             logger.error(f"[StorageService] Failed to upload file: {str(e)}")
             raise
 
-    def get_signed_url(self, file_path: str, expiration_minutes: int = 60) -> str:
+    def get_signed_url(
+        self,
+        file_path: str,
+        expiration_minutes: int = 60,
+    ) -> str:
         """
         Generate a signed URL for private file access.
 
@@ -118,6 +133,13 @@ class StorageService:
         except Exception as e:
             logger.error(f"[StorageService] Failed to generate signed URL: {str(e)}")
             raise
+
+    def get_public_url(self, file_path: str) -> str:
+        """Return the public URL form for an object path.
+
+        Note: Access still depends on bucket/object permissions.
+        """
+        return f"https://storage.googleapis.com/{self.bucket.name}/{file_path}"
 
     def delete_file(self, file_path: str) -> bool:
         """
@@ -255,18 +277,19 @@ class StorageService:
             return []
 
     @staticmethod
-    def generate_file_path(project_id: str, file_id: str, filename: str) -> str:
+    def generate_project_file_path(project_id: str, file_id: str, filename: str) -> str:
         """
-        Generate a structured path for file storage.
-
-        Args:
-            project_id: Project ID
-            file_id: Unique file ID
-            filename: Original filename
-
-        Returns:
-            Structured path like: projects/{project_id}/files/{file_id}/{filename}
+        Generate a structured path for a project file.
+        e.g., projects/{project_id}/files/{file_id}/{filename}
         """
-        # Sanitize filename to avoid issues
         safe_filename = filename.replace(" ", "_").replace("/", "_")
         return f"projects/{project_id}/files/{file_id}/{safe_filename}"
+
+    @staticmethod
+    def generate_message_file_path(user_id: str, file_id: str, filename: str) -> str:
+        """
+        Generate a structured path for a message file.
+        e.g., messages/{user_id}/{file_id}/{filename}
+        """
+        safe_filename = filename.replace(" ", "_").replace("/", "_")
+        return f"messages/{user_id}/{file_id}/{safe_filename}"

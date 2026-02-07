@@ -11,6 +11,10 @@ class AgenticRAGState(BaseModel):
     user_id: str = Field(default="", description="User identifier")
     session_id: str = Field(default="default", description="Session identifier")
     llm_model: str = Field(default="gpt-4.1", description="LLM model to use")
+    project_id: str | None = Field(default=None, description="Optional project ID")
+    file_ids: list[str] | None = Field(
+        default=None, description="List of file IDs attached to the current message"
+    )
 
     # Intermediate outputs
     enriched_query: str | None = Field(

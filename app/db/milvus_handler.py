@@ -22,6 +22,9 @@ class MilvusHandler(VectorDBHandler):
         self.milvus_collections = [
             settings.MILVUS_MAIN_NAME,
             settings.MILVUS_SOLIQ_ASSISTANT_NAME,
+            settings.MILVUS_PROJECT_FILES,
+            settings.MILVUS_MAMURIY_SUD,
+            settings.MILVUS_SHARTNOMA,
         ]
         self.client = MilvusClient(
             uri=settings.MILVUS_URI,
@@ -73,7 +76,10 @@ class MilvusHandler(VectorDBHandler):
     ) -> None:
         milvus_data = []
 
-        partition_name = self.create_partition(partition_name)
+        if partition_name and not self.client.has_partition(
+            collection_name=collection_name, partition_name=partition_name
+        ):
+            partition_name = self.create_partition(partition_name)
 
         for doc in documents:
             if "id" not in doc or "embedding" not in doc:
@@ -107,6 +113,28 @@ class MilvusHandler(VectorDBHandler):
                 logger.error(f"Error upserting to Milvus: {str(e)}")
                 raise
 
+    def query(
+        self,
+        filter: str = str,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> list[dict[str, Any]]:
+        """
+        Perform direct search using filter
+        """
+        results = self.client.query(
+            collection_name=collection_name,
+            filter=filter,
+            output_fields=["text", "metadata"],
+        )
+
+        format_results = []
+        for res in results:
+            format_results.append(
+                {"metadata": res.get("metadata", {}), "text": res.get("text", "")}
+            )
+
+        return format_results
+
     def query_hybrid(
         self,
         dense_vector: list[float],
@@ -115,20 +143,22 @@ class MilvusHandler(VectorDBHandler):
         alpha: float = settings.ALPHA,
         collection_name: str = settings.MILVUS_MAIN_NAME,
         partitions: list[str] = None,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """
         Perform hybrid search using both dense vectors and BM25 sparse vectors
         """
         logger.debug(
-            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}"
+            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}, filter: {expr}"
         )
 
         # Create search requests for both dense and sparse vectors
         dense_search = AnnSearchRequest(
             data=[dense_vector],
             anns_field="text_dense",
-            param={"metric_type": "COSINE", "nprobe": 30},
+            param={"metric_type": "COSINE"},
             limit=top_k,
+            expr=expr,
         )
 
         sparse_search = AnnSearchRequest(
@@ -136,6 +166,7 @@ class MilvusHandler(VectorDBHandler):
             anns_field="text_sparse",
             param={"drop_ratio_search": 0.2},
             limit=top_k,
+            expr=expr,
         )
 
         # Perform hybrid search with weighted ranking - pass weights as separate arguments

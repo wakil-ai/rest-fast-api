@@ -40,7 +40,7 @@ class DBManager:
             return
 
         self.mongo_handler.db.create_collection(collection_name)
-        
+
     # Initialize vector database handler
     def _initialize_vector_db(self) -> VectorDBHandler:
         """Create vector database handler based on configuration."""
@@ -90,22 +90,16 @@ class DBManager:
         collection = self.mongo_handler.db[collection_name]
         return collection.delete_many(query)
 
-    # Vector database operations (Pinecone, or Milvus)
-    def upsert_vectors(
-        self, documents: list[dict[str, Any]], partition_name: str = None
-    ) -> None:
-        """Upsert vectors into vector database."""
-        self.vector_handler.upsert_vectors(documents, partition_name)
-
     def search_dense(
         self,
         dense_vector: list[float],
         top_k: int = settings.TOP_K,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """Dense-only search."""
         return self.vector_handler.query_dense(
-            dense_vector, top_k, collection_name=collection_name
+            dense_vector, top_k, collection_name=collection_name, expr=expr
         )
 
     def search_sparse(
@@ -126,10 +120,16 @@ class DBManager:
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """Hybrid search (dense + sparse)."""
         return self.vector_handler.query_hybrid(
-            dense_vector, text_query, top_k, alpha, collection_name=collection_name
+            dense_vector,
+            text_query,
+            top_k,
+            alpha,
+            collection_name=collection_name,
+            expr=expr,
         )
 
     def search_specific(
@@ -147,12 +147,18 @@ class DBManager:
             # Return empty list
             return []
 
-    def upsert_vectors(self, documents: list[dict[str, Any]]) -> None:
+    def _upsert_vectors(
+        self,
+        documents: list[dict[str, Any]],
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+        partition_name: str = None,
+    ) -> None:
         """Upsert vectors into vector database."""
-        # Splitting logic here
-
-        # 
-        self.vector_handler.upsert_vectors(documents)
+        self.vector_handler.upsert_vectors(
+            documents=documents,
+            collection_name=collection_name,
+            partition_name=partition_name,
+        )
 
     def close_all_connections(self):
         """Close all database connections."""

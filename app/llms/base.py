@@ -18,4 +18,3 @@ class LLM(ABC):
             - str: Complete response if streaming is disabled
             - AsyncGenerator[str, None]: Streaming response if streaming is enabled
         """
-        pass

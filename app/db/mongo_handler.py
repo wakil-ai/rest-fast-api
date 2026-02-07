@@ -11,6 +11,7 @@ class MongoHandler:
     """
     MongoDB handler for storing and querying documents.
     """
+
     # Prevent multiple instances
     _instance = None
     _initialized = False

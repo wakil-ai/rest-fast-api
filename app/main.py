@@ -17,14 +17,11 @@ from app.api import (
     auth,
     chat,
     chat_history,
-    count,
-    google_auth,
+    health,
     memory,
-    ocr,
     payme,
     retrieval,
     speech_to_text,
-    ws_stt,
 )
 from app.core.config import settings
 from app.core.logger import logger
@@ -88,7 +85,6 @@ async def lifespan(app: FastAPI):
 
     yield
     # Shutdown (if needed)
-    pass
 
 
 def create_app() -> FastAPI:
@@ -147,17 +143,6 @@ def create_app() -> FastAPI:
         dependencies=[Depends(verify_api_key)],
     )
     app.include_router(
-        ocr.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
-    app.include_router(
-        count.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
-    app.include_router(
-        ws_stt.router,
-        prefix=settings.API_PREFIX,
-    )
-
-    app.include_router(
         memory.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)],
@@ -165,20 +150,15 @@ def create_app() -> FastAPI:
     app.include_router(
         admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
     )
+    # Health check router (no authentication required)
+    app.include_router(
+        health.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key)],
+    )
     # Auth routers without API prefix
-    app.include_router(
-        auth.router,
-    )
-    app.include_router(google_auth.router, prefix=settings.API_PREFIX)
-    # Payme payment routes
-    # Transaction endpoint (no API key - uses Payme merchant auth)
-    # Payment link creation endpoint (requires API key)
-    app.include_router(
-        payme.router,
-        prefix=f"{settings.API_PREFIX}/transaction",
-        tags=["Payme"],
-        # Only payment link creation requires API key, merchant API uses its own auth
-    )
+    app.include_router(auth.router, prefix=settings.API_PREFIX)
+    app.include_router(payme.router, prefix=settings.API_PREFIX)
 
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"], include_in_schema=False)
@@ -188,15 +168,15 @@ def create_app() -> FastAPI:
 
     # Documentation endpoints (Basic Auth protected)
     @app.get("/docs")
-    async def get_documentation(username: str = Depends(get_current_username)):
+    async def docs(username: str = Depends(get_current_username)):
         return get_swagger_ui_html(openapi_url="/openapi.json", title="docs")
 
     @app.get("/redoc")
-    async def get_documentation(username: str = Depends(get_current_username)):
+    async def redoc(username: str = Depends(get_current_username)):
         return get_redoc_html(openapi_url="/openapi.json", title="redocs")
 
     @app.get("/swagger-ui.html")
-    async def get_documentation(username: str = Depends(get_current_username)):
+    async def swagger_ui(username: str = Depends(get_current_username)):
         return get_swagger_ui_html(openapi_url="/openapi.json", title="docs")
 
     @app.get("/openapi.json")
