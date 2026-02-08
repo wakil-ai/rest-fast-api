@@ -53,13 +53,16 @@ class RetrievalService:
                 collection_name=collection_name,
             )
 
-            # Retrieve documents
+            # # Retrieve documents
+            # if file_context:
+            #     search_results = await self._retrieve_with_file_context(
+            #         query, file_context, config
+            #     )
+            # else:
+            # Experimental: always use both query and file context if available
             if file_context:
-                search_results = await self._retrieve_with_file_context(
-                    query, file_context, config
-                )
-            else:
-                search_results = await self._retrieve_raw_documents(query, config)
+                query = f"{query}\n\n\n{file_context}"
+            search_results = await self._retrieve_raw_documents(query, config)
 
             # Format results based on collection type
             formatted_result = await self.formatter.format_results(

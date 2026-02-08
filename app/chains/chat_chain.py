@@ -128,7 +128,7 @@ class ChatChain:
             for file_id in file_ids:
                 file = self.chat_history_service.get_file_by_id(file_id)
                 if file:
-                    file_context += f"\n\nFile Context\n{file['ocr_result']}"
+                    file_context += f"\n\n## USER FILE CONTEXT\n{file['ocr_result']}"
 
         context, attachments = await self._retrieve_context(
             query=query,
@@ -183,7 +183,7 @@ class ChatChain:
         )
 
         if file_context:
-            context = f"{context}\nFile Content:\n{file_context}"
+            context = f"{context}\n\n\n{file_context}"
 
         return context, attachments
 
