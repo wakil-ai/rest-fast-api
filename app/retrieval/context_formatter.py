@@ -193,6 +193,20 @@ class DocumentFormatter:
         self, metadata: dict[str, Any]
     ) -> Optional[dict[str, Any]]:
         """Create attachment dictionary for contract document."""
+        content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        docx_blob_path = metadata.get("gcs_docx_path", "")
+        
+        if docx_blob_path:
+            public_url = self.storage_service.get_signed_url(docx_blob_path)
+            hierarchy_path = metadata.get("hierarchy_path", "")
+            filename = hierarchy_path.split("/")[-1] + ".docx"
+            return {
+                "name": filename,
+                "url": public_url,
+                "content_type": content_type,
+            }
+            
+        # IF no DOCX path, try to convert from MD path
         md_blob_path = metadata.get("gcs_md_path", "")
         if not md_blob_path:
             return None
@@ -207,7 +221,7 @@ class DocumentFormatter:
             return {
                 "name": filename,
                 "url": public_url,
-                "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "content_type": content_type,
             }
         except Exception as e:
             logger.error(f"Failed to create attachment: {e}")
