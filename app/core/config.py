@@ -195,6 +195,8 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str | None = None
     GOOGLE_REDIRECT_URI: str | None = None
     AUTH_SECRET_KEY: str = "secret-key-change-me"
+    
+    GEMINI_API_KEY: str | None = None
 
     model_config = ConfigDict(
         env_file=".env",

@@ -8,10 +8,7 @@ from app.chains.intent_classifier import IntentClassifier
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger
-from app.llms.base import LLM
-from app.llms.claude import Claude
-from app.llms.gpt import ChatGPT
-from app.llms.novita import Novita
+from app.llms import LLM, Claude, ChatGPT, Gemini, Novita
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.chat_history_service import ChatHistoryService
 from app.services.memory_service import ChatMemoryService
@@ -104,6 +101,7 @@ class ChatChain:
             "gpt-oss-": Novita,
             "gpt-": ChatGPT,
             "claude-": Claude,
+            "gemini-": Gemini,
         }
 
         for prefix, llm_class in model_mapping.items():
@@ -123,9 +121,6 @@ class ChatChain:
         assistant: str,
     ) -> GenerationContext:
         """Prepare all context needed for generation."""
-        # Get collection name with assistant config
-        collection_name = AssistantConfig.get_collection_name(assistant)
-
         # Collect file context if any
         file_context = ""
         if file_ids:
