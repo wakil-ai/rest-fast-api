@@ -1,10 +1,12 @@
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
+from langchain.prompts import PromptTemplate
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger
+from app.chains.intent_classifier import IntentClassifier
 from app.llms.base import LLM
 from app.llms.claude import Claude
 from app.llms.gpt import ChatGPT
@@ -38,6 +40,7 @@ class ChatChain:
         self.memory_service = ChatMemoryService()
         self.chat_history_service = ChatHistoryService()
         self.fallback_llm = ChatGPT()
+        self.intent_classifier = IntentClassifier()
 
     # Public API
     async def generate_answer(
@@ -154,10 +157,15 @@ class ChatChain:
             )
 
         logger.debug(f"[ChatChain] Total tokens in context + history: {total_tokens}")
-
+        
+        template = AssistantConfig.get_assistant_prompt_template(assistant)
+        if assistant == "mamuriy_sud":
+            logger.debug("[ChatChain] Classifying intent for 'mamuriy_sud' assistant")
+            template = await self.intent_classifier.classify_intent(query, chat_history_text)
+            
         # Build system prompt
         system_prompt = self._build_system_prompt(
-            assistant,
+            template,
             context,
             history_text,
         )
@@ -204,12 +212,11 @@ class ChatChain:
 
     def _build_system_prompt(
         self,
-        assistant: str,
+        template: PromptTemplate,
         context: str,
-        chat_history: str,
+        chat_history: str
     ) -> str:
         """Build system prompt from template and context."""
-        template = AssistantConfig.get_assistant_prompt_template(assistant)
         return template.format(context=context, chat_history=chat_history)
 
     # Response Generation

@@ -1,7 +1,6 @@
 from typing import Any
 
 from app.chains.prompts import (
-    MAMURIY_ASSISTANT_PROMPT,
     PROJECT_FILE_PROMPT,
     PROMPT,
     SHARTNOMA_PROMPT,
@@ -80,7 +79,7 @@ class AssistantConfig:
             "main": PROMPT,
             "umumiy": PROMPT,  # TODO: Need to make 'umumiy' alias to 'main'
             "soliq": SOLIQ_PROMPT,
-            "mamuriy_sud": MAMURIY_ASSISTANT_PROMPT,
+            "mamuriy_sud": PROMPT,
             "shartnoma": SHARTNOMA_PROMPT,
             "project_file": PROJECT_FILE_PROMPT,
         }
