@@ -1,12 +1,13 @@
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
+
 from langchain.prompts import PromptTemplate
 
+from app.chains.intent_classifier import IntentClassifier
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger
-from app.chains.intent_classifier import IntentClassifier
 from app.llms.base import LLM
 from app.llms.claude import Claude
 from app.llms.gpt import ChatGPT
@@ -157,12 +158,14 @@ class ChatChain:
             )
 
         logger.debug(f"[ChatChain] Total tokens in context + history: {total_tokens}")
-        
+
         template = AssistantConfig.get_assistant_prompt_template(assistant)
         if assistant == "mamuriy_sud":
             logger.debug("[ChatChain] Classifying intent for 'mamuriy_sud' assistant")
-            template = await self.intent_classifier.classify_intent(query, chat_history_text)
-            
+            template = await self.intent_classifier.classify_intent(
+                query, chat_history_text
+            )
+
         # Build system prompt
         system_prompt = self._build_system_prompt(
             template,
@@ -211,10 +214,7 @@ class ChatChain:
         return "\n".join(lines)
 
     def _build_system_prompt(
-        self,
-        template: PromptTemplate,
-        context: str,
-        chat_history: str
+        self, template: PromptTemplate, context: str, chat_history: str
     ) -> str:
         """Build system prompt from template and context."""
         return template.format(context=context, chat_history=chat_history)

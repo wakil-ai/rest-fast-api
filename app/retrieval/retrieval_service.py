@@ -68,9 +68,12 @@ class RetrievalService:
             formatted_result = await self.formatter.format_results(
                 search_results, collection_name
             )
-            
+
             if isinstance(formatted_result, dict):
-                return formatted_result["formatted_text"], formatted_result["attachments"]
+                return (
+                    formatted_result["formatted_text"],
+                    formatted_result["attachments"],
+                )
             else:
                 return (formatted_result, [])
 

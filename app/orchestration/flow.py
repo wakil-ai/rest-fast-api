@@ -468,7 +468,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             # Get LLM
             llm = self.chat_chain._get_llm(self.state.llm_model)
 
-
             # Handle streaming vs non-streaming
             if self.enable_progress_stream:
                 response = self.chat_chain._generate_stream(

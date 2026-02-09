@@ -1,36 +1,40 @@
 from enum import Enum
+
 from langchain.prompts import PromptTemplate
+
+from app.chains.prompts import (
+    APPEAL_TAX_ADMINISTRATION_PROMPT,
+    APPEAL_TO_COURT_DECISION_PROMPT,
+    INTENT_CLASSIFICATION_PROMPT,
+    PREDICTING_LAWSUIT_RESULT_PROMPT,
+    PROMPT,
+)
 from app.core.logger import logger
 from app.llms.gpt import ChatGPT
-from app.chains.prompts import INTENT_CLASSIFICATION_PROMPT
-from app.chains.prompts import (
-    PROMPT,
-    PREDICTING_LAWSUIT_RESULT_PROMPT,
-    APPEAL_TO_COURT_DECISION_PROMPT,
-    APPEAL_TAX_ADMINISTRATION_PROMPT,
-)
 
 
 class LegalIntent(str, Enum):
     """Legal assistance intent categories"""
+
     PREDICTING_LAWSUIT = "predicting_lawsuit"  # Predicting lawsuit results
     APPEAL_COURT_DECISION = "appeal_court_decision"  # Appealing court decisions
     APPEAL_TAX_ADMIN = "appeal_tax_admin"  # Appealing tax administration decisions
     GENERAL_LEGAL = "general_legal"  # General legal questions
+
 
 class IntentClassifier:
     """Classifies user queries into legal assistance intents"""
 
     def __init__(self):
         self.llm = ChatGPT(model_name="gpt-4o-mini")  # Fast classification model
-        
+
     async def get_prompt_for_intent(self, intent: LegalIntent) -> str:
         """
         Select appropriate system prompt based on classified intent
-        
+
         Args:
             intent: Classified user intent
-            
+
         Returns:
             System prompt string for the specific intent
         """
@@ -38,12 +42,14 @@ class IntentClassifier:
             LegalIntent.PREDICTING_LAWSUIT: PREDICTING_LAWSUIT_RESULT_PROMPT,
             LegalIntent.APPEAL_COURT_DECISION: APPEAL_TO_COURT_DECISION_PROMPT,
             LegalIntent.APPEAL_TAX_ADMIN: APPEAL_TAX_ADMINISTRATION_PROMPT,
-            LegalIntent.GENERAL_LEGAL: PROMPT, # Default prompt # Fallback
+            LegalIntent.GENERAL_LEGAL: PROMPT,  # Default prompt # Fallback
         }
-        
+
         return prompt_mapping.get(intent, PROMPT)
 
-    async def classify_intent(self, query: str, chat_history: str = "") -> PromptTemplate:
+    async def classify_intent(
+        self, query: str, chat_history: str = ""
+    ) -> PromptTemplate:
         """
         Classify user query intent
 
@@ -68,13 +74,13 @@ class IntentClassifier:
 
             # Parse response
             intent_str = response.strip().lower()
-            
+
             logger.debug(f"[IntentClassifier] Classification response: {intent_str}")
-            
+
             # Map to enum
             if "predicting_lawsuit" in intent_str:
                 intent = LegalIntent.PREDICTING_LAWSUIT
-            elif "appeal_court" in intent_str :
+            elif "appeal_court" in intent_str:
                 intent = LegalIntent.APPEAL_COURT_DECISION
             elif "appeal_tax" in intent_str:
                 intent = LegalIntent.APPEAL_TAX_ADMIN

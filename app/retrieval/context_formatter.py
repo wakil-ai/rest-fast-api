@@ -165,7 +165,9 @@ class DocumentFormatter:
             "attachments": attachments,
         }
 
-    async def format_sud_results(self, documents: list[dict[str, Any]]) -> tuple[str, None]:
+    async def format_sud_results(
+        self, documents: list[dict[str, Any]]
+    ) -> tuple[str, None]:
         """Format sud documents into readable string."""
         formatted_entries = []
         seen_content = set()
