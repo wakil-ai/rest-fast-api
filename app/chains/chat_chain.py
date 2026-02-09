@@ -136,8 +136,8 @@ class ChatChain:
 
         context, attachments = await self._retrieve_context(
             query=query,
-            collection_name=collection_name,
             file_context=file_context,
+            assistant=assistant,
         )
 
         # Build chat history with memory
@@ -183,9 +183,55 @@ class ChatChain:
         )
 
     async def _retrieve_context(
-        self, query: str, collection_name: str, file_context: str | None
+        self, query: str, file_context: str | None, assistant: str
     ) -> tuple[str, list[dict[str, Any]]]:
-        """Retrieve context from vector DB."""
+        """
+        Retrieve context from vector DB.
+        
+        For mamuriy_sud assistant, retrieves from both mamuriy_sud and soliq collections
+        to provide comprehensive legal context combining administrative law and tax law.
+        """
+        collection_name = AssistantConfig.get_collection_name(assistant)
+        
+        # Special handling for mamuriy_sud: retrieve from both collections
+        if assistant == "mamuriy_sud":
+            # Split top_k between the two collections
+            half_k = max(1, settings.TOP_K // 2)
+            
+            logger.info(
+                f"[ChatChain] Retrieving {half_k} docs from mamuriy_sud "
+                f"and {half_k} docs from soliq collections"
+            )
+            
+            # Retrieve from mamuriy_sud collection
+            mamuriy_context, mamuriy_attachments = await self.retrieval_service.retrieve_context(
+                query=query,
+                top_k=half_k,
+                collection_name=collection_name,  # mamuriy_sud
+                file_context=file_context if file_context else None,
+            )
+            
+            # Retrieve from soliq collection
+            soliq_collection = AssistantConfig.get_collection_name("soliq")
+            soliq_context, soliq_attachments = await self.retrieval_service.retrieve_context(
+                query=query,
+                top_k=half_k,
+                collection_name=soliq_collection,
+                file_context=file_context if file_context else None, 
+            )
+            
+            # Combine contexts with clear separation
+            combined_context = f"{mamuriy_context}\n\n{'='*60}\n\n{soliq_context}"
+            
+            # Combine attachments (if any)
+            combined_attachments = mamuriy_attachments + soliq_attachments
+            
+            if file_context:
+                combined_context = f"{combined_context}\n\n\n{file_context}"
+            
+            return combined_context, combined_attachments
+        
+        # Default behavior for other assistants
         context, attachments = await self.retrieval_service.retrieve_context(
             query=query,
             top_k=settings.TOP_K,
