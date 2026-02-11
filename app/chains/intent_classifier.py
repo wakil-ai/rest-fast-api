@@ -10,8 +10,8 @@ from app.chains.prompts import (
     INTENT_CLASSIFICATION_PROMPT,
     PREDICTING_LAWSUIT_RESULT_PROMPT,
     PROMPT,
-    SUPREME_ADMIN_LITIGATION_SYSTEM_PROMPT_TEMPLATE,
-    SUPREME_JUDICIAL_REVIEW_DIRECTIVE,
+    SUPREME_ADMIN_LITIGATION_SYSTEM_PROMPT,
+    SUPREME_JUDICIAL_REVIEW_DIRECTIVE_PROMPT,
 )
 from app.core.logger import logger
 from app.llms.gpt import ChatGPT
@@ -67,10 +67,10 @@ class IntentClassifier:
         # General domain prompts
         elif domain == DomainType.GENERAL:
             prompt_mapping = {
-                LegalIntent.ADMIN_LITIGATION: SUPREME_ADMIN_LITIGATION_SYSTEM_PROMPT_TEMPLATE,
-                LegalIntent.JUDICIAL_REVIEW: SUPREME_JUDICIAL_REVIEW_DIRECTIVE,
+                LegalIntent.ADMIN_LITIGATION: SUPREME_ADMIN_LITIGATION_SYSTEM_PROMPT,
+                LegalIntent.JUDICIAL_REVIEW: SUPREME_JUDICIAL_REVIEW_DIRECTIVE_PROMPT,
             }
-            return prompt_mapping.get(intent, SUPREME_ADMIN_LITIGATION_SYSTEM_PROMPT_TEMPLATE)
+            return prompt_mapping.get(intent, SUPREME_ADMIN_LITIGATION_SYSTEM_PROMPT)
         
         # Fallback
         return PROMPT

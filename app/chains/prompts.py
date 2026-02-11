@@ -1566,7 +1566,7 @@ CONTEXT
 {chat_history}
 """
 
-SUPREME_JUDICIAL_REVIEW_DIRECTIVE = """
+SUPREME_JUDICIAL_REVIEW_DIRECTIVE_TEMPLATE = """
 **AI-LAWYER: АПЕЛЛЯЦИЯ, КАССАЦИЯ, ТАФТИШ ШИКОЯТИ ЯРАТИШ ТИЗИМИ**
 
 <a name="_hlk221476245"></a>**1.** ТИЗИМ РОЛИ ВА МИССИЯСИ 
@@ -1812,6 +1812,15 @@ APPEAL_TO_COURT_DECISION_PROMPT = PromptTemplate(
     input_variables=["context", "chat_history"],
 )
 
+SUPREME_ADMIN_LITIGATION_SYSTEM_PROMPT = PromptTemplate(
+    template=SUPREME_ADMIN_LITIGATION_SYSTEM_PROMPT_TEMPLATE,
+    input_variables=['context', 'chat_history'],
+)
+
+SUPREME_JUDICIAL_REVIEW_DIRECTIVE_PROMPT = PromptTemplate(
+    template=SUPREME_JUDICIAL_REVIEW_DIRECTIVE_TEMPLATE,
+    input_variables=['context', 'chat_history'],
+)   
 
 PROJECT_FILE_PROMPT = PromptTemplate(
     template=PROJECT_FILE_PROMPT_TEMPLATE,
