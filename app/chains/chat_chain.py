@@ -189,10 +189,10 @@ class ChatChain:
 
         # mamuriy_sud special routing
         if domain_type == "tax":
-            return await self._retrieve_mamuriy_sud(query, file_context, collection_name=settings.MILVUS_MAMURIY_SUD)
+            return await self._retrieve_tax_domain(query, file_context)
 
         if domain_type == "general":
-            return await self._retrieve_mamuriy_sud(query, file_context, collection_name=settings.MILVUS_MAMURIY_SUD_ALL)
+            return await self._retrieve_general_domain(query, file_context)
 
         # Fallback / legacy behavior
         return await self._retrieve_tax_domain(query, file_context)  # same split logic
@@ -210,17 +210,26 @@ class ChatChain:
             ctx += f"\n\n\n{file_context}"
         return ctx, att
 
-    async def _retrieve_mamuriy_sud(self, query: str, file_context: str, collection_name: str) -> tuple[str, list]:
+    async def _retrieve_tax_domain(self, query: str, file_context: str) -> tuple[str, list]:
+        """Retrieve for TAX domain: half from mamuriy_sud + half from soliq"""
         half_k = max(1, settings.TOP_K // 2)
         logger.info(f"TAX domain: retrieving {half_k} from mamuriy_sud + {half_k} from soliq")
 
+        # Retrieve from mamuriy_sud collection
         mam_ctx, mam_att = await self.retrieval.retrieve_context(
-            query=query, top_k=half_k, collection_name=collection_name, file_context=file_context or None
+            query=query, 
+            top_k=half_k, 
+            collection_name=settings.MILVUS_MAMURIY_SUD, 
+            file_context=file_context or None
         )
 
+        # Retrieve from soliq collection
         soliq_coll = AssistantConfig.get_collection_name("soliq")
         sol_ctx, sol_att = await self.retrieval.retrieve_context(
-            query=query, top_k=half_k, collection_name=soliq_coll, file_context=file_context or None
+            query=query, 
+            top_k=half_k, 
+            collection_name=soliq_coll, 
+            file_context=file_context or None
         )
 
         combined = f"{mam_ctx}\n\n{'='*60}\n\n{sol_ctx}"
@@ -228,6 +237,34 @@ class ChatChain:
             combined += f"\n\n\n{file_context}"
 
         return combined, mam_att + sol_att
+    
+    async def _retrieve_general_domain(self, query: str, file_context: str) -> tuple[str, list]:
+        """Retrieve for GENERAL domain: half from mamuriy_sud + half from main (lexuz) database"""
+        half_k = max(1, settings.TOP_K // 2)
+        logger.info(f"GENERAL domain: retrieving {half_k} from mamuriy_sud + {half_k} from main database")
+
+        # Retrieve from mamuriy_sud collection
+        mam_ctx, mam_att = await self.retrieval.retrieve_context(
+            query=query, 
+            top_k=half_k, 
+            collection_name=settings.MILVUS_MAMURIY_SUD, 
+            file_context=file_context or None
+        )
+
+        # Retrieve from main (lexuz) collection - general legal database
+        main_coll = settings.MILVUS_MAIN_NAME
+        main_ctx, main_att = await self.retrieval.retrieve_context(
+            query=query, 
+            top_k=half_k, 
+            collection_name=main_coll, 
+            file_context=file_context or None
+        )
+
+        combined = f"{mam_ctx}\n\n{'='*60}\n\n{main_ctx}"
+        if file_context:
+            combined += f"\n\n\n{file_context}"
+
+        return combined, mam_att + main_att
     
     #  Prompt & History Formatting
     def _format_chat_history(self, chat_history: list | None) -> str:
