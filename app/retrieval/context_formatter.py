@@ -106,12 +106,17 @@ class DocumentFormatter:
         """Format documents based on collection type."""
         if collection_name == settings.MILVUS_SHARTNOMA:
             return await self.format_contract_results(documents)
-        elif collection_name == settings.MILVUS_MAMURIY_SUD or collection_name == settings.MILVUS_MAMURIY_SUD_ALL:
+        elif (
+            collection_name == settings.MILVUS_MAMURIY_SUD
+            or collection_name == settings.MILVUS_MAMURIY_SUD_ALL
+        ):
             return await self.format_sud_results(documents)
         else:
             return await self.format_standard_results(documents)
 
-    async def format_standard_results(self, documents: list[dict[str, Any]]) -> dict[str, Any]:
+    async def format_standard_results(
+        self, documents: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Format standard documents into readable string."""
         formatted_entries = []
         seen_content = set()
@@ -177,13 +182,13 @@ class DocumentFormatter:
 
         metadata_mapping = {
             "responsible_judge_name": "Masul Sudya nomi",
-            "speaker_judge_name":     "Ma'ruzachi sudya",
-            "hearing_date":           "Sud majlisi sanasi",
-            "result":                 "Sud qarori",
-            "court_names_uz":         "Sud nomi",
-            "document_type_name_uz":  "Hujjat turi",
-            "categories_uz":          "Sud toifalari",
-            "instance":               "Sud instantsiyasi",
+            "speaker_judge_name": "Ma'ruzachi sudya",
+            "hearing_date": "Sud majlisi sanasi",
+            "result": "Sud qarori",
+            "court_names_uz": "Sud nomi",
+            "document_type_name_uz": "Hujjat turi",
+            "categories_uz": "Sud toifalari",
+            "instance": "Sud instantsiyasi",
         }
 
         for doc in documents:
@@ -211,11 +216,13 @@ class DocumentFormatter:
             # Add main document content
             content = doc.get("text", "").strip()
             if content:
-                entry_parts.extend([
-                    "\n",
-                    "Hujjat matni:",
-                    content,
-                ])
+                entry_parts.extend(
+                    [
+                        "\n",
+                        "Hujjat matni:",
+                        content,
+                    ]
+                )
 
             entry = "\n".join(entry_parts)
 
@@ -236,9 +243,11 @@ class DocumentFormatter:
         self, metadata: dict[str, Any]
     ) -> Optional[dict[str, Any]]:
         """Create attachment dictionary for contract document."""
-        content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        content_type = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
         docx_blob_path = metadata.get("gcs_docx_path", "")
-        
+
         if docx_blob_path:
             public_url = self.storage_service.get_signed_url(docx_blob_path)
             hierarchy_path = metadata.get("hierarchy_path", "")
@@ -248,7 +257,7 @@ class DocumentFormatter:
                 "url": public_url,
                 "content_type": content_type,
             }
-            
+
         # IF no DOCX path, try to convert from MD path
         md_blob_path = metadata.get("gcs_md_path", "")
         if not md_blob_path:

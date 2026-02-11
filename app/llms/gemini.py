@@ -1,6 +1,7 @@
+from typing import AsyncGenerator
+
 from google import genai
 from google.genai import types
-from typing import AsyncGenerator
 
 from app.core.config import settings
 from app.llms.base import LLM
@@ -8,11 +9,9 @@ from app.llms.base import LLM
 
 class Gemini(LLM):
     def __init__(self, model_name: str = "gemini-3-pro-preview"):
-        self.client = genai.Client(
-            api_key=settings.GEMINI_API_KEY
-        )
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.model = model_name
-        
+
     async def generate_response(
         self,
         user_prompt: str,
@@ -33,8 +32,10 @@ class Gemini(LLM):
 
         except Exception as e:
             raise e
-        
-    async def _generate_streaming(self, system_prompt: str, user_prompt: str) -> AsyncGenerator[str, None]:
+
+    async def _generate_streaming(
+        self, system_prompt: str, user_prompt: str
+    ) -> AsyncGenerator[str, None]:
         """Generate streaming response."""
         contents = [
             types.Content(
@@ -51,8 +52,7 @@ class Gemini(LLM):
             ),
         ]
         tools = [
-            types.Tool(googleSearch=types.GoogleSearch(
-            )),
+            types.Tool(googleSearch=types.GoogleSearch()),
         ]
         generate_content_config = types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(
@@ -60,14 +60,14 @@ class Gemini(LLM):
             ),
             tools=tools,
         )
-        
+
         for chunk in self.client.models.generate_content_stream(
             model=self.model,
             contents=contents,
             config=generate_content_config,
         ):
             yield chunk.text
-    
+
     async def _generate_complete(self, system_prompt: str, user_prompt: str) -> str:
         """Generate complete response."""
         contents = [
@@ -85,8 +85,7 @@ class Gemini(LLM):
             ),
         ]
         tools = [
-            types.Tool(googleSearch=types.GoogleSearch(
-            )),
+            types.Tool(googleSearch=types.GoogleSearch()),
         ]
         generate_content_config = types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(
@@ -94,11 +93,11 @@ class Gemini(LLM):
             ),
             tools=tools,
         )
-        
+
         response = self.client.models.generate_content(
             model=self.model,
             contents=contents,
             config=generate_content_config,
         )
-        
+
         return response.text

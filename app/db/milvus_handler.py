@@ -32,14 +32,14 @@ class MilvusHandler(VectorDBHandler):
             user=settings.MILVUS_USER,
             password=settings.MILVUS_PASSWORD,
         )
-        
+
         # Create and load all collections at startup
         for col in self.milvus_collections:
             self.create_collection(col)
-        
+
         # Ensure all collections are loaded into memory at startup
         self._load_all_collections()
-    
+
     def _load_all_collections(self) -> None:
         """
         Load all collections into memory at startup to avoid latency during queries.

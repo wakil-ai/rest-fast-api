@@ -1,6 +1,5 @@
 from typing import Any
 
-from app.chains.prompts_registry import PROMPTS
 from app.core.config import settings
 
 

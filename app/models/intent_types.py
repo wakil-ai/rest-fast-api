@@ -1,4 +1,5 @@
 from enum import Enum
+
 from pydantic import BaseModel
 
 
@@ -6,10 +7,12 @@ class IntentOutput(BaseModel):
     domain: str
     intent: str
 
+
 class DomainType(str, Enum):
     TAX = "tax"
     GENERAL = "general"
     CONTRACT = "contract"
+
 
 class LegalIntent(str, Enum):
     # Tax domain intents

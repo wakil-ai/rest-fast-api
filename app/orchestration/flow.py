@@ -373,13 +373,11 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     async def _retrieve_project_documents(self) -> str:
         """Retrieve documents for project context (dual retrieval)."""
         # Project-specific context
-        project_context = (
-            await self.chat_chain.retrieval.retrieve_project_context(
-                query=self.state.rewritten_query,
-                project_id=self.state.project_id,
-                user_id=self.state.user_id,
-                top_k=settings.TOP_K // 2,
-            )
+        project_context = await self.chat_chain.retrieval.retrieve_project_context(
+            query=self.state.rewritten_query,
+            project_id=self.state.project_id,
+            user_id=self.state.user_id,
+            top_k=settings.TOP_K // 2,
         )
 
         return project_context

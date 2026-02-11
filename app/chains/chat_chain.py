@@ -19,6 +19,7 @@ from app.utils.tokens import count_tokens, truncate_to_token_limit
 @dataclass
 class GenerationContext:
     """All context needed for response generation."""
+
     context: str
     system_prompt: str
     chat_history: str
@@ -43,7 +44,6 @@ class ChatChain:
         self.intent_classifier = IntentClassifier()
         self.prompts_registry = PromptRegistry()
 
-    
     #  Public API
     async def generate_answer(
         self,
@@ -78,7 +78,6 @@ class ChatChain:
             logger.error(f"Generation failed: {e}", exc_info=True)
             return self._create_error_response(stream)
 
-    
     #  LLM Selection
     def _select_llm(self, model_name: str | None) -> LLM:
         """Factory method: select LLM based on model name prefix."""
@@ -100,8 +99,7 @@ class ChatChain:
         logger.warning(f"Unknown model '{model_name}' → using fallback")
         return self.fallback_llm
 
-    
-    #  Context Preparation  
+    #  Context Preparation
     async def _prepare_generation_context(
         self,
         user_id: str,
@@ -150,13 +148,18 @@ class ChatChain:
                 f"Context + history exceeds token limit ({total_tokens} > "
                 f"{settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT}). Truncating context."
             )
-            max_ctx_tokens = settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT - count_tokens(full_history_text)
-            retrieved_context = truncate_to_token_limit(retrieved_context, max_ctx_tokens)
+            max_ctx_tokens = settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT - count_tokens(
+                full_history_text
+            )
+            retrieved_context = truncate_to_token_limit(
+                retrieved_context, max_ctx_tokens
+            )
 
         # 6. Final system prompt
-        system_prompt = self._build_system_prompt(template, retrieved_context, full_history_text)
-        
-        
+        system_prompt = self._build_system_prompt(
+            template, retrieved_context, full_history_text
+        )
+
         logger.debug(f"[SYSTEM PROMPT]\n{system_prompt}")
 
         return GenerationContext(
@@ -218,26 +221,30 @@ class ChatChain:
             ctx += f"\n\n\n{file_context}"
         return ctx, att
 
-    async def _retrieve_tax_domain(self, query: str, file_context: str) -> tuple[str, list]:
+    async def _retrieve_tax_domain(
+        self, query: str, file_context: str
+    ) -> tuple[str, list]:
         """Retrieve for TAX domain: half from mamuriy_sud + half from soliq"""
         half_k = max(1, settings.TOP_K // 2)
-        logger.info(f"TAX domain: retrieving {half_k} from mamuriy_sud + {half_k} from soliq")
+        logger.info(
+            f"TAX domain: retrieving {half_k} from mamuriy_sud + {half_k} from soliq"
+        )
 
         # Retrieve from mamuriy_sud collection
         mam_ctx, mam_att = await self.retrieval.retrieve_context(
-            query=query, 
-            top_k=half_k, 
-            collection_name=settings.MILVUS_MAMURIY_SUD, 
-            file_context=file_context or None
+            query=query,
+            top_k=half_k,
+            collection_name=settings.MILVUS_MAMURIY_SUD,
+            file_context=file_context or None,
         )
 
         # Retrieve from soliq collection
         soliq_coll = AssistantConfig.get_collection_name("soliq")
         sol_ctx, sol_att = await self.retrieval.retrieve_context(
-            query=query, 
-            top_k=half_k, 
-            collection_name=soliq_coll, 
-            file_context=file_context or None
+            query=query,
+            top_k=half_k,
+            collection_name=soliq_coll,
+            file_context=file_context or None,
         )
 
         combined = f"{mam_ctx}\n\n{'='*60}\n\n{sol_ctx}"
@@ -245,27 +252,31 @@ class ChatChain:
             combined += f"\n\n\n{file_context}"
 
         return combined, mam_att + sol_att
-    
-    async def _retrieve_general_domain(self, query: str, file_context: str) -> tuple[str, list]:
+
+    async def _retrieve_general_domain(
+        self, query: str, file_context: str
+    ) -> tuple[str, list]:
         """Retrieve for GENERAL domain: half from mamuriy_sud + half from main (lexuz) database"""
         half_k = max(1, settings.TOP_K // 2)
-        logger.info(f"GENERAL domain: retrieving {half_k} from mamuriy_sud + {half_k} from main database")
+        logger.info(
+            f"GENERAL domain: retrieving {half_k} from mamuriy_sud + {half_k} from main database"
+        )
 
         # Retrieve from mamuriy_sud collection
         mam_ctx, mam_att = await self.retrieval.retrieve_context(
-            query=query, 
-            top_k=half_k, 
-            collection_name=settings.MILVUS_MAMURIY_SUD, 
-            file_context=file_context or None
+            query=query,
+            top_k=half_k,
+            collection_name=settings.MILVUS_MAMURIY_SUD,
+            file_context=file_context or None,
         )
 
         # Retrieve from main (lexuz) collection - general legal database
         main_coll = settings.MILVUS_MAIN_NAME
         main_ctx, main_att = await self.retrieval.retrieve_context(
-            query=query, 
-            top_k=half_k, 
-            collection_name=main_coll, 
-            file_context=file_context or None
+            query=query,
+            top_k=half_k,
+            collection_name=main_coll,
+            file_context=file_context or None,
         )
 
         combined = f"{mam_ctx}\n\n{'='*60}\n\n{main_ctx}"
@@ -273,13 +284,13 @@ class ChatChain:
             combined += f"\n\n\n{file_context}"
 
         return combined, mam_att + main_att
-    
+
     #  Prompt & History Formatting
     def _format_chat_history(self, chat_history: list | None) -> str:
         if not chat_history:
             return ""
 
-        recent = chat_history[-settings.CHAT_HISTORY_LIMIT:]
+        recent = chat_history[-settings.CHAT_HISTORY_LIMIT :]
         if not recent:
             return ""
 
@@ -297,7 +308,6 @@ class ChatChain:
     ) -> str:
         return template.format(context=context, chat_history=chat_history)
 
-    
     #  Generation (streaming & non-streaming)
     def _generate_streaming(
         self,
@@ -344,13 +354,17 @@ class ChatChain:
         except Exception:
             logger.warning("Primary LLM failed → fallback", exc_info=True)
             try:
-                raw = await self._get_response(self.fallback_llm, query, ctx.system_prompt)
+                raw = await self._get_response(
+                    self.fallback_llm, query, ctx.system_prompt
+                )
             except Exception:
                 logger.error("Fallback LLM failed", exc_info=True)
                 raise
 
         cleaned = self._clean_text(raw)
-        logger.info(f"LLM response: {cleaned[:300]}{'...' if len(cleaned) > 300 else ''}")
+        logger.info(
+            f"LLM response: {cleaned[:300]}{'...' if len(cleaned) > 300 else ''}"
+        )
 
         meta = {
             "attachments": ctx.attachments if assistant == "shartnoma" else [],
@@ -361,7 +375,9 @@ class ChatChain:
 
         return cleaned, meta
 
-    async def _stream_from_llm(self, llm: LLM, user_prompt: str, system_prompt: str) -> AsyncGenerator[str, None]:
+    async def _stream_from_llm(
+        self, llm: LLM, user_prompt: str, system_prompt: str
+    ) -> AsyncGenerator[str, None]:
         gen = await llm.generate_response(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
@@ -371,14 +387,15 @@ class ChatChain:
             if chunk:
                 yield self._clean_text(chunk)
 
-    async def _get_response(self, llm: LLM, user_prompt: str, system_prompt: str) -> str:
+    async def _get_response(
+        self, llm: LLM, user_prompt: str, system_prompt: str
+    ) -> str:
         return await llm.generate_response(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             stream=False,
         )
 
-    
     #  Utilities
     @staticmethod
     def _clean_text(text: str) -> str:

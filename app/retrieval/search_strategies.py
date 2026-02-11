@@ -39,7 +39,10 @@ class SearchStrategy:
         if config.collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME:
             return self._search_soliq_assistant(query, config)
 
-        if config.collection_name == settings.MILVUS_MAMURIY_SUD or config.collection_name == settings.MILVUS_MAMURIY_SUD_ALL:
+        if (
+            config.collection_name == settings.MILVUS_MAMURIY_SUD
+            or config.collection_name == settings.MILVUS_MAMURIY_SUD_ALL
+        ):
             return self._search_mamuriy_sud(query, config, expr)
 
         search_method = search_methods.get(config.search_type, self._search_hybrid)

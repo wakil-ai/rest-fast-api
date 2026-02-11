@@ -1,10 +1,10 @@
-from pydantic import ValidationError
 from langchain.output_parsers import PydanticOutputParser
+from pydantic import ValidationError
 
-from app.models.intent_types import DomainType, LegalIntent, IntentOutput
 from app.chains.prompts_registry import PromptRegistry
 from app.core.logger import logger
 from app.llms.gpt import ChatGPT
+from app.models.intent_types import DomainType, IntentOutput, LegalIntent
 
 
 class IntentClassifier:
@@ -14,11 +14,11 @@ class IntentClassifier:
 
         # Structured output parser
         self.output_parser = PydanticOutputParser(pydantic_object=IntentOutput)
-        
+
         # Intent classification prompt template
-        self.intent_prompt_template = (
-            self.prompt_registry.get_prompt("intent_classification").template
-        )
+        self.intent_prompt_template = self.prompt_registry.get_prompt(
+            "intent_classification"
+        ).template
 
     async def classify_intent(
         self,

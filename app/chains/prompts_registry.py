@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Dict
+
 from langchain.prompts import PromptTemplate
 
 from app.models.intent_types import DomainType, LegalIntent
@@ -72,26 +73,20 @@ class PromptRegistry:
                 LegalIntent.APPEAL_COURT_DECISION: "appeal_court_decision",
                 LegalIntent.APPEAL_TAX_ADMIN: "appeal_tax_administration",
             }
-            return self.get_prompt(
-                mapping.get(intent, "appeal_tax_administration")
-            )
+            return self.get_prompt(mapping.get(intent, "appeal_tax_administration"))
 
         if domain == DomainType.GENERAL:
             mapping = {
                 LegalIntent.ADMIN_LITIGATION: "supreme_admin_litigation",
                 LegalIntent.JUDICIAL_REVIEW: "supreme_judicial_review",
             }
-            return self.get_prompt(
-                mapping.get(intent, "supreme_admin_litigation")
-            )
+            return self.get_prompt(mapping.get(intent, "supreme_admin_litigation"))
 
         if domain == DomainType.CONTRACT:
             mapping = {
                 LegalIntent.CONTRACT_TEMPLATE_GENERATION: "contract_template_generation",
                 LegalIntent.CONTRACT_RISK_ANALYSIS: "contract_risk_analysis",
             }
-            return self.get_prompt(
-                mapping.get(intent, "contract_template_generation")
-            )
+            return self.get_prompt(mapping.get(intent, "contract_template_generation"))
 
         return self.get_prompt("system_prompt")
