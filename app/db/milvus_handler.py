@@ -24,6 +24,7 @@ class MilvusHandler(VectorDBHandler):
             settings.MILVUS_SOLIQ_ASSISTANT_NAME,
             settings.MILVUS_PROJECT_FILES,
             settings.MILVUS_MAMURIY_SUD,
+            settings.MILVUS_MAMURIY_SUD_ALL,
             settings.MILVUS_SHARTNOMA,
         ]
         self.client = MilvusClient(
@@ -31,8 +32,24 @@ class MilvusHandler(VectorDBHandler):
             user=settings.MILVUS_USER,
             password=settings.MILVUS_PASSWORD,
         )
+        
+        # Create and load all collections at startup
         for col in self.milvus_collections:
             self.create_collection(col)
+        
+        # Ensure all collections are loaded into memory at startup
+        self._load_all_collections()
+    
+    def _load_all_collections(self) -> None:
+        """
+        Load all collections into memory at startup to avoid latency during queries.
+        """
+        for collection_name in self.milvus_collections:
+            try:
+                if self.client.has_collection(collection_name):
+                    self.client.load_collection(collection_name)
+            except Exception as e:
+                logger.error(f"Failed to load collection '{collection_name}': {e}")
 
     def create_collection(self, collection_name: str):
         # Drop existing collection if it exists

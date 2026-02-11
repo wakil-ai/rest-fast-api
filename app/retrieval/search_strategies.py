@@ -39,7 +39,7 @@ class SearchStrategy:
         if config.collection_name == settings.MILVUS_SOLIQ_ASSISTANT_NAME:
             return self._search_soliq_assistant(query, config)
 
-        if config.collection_name == settings.MILVUS_MAMURIY_SUD:
+        if config.collection_name == settings.MILVUS_MAMURIY_SUD or config.collection_name == settings.MILVUS_MAMURIY_SUD_ALL:
             return self._search_mamuriy_sud(query, config, expr)
 
         search_method = search_methods.get(config.search_type, self._search_hybrid)
@@ -117,6 +117,7 @@ class SearchStrategy:
         documents = []
         for doc in search_results:
             file_id = doc.get("metadata", {}).get("file_id")
+            metadata = doc.get("metadata", {})
 
             if file_id in file_ids:
                 continue  # Skip duplicate file_ids
@@ -128,12 +129,12 @@ class SearchStrategy:
             filter = f"metadata['file_id'] == '{file_id}'"
             searched_file_results = self.db_manager.vector_handler.query(
                 filter=filter,
-                collection_name=settings.MILVUS_MAMURIY_SUD,
+                collection_name=config.collection_name,
             )
 
             # Sort files with chunk_id in the metadata
             searched_file_results.sort(
-                key=lambda x: x.get("metadata", {}).get("chunk_id", 0)
+                key=lambda x: x.get("metadata", {}).get("chunk_index", 0)
             )
             file_texts = file_texts = "\n".join(
                 file_doc.get("text", "") for file_doc in searched_file_results
@@ -147,6 +148,7 @@ class SearchStrategy:
                         "file_name": file_name,
                         "text": file_texts,
                         "hierarchy": hierarchy,
+                        **metadata,
                     },
                 }
             )

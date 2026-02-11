@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     MILVUS_SOLIQ_ASSISTANT_NAME: str = "soliq"
     MILVUS_PROJECT_FILES: str = "project_files"
     MILVUS_MAMURIY_SUD: str = "mamuriy_sud"
+    MILVUS_MAMURIY_SUD_ALL: str = "mamuriy_sud_all"  # For general domain
     MILVUS_SHARTNOMA: str = "shartnoma"
     MILVUS_URI: str = "http://localhost:19530"
     MILVUS_USER: str | None = None

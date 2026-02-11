@@ -102,16 +102,16 @@ class DocumentFormatter:
 
     async def format_results(
         self, documents: list[dict[str, Any]], collection_name: str
-    ) -> Any:
+    ) -> dict[str, Any]:
         """Format documents based on collection type."""
         if collection_name == settings.MILVUS_SHARTNOMA:
             return await self.format_contract_results(documents)
-        elif collection_name == settings.MILVUS_MAMURIY_SUD:
+        elif collection_name == settings.MILVUS_MAMURIY_SUD or collection_name == settings.MILVUS_MAMURIY_SUD_ALL:
             return await self.format_sud_results(documents)
         else:
             return await self.format_standard_results(documents)
 
-    async def format_standard_results(self, documents: list[dict[str, Any]]) -> str:
+    async def format_standard_results(self, documents: list[dict[str, Any]]) -> dict[str, Any]:
         """Format standard documents into readable string."""
         formatted_entries = []
         seen_content = set()
@@ -123,16 +123,19 @@ class DocumentFormatter:
                 seen_content.add(entry)
                 formatted_entries.append(entry)
 
-        return "\n".join(formatted_entries)
+        return {
+            "formatted_text": "\n\n".join(formatted_entries),
+            "attachments": [],
+        }
 
     async def format_contract_results(
         self, documents: list[dict[str, Any]], max_attachments: int = 3, top_k: int = 5
-    ) -> tuple[str, list[dict[str, Any]]]:
+    ) -> dict[str, Any]:
         """
         Format contract documents for shartnoma assistant.
 
         Returns:
-            Tuple of (formatted_text, attachments_list)
+            Dict with keys "formatted_text" and "attachments"
         """
         formatted_entries = []
         attachments = []
@@ -167,27 +170,67 @@ class DocumentFormatter:
 
     async def format_sud_results(
         self, documents: list[dict[str, Any]]
-    ) -> tuple[str, None]:
-        """Format sud documents into readable string."""
+    ) -> dict[str, Any]:
+        """Format sud documents into readable string with metadata fields."""
         formatted_entries = []
         seen_content = set()
 
+        metadata_mapping = {
+            "responsible_judge_name": "Masul Sudya nomi",
+            "speaker_judge_name":     "Ma'ruzachi sudya",
+            "hearing_date":           "Sud majlisi sanasi",
+            "result":                 "Sud qarori",
+            "court_names_uz":         "Sud nomi",
+            "document_type_name_uz":  "Hujjat turi",
+            "categories_uz":          "Sud toifalari",
+            "instance":               "Sud instantsiyasi",
+        }
+
         for doc in documents:
             metadata = doc.get("metadata", {})
-            title = metadata.get("hierarchy", "")
+            title = metadata.get("hierarchy", "—")
 
+            # Collect displayed metadata lines
+            meta_lines = []
+            for key, label in metadata_mapping.items():
+                value = metadata.get(key)
+                if value is not None and value != "":
+                    meta_lines.append(f"{label}: {value}")
+
+            # Build the full entry
             entry_parts = [
-                f"{'-' * 50}",
-                f"Title: {title}",
-                f"Document Content: {doc.get('text', '')}\n",
+                "-" * 50,
+                f"Hierarchy: {title}",
             ]
+
+            # Add metadata fields only if we have any
+            if meta_lines:
+                entry_parts.append("\n")
+                entry_parts.extend(meta_lines)
+
+            # Add main document content
+            content = doc.get("text", "").strip()
+            if content:
+                entry_parts.extend([
+                    "\n",
+                    "Hujjat matni:",
+                    content,
+                ])
+
             entry = "\n".join(entry_parts)
 
+            # Deduplicate entries
             if entry not in seen_content:
                 seen_content.add(entry)
                 formatted_entries.append(entry)
 
-        return "\n".join(formatted_entries)
+        if not formatted_entries:
+            return "Hech qanday hujjat topilmadi.", None
+
+        return {
+            "formatted_text": "\n\n".join(formatted_entries),
+            "attachments": [],
+        }
 
     async def _create_contract_attachment(
         self, metadata: dict[str, Any]
