@@ -1,11 +1,6 @@
 from typing import Any
 
-from app.chains.prompts import (
-    PROJECT_FILE_PROMPT,
-    PROMPT,
-    SHARTNOMA_PROMPT,
-    SOLIQ_PROMPT,
-)
+from app.chains.prompts_registry import PROMPTS
 from app.core.config import settings
 
 
@@ -71,20 +66,3 @@ class AssistantConfig:
 
         # Return default if no match found
         return "main"
-
-    @classmethod
-    def get_assistant_prompt_template(cls, assistant_name: str) -> str:
-        """Get prompt template for a specific assistant."""
-        prompts = {
-            "main": PROMPT,
-            "umumiy": PROMPT,  # TODO: Need to make 'umumiy' alias to 'main'
-            "soliq": SOLIQ_PROMPT,
-            "mamuriy_sud": PROMPT,
-            "shartnoma": SHARTNOMA_PROMPT,
-            "project_file": PROJECT_FILE_PROMPT,
-        }
-        if assistant_name not in prompts:
-            raise ValueError(
-                f"Prompt template for assistant '{assistant_name}' not found."
-            )
-        return prompts[assistant_name]

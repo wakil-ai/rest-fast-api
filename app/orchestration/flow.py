@@ -4,6 +4,7 @@ from typing import Any
 from crewai.flow.flow import Flow, listen, router, start
 
 from app.chains.chat_chain import ChatChain, GenerationContext
+from app.chains.prompts_registry import PromptRegistry
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger
@@ -44,7 +45,8 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         """Initialize all required services."""
         self.chat_chain = ChatChain()
         self.memory_service = ChatMemoryService()
-        self.formatter = self.chat_chain.retrieval_service.formatter
+        self.prompt_registry = PromptRegistry()
+        self.formatter = self.chat_chain.retrieval.formatter
 
     def _initialize_crews(self) -> None:
         """Initialize and cache all crews once."""
@@ -372,7 +374,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         """Retrieve documents for project context (dual retrieval)."""
         # Project-specific context
         project_context = (
-            await self.chat_chain.retrieval_service.retrieve_project_context(
+            await self.chat_chain.retrieval.retrieve_project_context(
                 query=self.state.rewritten_query,
                 project_id=self.state.project_id,
                 user_id=self.state.user_id,
@@ -386,7 +388,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         self, query_translations: dict, strategy: str, collection_name: str
     ) -> str:
         """Retrieve standard documents."""
-        documents_list = await self.chat_chain.retrieval_service.retrieve_multilingual(
+        documents_list = await self.chat_chain.retrieval.retrieve_multilingual(
             query_translations=query_translations,
             top_k=settings.TOP_K,
             search_type=strategy,
@@ -399,7 +401,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         """Retrieve documents for provided file IDs."""
         file_context = ""
         for file_id in self.state.file_ids:
-            file = self.chat_chain.chat_history_service.get_file_by_id(file_id)
+            file = self.chat_chain.history_service.get_file_by_id(file_id)
             if file:
                 file_context += f"\n\nFile: {file['file_metadata']['file_name']}\n{file['ocr_result']}"
 
@@ -466,22 +468,22 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             system_prompt = self._build_system_prompt()
 
             # Get LLM
-            llm = self.chat_chain._get_llm(self.state.llm_model)
+            llm = self.chat_chain._select_llm(self.state.llm_model)
 
             # Handle streaming vs non-streaming
             if self.enable_progress_stream:
-                response = self.chat_chain._generate_stream(
+                response = self.chat_chain._generate_streaming(
                     llm=llm,
                     query=query,
-                    gen_context=self._create_chat_context(system_prompt),
+                    ctx=self._create_chat_context(system_prompt),
                     assistant=self.state.selected_assistant,
                 )
                 return await self._handle_streaming_response(response)
             else:
-                response = await self.chat_chain._generate_non_stream(
+                response = await self.chat_chain._generate_non_streaming(
                     llm=llm,
                     query=query,
-                    gen_context=self._create_chat_context(system_prompt),
+                    ctx=self._create_chat_context(system_prompt),
                     assistant=self.state.selected_assistant,
                 )
                 return self._handle_non_streaming_response(response)
@@ -526,7 +528,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
     def _build_standard_system_prompt(self) -> str:
         """Build standard system prompt."""
-        prompt_template = self._get_assistant_prompt_template(
+        prompt_template = self.prompt_registry.get_assistant_prompt(
             self.state.selected_assistant
         )
 

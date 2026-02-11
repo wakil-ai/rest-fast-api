@@ -5,6 +5,7 @@ from typing import Any
 from langchain.prompts import PromptTemplate
 
 from app.chains.intent_classifier import IntentClassifier
+from app.chains.prompts_registry import PromptRegistry
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger
@@ -40,6 +41,7 @@ class ChatChain:
         self.history_service = ChatHistoryService()
         self.fallback_llm = ChatGPT()
         self.intent_classifier = IntentClassifier()
+        self.prompts_registry = PromptRegistry()
 
     
     #  Public API
@@ -117,8 +119,8 @@ class ChatChain:
         memory_text = await self.memory.search_memory(user_id, query)
         full_history_text = "\n".join(filter(None, [history_formatted, memory_text]))
 
-        # 3. Prompt template & domain classification (mamuriy_sud special case)
-        template = AssistantConfig.get_assistant_prompt_template(assistant)
+        # 3. Prompt template & domain classification (mamuriy_sud and shartnoma special cases)
+        template = self.prompts_registry.get_assistant_prompt(assistant)
         domain_type = None
 
         if assistant == "mamuriy_sud":
@@ -126,6 +128,12 @@ class ChatChain:
                 query, history_formatted, file_context
             )
             logger.info(f"Intent classified as domain: {domain_type}")
+        elif assistant == "shartnoma":
+            # Contract analysis - classify intent for template generation vs risk analysis
+            domain_type, template = await self.intent_classifier.classify_intent(
+                query, history_formatted, file_context
+            )
+            logger.info(f"Contract intent classified as domain: {domain_type}")
 
         # 4. Retrieval
         retrieved_context, attachments = await self._retrieve_relevant_context(
@@ -291,8 +299,6 @@ class ChatChain:
 
     
     #  Generation (streaming & non-streaming)
-    
-
     def _generate_streaming(
         self,
         llm: LLM,
