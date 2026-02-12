@@ -393,7 +393,9 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         )
 
         # Format using the standard context formatter
-        result = await self.chat_chain.retrieval._formatter.format_results(documents_list)
+        result = await self.chat_chain.retrieval._formatter.format_results(
+            documents_list
+        )
         return result.context
 
     async def _get_file_id_context(self) -> str:

@@ -1,6 +1,7 @@
 import re
 import unicodedata
 
+
 # Lightweight text-cleaning helpers (formerly in context_formatter.py)
 class TextCleaner:
     """Static text-cleaning utilities shared across assistants."""
@@ -16,7 +17,7 @@ class TextCleaner:
 
     @staticmethod
     def remove_header_lines(text: str) -> str:
-        cleaned = [l for l in text.splitlines() if not re.match(r"^\s*#{1,6}\s*", l)]
+        cleaned = [le for le in text.splitlines() if not re.match(r"^\s*#{1,6}\s*", le)]
         return "\n".join(cleaned).strip()
 
     @staticmethod
@@ -32,6 +33,7 @@ class PathConverter:
         if not isinstance(s, str):
             return False
         return re.fullmatch(r"-?\d+", s) is not None
+
 
 def clean_html_text(text: str) -> str:
     """

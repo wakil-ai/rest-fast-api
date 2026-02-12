@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from app.assistants.base import BaseAssistant, RetrievalConfig, RetrievalResult
+from app.assistants.base import BaseAssistant, RetrievalResult
 from app.chains.intent_classifier import IntentClassifier
 from app.core.config import settings
 from app.core.logger import logger
@@ -42,7 +42,9 @@ class ShartnomaAssistant(BaseAssistant):
             domain_type, template = await self.intent_classifier.classify_intent(
                 query, chat_history, file_context
             )
-            logger.info(f"[ShartnomaAssistant] Contract intent classified as domain: {domain_type}")
+            logger.info(
+                f"[ShartnomaAssistant] Contract intent classified as domain: {domain_type}"
+            )
 
             # Standard retrieval pipeline
             effective_query = f"{query}\n\n\n{file_context}" if file_context else query
@@ -65,7 +67,10 @@ class ShartnomaAssistant(BaseAssistant):
 
     # Formatting
     async def format_results(
-        self, documents: list[dict[str, Any]], max_attachments: int = 3, top_k: int = 5,
+        self,
+        documents: list[dict[str, Any]],
+        max_attachments: int = 3,
+        top_k: int = 5,
     ) -> RetrievalResult:
         """Format contract documents and generate DOCX download attachments."""
         entries: list[str] = []

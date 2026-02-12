@@ -6,8 +6,9 @@ from app.assistants.base import RetrievalConfig
 from app.core.config import settings
 from app.core.logger import logger
 from app.db.db_manager import DBManager
-from app.retrieval.embedding_manager import EmbeddingManager
 from app.retrieval.context_formatter import StandardContextFormatter
+from app.retrieval.embedding_manager import EmbeddingManager
+
 
 class RetrievalService:
     """
@@ -98,8 +99,7 @@ class RetrievalService:
         unique = self._formatter.deduplicate_by_url(all_results)
         unique.sort(key=lambda x: x.get("score", 0), reverse=True)
         return unique[:top_k]
-    
-    
+
     # Low-level search dispatcher
     def _search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
         """Route to the correct search method based on ``config.search_type``."""

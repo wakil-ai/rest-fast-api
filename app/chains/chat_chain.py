@@ -143,15 +143,19 @@ class ChatChain:
         full_history_text = "\n".join(filter(None, [history_formatted, memory_text]))
 
         # 3. Retrieval — each assistant handles its own classification / filtering
-        retrieved_context, attachments, template_override = await self._retrieve_relevant_context(
-            query=query,
-            file_context=file_context,
-            chat_history=history_formatted,
-            assistant=assistant,
+        retrieved_context, attachments, template_override = (
+            await self._retrieve_relevant_context(
+                query=query,
+                file_context=file_context,
+                chat_history=history_formatted,
+                assistant=assistant,
+            )
         )
 
         # 4. Prompt template (assistant may override via intent classification)
-        template = template_override or self.prompts_registry.get_assistant_prompt(assistant)
+        template = template_override or self.prompts_registry.get_assistant_prompt(
+            assistant
+        )
 
         # 5. Truncate if necessary
         total_tokens = count_tokens(retrieved_context + full_history_text)

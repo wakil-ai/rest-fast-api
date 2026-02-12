@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -22,7 +22,9 @@ def mock_dependencies():
 
         # Setup default async returns
         mock_mem_instance.search_memory = AsyncMock(return_value="")
-        mock_ret_instance.retrieve_context = AsyncMock(return_value=("Valid Context", []))
+        mock_ret_instance.retrieve_context = AsyncMock(
+            return_value=("Valid Context", [])
+        )
 
         # Mock main assistant's retrieve
         mock_main_instance = mock_main_asst.return_value

@@ -4,11 +4,11 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.logger import logger
+from app.db.db_manager import DBManager
 from app.models.retrieval_models import RetrievalConfig, RetrievalResult
 from app.retrieval.context_formatter import StandardContextFormatter
-from app.db.db_manager import DBManager
 from app.retrieval.embedding_manager import EmbeddingManager
-from app.utils.text_cleaning import TextCleaner, PathConverter
+
 
 # Abstract base assistant
 class BaseAssistant:
@@ -36,7 +36,7 @@ class BaseAssistant:
         if BaseAssistant._embedder is None:
             BaseAssistant._embedder = EmbeddingManager()
         return BaseAssistant._embedder
-    
+
     @property
     def formatter(self) -> StandardContextFormatter:
         if BaseAssistant._formatter is None:
@@ -69,7 +69,9 @@ class BaseAssistant:
 
             return result
         except Exception as e:
-            logger.error(f"[{self.__class__.__name__}] Retrieval failed: {e}", exc_info=True)
+            logger.error(
+                f"[{self.__class__.__name__}] Retrieval failed: {e}", exc_info=True
+            )
             return self._error_result()
 
     # Hooks for subclasses
@@ -84,9 +86,7 @@ class BaseAssistant:
             expr=config.filter or "",
         )
 
-    async def format_results(
-        self, documents: list[dict[str, Any]]
-    ) -> RetrievalResult:
+    async def format_results(self, documents: list[dict[str, Any]]) -> RetrievalResult:
         """Format raw documents using the standard formatter."""
         return await self.formatter.format_results(documents)
 

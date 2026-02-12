@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.models.retrieval_models import RetrievalResult
-from app.utils.text_cleaning import TextCleaner, PathConverter
+from app.utils.text_cleaning import PathConverter, TextCleaner
 
 
 class StandardContextFormatter:
@@ -16,7 +16,9 @@ class StandardContextFormatter:
         return await self._format_standard(documents)
 
     # Shared formatting standards
-    async def _format_standard(self, documents: list[dict[str, Any]]) -> RetrievalResult:
+    async def _format_standard(
+        self, documents: list[dict[str, Any]]
+    ) -> RetrievalResult:
         """Default formatting: score + text + citation metadata."""
         entries: list[str] = []
         seen: set[str] = set()
@@ -52,7 +54,9 @@ class StandardContextFormatter:
         parts.extend(self._build_metadata_section(metadata, is_buxgalter))
         return "\n".join(parts)
 
-    def _build_metadata_section(self, metadata: dict[str, Any], is_buxgalter: bool) -> list[str]:
+    def _build_metadata_section(
+        self, metadata: dict[str, Any], is_buxgalter: bool
+    ) -> list[str]:
         parts: list[str] = []
 
         if not is_buxgalter and (hierarchy := metadata.get("hierarchy_path")):
@@ -88,7 +92,11 @@ class StandardContextFormatter:
 
         if metadata.get("project_id"):
             filename = metadata.get("file_name", "")
-            return f"Source: Project File - {filename}\n" if filename else "Source: Project Document\n"
+            return (
+                f"Source: Project File - {filename}\n"
+                if filename
+                else "Source: Project Document\n"
+            )
 
         if filename := metadata.get("file_name"):
             filename = filename.replace(".md", "")

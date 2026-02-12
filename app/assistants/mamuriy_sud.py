@@ -63,7 +63,9 @@ class MamuriyAssistant(BaseAssistant):
             domain_type, template = await self.intent_classifier.classify_intent(
                 query, chat_history, file_context
             )
-            logger.info(f"[MamuriyAssistant] Intent classified as domain: {domain_type}")
+            logger.info(
+                f"[MamuriyAssistant] Intent classified as domain: {domain_type}"
+            )
 
             # Milvus filter expression (court, instance, category)
             milvus_filter = await self.milvus_agent.generate_filter(
@@ -74,7 +76,9 @@ class MamuriyAssistant(BaseAssistant):
             if domain_type == "tax":
                 result = await self._retrieve_tax(query, file_context, milvus_filter)
             else:
-                result = await self._retrieve_general(query, file_context, milvus_filter)
+                result = await self._retrieve_general(
+                    query, file_context, milvus_filter
+                )
 
             result.prompt_template = template
             return result
@@ -147,9 +151,7 @@ class MamuriyAssistant(BaseAssistant):
         return documents
 
     # Formatting (sud-specific metadata)
-    async def format_results(
-        self, documents: list[dict[str, Any]]
-    ) -> RetrievalResult:
+    async def format_results(self, documents: list[dict[str, Any]]) -> RetrievalResult:
         """Format documents with administrative-court metadata fields."""
         entries: list[str] = []
         seen: set[str] = set()
@@ -179,7 +181,9 @@ class MamuriyAssistant(BaseAssistant):
                 entries.append(entry)
 
         if not entries:
-            return RetrievalResult(context="Hech qanday hujjat topilmadi.", attachments=[])
+            return RetrievalResult(
+                context="Hech qanday hujjat topilmadi.", attachments=[]
+            )
 
         return RetrievalResult(
             context="\n\n".join(entries),

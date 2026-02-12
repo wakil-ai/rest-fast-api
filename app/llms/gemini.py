@@ -51,7 +51,7 @@ class Gemini(LLM):
                 ],
             ),
         ]
-        
+
         generate_content_config = types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(
                 thinking_level="HIGH",
