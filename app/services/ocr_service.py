@@ -25,7 +25,7 @@ class OCRService:
         logger.debug(f"[OCR Service] Processing file: {file}")
 
         try:
-            result = await self.client.convert(file_path=file)
+            result = await self.client.convert(file_path=str(file))
             context = result.markdown
             if count_tokens(context) > self.token_limit:
                 # Truncate content to the token limit
