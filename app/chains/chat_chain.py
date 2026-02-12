@@ -4,10 +4,14 @@ from typing import Any
 
 from langchain_core.prompts import PromptTemplate
 
-from app.chains.intent_classifier import IntentClassifier
-from app.chains.milvus_agent import MilvusQueryAgent
+from app.assistants import (
+    BaseAssistant,
+    MainAssistant,
+    MamuriyAssistant,
+    ShartnomaAssistant,
+    SoliqAssistant,
+)
 from app.chains.prompts_registry import PromptRegistry
-from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.logger import logger
 from app.llms import LLM, ChatGPT, Claude, Gemini, Novita
@@ -37,14 +41,33 @@ class ChatChain:
     - Generate answer using selected LLM (with fallback)
     """
 
+    # Assistant registry — maps assistant name → class
+    ASSISTANT_REGISTRY: dict[str, type[BaseAssistant]] = {
+        "main": MainAssistant,
+        "umumiy": MainAssistant,
+        "soliq": SoliqAssistant,
+        "mamuriy_sud": MamuriyAssistant,
+        "shartnoma": ShartnomaAssistant,
+    }
+
     def __init__(self):
+        # Assistants (lazy-cached per name)
+        self._assistant_cache: dict[str, BaseAssistant] = {}
+
+        # Generic retrieval (for agentic RAG flow only)
         self.retrieval = RetrievalService()
+
         self.memory = ChatMemoryService()
         self.history_service = ChatHistoryService()
         self.fallback_llm = ChatGPT()
-        self.intent_classifier = IntentClassifier()
         self.prompts_registry = PromptRegistry()
-        self.milvus_agent = MilvusQueryAgent()
+
+    def _get_assistant(self, name: str) -> BaseAssistant:
+        """Get or create an assistant instance by name."""
+        if name not in self._assistant_cache:
+            cls = self.ASSISTANT_REGISTRY.get(name, MainAssistant)
+            self._assistant_cache[name] = cls()
+        return self._assistant_cache[name]
 
     #  Public API
     async def generate_answer(
@@ -119,34 +142,16 @@ class ChatChain:
         memory_text = await self.memory.search_memory(user_id, query)
         full_history_text = "\n".join(filter(None, [history_formatted, memory_text]))
 
-        # 3. Prompt template & domain classification (mamuriy_sud and shartnoma special cases)
-        template = self.prompts_registry.get_assistant_prompt(assistant)
-        domain_type = None
-
-        milvus_filter = ""
-        if assistant == "mamuriy_sud":
-            domain_type, template = await self.intent_classifier.classify_intent(
-                query, history_formatted, file_context
-            )
-            milvus_filter = await self.milvus_agent.generate_filter(
-                query, history_formatted, file_context
-            )  # Generate Milvus filter expression for mamuriy_sud
-            logger.info(f"Intent classified as domain: {domain_type}")
-        elif assistant == "shartnoma":
-            # Contract analysis - classify intent for template generation vs risk analysis
-            domain_type, template = await self.intent_classifier.classify_intent(
-                query, history_formatted, file_context
-            )
-            logger.info(f"Contract intent classified as domain: {domain_type}")
-
-        # 4. Retrieval
-        retrieved_context, attachments = await self._retrieve_relevant_context(
+        # 3. Retrieval — each assistant handles its own classification / filtering
+        retrieved_context, attachments, template_override = await self._retrieve_relevant_context(
             query=query,
             file_context=file_context,
+            chat_history=history_formatted,
             assistant=assistant,
-            domain_type=domain_type,
-            filter=milvus_filter,
         )
+
+        # 4. Prompt template (assistant may override via intent classification)
+        template = template_override or self.prompts_registry.get_assistant_prompt(assistant)
 
         # 5. Truncate if necessary
         total_tokens = count_tokens(retrieved_context + full_history_text)
@@ -192,31 +197,24 @@ class ChatChain:
         self,
         query: str,
         file_context: str,
+        chat_history: str,
         assistant: str,
-        domain_type: str | None = None,
-        filter: str = "",
-    ) -> tuple[str, list[dict[str, Any]]]:
+    ) -> tuple[str, list[dict[str, Any]], Any]:
         """
-        Retrieve documents — with special logic for mamuriy_sud assistant.
+        Delegate retrieval to the assistant's own retrieve() method.
+
+        Each assistant encapsulates its own search strategy, formatting,
+        classification, and (optionally) multi-collection merging.
+
+        Returns (context, attachments, prompt_template_or_None).
         """
-        if assistant != "mamuriy_sud":
-            return await self.retrieval._retrieve_standard(
-                query=query,
-                collection_name=AssistantConfig.get_collection_name(assistant),
-                file_context=file_context,
-            )
-
-        # mamuriy_sud special routing with filter support
-        if domain_type == "tax":
-            return await self.retrieval._retrieve_tax_domain(query, file_context)
-
-        if domain_type == "general":
-            return await self.retrieval._retrieve_general_domain(
-                query, file_context, filter=filter
-            )
-
-        # Fallback / legacy behavior
-        return await self.retrieval._retrieve_general_domain(query, file_context)
+        assistant_instance = self._get_assistant(assistant)
+        result = await assistant_instance.retrieve(
+            query=query,
+            file_context=file_context,
+            chat_history=chat_history,
+        )
+        return result.context, result.attachments, result.prompt_template
 
     #  Prompt & History Formatting
     def _format_chat_history(self, chat_history: list | None) -> str:

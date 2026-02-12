@@ -277,38 +277,6 @@ class MilvusHandler(VectorDBHandler):
 
         return search_results
 
-    def query_soliq_assistant(
-        self,
-        dense_vector: list[float],
-        top_k: int = settings.TOP_K,
-        collection_name: str = settings.MILVUS_SOLIQ_ASSISTANT_NAME,
-    ) -> list[dict[str, Any]]:
-        """
-        Perform specific sparse vector search using keyword matching
-        """
-        filters = [
-            'metadata["url"] like "%lex.uz%"',
-            'metadata["url"] like "%buxgalter.uz%"',
-            None,
-        ]
-        search_results = []
-        for expr in filters:
-            # make top-k on half of the top_k
-            top_k_half = top_k // 2
-            if expr is None:
-                top_k_half = (
-                    top_k  # increase the top_k for none filter because of duplicates
-                )
-            results = self.query_dense(
-                dense_vector=dense_vector,
-                top_k=top_k_half,
-                collection_name=collection_name,
-                expr=expr,
-            )
-            search_results.extend(results)
-
-        return search_results
-
     def _create_schema(self):
         schema = MilvusClient.create_schema(auto_id=False)
         schema.add_field(

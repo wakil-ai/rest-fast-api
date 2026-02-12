@@ -46,7 +46,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         self.chat_chain = ChatChain()
         self.memory_service = ChatMemoryService()
         self.prompt_registry = PromptRegistry()
-        self.formatter = self.chat_chain.retrieval.formatter
 
     def _initialize_crews(self) -> None:
         """Initialize and cache all crews once."""
@@ -393,7 +392,9 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             collection_name=collection_name,
         )
 
-        return await self.formatter.format_results(documents_list, collection_name)
+        # Format using the retrieval service's standard formatter
+        result = await self.chat_chain.retrieval._formatter.format_results(documents_list)
+        return result.context
 
     async def _get_file_id_context(self) -> str:
         """Retrieve documents for provided file IDs."""

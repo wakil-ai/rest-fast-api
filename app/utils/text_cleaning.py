@@ -1,5 +1,37 @@
 import re
+import unicodedata
 
+# Lightweight text-cleaning helpers (formerly in context_formatter.py)
+class TextCleaner:
+    """Static text-cleaning utilities shared across assistants."""
+
+    @staticmethod
+    def clean_markdown(text: str) -> str:
+        text = re.sub(r"(\*\*|\*|__|_)+", "", text)
+        text = re.sub(r"([#*-]+)", "", text)
+        text = re.sub(r"https?://[^\s]+", "", text)
+        text = re.sub(r"buxgalter\.uz", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"[\[\]{}()<>]", "", text)
+        return text
+
+    @staticmethod
+    def remove_header_lines(text: str) -> str:
+        cleaned = [l for l in text.splitlines() if not re.match(r"^\s*#{1,6}\s*", l)]
+        return "\n".join(cleaned).strip()
+
+    @staticmethod
+    def normalize_unicode(text: str) -> str:
+        return unicodedata.normalize("NFC", text)
+
+
+class PathConverter:
+    """Path conversion helpers (lex IDs, md→docx)."""
+
+    @staticmethod
+    def is_valid_lex_id(s: str) -> bool:
+        if not isinstance(s, str):
+            return False
+        return re.fullmatch(r"-?\d+", s) is not None
 
 def clean_html_text(text: str) -> str:
     """
