@@ -136,8 +136,14 @@ class SearchStrategy:
             )
 
             # Sort files with chunk_id in the metadata
+            def parse_chunk_index(val):
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    return 0.0
+
             searched_file_results.sort(
-                key=lambda x: x.get("metadata", {}).get("chunk_index", 0)
+                key=lambda x: parse_chunk_index(x["metadata"].get("chunk_index", 0))
             )
             file_texts = file_texts = "\n".join(
                 file_doc.get("text", "") for file_doc in searched_file_results
