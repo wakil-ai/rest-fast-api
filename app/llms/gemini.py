@@ -51,14 +51,11 @@ class Gemini(LLM):
                 ],
             ),
         ]
-        tools = [
-            types.Tool(googleSearch=types.GoogleSearch()),
-        ]
+        
         generate_content_config = types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(
                 thinking_level="HIGH",
             ),
-            tools=tools,
         )
 
         for chunk in self.client.models.generate_content_stream(

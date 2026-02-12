@@ -10,7 +10,11 @@ class StandardContextFormatter:
     def __init__(self):
         self.text_cleaner = TextCleaner()
         self.path_converter = PathConverter()
-    
+
+    async def format_results(self, documents: list[dict[str, Any]]) -> RetrievalResult:
+        """Format raw documents with standard score + text + citation layout."""
+        return await self._format_standard(documents)
+
     # Shared formatting standards
     async def _format_standard(self, documents: list[dict[str, Any]]) -> RetrievalResult:
         """Default formatting: score + text + citation metadata."""

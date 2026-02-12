@@ -88,7 +88,7 @@ class BaseAssistant:
         self, documents: list[dict[str, Any]]
     ) -> RetrievalResult:
         """Format raw documents using the standard formatter."""
-        return await self.formatter._format_standard(documents)
+        return await self.formatter.format_results(documents)
 
     # Helpers
     def _build_config(self, **overrides) -> RetrievalConfig:

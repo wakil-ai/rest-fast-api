@@ -392,7 +392,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             collection_name=collection_name,
         )
 
-        # Format using the retrieval service's standard formatter
+        # Format using the standard context formatter
         result = await self.chat_chain.retrieval._formatter.format_results(documents_list)
         return result.context
 

@@ -213,7 +213,7 @@ class MamuriyAssistant(BaseAssistant):
             top_k=half_k,
             collection_name=soliq_coll,
         )
-        sol_result = await self.formatter._format_standard(sol_docs)
+        sol_result = await self.formatter.format_results(sol_docs)
 
         combined_ctx = f"{mam_result.context}\n\n{'=' * 60}\n\n{sol_result.context}"
         if file_context:
@@ -250,7 +250,7 @@ class MamuriyAssistant(BaseAssistant):
             top_k=half_k,
             collection_name=settings.MILVUS_MAIN_NAME,
         )
-        main_result = await self.formatter._format_standard(main_docs)
+        main_result = await self.formatter.format_results(main_docs)
 
         combined_ctx = f"{mam_result.context}\n\n{'=' * 60}\n\n{main_result.context}"
         if file_context:

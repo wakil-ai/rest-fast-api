@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from app.assistants.base import BaseAssistant, RetrievalConfig
+from app.assistants.base import RetrievalConfig
 from app.core.config import settings
 from app.core.logger import logger
 from app.db.db_manager import DBManager
@@ -95,7 +95,7 @@ class RetrievalService:
         if not all_results:
             return []
 
-        unique = BaseAssistant.deduplicate_by_url(all_results)
+        unique = self._formatter.deduplicate_by_url(all_results)
         unique.sort(key=lambda x: x.get("score", 0), reverse=True)
         return unique[:top_k]
     
