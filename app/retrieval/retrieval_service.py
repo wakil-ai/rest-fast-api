@@ -39,7 +39,7 @@ class RetrievalService:
 
     # Domain-specific retrieval methods > Administrative Court for TAX
     async def _retrieve_tax_domain(
-        self, query: str, file_context: str
+        self, query: str, file_context: str, filter: str = ""
     ) -> tuple[str, list]:
         """Retrieve for TAX domain: half from mamuriy_sud + half from soliq"""
         half_k = max(1, settings.TOP_K // 2)
@@ -51,8 +51,9 @@ class RetrievalService:
         mam_ctx, mam_att = await self.retrieve_context(
             query=query,
             top_k=half_k,
-            collection_name=settings.MILVUS_MAMURIY_SUD,
+            collection_name=settings.MILVUS_MAMURIY_SUD_ALL,  # experimental: use ALL collection for tax too
             file_context=file_context or None,
+            filter=filter,
         )
 
         # Retrieve from soliq collection
@@ -72,7 +73,7 @@ class RetrievalService:
 
     # Domain-specific retrieval methods > Administrative Court for GENERAL
     async def _retrieve_general_domain(
-        self, query: str, file_context: str
+        self, query: str, file_context: str, filter: str = ""
     ) -> tuple[str, list]:
         """Retrieve for GENERAL domain: half from mamuriy_sud + half from main (lexuz) database"""
         half_k = max(1, settings.TOP_K // 2)
@@ -84,8 +85,9 @@ class RetrievalService:
         mam_ctx, mam_att = await self.retrieve_context(
             query=query,
             top_k=half_k,
-            collection_name=settings.MILVUS_MAMURIY_SUD,
+            collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
             file_context=file_context or None,
+            filter=filter,
         )
 
         # Retrieve from main (lexuz) collection - general legal database
@@ -112,6 +114,7 @@ class RetrievalService:
         search_type: str = "hybrid",
         collection_name: str = settings.MILVUS_MAIN_NAME,
         file_context: Optional[str] = None,
+        filter: str = "",
     ) -> tuple[str, list[dict[str, Any]]]:
         """
         Retrieve and format top documents.
@@ -133,6 +136,7 @@ class RetrievalService:
                 alpha=alpha,
                 search_type=search_type,
                 collection_name=collection_name,
+                filter=filter,
             )
 
             # Experimental: always use both query and file context if available

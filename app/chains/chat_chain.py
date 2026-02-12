@@ -2,9 +2,10 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
 
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 from app.chains.intent_classifier import IntentClassifier
+from app.chains.milvus_agent import MilvusQueryAgent
 from app.chains.prompts_registry import PromptRegistry
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
@@ -43,6 +44,7 @@ class ChatChain:
         self.fallback_llm = ChatGPT()
         self.intent_classifier = IntentClassifier()
         self.prompts_registry = PromptRegistry()
+        self.milvus_agent = MilvusQueryAgent()
 
     #  Public API
     async def generate_answer(
@@ -121,10 +123,14 @@ class ChatChain:
         template = self.prompts_registry.get_assistant_prompt(assistant)
         domain_type = None
 
+        milvus_filter = ""
         if assistant == "mamuriy_sud":
             domain_type, template = await self.intent_classifier.classify_intent(
                 query, history_formatted, file_context
             )
+            milvus_filter = await self.milvus_agent.generate_filter(
+                query, history_formatted, file_context
+            )  # Generate Milvus filter expression for mamuriy_sud
             logger.info(f"Intent classified as domain: {domain_type}")
         elif assistant == "shartnoma":
             # Contract analysis - classify intent for template generation vs risk analysis
@@ -139,6 +145,7 @@ class ChatChain:
             file_context=file_context,
             assistant=assistant,
             domain_type=domain_type,
+            filter=milvus_filter,
         )
 
         # 5. Truncate if necessary
@@ -187,6 +194,7 @@ class ChatChain:
         file_context: str,
         assistant: str,
         domain_type: str | None = None,
+        filter: str = "",
     ) -> tuple[str, list[dict[str, Any]]]:
         """
         Retrieve documents — with special logic for mamuriy_sud assistant.
@@ -198,17 +206,17 @@ class ChatChain:
                 file_context=file_context,
             )
 
-        # mamuriy_sud special routing
+        # mamuriy_sud special routing with filter support
         if domain_type == "tax":
             return await self.retrieval._retrieve_tax_domain(query, file_context)
 
         if domain_type == "general":
-            return await self.retrieval._retrieve_general_domain(query, file_context)
+            return await self.retrieval._retrieve_general_domain(
+                query, file_context, filter=filter
+            )
 
         # Fallback / legacy behavior
-        return await self.retrieval._retrieve_general_domain(
-            query, file_context
-        )  # same split logic
+        return await self.retrieval._retrieve_general_domain(query, file_context)
 
     #  Prompt & History Formatting
     def _format_chat_history(self, chat_history: list | None) -> str:

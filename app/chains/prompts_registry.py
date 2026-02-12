@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Dict
 
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 from app.models.intent_types import DomainType, LegalIntent
 
@@ -22,6 +22,7 @@ class PromptRegistry:
         "contract_template_generation": "contract_template_generation.md",
         "contract_risk_analysis": "contract_risk_analysis.md",
         "intent_classification": "intent_classification.md",
+        "milvus_query_agent": "milvus_agent.md",
     }
 
     ASSISTANT_MAPPING = {

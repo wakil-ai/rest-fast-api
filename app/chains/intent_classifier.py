@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from app.chains.prompts_registry import PromptRegistry
 from app.core.logger import logger
-from app.llms.gpt import ChatGPT
+from app.llms import ChatGPT
 from app.models.intent_types import DomainType, IntentOutput, LegalIntent
 
 

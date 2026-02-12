@@ -15,6 +15,7 @@ class RetrievalConfig:
     alpha: float = settings.ALPHA
     search_type: str = "hybrid"
     collection_name: str = settings.MILVUS_MAIN_NAME
+    filter: str = ""
 
 
 class SearchStrategy:
@@ -28,6 +29,10 @@ class SearchStrategy:
         self, query: str, config: RetrievalConfig, expr: Optional[str] = None
     ) -> list[dict[str, Any]]:
         """Execute search based on configuration."""
+        # Update config with expr if provided (for backward compatibility)
+        if expr:
+            config.filter = expr
+
         search_methods = {
             "sparse": self._search_sparse,
             "dense": self._search_dense,
@@ -43,13 +48,13 @@ class SearchStrategy:
             config.collection_name == settings.MILVUS_MAMURIY_SUD
             or config.collection_name == settings.MILVUS_MAMURIY_SUD_ALL
         ):
-            return self._search_mamuriy_sud(query, config, expr)
+            return self._search_mamuriy_sud(query, config)
 
         search_method = search_methods.get(config.search_type, self._search_hybrid)
-        return search_method(query, config, expr)
+        return search_method(query, config)
 
     def _search_sparse(
-        self, query: str, config: RetrievalConfig, expr: Optional[str] = None
+        self, query: str, config: RetrievalConfig
     ) -> list[dict[str, Any]]:
         """Perform BM25 keyword-based search."""
         return self.db_manager.search_sparse(
@@ -57,7 +62,7 @@ class SearchStrategy:
         )
 
     def _search_dense(
-        self, query: str, config: RetrievalConfig, expr: Optional[str] = None
+        self, query: str, config: RetrievalConfig
     ) -> list[dict[str, Any]]:
         """Perform semantic embedding-based search."""
         embedding = self.embedding_manager.embed_query(query)
@@ -66,7 +71,7 @@ class SearchStrategy:
         )
 
     def _search_hybrid(
-        self, query: str, config: RetrievalConfig, expr: Optional[str] = None
+        self, query: str, config: RetrievalConfig
     ) -> list[dict[str, Any]]:
         """Perform hybrid search combining dense and sparse."""
         embedding = self.embedding_manager.embed_query(query)
@@ -76,11 +81,11 @@ class SearchStrategy:
             top_k=config.top_k,
             alpha=config.alpha,
             collection_name=config.collection_name,
-            expr=expr or "",
+            expr=config.filter or "",
         )
 
     def _search_specific(
-        self, query: str, config: RetrievalConfig, expr: Optional[str] = None
+        self, query: str, config: RetrievalConfig
     ) -> list[dict[str, Any]]:
         """Perform specific search for article numbers."""
         return self.db_manager.search_specific(
@@ -102,7 +107,6 @@ class SearchStrategy:
         self,
         query: str,
         config: RetrievalConfig,
-        expr: Optional[str] = None,
         top_k_file: int = 3,
     ) -> list[dict[str, Any]]:
         """Perform search for mamuriy sud with expression filtering."""
@@ -111,9 +115,8 @@ class SearchStrategy:
             dense_vector=embedding,
             text_query=query,
             top_k=config.top_k,
-            alpha=config.alpha,
             collection_name=config.collection_name,
-            expr=expr or "",
+            expr=config.filter or "",
         )
 
         file_ids = set()
