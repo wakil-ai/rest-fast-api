@@ -22,7 +22,7 @@ class MamuriyAssistant(BaseAssistant):
     """
 
     # Number of unique files to return per search
-    TOP_K_FILES = 3
+    TOP_K_FILES = 3 # NOT THE TOP_K
 
     # Metadata fields rendered in formatted output
     METADATA_LABELS: dict[str, str] = {
@@ -195,12 +195,9 @@ class MamuriyAssistant(BaseAssistant):
         self, query: str, file_context: str, filter: str
     ) -> RetrievalResult:
         """Merge results from mamuriy_sud + soliq collections."""
-        half_k = max(1, self.top_k // 2)
-        logger.info(f"TAX domain: {half_k} from mamuriy_sud + {half_k} from soliq")
-
         # mamuriy_sud portion
         mam_config = RetrievalConfig(
-            top_k=half_k,
+            top_k=settings.ADDITIONAL_TOP_K,
             collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
             filter=filter,
         )
@@ -214,7 +211,7 @@ class MamuriyAssistant(BaseAssistant):
         sol_docs = self.db.search_hybrid(
             dense_vector=sol_embedding,
             text_query=effective,
-            top_k=half_k,
+            top_k=settings.ADDITIONAL_TOP_K,
             collection_name=soliq_coll,
         )
         sol_result = await self.formatter.format_results(sol_docs)
@@ -232,14 +229,11 @@ class MamuriyAssistant(BaseAssistant):
         self, query: str, file_context: str, filter: str
     ) -> RetrievalResult:
         """Merge results from mamuriy_sud + main (lexuz) collections."""
-        half_k = max(1, self.top_k // 2)
-        logger.info(f"GENERAL domain: {half_k} from mamuriy_sud + {half_k} from main")
-
         effective = f"{query}\n\n\n{file_context}" if file_context else query
 
         # mamuriy_sud portion
         mam_config = RetrievalConfig(
-            top_k=half_k,
+            top_k=settings.TOP_K,
             collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
             filter=filter,
         )
@@ -251,7 +245,7 @@ class MamuriyAssistant(BaseAssistant):
         main_docs = self.db.search_hybrid(
             dense_vector=main_embedding,
             text_query=effective,
-            top_k=half_k,
+            top_k=settings.ADDITIONAL_TOP_K,
             collection_name=settings.MILVUS_MAIN_NAME,
         )
         main_result = await self.formatter.format_results(main_docs)

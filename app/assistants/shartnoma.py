@@ -24,7 +24,7 @@ class ShartnomaAssistant(BaseAssistant):
         self.storage_service = StorageService()
         self.intent_classifier = IntentClassifier()
 
-    # Retrieve — classification + retrieval (all internal)
+    # Retrieve — classification + multi-collection retrieval
     async def retrieve(
         self,
         query: str,
@@ -35,7 +35,9 @@ class ShartnomaAssistant(BaseAssistant):
     ) -> RetrievalResult:
         """
         1. Classify intent → domain_type + prompt template
-        2. Standard hybrid search + contract formatting
+        2. Retrieve full top_k from shartnoma (contract formatting)
+        3. Retrieve half top_k from main/lexuz (standard formatting)
+        4. Merge both results
         """
         try:
             # Intent classification (template generation vs risk analysis)
@@ -46,17 +48,38 @@ class ShartnomaAssistant(BaseAssistant):
                 f"[ShartnomaAssistant] Contract intent classified as domain: {domain_type}"
             )
 
-            # Standard retrieval pipeline
             effective_query = f"{query}\n\n\n{file_context}" if file_context else query
-            config = self._build_config()
 
-            raw_docs = self.search(effective_query, config)
-            result = await self.format_results(raw_docs)
+            # Shartnoma portion — full top_k, contract formatting
+            shartnoma_config = self._build_config()
+            shartnoma_docs = self.search(effective_query, shartnoma_config)
+            shartnoma_result = await self.format_results(shartnoma_docs)
 
-            if file_context and result.context:
-                result.context += f"\n\n\n{file_context}"
+            # Main (lexuz) portion — half top_k, standard formatting
+            logger.info(
+                f"[ShartnomaAssistant] Retrieving {self.top_k} from shartnoma + {settings.ADDITIONAL_TOP_K} from main"
+            )
+            main_embedding = self.embedder.embed_query(effective_query)
+            main_docs = self.db.search_hybrid(
+                dense_vector=main_embedding,
+                text_query=effective_query,
+                top_k=settings.ADDITIONAL_TOP_K,
+                collection_name=settings.MILVUS_MAIN_NAME,
+            )
+            main_result = await self.formatter.format_results(main_docs)
 
-            result.prompt_template = template
+            # Merge results
+            combined_ctx = shartnoma_result.context
+            if main_result.context:
+                combined_ctx += f"\n\n{'=' * 60}\n\n{main_result.context}"
+            if file_context and combined_ctx:
+                combined_ctx += f"\n\n\n{file_context}"
+
+            result = RetrievalResult(
+                context=combined_ctx,
+                attachments=shartnoma_result.attachments,
+                prompt_template=template,
+            )
             return result
 
         except Exception as e:
@@ -69,8 +92,8 @@ class ShartnomaAssistant(BaseAssistant):
     async def format_results(
         self,
         documents: list[dict[str, Any]],
-        max_attachments: int = 3,
-        top_k: int = 5,
+        max_attachments: int = 1,
+        top_k: int = settings.TOP_K,
     ) -> RetrievalResult:
         """Format contract documents and generate DOCX download attachments."""
         entries: list[str] = []

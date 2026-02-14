@@ -154,6 +154,7 @@ class Settings(BaseSettings):
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
     TOP_K: int = 10
+    ADDITIONAL_TOP_K: int = 3  # For multi-collection retrievals (e.g. shartnoma assistant + main e.g)
     ALPHA: float = 0.8
 
     # TEMPERATURE
