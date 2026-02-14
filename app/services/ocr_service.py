@@ -10,8 +10,8 @@ from app.utils.tokens import count_tokens, truncate_to_token_limit
 class OCRService:
     def __init__(self):
         self.options = ConvertOptions(
-            output_format="chunks",  # "markdown", "html", "json", "chunks"
-            mode="balanced",  # "fast", "balanced", "accurate"
+            output_format="markdown",  # "markdown", "html", "json", "chunks"
+            mode="fast",  # "fast", "balanced", "accurate"
             paginate=True,  # Add page delimiters
             page_range="0-10",  # Process specific pages (0-indexed)
         )
@@ -25,7 +25,9 @@ class OCRService:
         logger.debug(f"[OCR Service] Processing file: {file}")
 
         try:
-            result = await self.client.convert(file_path=str(file))
+            result = await self.client.convert(file_path=str(file), options=self.options)
+            if not result.success:
+                raise ValueError(f"[OCR Service] OCR conversion failed: {result.error}")
             context = result.markdown
             if count_tokens(context) > self.token_limit:
                 # Truncate content to the token limit
