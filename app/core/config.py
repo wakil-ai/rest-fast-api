@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     DEVELOPMENT_MODE: bool = False
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Enable tracing for agents and crews
+    
+    ALLOWED_ORIGINS: list[str] = ["https://chat.wakil.ai", "https://dev-chat.wakil.ai"]  # CORS allowed origins
 
     # Memory Service API Key
     MEM0_API_KEY: str = None  # Mem
