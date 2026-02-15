@@ -1,5 +1,4 @@
 import os
-import secrets
 
 # FastAPI imports
 from contextlib import asynccontextmanager
@@ -8,7 +7,6 @@ from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
 from starlette.middleware.sessions import SessionMiddleware
 
 # Internal imports
@@ -18,6 +16,7 @@ from app.api import (
     chat,
     chat_history,
     health,
+    logs,
     memory,
     payme,
     retrieval,
@@ -25,52 +24,7 @@ from app.api import (
 )
 from app.core.config import settings
 from app.core.logger import logger
-
-security = HTTPBasic()
-
-# API Key authentication
-api_key_header = APIKeyHeader(
-    name=settings.API_KEY_NAME.lower(),  # make sure it matches lowercase
-    auto_error=False,
-    description="HBAI API Key",
-)
-
-
-def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(credentials.username, settings.DOCS_USER)
-    correct_password = secrets.compare_digest(
-        credentials.password, settings.DOCS_PASSWORD
-    )
-    if not (correct_username and correct_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
-
-def verify_api_key(api_key: str = Security(api_key_header)):
-    """
-    Verify API key authentication
-    Checks both API key name and API key value from settings
-    """
-    if api_key is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API Key required",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
-
-    # Check if the provided API key matches the one in settings
-    if not secrets.compare_digest(api_key, settings.API_KEY):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API Key",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
-
-    return True
+from app.security import get_current_username, verify_api_key, verify_super_admin_key
 
 
 @asynccontextmanager
@@ -149,6 +103,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
+    )
+    app.include_router(
+        logs.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_super_admin_key)],
     )
     # Health check router (no authentication required)
     app.include_router(

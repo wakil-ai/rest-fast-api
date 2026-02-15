@@ -150,6 +150,8 @@ class Settings(BaseSettings):
     # API Key Authentication
     API_KEY_NAME: str = "admin"
     API_KEY: str = "admin"
+    SUPER_ADMIN_KEY_NAME: str = "x-super-admin-key"
+    SUPER_ADMIN_API_KEY: str = "super-admin"
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
@@ -199,6 +201,11 @@ class Settings(BaseSettings):
     AUTH_SECRET_KEY: str = "secret-key-change-me"
 
     GEMINI_API_KEY: str | None = None
+    
+    # Caching
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_EXPIRATION_SECONDS: int = 86400 * 3  # 3 days in seconds
 
     model_config = ConfigDict(
         env_file=".env",
