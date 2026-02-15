@@ -19,7 +19,6 @@ from app.api import (
     logs,
     memory,
     payme,
-    retrieval,
     speech_to_text,
 )
 from app.core.config import settings
@@ -75,11 +74,6 @@ def create_app() -> FastAPI:
     # Mount routers with API key authentication
     app.include_router(
         chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
-    app.include_router(
-        retrieval.router,
-        prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_super_admin_key)],
     )
     app.include_router(
         chat_history.router,

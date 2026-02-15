@@ -191,7 +191,7 @@ class ChatChain:
 
         parts = []
         for fid in file_ids:
-            file = self.history_service.get_file_by_id(fid)
+            file = await self.history_service.get_file_by_id(fid)
             if file and file.get("ocr_result"):
                 parts.append(f"\n\n## USER FILE CONTEXT\n{file['ocr_result']}")
 
