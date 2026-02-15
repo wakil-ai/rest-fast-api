@@ -10,6 +10,8 @@ services:
     environment:
       - MONGODB_URI=mongodb://nlp:nlp123@mongodb:27017/?authSource=admin
       - MILVUS_URI=http://milvus-standalone:19530/
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - PYTHONUNBUFFERED=1
       - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     networks:
