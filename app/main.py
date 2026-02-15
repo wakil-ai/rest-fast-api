@@ -84,7 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(
         retrieval.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
+        dependencies=[Depends(verify_super_admin_key)],
     )
     app.include_router(
         chat_history.router,
