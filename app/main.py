@@ -72,13 +72,6 @@ def create_app() -> FastAPI:
         same_site="lax",
     )
 
-    # Middleware to handle HTTPS redirect behind proxy
-    @app.middleware("http")
-    async def proxy_protocol_middleware(request, call_next):
-        if request.headers.get("x-forwarded-proto") == "https":
-            request.scope["scheme"] = "https"
-        return await call_next(request)
-
     # Mount routers with API key authentication
     app.include_router(
         chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]

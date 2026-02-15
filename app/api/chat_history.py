@@ -53,14 +53,14 @@ def create_response(data: dict, message: str) -> dict:
     response_model=UserCreateResponse,
 )
 @handle_service_error
-def create_user(request: UserCreateRequest, response: Response) -> UserCreateResponse:
+async def create_user(request: UserCreateRequest, response: Response) -> UserCreateResponse:
     """Create a new user or return existing one."""
-    existing_user = chat_history_service.get_user(user_id=request.user_id)
+    existing_user = await chat_history_service.get_user(user_id=request.user_id)
 
     if existing_user:
         return create_response(existing_user, "User already exists")
 
-    user_info = chat_history_service.create_user(
+    user_info = await chat_history_service.create_user(
         user_id=request.user_id,
         username=request.username,
         first_name=request.first_name,
@@ -73,9 +73,9 @@ def create_user(request: UserCreateRequest, response: Response) -> UserCreateRes
 
 @router.get("/users/{user_id}", response_model=UserCreateResponse)
 @handle_service_error
-def get_user(user_id: str) -> UserCreateResponse:
+async def get_user(user_id: str) -> UserCreateResponse:
     """Get user by user_id."""
-    user = chat_history_service.get_user(user_id=user_id)
+    user = await chat_history_service.get_user(user_id=user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found"
@@ -92,9 +92,9 @@ def get_user(user_id: str) -> UserCreateResponse:
     response_model=ProjectCreateResponse,
 )
 @handle_service_error
-def create_project(request: ProjectCreateRequest) -> ProjectCreateResponse:
+async def create_project(request: ProjectCreateRequest) -> ProjectCreateResponse:
     """Create a new project."""
-    project_info = chat_history_service.create_project(
+    project_info = await chat_history_service.create_project(
         user_id=request.user_id,
         project_id=request.project_id,
         title=request.title,
@@ -104,17 +104,17 @@ def create_project(request: ProjectCreateRequest) -> ProjectCreateResponse:
 
 @router.get("/projects/{user_id}", response_model=list[ProjectResponse])
 @handle_service_error
-def get_projects(user_id: str, limit: int = 50) -> list[ProjectResponse]:
+async def get_projects(user_id: str, limit: int = 50) -> list[ProjectResponse]:
     """Retrieve all projects for a user."""
-    projects = chat_history_service.get_projects(user_id=user_id, limit=limit)
+    projects = await chat_history_service.get_projects(user_id=user_id, limit=limit)
     return [serialize_mongo_id(project) for project in projects]
 
 
 @router.get("/projects/{user_id}/{project_id}", response_model=ProjectResponse)
 @handle_service_error
-def get_project(user_id: str, project_id: str) -> ProjectResponse:
+async def get_project(user_id: str, project_id: str) -> ProjectResponse:
     """Get a specific project."""
-    project = chat_history_service.get_project(project_id=project_id)
+    project = await chat_history_service.get_project(project_id=project_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -129,9 +129,9 @@ def get_project(user_id: str, project_id: str) -> ProjectResponse:
 
 @router.patch("/projects/{project_id}", response_model=ProjectResponse)
 @handle_service_error
-def edit_project(project_id: str, title: str) -> ProjectResponse:
+async def edit_project(project_id: str, title: str) -> ProjectResponse:
     """Edit a project's title."""
-    project_info = chat_history_service.edit_project(project_id=project_id, title=title)
+    project_info = await chat_history_service.edit_project(project_id=project_id, title=title)
     return serialize_mongo_id(project_info)
 
 
@@ -139,9 +139,9 @@ def edit_project(project_id: str, title: str) -> ProjectResponse:
     "/projects/{user_id}/{project_id}", status_code=status.HTTP_204_NO_CONTENT
 )
 @handle_service_error
-def delete_project(user_id: str, project_id: str) -> None:
+async def delete_project(user_id: str, project_id: str) -> None:
     """Delete a project and all its associated data."""
-    chat_history_service.delete_project(user_id=user_id, project_id=project_id)
+    await chat_history_service.delete_project(user_id=user_id, project_id=project_id)
     return
 
 
@@ -154,9 +154,9 @@ def delete_project(user_id: str, project_id: str) -> None:
     response_model=SessionCreateResponse,
 )
 @handle_service_error
-def create_session(request: SessionCreateRequest) -> SessionCreateResponse:
+async def create_session(request: SessionCreateRequest) -> SessionCreateResponse:
     """Create a new chat session."""
-    session_info = chat_history_service.create_session(
+    session_info = await chat_history_service.create_session(
         user_id=request.user_id,
         session_id=request.session_id,
         project_id=request.project_id,
@@ -168,11 +168,11 @@ def create_session(request: SessionCreateRequest) -> SessionCreateResponse:
 
 @router.get("/sessions/{user_id}", response_model=list[SessionResponse])
 @handle_service_error
-def get_sessions(
+async def get_sessions(
     user_id: str, project_id: str | None = None, limit: int = 50
 ) -> list[SessionResponse]:
     """Retrieve user sessions, optionally filtered by project."""
-    sessions = chat_history_service.get_sessions(
+    sessions = await chat_history_service.get_sessions(
         user_id=user_id, project_id=project_id, limit=limit
     )
     return [serialize_mongo_id(session) for session in sessions]
@@ -180,9 +180,9 @@ def get_sessions(
 
 @router.get("/sessions/{user_id}/{session_id}", response_model=SessionResponse)
 @handle_service_error
-def get_session(user_id: str, session_id: str) -> SessionResponse:
+async def get_session(user_id: str, session_id: str) -> SessionResponse:
     """Get a specific session."""
-    session = chat_history_service.get_session(session_id=session_id)
+    session = await chat_history_service.get_session(session_id=session_id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -197,11 +197,11 @@ def get_session(user_id: str, session_id: str) -> SessionResponse:
 
 @router.patch("/sessions/{session_id}", response_model=SessionResponse)
 @handle_service_error
-def edit_session(
+async def edit_session(
     session_id: str, title: str | None = None, tags: list[str] | None = None
 ) -> SessionResponse:
     """Edit a session's title or tags."""
-    session_info = chat_history_service.edit_session(
+    session_info = await chat_history_service.edit_session(
         session_id=session_id, title=title, tags=tags
     )
     return serialize_mongo_id(session_info)
@@ -209,9 +209,9 @@ def edit_session(
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_service_error
-def delete_session(session_id: str) -> None:
+async def delete_session(session_id: str) -> None:
     """Delete a session and its messages."""
-    chat_history_service.delete_session(session_id=session_id)
+    await chat_history_service.delete_session(session_id=session_id)
     return
 
 
@@ -224,21 +224,21 @@ def delete_session(session_id: str) -> None:
     response_model=MessageCreateResponse,
 )
 @handle_service_error
-def add_message(request: MessageCreateRequest) -> MessageCreateResponse:
+async def add_message(request: MessageCreateRequest) -> MessageCreateResponse:
     """Add a message to a session. Only session_id is required."""
     # Ensure the session exists (some clients post messages before explicitly creating a session).
-    if not chat_history_service.get_session(session_id=request.session_id):
+    if not await chat_history_service.get_session(session_id=request.session_id):
         user_id = (
             request.user_id
             or (request.metadata or {}).get("user_id")
             or (request.metadata or {}).get("userId")
             or "anonymous"
         )
-        chat_history_service.create_session(
+        await chat_history_service.create_session(
             user_id=user_id, session_id=request.session_id
         )
 
-    message_info = chat_history_service.add_message(
+    message_info = await chat_history_service.add_message(
         session_id=request.session_id,
         message_id=request.message_id,
         content=request.content,
@@ -249,17 +249,17 @@ def add_message(request: MessageCreateRequest) -> MessageCreateResponse:
 
 @router.get("/messages/{session_id}", response_model=list[MessageResponse])
 @handle_service_error
-def get_messages(session_id: str, limit: int = 100) -> list[MessageResponse]:
+async def get_messages(session_id: str, limit: int = 100) -> list[MessageResponse]:
     """Retrieve messages from a session. Only session_id is required."""
-    messages = chat_history_service.get_messages(session_id=session_id, limit=limit)
+    messages = await chat_history_service.get_messages(session_id=session_id, limit=limit)
     return [serialize_mongo_id(message) for message in messages]
 
 
 @router.get("/messages/{session_id}/{message_id}", response_model=MessageResponse)
 @handle_service_error
-def get_message(session_id: str, message_id: str) -> MessageResponse:
+async def get_message(session_id: str, message_id: str) -> MessageResponse:
     """Get a specific message."""
-    message = chat_history_service.get_message(message_id=message_id)
+    message = await chat_history_service.get_message(message_id=message_id)
     if not message:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -282,9 +282,9 @@ def get_message(session_id: str, message_id: str) -> MessageResponse:
     response_model=FeedbackCreateResponse,
 )
 @handle_service_error
-def submit_feedback(request: FeedbackCreateRequest) -> FeedbackCreateResponse:
+async def submit_feedback(request: FeedbackCreateRequest) -> FeedbackCreateResponse:
     """Submit feedback for a message. Only message_id is required."""
-    feedback_info = chat_history_service.submit_feedback(
+    feedback_info = await chat_history_service.submit_feedback(
         message_id=request.message_id,
         feedback_type=request.feedback_type,
         comments=request.comments,
@@ -294,9 +294,9 @@ def submit_feedback(request: FeedbackCreateRequest) -> FeedbackCreateResponse:
 
 @router.get("/feedback/{message_id}")
 @handle_service_error
-def get_feedback(message_id: str):
+async def get_feedback(message_id: str):
     """Retrieve feedback for a message. Only message_id is required."""
-    feedback = chat_history_service.get_feedback(message_id=message_id)
+    feedback = await chat_history_service.get_feedback(message_id=message_id)
     return create_response(feedback, "Feedback retrieved")
 
 
@@ -334,17 +334,17 @@ async def upload_file(
 
 @router.get("/files/project/{project_id}", response_model=list[FileUploadResponse])
 @handle_service_error
-def get_project_files(project_id: str, limit: int = 100) -> list[FileUploadResponse]:
+async def get_project_files(project_id: str, limit: int = 100) -> list[FileUploadResponse]:
     """Retrieve all files for a project."""
-    files = chat_history_service.get_files(project_id=project_id, limit=limit)
+    files = await chat_history_service.get_files_by_scope(project_id=project_id, limit=limit)
     return [serialize_mongo_id(file) for file in files]
 
 
 @router.get("/files/{file_id}", response_model=FileUploadResponse)
 @handle_service_error
-def get_file_upload(file_id: str) -> FileUploadResponse:
+async def get_file_upload(file_id: str) -> FileUploadResponse:
     """Retrieve a specific file by file_id."""
-    file_record = chat_history_service.get_file_by_id(file_id=file_id)
+    file_record = await chat_history_service.get_file_by_id(file_id=file_id)
     if not file_record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -355,13 +355,13 @@ def get_file_upload(file_id: str) -> FileUploadResponse:
 
 @router.get("/files/{file_id}/view")
 @handle_service_error
-def get_file_view_url(file_id: str, expiration_minutes: int = 60) -> dict:
+async def get_file_view_url(file_id: str, expiration_minutes: int = 60) -> dict:
     """
     Get a temporary signed URL to view/download a file.
     Returns a signed URL that expires after the specified time (default: 60 minutes).
     """
     # Get file record from database
-    file_record = chat_history_service.get_file_by_id(file_id=file_id)
+    file_record = await chat_history_service.get_file_by_id(file_id=file_id)
 
     if not file_record:
         raise HTTPException(
@@ -400,11 +400,11 @@ def get_file_view_url(file_id: str, expiration_minutes: int = 60) -> dict:
 
 @router.patch("/files/{file_id}/status")
 @handle_service_error
-def update_file_status(
+async def update_file_status(
     file_id: str, status: str, ocr_result: str | None = None
 ) -> FileUploadResponse:
     """Update file processing status."""
-    file_record = chat_history_service.update_file_status(
+    file_record = await chat_history_service.update_file_status(
         file_id=file_id, status=status, ocr_result=ocr_result
     )
     return serialize_mongo_id(file_record)
@@ -412,10 +412,10 @@ def update_file_status(
 
 @router.delete("/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_service_error
-def delete_file_upload(file_id: str) -> None:
+async def delete_file_upload(file_id: str) -> None:
     """Delete a file upload record and the file from Google Cloud Storage."""
     # Get file record to get the GCS path
-    file_record = chat_history_service.get_file_by_id(file_id=file_id)
+    file_record = await chat_history_service.get_file_by_id(file_id=file_id)
 
     if not file_record:
         raise HTTPException(
@@ -433,7 +433,7 @@ def delete_file_upload(file_id: str) -> None:
             logger.warning(f"Failed to archive file from GCS: {str(e)}")
 
     # Delete from database
-    chat_history_service.delete_file_upload(file_id=file_id)
+    await chat_history_service.delete_file_upload(file_id=file_id)
     return
 
 
@@ -466,7 +466,7 @@ async def associate_file_with_message(
     Associate an uploaded file with a message.
     """
     try:
-        chat_history_service.update_file_message_id(file_id, message_id)
+        await chat_history_service.update_file_message_id(file_id, message_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -478,7 +478,7 @@ async def list_user_files(user_id: str):
     """
     Retrieve a list of files uploaded by a specific user.
     """
-    files = chat_history_service.get_files_by_user(user_id)
+    files = await chat_history_service.get_files_by_user(user_id)
     return files
 
 
@@ -487,18 +487,18 @@ async def get_message_file_status(message_id: str):
     """
     Get the processing status of files associated with a specific message.
     """
-    files = chat_history_service.get_files_by_message(message_id)
+    files = await chat_history_service.get_files_by_message(message_id)
     return files
 
 
 @router.get("/sync/{user_id}")
 @handle_service_error
-def sync_user_data(user_id: str, months: int = 3):
+async def sync_user_data(user_id: str, months: int = 3):
     """
     Get all sessions and messages for a user for the last N months.
     Used for bulk synchronization to client.
     """
-    data = chat_history_service.get_sync_data(user_id=user_id, months=months)
+    data = await chat_history_service.get_sync_data(user_id=user_id, months=months)
 
     # Serialize mongo IDs
     data["sessions"] = [serialize_mongo_id(s) for s in data["sessions"]]

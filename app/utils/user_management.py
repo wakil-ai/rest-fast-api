@@ -31,7 +31,7 @@ def handle_service_error(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
         try:
-            return func(*args, **kwargs)
+            return await func(*args, **kwargs)
         except Exception as e:
             logger.error(f"Error in {func.__name__}: {str(e)}")
             raise HTTPException(

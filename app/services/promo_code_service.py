@@ -20,7 +20,7 @@ class PromoCodeService:
     def __init__(self):
         self.mongo_handler = MongoHandler()
 
-    def create_promo_code(
+    async def create_promo_code(
         self,
         code: str,
         created_by: str | None = None,
@@ -45,7 +45,7 @@ class PromoCodeService:
             collection = self.mongo_handler.db[self.PROMO_CODE_COLLECTION]
 
             # Check if code already exists
-            existing = collection.find_one({"code": code})
+            existing = await collection.find_one({"code": code})
             if existing:
                 logger.warning(f"[PromoCodeService] Promo code '{code}' already exists")
                 return False
@@ -61,7 +61,7 @@ class PromoCodeService:
                 "description": description,
             }
 
-            collection.insert_one(promo_code_doc)
+            await collection.insert_one(promo_code_doc)
             logger.info(
                 f"[PromoCodeService] Created promo code: {code} (expires: {expiration_date or 'never'}, credits: {credit_amount or 'unlimited'})"
             )
@@ -71,7 +71,7 @@ class PromoCodeService:
             logger.error(f"[PromoCodeService] Error creating promo code: {str(e)}")
             return False
 
-    def get_promo_code(self, code: str) -> dict[str, Any] | None:
+    async def get_promo_code(self, code: str) -> dict[str, Any] | None:
         """
         Get a specific promo code by code string.
 
@@ -83,7 +83,7 @@ class PromoCodeService:
         """
         try:
             collection = self.mongo_handler.db[self.PROMO_CODE_COLLECTION]
-            promo_code = collection.find_one({"code": code})
+            promo_code = await collection.find_one({"code": code})
             return promo_code
 
         except Exception as e:
@@ -92,7 +92,7 @@ class PromoCodeService:
             )
             return None
 
-    def list_all_promo_codes(self, active_only: bool = False) -> list[dict[str, Any]]:
+    async def list_all_promo_codes(self, active_only: bool = False) -> list[dict[str, Any]]:
         """
         List all promo codes.
 
@@ -115,7 +115,7 @@ class PromoCodeService:
             logger.error(f"[PromoCodeService] Error listing promo codes: {str(e)}")
             return []
 
-    def activate_promo_code(self, code: str) -> bool:
+    async def activate_promo_code(self, code: str) -> bool:
         """
         Activate a promo code.
 
@@ -128,7 +128,7 @@ class PromoCodeService:
         try:
             collection = self.mongo_handler.db[self.PROMO_CODE_COLLECTION]
 
-            result = collection.update_one(
+            result = await collection.update_one(
                 {"code": code},
                 {"$set": {"is_active": True, "updated_at": datetime.now(timezone.utc)}},
             )
@@ -144,7 +144,7 @@ class PromoCodeService:
             )
             return False
 
-    def deactivate_promo_code(self, code: str) -> bool:
+    async def deactivate_promo_code(self, code: str) -> bool:
         """
         Deactivate a promo code.
 
@@ -157,7 +157,7 @@ class PromoCodeService:
         try:
             collection = self.mongo_handler.db[self.PROMO_CODE_COLLECTION]
 
-            result = collection.update_one(
+            result = await collection.update_one(
                 {"code": code},
                 {
                     "$set": {
@@ -178,7 +178,7 @@ class PromoCodeService:
             )
             return False
 
-    def delete_promo_code(self, code: str) -> bool:
+    async def delete_promo_code(self, code: str) -> bool:
         """
         Delete a promo code and all user assignments.
 
@@ -197,7 +197,7 @@ class PromoCodeService:
             user_promo_collection = self.mongo_handler.db[
                 self.USER_PROMO_CODE_COLLECTION
             ]
-            user_result = user_promo_collection.delete_many({"promo_code": code})
+            user_result = await user_promo_collection.delete_many({"promo_code": code})
 
             if promo_result.deleted_count > 0:
                 logger.info(
@@ -212,7 +212,7 @@ class PromoCodeService:
             )
             return False
 
-    def assign_promo_code_to_user(
+    async def assign_promo_code_to_user(
         self, user_id: str, promo_code: str
     ) -> tuple[bool, int]:
         """
@@ -228,7 +228,7 @@ class PromoCodeService:
         """
         try:
             # Verify promo code exists and is active
-            promo = self.get_promo_code(promo_code)
+            promo = await self.get_promo_code(promo_code)
             if not promo:
                 logger.warning(
                     f"[PromoCodeService] Promo code '{promo_code}' not found"
@@ -245,11 +245,11 @@ class PromoCodeService:
             user_promo_collection = self.mongo_handler.db[
                 self.USER_PROMO_CODE_COLLECTION
             ]
-            existing = user_promo_collection.find_one({"user_id": user_id})
+            existing = await user_promo_collection.find_one({"user_id": user_id})
 
             if existing:
                 # Update existing assignment
-                user_promo_collection.update_one(
+                await user_promo_collection.update_one(
                     {"user_id": user_id},
                     {
                         "$set": {
@@ -270,7 +270,7 @@ class PromoCodeService:
                     "assigned_at": datetime.now(timezone.utc),
                     "has_unlimited_access": True,
                 }
-                user_promo_collection.insert_one(assignment_doc)
+                await user_promo_collection.insert_one(assignment_doc)
                 logger.info(
                     f"[PromoCodeService] Assigned promo code '{promo_code}' to user {user_id}"
                 )
@@ -283,7 +283,7 @@ class PromoCodeService:
             )
             return False
 
-    def remove_user_promo_code(self, user_id: str) -> bool:
+    async def remove_user_promo_code(self, user_id: str) -> bool:
         """
         Remove promo code from a user.
 
@@ -297,7 +297,7 @@ class PromoCodeService:
             user_promo_collection = self.mongo_handler.db[
                 self.USER_PROMO_CODE_COLLECTION
             ]
-            result = user_promo_collection.delete_one({"user_id": user_id})
+            result = await user_promo_collection.delete_one({"user_id": user_id})
 
             if result.deleted_count > 0:
                 logger.info(
@@ -312,7 +312,7 @@ class PromoCodeService:
             )
             return False
 
-    def get_user_promo_code(self, user_id: str) -> dict[str, Any] | None:
+    async def get_user_promo_code(self, user_id: str) -> dict[str, Any] | None:
         """
         Get the promo code assigned to a user.
 
@@ -326,14 +326,14 @@ class PromoCodeService:
             user_promo_collection = self.mongo_handler.db[
                 self.USER_PROMO_CODE_COLLECTION
             ]
-            assignment = user_promo_collection.find_one({"user_id": user_id})
+            assignment = await user_promo_collection.find_one({"user_id": user_id})
             return assignment
 
         except Exception as e:
             logger.error(f"[PromoCodeService] Error getting user promo code: {str(e)}")
             return None
 
-    def get_user_promo_status(self, user_id: str) -> tuple[bool, int | None]:
+    async def get_user_promo_status(self, user_id: str) -> tuple[bool, int | None]:
         """
         Check if a user has a valid promo code and get their daily credit limit.
 
@@ -347,7 +347,7 @@ class PromoCodeService:
         """
         try:
             # Get user's promo code assignment
-            assignment = self.get_user_promo_code(user_id)
+            assignment = await self.get_user_promo_code(user_id)
             if not assignment:
                 logger.info(
                     f"[PromoCodeService] No promo code assignment found for user {user_id}"
@@ -362,7 +362,7 @@ class PromoCodeService:
                 )
                 return False, None
 
-            promo = self.get_promo_code(promo_code)
+            promo = await self.get_promo_code(promo_code)
             if not promo:
                 logger.warning(
                     f"[PromoCodeService] Promo code '{promo_code}' not found for user {user_id}"
@@ -425,7 +425,7 @@ class PromoCodeService:
             )
             return False, None
 
-    def user_has_unlimited_access(self, user_id: str) -> bool:
+    async def user_has_unlimited_access(self, user_id: str) -> bool:
         """
         Check if a user has unlimited access via a valid promo code.
 
@@ -435,27 +435,5 @@ class PromoCodeService:
         Returns:
             bool: True if user has unlimited access (promo code with no credit limit)
         """
-        has_promo, credit_limit = self.get_user_promo_status(user_id)
+        has_promo, credit_limit = await self.get_user_promo_status(user_id)
         return has_promo and credit_limit is None
-
-    def list_users_with_promo_codes(self) -> list[dict[str, Any]]:
-        """
-        List all users with promo code assignments.
-
-        Returns:
-            List of user promo code assignments
-        """
-        try:
-            user_promo_collection = self.mongo_handler.db[
-                self.USER_PROMO_CODE_COLLECTION
-            ]
-            assignments = list(user_promo_collection.find().sort("assigned_at", -1))
-
-            logger.info(
-                f"[PromoCodeService] Retrieved {len(assignments)} user promo code assignments"
-            )
-            return assignments
-
-        except Exception as e:
-            logger.error(f"[PromoCodeService] Error listing user promo codes: {str(e)}")
-            return []

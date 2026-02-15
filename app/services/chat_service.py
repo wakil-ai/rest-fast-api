@@ -42,10 +42,9 @@ class ChatService:
     ) -> None:
         """Verify user has sufficient credits and deduct them."""
         try:
-            is_allowed, credits_remaining, limit = await asyncio.to_thread(
-                self.rate_limit_service.check_and_decrement_credits,
-                user_id,
-                assistant_type,
+            is_allowed, credits_remaining, limit = await self.rate_limit_service.check_and_decrement_credits(
+                user_id=user_id,
+                assistant_type=assistant_type,
             )
 
             if not is_allowed:

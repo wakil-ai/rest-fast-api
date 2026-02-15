@@ -52,7 +52,7 @@ class RateLimitService:
         }
         return cost_map[assistant_type]
 
-    def check_and_decrement_credits(
+    async def check_and_decrement_credits(
         self, user_id: str, assistant_type: RateLimitAssistantType = "main"
     ) -> tuple[bool, int, int]:
         """
@@ -62,7 +62,7 @@ class RateLimitService:
         try:
             # Check if user has a promo code and get their credit limit
             has_promo, promo_credit_limit = (
-                self.promo_code_service.get_user_promo_status(user_id)
+                await self.promo_code_service.get_user_promo_status(user_id)
             )
 
             # Calculate total daily limit
@@ -90,7 +90,7 @@ class RateLimitService:
 
             # Find or create user's credit document for today
             query = {"user_id": user_id, "date": today}
-            user_limit = collection.find_one(query)
+            user_limit = await collection.find_one(query)
 
             if user_limit:
                 credits_used = user_limit.get("credits_used", 0)
@@ -104,7 +104,7 @@ class RateLimitService:
                     return False, credits_remaining, daily_limit
 
                 # Deduct credits
-                collection.update_one(
+                await collection.update_one(
                     query,
                     {
                         "$inc": {"credits_used": credit_cost},
@@ -115,7 +115,7 @@ class RateLimitService:
                 return True, new_credits_remaining, daily_limit
             else:
                 # Create new credit entry for today
-                collection.insert_one(
+                await collection.insert_one(
                     {
                         "user_id": user_id,
                         "date": today,
@@ -134,7 +134,7 @@ class RateLimitService:
             # On error, allow the request (fail open)
             return True, settings.DAILY_CREDITS_LIMIT, settings.DAILY_CREDITS_LIMIT
 
-    def get_remaining_credits(self, user_id: str) -> int:
+    async def get_remaining_credits(self, user_id: str) -> int:
         """
         Get the number of remaining credits for today.
         Returns -1 for users with unlimited access via promo code.
@@ -148,7 +148,7 @@ class RateLimitService:
         try:
             # Check if user has a promo code and get their credit limit
             has_promo, promo_credit_limit = (
-                self.promo_code_service.get_user_promo_status(user_id)
+                await self.promo_code_service.get_user_promo_status(user_id)
             )
 
             daily_limit = settings.DAILY_CREDITS_LIMIT
@@ -166,7 +166,7 @@ class RateLimitService:
             collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
 
             query = {"user_id": user_id, "date": today}
-            user_limit = collection.find_one(query)
+            user_limit = await collection.find_one(query)
 
             if user_limit:
                 credits_used = user_limit.get("credits_used", 0)

@@ -30,16 +30,16 @@ class DBManager:
         self.vector_handler = self._initialize_vector_db()
         self.mongo_handler = MongoHandler()  # For automatic ingestions
 
-    def create_collection(self, collection_name: str) -> None:
+    async def create_collection(self, collection_name: str) -> None:
         """Create a MongoDB collection if it doesn't exist."""
         # List existing collections first
-        existing_collections = self.mongo_handler.db.list_collection_names()
+        existing_collections = await self.mongo_handler.db.list_collection_names()
 
         if collection_name in existing_collections:
             # logger.info(f"[DBManager] Collection {collection_name} already exists in MongoDB.")
             return
 
-        self.mongo_handler.db.create_collection(collection_name)
+        await self.mongo_handler.db.create_collection(collection_name)
 
     # Initialize vector database handler
     def _initialize_vector_db(self) -> VectorDBHandler:
@@ -61,20 +61,20 @@ class DBManager:
                 f"[DBManager] Invalid vector database type: {settings.VECTOR_DB_TYPE}. Please choose from {VectorDBType.values()}"
             )
 
-    # MongoDB operations - synchronous
-    def find_documents(
+    # MongoDB operations - asynchronous
+    async def find_documents(
         self, collection_name: str, query: dict[str, Any], limit: int = 50
     ) -> list[dict[str, Any]]:
         """Find documents in MongoDB based on query."""
-        return self.mongo_handler.find_documents(collection_name, query, limit)
+        return await self.mongo_handler.find_documents(collection_name, query, limit)
 
-    def insert_documents(
+    async def insert_documents(
         self, collection_name: str, documents: list[dict[str, Any]]
     ) -> list:
         """Insert documents into MongoDB collection and return inserted IDs."""
-        return self.mongo_handler.insert_documents(collection_name, documents)
+        return await self.mongo_handler.insert_documents(collection_name, documents)
 
-    def update_documents(
+    async def update_documents(
         self,
         collection_name: str,
         query: dict[str, Any],
@@ -83,12 +83,14 @@ class DBManager:
     ) -> Any:
         """Update documents in MongoDB collection."""
         collection = self.mongo_handler.db[collection_name]
-        return collection.update_one(query, update, upsert=upsert)
+        result = await collection.update_one(query, update, upsert=upsert)
+        return result.modified_count
 
-    def delete_documents(self, collection_name: str, query: dict[str, Any]) -> Any:
+    async def delete_documents(self, collection_name: str, query: dict[str, Any]) -> Any:
         """Delete documents from MongoDB collection."""
         collection = self.mongo_handler.db[collection_name]
-        return collection.delete_many(query)
+        result = await collection.delete_many(query)
+        return {"deleted_count": result.deleted_count}
 
     def search_dense(
         self,

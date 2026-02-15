@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.core.config import settings
 from app.core.logger import logger
 from app.models.promo_code import PromoCodeCreate, UserPromoCode
 from app.services.promo_code_service import PromoCodeService
@@ -42,9 +43,7 @@ async def get_user_rate_limit(user_id: str):
     - credit_costs: Credit cost for each assistant type
     """
     try:
-        from app.core.config import settings
-
-        remaining = rate_limit_service.get_remaining_credits(user_id)
+        remaining = await rate_limit_service.get_remaining_credits(user_id)
         return RateLimitResponse(
             user_id=user_id,
             remaining_credits=remaining,
@@ -64,41 +63,7 @@ async def get_user_rate_limit(user_id: str):
         )
 
 
-@router.post("/rate-limit/reset", summary="Reset rate limit for a user")
-async def reset_user_rate_limit(request: ResetLimitRequest):
-    """
-    Reset the rate limit for a specific user (admin function).
-    This removes today's rate limit record, allowing the user to make requests again.
-
-    Parameters:
-    - user_id: User ID to reset
-
-    Returns:
-    - success: Whether the reset was successful
-    - message: Status message
-    """
-    try:
-        success = rate_limit_service.reset_user_limit(request.user_id)
-        if success:
-            return {
-                "success": True,
-                "message": f"Rate limit reset successfully for user {request.user_id}",
-            }
-        else:
-            return {
-                "success": False,
-                "message": f"No rate limit record found for user {request.user_id} today",
-            }
-    except Exception as e:
-        logger.error(
-            f"[AdminAPI] Error resetting rate limit for user {request.user_id}: {str(e)}"
-        )
-        raise HTTPException(status_code=500, detail="Failed to reset rate limit")
-
-
 #  Promo Code Management Endpoints
-
-
 @router.post("/promo-codes", summary="Create a new promo code")
 async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin"):
     """
@@ -115,7 +80,10 @@ async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin")
     - promo_code: The created promo code details
     """
     try:
-        success = promo_code_service.create_promo_code(
+        if request.super_secret_admin_key != settings.SUPER_ADMIN_API_KEY:
+            raise HTTPException(status_code=403, detail="Invalid Admin key")
+        
+        success = await promo_code_service.create_promo_code(
             code=request.code,
             created_by=created_by,
             description=request.description,
@@ -124,7 +92,7 @@ async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin")
         )
 
         if success:
-            promo_code = promo_code_service.get_promo_code(request.code)
+            promo_code = await promo_code_service.get_promo_code(request.code)
             return {
                 "success": True,
                 "message": f"Promo code '{request.code}' created successfully",
@@ -149,41 +117,6 @@ async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin")
         raise HTTPException(status_code=500, detail="Failed to create promo code")
 
 
-@router.get("/promo-codes", summary="List all promo codes")
-async def list_promo_codes(active_only: bool = False):
-    """
-    List all promo codes.
-
-    Parameters:
-    - active_only: If true, return only active promo codes
-
-    Returns:
-    - promo_codes: List of promo codes
-    - count: Total number of promo codes
-    """
-    try:
-        promo_codes = promo_code_service.list_all_promo_codes(active_only=active_only)
-
-        return {
-            "promo_codes": [
-                {
-                    "code": pc["code"],
-                    "is_active": pc["is_active"],
-                    "expiration_date": pc.get("expiration_date"),
-                    "credit_amount": pc.get("credit_amount"),
-                    "created_at": pc["created_at"],
-                    "created_by": pc.get("created_by"),
-                    "description": pc.get("description"),
-                }
-                for pc in promo_codes
-            ],
-            "count": len(promo_codes),
-        }
-    except Exception as e:
-        logger.error(f"[AdminAPI] Error listing promo codes: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve promo codes")
-
-
 @router.get("/promo-codes/{code}", summary="Get specific promo code details")
 async def get_promo_code(code: str):
     """
@@ -196,7 +129,7 @@ async def get_promo_code(code: str):
     - Promo code details
     """
     try:
-        promo_code = promo_code_service.get_promo_code(code)
+        promo_code = await promo_code_service.get_promo_code(code)
 
         if not promo_code:
             raise HTTPException(
@@ -232,7 +165,7 @@ async def activate_promo_code(code: str):
     - message: Status message
     """
     try:
-        success = promo_code_service.activate_promo_code(code)
+        success = await promo_code_service.activate_promo_code(code)
 
         if success:
             return {
@@ -263,7 +196,7 @@ async def deactivate_promo_code(code: str):
     - message: Status message
     """
     try:
-        success = promo_code_service.deactivate_promo_code(code)
+        success = await promo_code_service.deactivate_promo_code(code)
 
         if success:
             return {
@@ -281,40 +214,7 @@ async def deactivate_promo_code(code: str):
         raise HTTPException(status_code=500, detail="Failed to deactivate promo code")
 
 
-@router.delete("/promo-codes/{code}", summary="Delete a promo code")
-async def delete_promo_code(code: str):
-    """
-    Delete a promo code and all user assignments.
-
-    Parameters:
-    - code: The promo code to delete
-
-    Returns:
-    - success: Whether deletion was successful
-    - message: Status message
-    """
-    try:
-        success = promo_code_service.delete_promo_code(code)
-
-        if success:
-            return {
-                "success": True,
-                "message": f"Promo code '{code}' deleted successfully",
-            }
-        else:
-            raise HTTPException(
-                status_code=404, detail=f"Promo code '{code}' not found"
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[AdminAPI] Error deleting promo code: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete promo code")
-
-
 # User Promo Code Assignment Endpoints
-
-
 @router.post("/promo-codes/assign", summary="Assign promo code to a user")
 async def assign_promo_code_to_user(request: UserPromoCode):
     """
@@ -329,7 +229,7 @@ async def assign_promo_code_to_user(request: UserPromoCode):
     - message: Status message
     """
     try:
-        success, status_code = promo_code_service.assign_promo_code_to_user(
+        success, status_code = await promo_code_service.assign_promo_code_to_user(
             user_id=request.user_id, promo_code=request.promo_code
         )
 
@@ -385,39 +285,6 @@ async def remove_user_promo_code(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to remove promo code")
 
 
-@router.get("/promo-codes/users", summary="List all users with promo codes")
-async def list_users_with_promo_codes():
-    """
-    List all users who have promo code assignments.
-
-    Returns:
-    - users: List of user promo code assignments
-    - count: Total number of users with promo codes
-    """
-    try:
-        assignments = promo_code_service.list_users_with_promo_codes()
-
-        return {
-            "users": [
-                {
-                    "user_id": assignment["user_id"],
-                    "promo_code": assignment["promo_code"],
-                    "assigned_at": assignment["assigned_at"],
-                    "has_unlimited_access": assignment.get(
-                        "has_unlimited_access", True
-                    ),
-                }
-                for assignment in assignments
-            ],
-            "count": len(assignments),
-        }
-    except Exception as e:
-        logger.error(f"[AdminAPI] Error listing users with promo codes: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to retrieve user promo code assignments"
-        )
-
-
 @router.get("/promo-codes/users/{user_id}", summary="Get user's promo code")
 async def get_user_promo_code(user_id: str):
     """
@@ -430,7 +297,7 @@ async def get_user_promo_code(user_id: str):
     - User's promo code assignment details
     """
     try:
-        assignment = promo_code_service.get_user_promo_code(user_id)
+        assignment = await promo_code_service.get_user_promo_code(user_id)
 
         if not assignment:
             raise HTTPException(

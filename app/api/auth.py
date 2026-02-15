@@ -67,7 +67,7 @@ async def auth_callback(request: Request):
         # Use email or sub as internal user_id
         internal_user_id = email or user_id
 
-        user = chat_history_service.create_user(
+        user = await chat_history_service.create_user(
             user_id=internal_user_id,
             username=email,
             first_name=user_info.get("given_name"),

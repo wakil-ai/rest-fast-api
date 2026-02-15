@@ -32,7 +32,7 @@ class FileManager:
         Process file upload for a project: validate → OCR → store → save metadata
         Returns: (status_code, response_or_error_message)
         """
-        project = self.history.get_project(project_id)
+        project = await self.history.get_project(project_id)
         if not project:
             return 404, "Project not found"
 
@@ -55,7 +55,7 @@ class FileManager:
 
             metadata = self._create_file_metadata(file, content, gcs_path)
 
-            record = self.history.add_file_upload(
+            record = await self.history.add_file_upload(
                 user_id=user_id,
                 file_id=file_id,
                 file_url=file_url,
@@ -124,7 +124,7 @@ class FileManager:
 
             metadata = self._create_file_metadata(file, content, gcs_path)
 
-            record = self.history.add_file_upload(
+            record = await self.history.add_file_upload(
                 user_id=user_id,
                 file_id=file_id,
                 file_url=file_url,
