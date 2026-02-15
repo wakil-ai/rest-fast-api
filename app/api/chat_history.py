@@ -1,4 +1,13 @@
-from fastapi import APIRouter, Body, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Body,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+    status,
+)
 
 from app.core.logger import logger
 from app.models.chat_history import (

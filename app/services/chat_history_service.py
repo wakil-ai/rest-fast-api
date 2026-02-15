@@ -141,7 +141,9 @@ class ChatHistoryService:
         except Exception as e:
             # Handle race condition: another request may have inserted the user
             if "E11000" in str(e) or "duplicate key" in str(e).lower():
-                logger.info(f"User {user_id} was created by a concurrent request, returning existing user.")
+                logger.info(
+                    f"User {user_id} was created by a concurrent request, returning existing user."
+                )
                 existing = self.db_manager.find_documents(
                     self.users_collection, {"_id": user_id}
                 )
