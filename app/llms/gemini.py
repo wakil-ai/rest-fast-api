@@ -59,17 +59,11 @@ class Gemini(LLM):
             ),
         )
 
-        def _sync_stream():
-            return list(
-                self.client.models.generate_content_stream(
-                    model=self.model,
-                    contents=contents,
-                    config=generate_content_config,
-                )
-            )
-
-        chunks = await asyncio.to_thread(_sync_stream)
-        for chunk in chunks:
+        for chunk in self.client.models.generate_content_stream(
+            model=self.model,
+            contents=contents,
+            config=generate_content_config,
+        ):
             yield chunk.text
 
     async def _generate_complete(self, system_prompt: str, user_prompt: str) -> str:
