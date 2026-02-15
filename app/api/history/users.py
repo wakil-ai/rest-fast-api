@@ -1,0 +1,41 @@
+from fastapi import APIRouter, Response, status, HTTPException
+
+from app.models.chat_history import UserCreateRequest, UserCreateResponse
+from app.services.chat_history_service import ChatHistoryService
+from app.utils.user_management import handle_service_error, serialize_mongo_id
+
+router = APIRouter(prefix="/users", tags=["Users"])
+
+chat_history_service = ChatHistoryService()
+
+
+def create_response(data: dict, message: str) -> dict:
+    return {"info": serialize_mongo_id(data), "message": message}
+
+
+@router.post("", status_code=status.HTTP_200_OK, response_model=UserCreateResponse)
+@handle_service_error
+async def create_or_get_user(request: UserCreateRequest, response: Response):
+    """Create a new user or return existing one (idempotent)"""
+    existing = await chat_history_service.get_user(user_id=request.user_id)
+    if existing:
+        return create_response(existing, "User already exists")
+
+    user = await chat_history_service.create_user(
+        user_id=request.user_id,
+        username=request.username,
+        first_name=request.first_name,
+        last_name=request.last_name,
+        picture=request.picture,
+    )
+    response.status_code = status.HTTP_201_CREATED
+    return create_response(user, "User created successfully")
+
+
+@router.get("/{user_id}", response_model=UserCreateResponse)
+@handle_service_error
+async def get_user(user_id: str):
+    user = await chat_history_service.get_user(user_id=user_id)
+    if not user:
+        raise HTTPException(404, f"User {user_id} not found")
+    return create_response(user, "User retrieved")

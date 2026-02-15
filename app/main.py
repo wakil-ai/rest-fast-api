@@ -14,13 +14,13 @@ from app.api import (
     admin,
     auth,
     chat,
-    chat_history,
     health,
     logs,
     memory,
     payme,
     speech_to_text,
 )
+from app.api.history import router as chat_history
 from app.core.config import settings
 from app.core.logger import logger
 from app.security import get_current_username, verify_api_key, verify_super_admin_key
