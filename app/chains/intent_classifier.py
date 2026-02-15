@@ -1,95 +1,100 @@
-from enum import Enum
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import ValidationError
 
-from langchain.prompts import PromptTemplate
-
-from app.chains.prompts import (
-    APPEAL_TAX_ADMINISTRATION_PROMPT,
-    APPEAL_TO_COURT_DECISION_PROMPT,
-    INTENT_CLASSIFICATION_PROMPT,
-    PREDICTING_LAWSUIT_RESULT_PROMPT,
-    PROMPT,
-)
+from app.chains.prompts_registry import PromptRegistry
 from app.core.logger import logger
-from app.llms.gpt import ChatGPT
-
-
-class LegalIntent(str, Enum):
-    """Legal assistance intent categories"""
-
-    PREDICTING_LAWSUIT = "predicting_lawsuit"  # Predicting lawsuit results
-    APPEAL_COURT_DECISION = "appeal_court_decision"  # Appealing court decisions
-    APPEAL_TAX_ADMIN = "appeal_tax_admin"  # Appealing tax administration decisions
-    GENERAL_LEGAL = "general_legal"  # General legal questions
+from app.llms import ChatGPT
+from app.models.intent_types import DomainType, IntentOutput, LegalIntent
 
 
 class IntentClassifier:
-    """Classifies user queries into legal assistance intents"""
-
     def __init__(self):
-        self.llm = ChatGPT(model_name="gpt-4o-mini")  # Fast classification model
+        self.prompt_registry = PromptRegistry()
+        self.llm = ChatGPT()
 
-    async def get_prompt_for_intent(self, intent: LegalIntent) -> str:
-        """
-        Select appropriate system prompt based on classified intent
+        # Structured output parser
+        self.output_parser = PydanticOutputParser(pydantic_object=IntentOutput)
 
-        Args:
-            intent: Classified user intent
-
-        Returns:
-            System prompt string for the specific intent
-        """
-        prompt_mapping = {
-            LegalIntent.PREDICTING_LAWSUIT: PREDICTING_LAWSUIT_RESULT_PROMPT,
-            LegalIntent.APPEAL_COURT_DECISION: APPEAL_TO_COURT_DECISION_PROMPT,
-            LegalIntent.APPEAL_TAX_ADMIN: APPEAL_TAX_ADMINISTRATION_PROMPT,
-            LegalIntent.GENERAL_LEGAL: PROMPT,  # Default prompt # Fallback
-        }
-
-        return prompt_mapping.get(intent, PROMPT)
+        # Intent classification prompt template
+        self.intent_prompt_template = self.prompt_registry.get_prompt(
+            "intent_classification"
+        ).template
 
     async def classify_intent(
-        self, query: str, chat_history: str = ""
-    ) -> PromptTemplate:
-        """
-        Classify user query intent
+        self,
+        query: str,
+        chat_history: str = "",
+        uploaded_file_context: str = "",
+    ) -> tuple[str, str]:
 
-        Args:
-            query: User's question
-            chat_history: Previous conversation context
-
-        Returns:
-            LegalIntent enum value
-        """
         try:
-            # Build classification prompt with context
-            full_query = f"{chat_history}\n\nСўров: {query}" if chat_history else query
-            prompt = INTENT_CLASSIFICATION_PROMPT.format(query=full_query)
+            structured_prompt = self._build_prompt(
+                query, chat_history, uploaded_file_context
+            )
 
-            # Get classification
             response = await self.llm.generate_response(
-                user_prompt=full_query,
-                system_prompt=prompt,
+                user_prompt=query,
+                system_prompt=structured_prompt,
                 stream=False,
             )
 
-            # Parse response
-            intent_str = response.strip().lower()
+            parsed = self._parse_response(response)
 
-            logger.debug(f"[IntentClassifier] Classification response: {intent_str}")
-
-            # Map to enum
-            if "predicting_lawsuit" in intent_str:
-                intent = LegalIntent.PREDICTING_LAWSUIT
-            elif "appeal_court" in intent_str:
-                intent = LegalIntent.APPEAL_COURT_DECISION
-            elif "appeal_tax" in intent_str:
-                intent = LegalIntent.APPEAL_TAX_ADMIN
-            else:
-                intent = LegalIntent.GENERAL_LEGAL  # Default fallback
-
-            logger.info(f"[IntentClassifier] Query classified as: {intent.value}")
-            return await self.get_prompt_for_intent(intent)
+            domain, intent = self._map_to_enums(
+                parsed.domain,
+                parsed.intent,
+                uploaded_file_context,
+            )
 
         except Exception as e:
             logger.error(f"[IntentClassifier] Classification failed: {e}")
-            return await self.get_prompt_for_intent(LegalIntent.GENERAL_LEGAL)
+            domain = DomainType.GENERAL
+            intent = LegalIntent.GENERAL_LEGAL
+
+        prompt = self.prompt_registry.get_prompt_for_intent(domain, intent)
+        return (domain.value, prompt)
+
+    def _build_prompt(self, query, chat_history, file_context):
+        full_context = f"""
+        Query: {query}
+        Uploaded file context: {file_context}
+        Chat history: {chat_history}
+        """
+
+        return self.intent_prompt_template.format(
+            query=full_context,
+            format_instructions=self.output_parser.get_format_instructions(),
+        )
+
+    def _parse_response(self, response: str) -> IntentOutput:
+        try:
+            return self.output_parser.parse(response)
+        except ValidationError:
+            logger.warning("[IntentClassifier] Structured parsing failed, fallback.")
+            return IntentOutput(domain="general", intent="general_legal")
+
+    def _map_to_enums(
+        self,
+        domain_str: str,
+        intent_str: str,
+        uploaded_file_context: str,
+    ) -> tuple[DomainType, LegalIntent]:
+
+        try:
+            domain = DomainType(domain_str.lower())
+        except ValueError:
+            domain = DomainType.GENERAL
+
+        try:
+            intent = LegalIntent(intent_str.lower())
+        except ValueError:
+            if domain == DomainType.CONTRACT:
+                intent = (
+                    LegalIntent.CONTRACT_RISK_ANALYSIS
+                    if uploaded_file_context
+                    else LegalIntent.CONTRACT_TEMPLATE_GENERATION
+                )
+            else:
+                intent = LegalIntent.GENERAL_LEGAL
+
+        return domain, intent

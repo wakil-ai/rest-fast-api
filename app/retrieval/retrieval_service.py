@@ -1,27 +1,31 @@
+from __future__ import annotations
+
 from typing import Any, Optional
 
+from app.assistants.base import RetrievalConfig
 from app.core.config import settings
 from app.core.logger import logger
-from app.retrieval.context_formatter import DocumentDeduplicator, DocumentFormatter
-from app.retrieval.search_strategies import RetrievalConfig, SearchStrategy
+from app.db.db_manager import DBManager
+from app.retrieval.context_formatter import StandardContextFormatter
+from app.retrieval.embedding_manager import EmbeddingManager
 
 
 class RetrievalService:
     """
-    Main retrieval service orchestrating all retrieval operations.
+    Thin retrieval layer for generic (non-assistant-specific) operations.
 
-    Provides unified interface for:
-    - Standard document retrieval
-    - Contract document retrieval
-    - Project-scoped retrieval
-    - Multilingual retrieval
+    Assistant-specific retrieval is handled by each assistant's ``retrieve()``
+    method.  This service is used by:
+    - ``/api/retrieval`` endpoints (direct vector search)
+    - ``AgenticRAGFlow`` (multilingual retrieval + project context)
     """
 
     def __init__(self):
-        self.search_strategy = SearchStrategy()
-        self.formatter = DocumentFormatter()
-        self.deduplicator = DocumentDeduplicator()
+        self._db = DBManager()
+        self._embedder = EmbeddingManager()
+        self._formatter = StandardContextFormatter()
 
+    # Generic retrieval (API endpoints)
     async def retrieve_context(
         self,
         query: str,
@@ -30,20 +34,13 @@ class RetrievalService:
         search_type: str = "hybrid",
         collection_name: str = settings.MILVUS_MAIN_NAME,
         file_context: Optional[str] = None,
+        filter: str = "",
     ) -> tuple[str, list[dict[str, Any]]]:
         """
-        Retrieve and format top documents.
+        Generic retrieval + standard formatting.
 
-        Args:
-            query: Search query
-            top_k: Number of documents to retrieve
-            alpha: Hybrid search weighting parameter
-            search_type: Type of search to perform
-            collection_name: Target collection
-            file_context: Optional additional context for retrieval
-
-        Returns:
-            Tuple of (formatted_context, attachments)
+        This is called from the ``/api/retrieval`` endpoints where there is
+        no assistant context.  Delegates to the base-class standard formatter.
         """
         try:
             config = RetrievalConfig(
@@ -51,36 +48,20 @@ class RetrievalService:
                 alpha=alpha,
                 search_type=search_type,
                 collection_name=collection_name,
+                filter=filter,
             )
 
-            # # Retrieve documents
-            # if file_context:
-            #     search_results = await self._retrieve_with_file_context(
-            #         query, file_context, config
-            #     )
-            # else:
-            # Experimental: always use both query and file context if available
-            if file_context:
-                query = f"{query}\n\n\n{file_context}"
-            search_results = await self._retrieve_raw_documents(query, config)
+            effective_query = f"{query}\n\n\n{file_context}" if file_context else query
+            raw_docs = self._search(effective_query, config)
 
-            # Format results based on collection type
-            formatted_result = await self.formatter.format_results(
-                search_results, collection_name
-            )
-
-            if isinstance(formatted_result, dict):
-                return (
-                    formatted_result["formatted_text"],
-                    formatted_result["attachments"],
-                )
-            else:
-                return (formatted_result, [])
+            result = await self._formatter.format_results(raw_docs)
+            return result.context, result.attachments
 
         except Exception as e:
             logger.error(f"Retrieval failed: {e}", exc_info=True)
-            return self._get_error_response(collection_name)
+            return self._error_response(collection_name)
 
+    # Multilingual retrieval (deep research / agentic RAG)
     async def retrieve_multilingual(
         self,
         query_translations: dict[str, str],
@@ -92,18 +73,10 @@ class RetrievalService:
         """
         Retrieve and merge documents for multiple query translations.
 
-        Args:
-            query_translations: Dict mapping language codes to translated queries
-            top_k: Number of final documents to return
-            alpha: Hybrid search parameter
-            search_type: Type of search
-            collection_name: Target collection
-
-        Returns:
-            Deduplicated and sorted list of documents
+        Returns deduplicated and score-sorted raw documents.
         """
-        all_results = []
-        per_lang_top_k = int(top_k * 1.5)  # Retrieve more per language
+        all_results: list[dict[str, Any]] = []
+        per_lang_top_k = int(top_k * 1.5)
 
         config = RetrievalConfig(
             top_k=per_lang_top_k,
@@ -115,7 +88,7 @@ class RetrievalService:
         for lang_code, query in query_translations.items():
             try:
                 logger.info(f"Retrieving for {lang_code}: {query}")
-                results = await self._retrieve_raw_documents(query, config)
+                results = self._search(query, config)
                 all_results.extend(results)
             except Exception as e:
                 logger.error(f"Search failed for {lang_code}: {e}")
@@ -123,91 +96,47 @@ class RetrievalService:
         if not all_results:
             return []
 
-        # Deduplicate and sort
-        unique_results = self.deduplicator.deduplicate_by_url(all_results)
-        sorted_results = sorted(
-            unique_results, key=lambda x: x.get("score", 0), reverse=True
-        )
+        unique = self._formatter.deduplicate_by_url(all_results)
+        unique.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return unique[:top_k]
 
-        return sorted_results[:top_k]
+    # Low-level search dispatcher
+    def _search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
+        """Route to the correct search method based on ``config.search_type``."""
+        embedding = self._embedder.embed_query(query)
 
-    async def retrieve_project_context(
-        self,
-        query: str,
-        project_id: str,
-        user_id: str,
-        top_k: int = settings.TOP_K,
-        alpha: float = settings.ALPHA,
-    ) -> str:
-        """
-        Retrieve documents from a specific project.
-
-        Args:
-            query: Search query
-            project_id: Project identifier
-            user_id: User identifier
-            top_k: Number of documents
-            alpha: Hybrid search parameter
-
-        Returns:
-            Formatted context string
-        """
-        try:
-            expr = f'metadata["project_id"] == "{project_id}" and metadata["user_id"] == "{user_id}"'
-
-            config = RetrievalConfig(
-                top_k=top_k,
-                alpha=alpha,
-                search_type="hybrid",
-                collection_name=settings.MILVUS_PROJECT_FILES,
+        if config.search_type == "sparse":
+            return self._db.search_sparse(
+                text_query=query,
+                top_k=config.top_k,
+                collection_name=config.collection_name,
             )
 
-            search_results = await self._retrieve_raw_documents(
-                query, config, expr=expr
+        if config.search_type == "dense":
+            return self._db.search_dense(
+                embedding, config.top_k, config.collection_name
             )
 
-            return await self.formatter.format_standard_results(search_results)
+        if config.search_type == "specific":
+            return self._db.search_specific(
+                text_query=query,
+                top_k=config.top_k,
+                collection_name=config.collection_name,
+            )
 
-        except Exception as e:
-            logger.error(f"Project retrieval failed: {e}", exc_info=True)
-            return "No relevant documents found in the project files."
-
-    async def _retrieve_raw_documents(
-        self, query: str, config: RetrievalConfig, expr: Optional[str] = None
-    ) -> list[dict[str, Any]]:
-        """Retrieve raw documents without formatting."""
-        return self.search_strategy.search(query, config, expr)
-
-    async def _retrieve_with_file_context(
-        self, query: str, file_context: str, config: RetrievalConfig
-    ) -> list[dict[str, Any]]:
-        """Retrieve documents using both query and file context."""
-        half_k = config.top_k // 2
-
-        # Create configs for both searches
-        query_config = RetrievalConfig(
-            top_k=half_k,
+        # Default: hybrid
+        return self._db.search_hybrid(
+            dense_vector=embedding,
+            text_query=query,
+            top_k=config.top_k,
             alpha=config.alpha,
-            search_type=config.search_type,
             collection_name=config.collection_name,
+            expr=config.filter or "",
         )
 
-        # Search with both query and file context
-        query_results = await self._retrieve_raw_documents(query, query_config)
-        file_results = await self._retrieve_raw_documents(file_context, query_config)
-
-        # Combine and deduplicate
-        combined = query_results + file_results
-        unique = self.deduplicator.deduplicate_by_url(combined)
-
-        # Sort by score and take top_k
-        return sorted(unique, key=lambda x: x.get("score", 0), reverse=True)[
-            : config.top_k
-        ]
-
+    # Helpers
     @staticmethod
-    def _get_error_response(collection_name: str) -> tuple[str, list]:
-        """Get appropriate error response based on collection."""
+    def _error_response(collection_name: str) -> tuple[str, list]:
         if collection_name == settings.MILVUS_SHARTNOMA:
             return ("", [])
         return ("No relevant documents found.", [])

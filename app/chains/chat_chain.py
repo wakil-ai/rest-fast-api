@@ -2,16 +2,19 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
 
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
-from app.chains.intent_classifier import IntentClassifier
-from app.core.assistants import AssistantConfig
+from app.assistants import (
+    BaseAssistant,
+    MainAssistant,
+    MamuriyAssistant,
+    ShartnomaAssistant,
+    SoliqAssistant,
+)
+from app.chains.prompts_registry import PromptRegistry
 from app.core.config import settings
 from app.core.logger import logger
-from app.llms.base import LLM
-from app.llms.claude import Claude
-from app.llms.gpt import ChatGPT
-from app.llms.novita import Novita
+from app.llms import LLM, ChatGPT, Claude, Gemini, Novita
 from app.retrieval.retrieval_service import RetrievalService
 from app.services.chat_history_service import ChatHistoryService
 from app.services.memory_service import ChatMemoryService
@@ -20,30 +23,53 @@ from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 @dataclass
 class GenerationContext:
-    """Encapsulates all context needed for response generation."""
+    """All context needed for response generation."""
 
     context: str
     system_prompt: str
     chat_history: str
-    attachments: list[dict[str, Any]] = None
+    attachments: list[dict[str, Any]] | None = None
 
 
 class ChatChain:
     """
-    Main chain for retrieval-augmented generation (RAG):
-    1. Retrieve relevant documents from vector DB
-    2. Build context and prompts
-    3. Generate answer using selected LLM with automatic fallback
+    Main RAG (Retrieval-Augmented Generation) chain with automatic fallback.
+
+    Responsibilities:
+    - Retrieve relevant documents
+    - Prepare context + prompts
+    - Generate answer using selected LLM (with fallback)
     """
 
-    def __init__(self):
-        self.retrieval_service = RetrievalService()
-        self.memory_service = ChatMemoryService()
-        self.chat_history_service = ChatHistoryService()
-        self.fallback_llm = ChatGPT()
-        self.intent_classifier = IntentClassifier()
+    # Assistant registry — maps assistant name → class
+    ASSISTANT_REGISTRY: dict[str, type[BaseAssistant]] = {
+        "main": MainAssistant,
+        "umumiy": MainAssistant,
+        "soliq": SoliqAssistant,
+        "mamuriy_sud": MamuriyAssistant,
+        "shartnoma": ShartnomaAssistant,
+    }
 
-    # Public API
+    def __init__(self):
+        # Assistants (lazy-cached per name)
+        self._assistant_cache: dict[str, BaseAssistant] = {}
+
+        # Generic retrieval (for agentic RAG flow only)
+        self.retrieval = RetrievalService()
+
+        self.memory = ChatMemoryService()
+        self.history_service = ChatHistoryService()
+        self.fallback_llm = ChatGPT()
+        self.prompts_registry = PromptRegistry()
+
+    def _get_assistant(self, name: str) -> BaseAssistant:
+        """Get or create an assistant instance by name."""
+        if name not in self._assistant_cache:
+            cls = self.ASSISTANT_REGISTRY.get(name, MainAssistant)
+            self._assistant_cache[name] = cls()
+        return self._assistant_cache[name]
+
+    #  Public API
     async def generate_answer(
         self,
         user_id: str,
@@ -55,23 +81,10 @@ class ChatChain:
         model_name: str | None = None,
     ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
         """
-        Generate response using RAG with automatic fallback.
-
-        Args:
-            user_id: User identifier for memory retrieval
-            query: User's question
-            chat_history: Previous conversation messages
-            stream: Whether to stream the response
-            file_ids: Optional list of file IDs to use as context
-            collection_name: Vector DB collection to query
-            model_name: Specific model to use
-
-        Returns:
-            String response, async generator, or tuple with debug data
+        Main entry point to generate a response (streaming or not).
         """
         try:
-            # Prepare context
-            gen_context = await self._prepare_generation_context(
+            ctx = await self._prepare_generation_context(
                 user_id=user_id,
                 query=query,
                 chat_history=chat_history,
@@ -79,41 +92,39 @@ class ChatChain:
                 assistant=assistant,
             )
 
-            # Select LLM
-            llm = self._get_llm(model_name) if model_name else self.fallback_llm
+            llm = self._select_llm(model_name)
 
-            # Generate response
             if stream:
-                return self._generate_stream(llm, query, gen_context, assistant)
+                return self._generate_streaming(llm, query, ctx, assistant)
             else:
-                return await self._generate_non_stream(
-                    llm, query, gen_context, assistant
-                )
+                return await self._generate_non_streaming(llm, query, ctx, assistant)
 
         except Exception as e:
-            logger.error(f"[ChatChain] Generation failed: {e}", exc_info=True)
-            return self._create_error_response(stream, {})
+            logger.error(f"Generation failed: {e}", exc_info=True)
+            return self._create_error_response(stream)
 
-    # LLM Selection
-    def _get_llm(self, model_name: str) -> LLM:
-        """Factory method to get LLM instance based on model name."""
-        logger.debug(f"[ChatChain] Selecting LLM for model: {model_name}")
+    #  LLM Selection
+    def _select_llm(self, model_name: str | None) -> LLM:
+        """Factory method: select LLM based on model name prefix."""
+        if not model_name:
+            return self.fallback_llm
 
-        model_mapping = {
+        mapping = {
             "gemma-": Novita,
             "gpt-oss-": Novita,
             "gpt-": ChatGPT,
             "claude-": Claude,
+            "gemini-": Gemini,
         }
 
-        for prefix, llm_class in model_mapping.items():
+        for prefix, cls in mapping.items():
             if model_name.startswith(prefix):
-                return llm_class(model_name=model_name)
+                return cls(model_name=model_name)
 
-        logger.warning(f"[ChatChain] Unknown model '{model_name}', using fallback")
+        logger.warning(f"Unknown model '{model_name}' → using fallback")
         return self.fallback_llm
 
-    # Context Preparation
+    #  Context Preparation
     async def _prepare_generation_context(
         self,
         user_id: str,
@@ -122,211 +133,217 @@ class ChatChain:
         file_ids: list[str] | None,
         assistant: str,
     ) -> GenerationContext:
-        """Prepare all context needed for generation."""
-        # Get collection name with assistant config
-        collection_name = AssistantConfig.get_collection_name(assistant)
+        """Gather all pieces needed for generation: files, memory, retrieval, prompt."""
+        # 1. File context (OCR results)
+        file_context = await self._collect_file_context(file_ids)
 
-        # Collect file context if any
-        file_context = ""
-        if file_ids:
-            for file_id in file_ids:
-                file = self.chat_history_service.get_file_by_id(file_id)
-                if file:
-                    file_context += f"\n\n## USER FILE CONTEXT\n{file['ocr_result']}"
+        # 2. Chat history + memory
+        history_formatted = self._format_chat_history(chat_history)
+        memory_text = await self.memory.search_memory(user_id, query)
+        full_history_text = "\n".join(filter(None, [history_formatted, memory_text]))
 
-        context, attachments = await self._retrieve_context(
-            query=query,
-            collection_name=collection_name,
-            file_context=file_context,
+        # 3. Retrieval — each assistant handles its own classification / filtering
+        retrieved_context, attachments, template_override = (
+            await self._retrieve_relevant_context(
+                query=query,
+                file_context=file_context,
+                chat_history=history_formatted,
+                assistant=assistant,
+            )
         )
 
-        # Build chat history with memory
-        chat_history_text = self._format_chat_history(chat_history)
-        memory_text = await self.memory_service.search_memory(user_id, query)
-        history_text = "\n".join(filter(None, [chat_history_text, memory_text]))
+        # 4. Prompt template (assistant may override via intent classification)
+        template = template_override or self.prompts_registry.get_assistant_prompt(
+            assistant
+        )
 
-        # Ensure context token limit
-        total_tokens = count_tokens(context + history_text)
+        # 5. Truncate if necessary
+        total_tokens = count_tokens(retrieved_context + full_history_text)
         if total_tokens > settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT:
             logger.warning(
-                f"[ChatChain] Retrieved context exceeds token limit of "
-                f"{settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT} tokens. Truncating context."
+                f"Context + history exceeds token limit ({total_tokens} > "
+                f"{settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT}). Truncating context."
             )
-            context = truncate_to_token_limit(
-                context,
-                settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT - count_tokens(history_text),
+            max_ctx_tokens = settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT - count_tokens(
+                full_history_text
             )
-
-        logger.debug(f"[ChatChain] Total tokens in context + history: {total_tokens}")
-
-        template = AssistantConfig.get_assistant_prompt_template(assistant)
-        if assistant == "mamuriy_sud":
-            logger.debug("[ChatChain] Classifying intent for 'mamuriy_sud' assistant")
-            template = await self.intent_classifier.classify_intent(
-                query, chat_history_text
+            retrieved_context = truncate_to_token_limit(
+                retrieved_context, max_ctx_tokens
             )
 
-        # Build system prompt
+        # 6. Final system prompt
         system_prompt = self._build_system_prompt(
-            template,
-            context,
-            history_text,
+            template, retrieved_context, full_history_text
         )
 
-        logger.debug(f"[ChatChain] System Prompt: {system_prompt}")
+        logger.debug(f"[SYSTEM PROMPT]\n{system_prompt}")
 
         return GenerationContext(
-            context=context,
+            context=retrieved_context,
             system_prompt=system_prompt,
-            chat_history=chat_history_text,
+            chat_history=history_formatted,
             attachments=attachments,
         )
 
-    async def _retrieve_context(
-        self, query: str, collection_name: str, file_context: str | None
-    ) -> tuple[str, list[dict[str, Any]]]:
-        """Retrieve context from vector DB."""
-        context, attachments = await self.retrieval_service.retrieve_context(
+    async def _collect_file_context(self, file_ids: list[str] | None) -> str:
+        if not file_ids:
+            return ""
+
+        parts = []
+        for fid in file_ids:
+            file = self.history_service.get_file_by_id(fid)
+            if file and file.get("ocr_result"):
+                parts.append(f"\n\n## USER FILE CONTEXT\n{file['ocr_result']}")
+
+        return "".join(parts)
+
+    async def _retrieve_relevant_context(
+        self,
+        query: str,
+        file_context: str,
+        chat_history: str,
+        assistant: str,
+    ) -> tuple[str, list[dict[str, Any]], Any]:
+        """
+        Delegate retrieval to the assistant's own retrieve() method.
+
+        Each assistant encapsulates its own search strategy, formatting,
+        classification, and (optionally) multi-collection merging.
+
+        Returns (context, attachments, prompt_template_or_None).
+        """
+        assistant_instance = self._get_assistant(assistant)
+        result = await assistant_instance.retrieve(
             query=query,
-            top_k=settings.TOP_K,
-            collection_name=collection_name,
-            file_context=file_context if file_context else None,
+            file_context=file_context,
+            chat_history=chat_history,
         )
+        return result.context, result.attachments, result.prompt_template
 
-        if file_context:
-            context = f"{context}\n\n\n{file_context}"
-
-        return context, attachments
-
+    #  Prompt & History Formatting
     def _format_chat_history(self, chat_history: list | None) -> str:
-        """Format recent chat history for inclusion in prompt."""
         if not chat_history:
             return ""
 
         recent = chat_history[-settings.CHAT_HISTORY_LIMIT :]
+        if not recent:
+            return ""
+
         lines = ["Previous Conversation History:"]
-
-        for idx, entry in enumerate(recent, start=1):
-            lines.append(f"{idx}. User: {entry.question}")
+        for i, entry in enumerate(recent, 1):
+            lines.append(f"{i}. User: {entry.question}")
             lines.append(f"   Assistant: {entry.answer}")
+        lines.append("Use the above conversation to maintain context and consistency.")
 
-        lines.append("Use the above conversation to maintain context.")
         return "\n".join(lines)
 
+    @staticmethod
     def _build_system_prompt(
-        self, template: PromptTemplate, context: str, chat_history: str
+        template: PromptTemplate, context: str, chat_history: str
     ) -> str:
-        """Build system prompt from template and context."""
         return template.format(context=context, chat_history=chat_history)
 
-    # Response Generation
-    async def _generate_stream(
-        self, llm: LLM, query: str, gen_context: GenerationContext, assistant: str
+    #  Generation (streaming & non-streaming)
+    def _generate_streaming(
+        self,
+        llm: LLM,
+        query: str,
+        ctx: GenerationContext,
+        assistant: str,
     ) -> AsyncGenerator[str, None]:
-        """Generate streaming response with fallback."""
-        buffer: list[str] = []
-
-        try:
-            async for chunk in self._stream_from_llm(
-                llm, query, gen_context.system_prompt
-            ):
-                buffer.append(chunk)
-                yield chunk
-        except Exception:
-            logger.warning(
-                "[ChatChain] Primary LLM failed, using fallback", exc_info=True
-            )
+        async def gen():
+            buffer = []
             try:
-                async for chunk in self._stream_from_llm(
-                    self.fallback_llm, query, gen_context.system_prompt
-                ):
+                async for chunk in self._stream_from_llm(llm, query, ctx.system_prompt):
+                    buffer.append(chunk)
                     yield chunk
             except Exception:
-                logger.error("[ChatChain] Fallback LLM failed", exc_info=True)
-                yield "Sorry, I couldn't generate an answer at the moment."
+                logger.warning("Primary LLM streaming failed → fallback", exc_info=True)
+                try:
+                    async for chunk in self._stream_from_llm(
+                        self.fallback_llm, query, ctx.system_prompt
+                    ):
+                        yield chunk
+                except Exception:
+                    logger.error("Fallback LLM also failed", exc_info=True)
+                    yield "Sorry, I couldn't generate an answer right now."
 
-        # Log full response for debugging
-        full_response = "".join(buffer)
-        logger.debug(
-            f"[ChatChain][FINAL_STREAM_RESPONSE]\n {full_response}",
-        )
+            full = "".join(buffer)
+            logger.debug(f"[STREAM FINAL]\n{full}")
 
-        # For shartnoma assistant, emit docx links at the end (separate from the text stream).
-        if assistant == "shartnoma" and gen_context.attachments:
-            yield {"type": "attachments", "attachments": gen_context.attachments}
+            # Special case: shartnoma → send attachments separately
+            if assistant == "shartnoma" and ctx.attachments:
+                yield {"type": "attachments", "attachments": ctx.attachments}
 
-    async def _generate_non_stream(
-        self, llm: LLM, query: str, gen_context: GenerationContext, assistant: str
+        return gen()
+
+    async def _generate_non_streaming(
+        self,
+        llm: LLM,
+        query: str,
+        ctx: GenerationContext,
+        assistant: str,
     ) -> tuple[str, dict[str, Any]]:
-        """Generate non-streaming response with fallback."""
         try:
-            response = await self._get_response(llm, query, gen_context.system_prompt)
+            raw = await self._get_response(llm, query, ctx.system_prompt)
         except Exception:
-            logger.warning(
-                "[ChatChain] Primary LLM failed, using fallback", exc_info=True
-            )
+            logger.warning("Primary LLM failed → fallback", exc_info=True)
             try:
-                response = await self._get_response(
-                    self.fallback_llm, query, gen_context.system_prompt
+                raw = await self._get_response(
+                    self.fallback_llm, query, ctx.system_prompt
                 )
             except Exception:
-                logger.error("[ChatChain] Fallback failed", exc_info=True)
+                logger.error("Fallback LLM failed", exc_info=True)
                 raise
 
-        response = self._clean_text(response)
-        logger.info(f"[DEBUG] LLM full response: {response}")
+        cleaned = self._clean_text(raw)
+        logger.info(
+            f"LLM response: {cleaned[:300]}{'...' if len(cleaned) > 300 else ''}"
+        )
 
-        meta: dict[str, Any] = {
-            "attachments": gen_context.attachments if assistant == "shartnoma" else [],
+        meta = {
+            "attachments": ctx.attachments if assistant == "shartnoma" else [],
         }
 
         if settings.DEVELOPMENT_MODE:
-            meta["retrieved_contents"] = gen_context.context
+            meta["retrieved_contents"] = ctx.context
 
-        return response, meta
+        return cleaned, meta
 
     async def _stream_from_llm(
         self, llm: LLM, user_prompt: str, system_prompt: str
     ) -> AsyncGenerator[str, None]:
-        """Stream cleaned chunks from LLM."""
-        response_gen = await llm.generate_response(
+        gen = await llm.generate_response(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             stream=True,
         )
-
-        async for chunk in response_gen:
+        async for chunk in gen:
             if chunk:
                 yield self._clean_text(chunk)
 
     async def _get_response(
         self, llm: LLM, user_prompt: str, system_prompt: str
     ) -> str:
-        """Get non-streaming response from LLM."""
         return await llm.generate_response(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             stream=False,
         )
 
-    # Utilities
+    #  Utilities
     @staticmethod
     def _clean_text(text: str) -> str:
-        """Replace special punctuation with standard equivalents."""
-        replacements = {"【": "[", "】": "]"}
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-        return text
+        """Replace fancy punctuation with standard characters."""
+        return text.replace("【", "[").replace("】", "]")
 
-    def _create_error_response(self, stream: bool) -> str | AsyncGenerator[str, None]:
-        """Create error response in appropriate format."""
-        error_msg = "Sorry, I couldn't generate an answer at the moment."
+    def _create_error_response(self, stream: bool) -> Any:
+        msg = "Sorry, I couldn't generate an answer at the moment."
 
-        if stream:
+        if not stream:
+            return msg
 
-            async def error_gen():
-                yield error_msg
+        async def err_gen():
+            yield msg
 
-            return error_gen()
-
-        return error_msg
+        return err_gen()

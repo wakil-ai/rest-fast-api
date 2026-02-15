@@ -1,4 +1,13 @@
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Body,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+    status,
+)
 
 from app.core.logger import logger
 from app.models.chat_history import (
@@ -40,12 +49,17 @@ def create_response(data: dict, message: str) -> dict:
 
 @router.post(
     "/users",
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,
     response_model=UserCreateResponse,
 )
 @handle_service_error
-def create_user(request: UserCreateRequest) -> UserCreateResponse:
-    """Create a new user."""
+def create_user(request: UserCreateRequest, response: Response) -> UserCreateResponse:
+    """Create a new user or return existing one."""
+    existing_user = chat_history_service.get_user(user_id=request.user_id)
+
+    if existing_user:
+        return create_response(existing_user, "User already exists")
+
     user_info = chat_history_service.create_user(
         user_id=request.user_id,
         username=request.username,
@@ -53,6 +67,7 @@ def create_user(request: UserCreateRequest) -> UserCreateResponse:
         last_name=request.last_name,
         picture=request.picture,
     )
+    response.status_code = status.HTTP_201_CREATED
     return create_response(user_info, "User created successfully")
 
 

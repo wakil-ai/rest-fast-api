@@ -24,6 +24,7 @@ class MilvusHandler(VectorDBHandler):
             settings.MILVUS_SOLIQ_ASSISTANT_NAME,
             settings.MILVUS_PROJECT_FILES,
             settings.MILVUS_MAMURIY_SUD,
+            settings.MILVUS_MAMURIY_SUD_ALL,
             settings.MILVUS_SHARTNOMA,
         ]
         self.client = MilvusClient(
@@ -31,8 +32,24 @@ class MilvusHandler(VectorDBHandler):
             user=settings.MILVUS_USER,
             password=settings.MILVUS_PASSWORD,
         )
+
+        # Create and load all collections at startup
         for col in self.milvus_collections:
             self.create_collection(col)
+
+        # Ensure all collections are loaded into memory at startup
+        self._load_all_collections()
+
+    def _load_all_collections(self) -> None:
+        """
+        Load all collections into memory at startup to avoid latency during queries.
+        """
+        for collection_name in self.milvus_collections:
+            try:
+                if self.client.has_collection(collection_name):
+                    self.client.load_collection(collection_name)
+            except Exception as e:
+                logger.error(f"Failed to load collection '{collection_name}': {e}")
 
     def create_collection(self, collection_name: str):
         # Drop existing collection if it exists
@@ -257,38 +274,6 @@ class MilvusHandler(VectorDBHandler):
 
         # Parse results
         search_results = self._parse_results(results)
-
-        return search_results
-
-    def query_soliq_assistant(
-        self,
-        dense_vector: list[float],
-        top_k: int = settings.TOP_K,
-        collection_name: str = settings.MILVUS_SOLIQ_ASSISTANT_NAME,
-    ) -> list[dict[str, Any]]:
-        """
-        Perform specific sparse vector search using keyword matching
-        """
-        filters = [
-            'metadata["url"] like "%lex.uz%"',
-            'metadata["url"] like "%buxgalter.uz%"',
-            None,
-        ]
-        search_results = []
-        for expr in filters:
-            # make top-k on half of the top_k
-            top_k_half = top_k // 2
-            if expr is None:
-                top_k_half = (
-                    top_k  # increase the top_k for none filter because of duplicates
-                )
-            results = self.query_dense(
-                dense_vector=dense_vector,
-                top_k=top_k_half,
-                collection_name=collection_name,
-                expr=expr,
-            )
-            search_results.extend(results)
 
         return search_results
 

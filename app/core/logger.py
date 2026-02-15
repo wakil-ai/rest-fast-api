@@ -3,6 +3,9 @@ import sys
 from loguru import logger as loguru_logger
 
 from app.core.config import settings
+from app.services.redis_service import RedisService
+
+redis_service = RedisService()
 
 
 def get_logger():
@@ -22,6 +25,16 @@ def get_logger():
         level="DEBUG" if settings.DEBUG else "INFO",
         colorize=True,
     )
+
+    # Add Redis sink — every log is persisted under logs:<level>
+    try:
+        loguru_logger.add(
+            redis_service.loguru_sink,
+            level="DEBUG" if settings.DEBUG else "INFO",
+            serialize=False,
+        )
+    except Exception as e:
+        loguru_logger.warning(f"Redis sink not available, logs won't be persisted: {e}")
 
     return loguru_logger
 

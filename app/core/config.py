@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Enable tracing for agents and crews
 
+    ALLOWED_ORIGINS: list[str] = [
+        "https://chat.wakil.ai",
+        "https://dev-chat.wakil.ai",
+    ]  # CORS allowed origins
+
     # Memory Service API Key
     MEM0_API_KEY: str = None  # Mem
     MEM0_PROJECT_ID: str = None
@@ -79,6 +84,7 @@ class Settings(BaseSettings):
     MILVUS_SOLIQ_ASSISTANT_NAME: str = "soliq"
     MILVUS_PROJECT_FILES: str = "project_files"
     MILVUS_MAMURIY_SUD: str = "mamuriy_sud"
+    MILVUS_MAMURIY_SUD_ALL: str = "mamuriy_sud_all"  # For general domain
     MILVUS_SHARTNOMA: str = "shartnoma"
     MILVUS_URI: str = "http://localhost:19530"
     MILVUS_USER: str | None = None
@@ -149,10 +155,15 @@ class Settings(BaseSettings):
     # API Key Authentication
     API_KEY_NAME: str = "admin"
     API_KEY: str = "admin"
+    SUPER_ADMIN_KEY_NAME: str = "x-super-admin-key"
+    SUPER_ADMIN_API_KEY: str = "super-admin"
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
     TOP_K: int = 10
+    ADDITIONAL_TOP_K: int = (
+        3  # For multi-collection retrievals (e.g. shartnoma assistant + main e.g)
+    )
     ALPHA: float = 0.8
 
     # TEMPERATURE
@@ -195,6 +206,13 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str | None = None
     GOOGLE_REDIRECT_URI: str | None = None
     AUTH_SECRET_KEY: str = "secret-key-change-me"
+
+    GEMINI_API_KEY: str | None = None
+
+    # Caching
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_EXPIRATION_SECONDS: int = 86400 * 3  # 3 days in seconds
 
     model_config = ConfigDict(
         env_file=".env",

@@ -275,6 +275,7 @@ class EmbeddingManager:
         )
         EmbeddingManager._initialized = True
 
+    # Sync versions (kept for backward compat)
     def embed_query(self, query: str) -> list[float]:
         return self.embedding.embed_query(query)
 
@@ -283,3 +284,19 @@ class EmbeddingManager:
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         return self.embedding.embed_batch(texts)
+
+    # Async versions — offload blocking HTTP to a thread
+    async def aembed_query(self, query: str) -> list[float]:
+        import asyncio
+
+        return await asyncio.to_thread(self.embedding.embed_query, query)
+
+    async def aembed_doc(self, text: str) -> list[float]:
+        import asyncio
+
+        return await asyncio.to_thread(self.embedding.embed_doc, text)
+
+    async def aembed_batch(self, texts: list[str]) -> list[list[float]]:
+        import asyncio
+
+        return await asyncio.to_thread(self.embedding.embed_batch, texts)
