@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from app.core.config import settings
@@ -61,7 +62,7 @@ class BaseAssistant:
             effective_query = f"{query}\n\n\n{file_context}" if file_context else query
             config = self._build_config()
 
-            raw_docs = self.search(effective_query, config)
+            raw_docs = await self.asearch(effective_query, config)
             result = await self.format_results(raw_docs)
 
             if file_context and result.context:
@@ -76,7 +77,7 @@ class BaseAssistant:
 
     # Hooks for subclasses
     def search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
-        """Fetch raw documents. Default: hybrid search."""
+        """Fetch raw documents (sync). Default: hybrid search."""
         embedding = self.embedder.embed_query(query)
         return self.db.search_hybrid(
             dense_vector=embedding,
@@ -85,6 +86,10 @@ class BaseAssistant:
             collection_name=config.collection_name,
             expr=config.filter or "",
         )
+
+    async def asearch(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
+        """Async wrapper — offloads embedding + vector search to a thread."""
+        return await asyncio.to_thread(self.search, query, config)
 
     async def format_results(self, documents: list[dict[str, Any]]) -> RetrievalResult:
         """Format raw documents using the standard formatter."""

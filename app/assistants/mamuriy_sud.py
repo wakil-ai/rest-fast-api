@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -202,13 +203,14 @@ class MamuriyAssistant(BaseAssistant):
             filter=filter,
         )
         effective = f"{query}\n\n\n{file_context}" if file_context else query
-        mam_docs = self.search(effective, mam_config)
+        mam_docs = await self.asearch(effective, mam_config)
         mam_result = await self.format_results(mam_docs)
 
         # soliq portion (standard hybrid search + standard formatting)
         soliq_coll = AssistantConfig.get_collection_name("soliq")
-        sol_embedding = self.embedder.embed_query(effective)
-        sol_docs = self.db.search_hybrid(
+        sol_embedding = await self.embedder.aembed_query(effective)
+        sol_docs = await asyncio.to_thread(
+            self.db.search_hybrid,
             dense_vector=sol_embedding,
             text_query=effective,
             top_k=settings.ADDITIONAL_TOP_K,
@@ -237,12 +239,13 @@ class MamuriyAssistant(BaseAssistant):
             collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
             filter=filter,
         )
-        mam_docs = self.search(effective, mam_config)
+        mam_docs = await self.asearch(effective, mam_config)
         mam_result = await self.format_results(mam_docs)
 
         # main (lexuz) portion (standard hybrid search + standard formatting)
-        main_embedding = self.embedder.embed_query(effective)
-        main_docs = self.db.search_hybrid(
+        main_embedding = await self.embedder.aembed_query(effective)
+        main_docs = await asyncio.to_thread(
+            self.db.search_hybrid,
             dense_vector=main_embedding,
             text_query=effective,
             top_k=settings.ADDITIONAL_TOP_K,

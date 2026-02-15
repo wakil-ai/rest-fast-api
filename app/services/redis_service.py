@@ -1,5 +1,7 @@
 import json
+import threading
 from datetime import datetime
+from queue import Empty, Queue
 
 import redis
 
@@ -25,6 +27,13 @@ class RedisService:
             decode_responses=True,
         )
 
+        # Background log-flushing thread
+        self._log_queue: Queue = Queue()
+        self._log_thread = threading.Thread(
+            target=self._flush_logs_forever, daemon=True
+        )
+        self._log_thread.start()
+
     def redis_sink(
         self,
         key: str,
@@ -38,14 +47,13 @@ class RedisService:
             print(f"Error setting Redis key {key}: {e}")
 
     def loguru_sink(self, message):
-        """Loguru sink — pushes each log entry into a Redis list keyed by level.
+        """Loguru sink — enqueues log entries for async flushing to Redis.
 
-        Redis keys: ``logs:info``, ``logs:warning``, ``logs:error``, etc.
-        Each entry is a JSON string with timestamp, level, location, and message.
+        Non-blocking: the actual Redis writes happen in a background thread.
         """
         try:
             record = message.record
-            level = record["level"].name.lower()  # info / warning / error / …
+            level = record["level"].name.lower()
 
             log_data = json.dumps(
                 {
@@ -58,12 +66,32 @@ class RedisService:
                 },
                 ensure_ascii=False,
             )
+            self._log_queue.put_nowait((f"logs:{level}", log_data))
+        except Exception:
+            pass  # never let logging break the app
 
-            redis_key = f"logs:{level}"
-            self.redis.rpush(redis_key, log_data)
-            self.redis.expire(redis_key, settings.REDIS_EXPIRATION_SECONDS)
-        except Exception as e:
-            print(f"Error pushing log to Redis: {e}")
+    def _flush_logs_forever(self):
+        """Background worker — drains the queue and writes to Redis in batches."""
+        while True:
+            try:
+                key, data = self._log_queue.get(timeout=1.0)
+                # Drain remaining items into a batch
+                batch: list[tuple[str, str]] = [(key, data)]
+                while len(batch) < 200:
+                    try:
+                        batch.append(self._log_queue.get_nowait())
+                    except Empty:
+                        break
+
+                pipe = self.redis.pipeline(transaction=False)
+                for k, d in batch:
+                    pipe.rpush(k, d)
+                    pipe.expire(k, settings.REDIS_EXPIRATION_SECONDS)
+                pipe.execute()
+            except Empty:
+                continue
+            except Exception:
+                pass  # Redis down — silently drop, don’t crash the worker
 
     def get_logs(self, level: str, limit: int = 100) -> list[dict]:
         """Retrieve the latest *limit* log entries for a given level."""

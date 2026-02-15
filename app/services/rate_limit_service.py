@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from typing import Literal
 
+import asyncio
+
 from app.core.config import settings
 from app.core.logger import logger
 from app.db.mongo_handler import MongoHandler
@@ -56,18 +58,8 @@ class RateLimitService:
         self, user_id: str, assistant_type: RateLimitAssistantType = "main"
     ) -> tuple[bool, int, int]:
         """
-        Check if user has enough credits and decrement if available.
+        Check if user has enough credits and decrement if available (sync).
         Users with valid promo codes may have custom credit limits or unlimited access.
-
-        Args:
-            user_id: The user's unique identifier
-            assistant_type: Type of assistant being used ("main", "soliq", or "deepresearch")
-
-        Returns:
-            tuple: (is_allowed: bool, credits_remaining: int, daily_limit: int)
-                - is_allowed: True if request is allowed, False if insufficient credits
-                - credits_remaining: Credits remaining after deduction (if allowed)
-                - daily_limit: The daily credit limit (or -1 for unlimited)
         """
         try:
             # Check if user has a promo code and get their credit limit

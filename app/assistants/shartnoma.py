@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
@@ -52,15 +53,16 @@ class ShartnomaAssistant(BaseAssistant):
 
             # Shartnoma portion — full top_k, contract formatting
             shartnoma_config = self._build_config()
-            shartnoma_docs = self.search(effective_query, shartnoma_config)
+            shartnoma_docs = await self.asearch(effective_query, shartnoma_config)
             shartnoma_result = await self.format_results(shartnoma_docs)
 
             # Main (lexuz) portion — half top_k, standard formatting
             logger.info(
                 f"[ShartnomaAssistant] Retrieving {self.top_k} from shartnoma + {settings.ADDITIONAL_TOP_K} from main"
             )
-            main_embedding = self.embedder.embed_query(effective_query)
-            main_docs = self.db.search_hybrid(
+            main_embedding = await self.embedder.aembed_query(effective_query)
+            main_docs = await asyncio.to_thread(
+                self.db.search_hybrid,
                 dense_vector=main_embedding,
                 text_query=effective_query,
                 top_k=settings.ADDITIONAL_TOP_K,

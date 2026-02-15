@@ -1,3 +1,4 @@
+import asyncio
 from typing import AsyncGenerator
 
 from google import genai
@@ -36,7 +37,7 @@ class Gemini(LLM):
     async def _generate_streaming(
         self, system_prompt: str, user_prompt: str
     ) -> AsyncGenerator[str, None]:
-        """Generate streaming response."""
+        """Generate streaming response (offloaded to thread)."""
         contents = [
             types.Content(
                 role="user",
@@ -58,15 +59,21 @@ class Gemini(LLM):
             ),
         )
 
-        for chunk in self.client.models.generate_content_stream(
-            model=self.model,
-            contents=contents,
-            config=generate_content_config,
-        ):
+        def _sync_stream():
+            return list(
+                self.client.models.generate_content_stream(
+                    model=self.model,
+                    contents=contents,
+                    config=generate_content_config,
+                )
+            )
+
+        chunks = await asyncio.to_thread(_sync_stream)
+        for chunk in chunks:
             yield chunk.text
 
     async def _generate_complete(self, system_prompt: str, user_prompt: str) -> str:
-        """Generate complete response."""
+        """Generate complete response (offloaded to thread)."""
         contents = [
             types.Content(
                 role="user",
@@ -91,7 +98,8 @@ class Gemini(LLM):
             tools=tools,
         )
 
-        response = self.client.models.generate_content(
+        response = await asyncio.to_thread(
+            self.client.models.generate_content,
             model=self.model,
             contents=contents,
             config=generate_content_config,
