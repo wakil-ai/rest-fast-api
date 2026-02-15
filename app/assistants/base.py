@@ -87,7 +87,9 @@ class BaseAssistant:
             expr=config.filter or "",
         )
 
-    async def asearch(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
+    async def asearch(
+        self, query: str, config: RetrievalConfig
+    ) -> list[dict[str, Any]]:
         """Async wrapper — offloads embedding + vector search to a thread."""
         return await asyncio.to_thread(self.search, query, config)
 

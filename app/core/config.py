@@ -44,8 +44,11 @@ class Settings(BaseSettings):
     DEVELOPMENT_MODE: bool = False
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Enable tracing for agents and crews
-    
-    ALLOWED_ORIGINS: list[str] = ["https://chat.wakil.ai", "https://dev-chat.wakil.ai"]  # CORS allowed origins
+
+    ALLOWED_ORIGINS: list[str] = [
+        "https://chat.wakil.ai",
+        "https://dev-chat.wakil.ai",
+    ]  # CORS allowed origins
 
     # Memory Service API Key
     MEM0_API_KEY: str = None  # Mem
@@ -158,7 +161,9 @@ class Settings(BaseSettings):
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
     TOP_K: int = 10
-    ADDITIONAL_TOP_K: int = 3  # For multi-collection retrievals (e.g. shartnoma assistant + main e.g)
+    ADDITIONAL_TOP_K: int = (
+        3  # For multi-collection retrievals (e.g. shartnoma assistant + main e.g)
+    )
     ALPHA: float = 0.8
 
     # TEMPERATURE
@@ -203,7 +208,7 @@ class Settings(BaseSettings):
     AUTH_SECRET_KEY: str = "secret-key-change-me"
 
     GEMINI_API_KEY: str | None = None
-    
+
     # Caching
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379

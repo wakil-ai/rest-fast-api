@@ -1,7 +1,6 @@
+import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
-
-import asyncio
 
 from fastapi.responses import StreamingResponse
 

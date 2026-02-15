@@ -288,12 +288,15 @@ class EmbeddingManager:
     # Async versions — offload blocking HTTP to a thread
     async def aembed_query(self, query: str) -> list[float]:
         import asyncio
+
         return await asyncio.to_thread(self.embedding.embed_query, query)
 
     async def aembed_doc(self, text: str) -> list[float]:
         import asyncio
+
         return await asyncio.to_thread(self.embedding.embed_doc, text)
 
     async def aembed_batch(self, texts: list[str]) -> list[list[float]]:
         import asyncio
+
         return await asyncio.to_thread(self.embedding.embed_batch, texts)

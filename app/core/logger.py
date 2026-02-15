@@ -1,6 +1,7 @@
 import sys
 
 from loguru import logger as loguru_logger
+
 from app.core.config import settings
 from app.services.redis_service import RedisService
 

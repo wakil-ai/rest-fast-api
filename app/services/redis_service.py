@@ -1,6 +1,5 @@
 import json
 import threading
-from datetime import datetime
 from queue import Empty, Queue
 
 import redis

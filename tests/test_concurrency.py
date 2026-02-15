@@ -95,38 +95,42 @@ def save_results(results: list[dict], wall_time: float, base_url: str):
     with open(RESULTS_FILE, "a", newline="") as f:
         writer = csv.writer(f)
         if not file_exists:
-            writer.writerow([
-                "run_timestamp",
-                "base_url",
-                "assistant",
-                "request_index",
-                "status",
-                "latency_s",
-                "server_time_s",
-                "ok",
-                "wall_time_s",
-                "total_requests",
-                "concurrency_gain",
-            ])
+            writer.writerow(
+                [
+                    "run_timestamp",
+                    "base_url",
+                    "assistant",
+                    "request_index",
+                    "status",
+                    "latency_s",
+                    "server_time_s",
+                    "ok",
+                    "wall_time_s",
+                    "total_requests",
+                    "concurrency_gain",
+                ]
+            )
 
         total = len(results)
         sum_latency = sum(r["latency_s"] for r in results)
         gain = round(sum_latency / wall_time, 2) if wall_time > 0 else 0
 
         for r in results:
-            writer.writerow([
-                run_ts,
-                base_url,
-                r["assistant"],
-                r["index"],
-                r["status"],
-                r["latency_s"],
-                r.get("server_time_s", ""),
-                r["ok"],
-                round(wall_time, 4),
-                total,
-                gain,
-            ])
+            writer.writerow(
+                [
+                    run_ts,
+                    base_url,
+                    r["assistant"],
+                    r["index"],
+                    r["status"],
+                    r["latency_s"],
+                    r.get("server_time_s", ""),
+                    r["ok"],
+                    round(wall_time, 4),
+                    total,
+                    gain,
+                ]
+            )
 
     print(f"  📄 Results saved to {RESULTS_FILE}")
 
@@ -142,7 +146,9 @@ async def main(base_url: str):
             tasks.append((assistant, i))
 
     total = len(tasks)
-    print(f"\n🚀 Sending {total} concurrent requests ({REQUESTS_PER_ASSISTANT} × {len(ASSISTANTS)} assistants)")
+    print(
+        f"\n🚀 Sending {total} concurrent requests ({REQUESTS_PER_ASSISTANT} × {len(ASSISTANTS)} assistants)"
+    )
     print(f"   Target: {url}")
     print(f"   Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
 
@@ -169,15 +175,21 @@ async def main(base_url: str):
     print(f"  Concurrency gain:  {sum_latency / wall_time:.1f}x")
 
     # Per-assistant breakdown
-    print(f"\n  Per-assistant breakdown:")
-    print(f"    {'assistant':15s}  {'avg':>6s}  {'min':>6s}  {'max':>6s}  {'p50':>6s}  {'ok':>3s}")
+    print("\n  Per-assistant breakdown:")
+    print(
+        f"    {'assistant':15s}  {'avg':>6s}  {'min':>6s}  {'max':>6s}  {'p50':>6s}  {'ok':>3s}"
+    )
     print(f"    {'-'*50}")
     for assistant in ASSISTANTS:
-        times = sorted([r["latency_s"] for r in results if r["assistant"] == assistant and r["ok"]])
+        times = sorted(
+            [r["latency_s"] for r in results if r["assistant"] == assistant and r["ok"]]
+        )
         if times:
             avg = sum(times) / len(times)
             p50 = times[len(times) // 2]
-            print(f"    {assistant:15s}  {avg:5.2f}s  {min(times):5.2f}s  {max(times):5.2f}s  {p50:5.2f}s  {len(times):>3d}")
+            print(
+                f"    {assistant:15s}  {avg:5.2f}s  {min(times):5.2f}s  {max(times):5.2f}s  {p50:5.2f}s  {len(times):>3d}"
+            )
     print(f"{'=' * 60}")
 
     # Save to CSV

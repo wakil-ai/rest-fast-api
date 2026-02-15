@@ -25,7 +25,9 @@ class OCRService:
         logger.debug(f"[OCR Service] Processing file: {file}")
 
         try:
-            result = await self.client.convert(file_path=str(file), options=self.options)
+            result = await self.client.convert(
+                file_path=str(file), options=self.options
+            )
             if not result.success:
                 raise ValueError(f"[OCR Service] OCR conversion failed: {result.error}")
             context = result.markdown

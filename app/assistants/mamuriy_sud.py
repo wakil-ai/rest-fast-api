@@ -23,7 +23,7 @@ class MamuriyAssistant(BaseAssistant):
     """
 
     # Number of unique files to return per search
-    TOP_K_FILES = 3 # NOT THE TOP_K
+    TOP_K_FILES = 3  # NOT THE TOP_K
 
     # Metadata fields rendered in formatted output
     METADATA_LABELS: dict[str, str] = {
