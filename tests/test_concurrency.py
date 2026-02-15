@@ -21,8 +21,8 @@ import httpx
 # ── Config ──────────────────────────────────────────────────────────
 DEFAULT_BASE_URL = "http://localhost:8080"
 API_PREFIX = "/api/v2"
-API_KEY_NAME = "X-API-HBAI-KEY"
-API_KEY_VALUE = "h621xfDtSVkJvaw1D8WhYJGl2TAVnUKW"
+API_KEY_NAME = os.getenv("API_KEY_NAME", "x-api-key")
+API_KEY_VALUE = os.getenv("API_KEY_VALUE", "your_api_key_here")  # Replace with actual API key
 RESULTS_FILE = os.path.join(os.path.dirname(__file__), "concurrency_results.csv")
 
 ASSISTANTS = ["main", "soliq", "mamuriy_sud", "shartnoma"]
