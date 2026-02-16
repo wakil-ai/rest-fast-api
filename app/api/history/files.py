@@ -1,18 +1,21 @@
 # app/routers/history/files.py
-from fastapi import APIRouter, File, Form, UploadFile, HTTPException, status, Body
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile, status
 
+from app.core.dependencies import (
+    get_chat_history_service,
+    get_file_manager,
+    get_storage_service,
+)
 from app.core.logger import logger
 from app.models.chat_history import FileUploadResponse
-from app.services.chat_history_service import ChatHistoryService
-from app.services.file_management import FileManager
-from app.services.storage_service import StorageService
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
-chat_history_service = ChatHistoryService()
-file_manager = FileManager()
-storage_service = StorageService()
+chat_history_service = get_chat_history_service()
+file_manager = get_file_manager()
+storage_service = get_storage_service()
+
 
 @router.get("/user/{user_id}", response_model=list[FileUploadResponse])
 @handle_service_error
@@ -20,7 +23,12 @@ async def list_user_files(user_id: str, limit: int = 100):
     files = await chat_history_service.get_files_by_user(user_id=user_id, limit=limit)
     return [serialize_mongo_id(f) for f in files]
 
-@router.post("/messages", response_model=FileUploadResponse, summary="Upload file for future message")
+
+@router.post(
+    "/messages",
+    response_model=FileUploadResponse,
+    summary="Upload file for future message",
+)
 async def upload_file_for_message(
     file: UploadFile = File(...),
     user_id: str = Form(...),
@@ -38,6 +46,7 @@ async def link_file_to_message(file_id: str, message_id: str = Body(..., embed=T
     except ValueError as e:
         raise HTTPException(404, str(e))
     return {"message": "File linked to message"}
+
 
 @router.get("/{file_id}", response_model=FileUploadResponse)
 @handle_service_error

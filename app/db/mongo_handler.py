@@ -1,7 +1,6 @@
 from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import ConnectionFailure
 from pymongo.server_api import ServerApi
 
 from app.core.config import settings
@@ -11,7 +10,7 @@ from app.core.logger import logger
 class MongoHandler:
     """
     Async MongoDB handler using Motor for storing and querying documents.
-    
+
     Note: Instance sharing is now managed by FastAPI dependency injection.
     Use get_mongo_handler() from app.core.dependencies instead of direct instantiation.
     """
@@ -30,7 +29,7 @@ class MongoHandler:
             logger.info("[MongoHandler] Initialized async MongoDB connection")
         except Exception as e:
             logger.warning(f"[MongoHandler] Could not initialize MongoDB: {str(e)}")
-    
+
     async def ping_server(self) -> bool:
         """Check if MongoDB server is reachable (async)."""
         try:
@@ -87,7 +86,9 @@ class MongoHandler:
                 f"[MongoHandler] Error cleaning collection {collection_name}: {str(e)}"
             )
 
-    async def find_one(self, collection_name: str, query: dict[str, Any]) -> dict[str, Any]:
+    async def find_one(
+        self, collection_name: str, query: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Find a single document matching the query.
         """

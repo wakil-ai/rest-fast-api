@@ -1,17 +1,22 @@
 # app/routers/history/messages.py
 from fastapi import APIRouter, HTTPException, status
 
+from app.core.dependencies import get_chat_history_service
 from app.models.chat_history import (
-    MessageCreateRequest, MessageCreateResponse, MessageResponse
+    MessageCreateRequest,
+    MessageCreateResponse,
+    MessageResponse,
 )
-from app.services.chat_history_service import ChatHistoryService
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
 
-chat_history_service = ChatHistoryService()
+chat_history_service = get_chat_history_service()
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=MessageCreateResponse)
+
+@router.post(
+    "", status_code=status.HTTP_201_CREATED, response_model=MessageCreateResponse
+)
 @handle_service_error
 async def create_message(request: MessageCreateRequest):
     # Auto-create session if missing

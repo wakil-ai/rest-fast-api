@@ -1,28 +1,16 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
 from app.core.config import settings
+from app.core.dependencies import get_promo_code_service, get_rate_limit_service
 from app.core.logger import logger
 from app.models.promo_code import PromoCodeCreate, UserPromoCode
-from app.services.promo_code_service import PromoCodeService
-from app.services.rate_limit_service import RateLimitService
+from app.models.rate_limit import RateLimitResponse
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 # Initialize services
-rate_limit_service = RateLimitService()
-promo_code_service = PromoCodeService()
-
-
-class RateLimitResponse(BaseModel):
-    user_id: str
-    remaining_credits: int
-    daily_credit_limit: int
-    credit_costs: dict  # Shows credit cost for each assistant type
-
-
-class ResetLimitRequest(BaseModel):
-    user_id: str
+rate_limit_service = get_rate_limit_service()
+promo_code_service = get_promo_code_service()
 
 
 @router.get(
@@ -82,7 +70,7 @@ async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin")
     try:
         if request.super_secret_admin_key != settings.SUPER_ADMIN_API_KEY:
             raise HTTPException(status_code=403, detail="Invalid Admin key")
-        
+
         success = await promo_code_service.create_promo_code(
             code=request.code,
             created_by=created_by,

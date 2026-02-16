@@ -4,8 +4,8 @@ from typing import Any
 from dateutil import parser as date_parser
 
 from app.core.config import settings
+from app.core.dependencies import get_mongo_handler
 from app.core.logger import logger
-from app.db.mongo_handler import MongoHandler
 
 
 class PromoCodeService:
@@ -18,7 +18,7 @@ class PromoCodeService:
     USER_PROMO_CODE_COLLECTION = settings.USER_PROMO_CODE_COLLECTION
 
     def __init__(self):
-        self.mongo_handler = MongoHandler()
+        self.mongo_handler = get_mongo_handler()
 
     async def create_promo_code(
         self,
@@ -92,7 +92,9 @@ class PromoCodeService:
             )
             return None
 
-    async def list_all_promo_codes(self, active_only: bool = False) -> list[dict[str, Any]]:
+    async def list_all_promo_codes(
+        self, active_only: bool = False
+    ) -> list[dict[str, Any]]:
         """
         List all promo codes.
 

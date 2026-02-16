@@ -4,11 +4,13 @@ import asyncio
 from typing import Any
 
 from app.core.config import settings
+from app.core.dependencies import (
+    get_context_formatter,
+    get_db_manager,
+    get_embedding_manager,
+)
 from app.core.logger import logger
-from app.db.db_manager import DBManager
 from app.models.retrieval_models import RetrievalConfig, RetrievalResult
-from app.retrieval.context_formatter import StandardContextFormatter
-from app.retrieval.embedding_manager import EmbeddingManager
 
 
 # Abstract base assistant
@@ -17,32 +19,21 @@ class BaseAssistant:
     Abstract base for every assistant.
     """
 
-    # Shared singletons — initialised once, reused everywhere.
-    _db: DBManager | None = None
-    _embedder: EmbeddingManager | None = None
-    _formatter: StandardContextFormatter | None = None
-
     def __init__(self, collection_name: str, top_k: int = settings.TOP_K):
         self.collection_name = collection_name
         self.top_k = top_k
 
     @property
-    def db(self) -> DBManager:
-        if BaseAssistant._db is None:
-            BaseAssistant._db = DBManager()
-        return BaseAssistant._db
+    def db(self):
+        return get_db_manager()
 
     @property
-    def embedder(self) -> EmbeddingManager:
-        if BaseAssistant._embedder is None:
-            BaseAssistant._embedder = EmbeddingManager()
-        return BaseAssistant._embedder
+    def embedder(self):
+        return get_embedding_manager()
 
     @property
-    def formatter(self) -> StandardContextFormatter:
-        if BaseAssistant._formatter is None:
-            BaseAssistant._formatter = StandardContextFormatter()
-        return BaseAssistant._formatter
+    def formatter(self):
+        return get_context_formatter()
 
     async def retrieve(
         self,

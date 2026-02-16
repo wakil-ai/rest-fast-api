@@ -4,23 +4,23 @@ from bson import ObjectId
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.core.dependencies import get_db_manager
 from app.core.logger import logger
-from app.db.db_manager import DBManager
 from app.utils.user_management import generate_short_id
 
 
 class ChatHistoryService:
     """Service for managing chat history, sessions, and user data."""
 
-    def __init__(self, db_manager: DBManager | None = None):
+    def __init__(self, db_manager=None):
         """
         Initialize ChatHistoryService with dependency injection.
-        
+
         Args:
-            db_manager: Injected DBManager instance. If None, creates a new one
-                       (for backward compatibility during migration).
+            db_manager: Injected DBManager instance. If None, uses the
+                       cached singleton from dependencies.
         """
-        self.db_manager = db_manager if db_manager is not None else DBManager()
+        self.db_manager = db_manager if db_manager is not None else get_db_manager()
         self.users_collection = settings.USERS_COLLECTION
         self.sessions_collection = settings.SESSIONS_COLLECTION
         self.messages_collection = settings.MESSAGES_COLLECTION
@@ -55,22 +55,22 @@ class ChatHistoryService:
         """Create necessary indexes for collections (async)."""
         try:
             # Sessions - query by user and project
-            await self.db_manager.mongo_handler.db[self.sessions_collection].create_index(
-                [("user_id", 1), ("updated_at", -1)]
-            )
-            await self.db_manager.mongo_handler.db[self.sessions_collection].create_index(
-                [("project_id", 1)]
-            )
+            await self.db_manager.mongo_handler.db[
+                self.sessions_collection
+            ].create_index([("user_id", 1), ("updated_at", -1)])
+            await self.db_manager.mongo_handler.db[
+                self.sessions_collection
+            ].create_index([("project_id", 1)])
 
             # Messages - query by session
-            await self.db_manager.mongo_handler.db[self.messages_collection].create_index(
-                [("session_id", 1), ("created_at", 1)]
-            )
+            await self.db_manager.mongo_handler.db[
+                self.messages_collection
+            ].create_index([("session_id", 1), ("created_at", 1)])
 
             # Feedback - query by message
-            await self.db_manager.mongo_handler.db[self.feedback_collection].create_index(
-                [("message_id", 1)]
-            )
+            await self.db_manager.mongo_handler.db[
+                self.feedback_collection
+            ].create_index([("message_id", 1)])
 
             # Files - query by project, message, user
             await self.db_manager.mongo_handler.db[self.files_collection].create_index(
@@ -84,9 +84,9 @@ class ChatHistoryService:
             )
 
             # Projects - query by user
-            await self.db_manager.mongo_handler.db[self.projects_collection].create_index(
-                [("user_id", 1)]
-            )
+            await self.db_manager.mongo_handler.db[
+                self.projects_collection
+            ].create_index([("user_id", 1)])
 
             logger.info("[ChatHistoryService] Successfully created database indexes")
         except Exception as e:
@@ -160,7 +160,9 @@ class ChatHistoryService:
         """Get user by user_id."""
         await self._ensure_initialized()
         self._validate_user_id(user_id)
-        users = await self.db_manager.find_documents(self.users_collection, {"_id": user_id})
+        users = await self.db_manager.find_documents(
+            self.users_collection, {"_id": user_id}
+        )
         return users[0] if users else None
 
     # PROJECT MANAGEMENT
@@ -235,7 +237,7 @@ class ChatHistoryService:
             {"_id": project_id},
             {"$set": update_fields},
         )
-        
+
         if updated_count == 0:
             raise ValueError("Project not found or no changes made")
 
@@ -248,7 +250,7 @@ class ChatHistoryService:
     async def delete_project(self, user_id: str, project_id: str) -> None:
         """Delete a project and all its associated data."""
         await self._ensure_initialized()
-        
+
         self._validate_user_id(user_id)
         self._validate_project_id(project_id)
 
@@ -409,7 +411,9 @@ class ChatHistoryService:
             raise ValueError("Session not found")
 
         # Delete session
-        await self.db_manager.delete_documents(self.sessions_collection, {"_id": session_id})
+        await self.db_manager.delete_documents(
+            self.sessions_collection, {"_id": session_id}
+        )
 
         # Delete associated messages
         await self.db_manager.delete_documents(
@@ -462,9 +466,9 @@ class ChatHistoryService:
 
         if isinstance(content, BaseModel):
             content = content.model_dump()
-            
+
         # Check whether file_id is existed
-        for file_id in (file_ids or []):
+        for file_id in file_ids or []:
             file = await self.db_manager.find_documents(
                 self.files_collection, {"_id": file_id}
             )
@@ -586,7 +590,7 @@ class ChatHistoryService:
         """Get message by message_id (direct _id lookup - fastest)."""
         await self._ensure_initialized()
         if not message_id or not message_id.strip():
-                    raise ValueError("Message ID cannot be empty")
+            raise ValueError("Message ID cannot be empty")
 
         messages = await self.db_manager.find_documents(
             self.messages_collection, {"_id": message_id}
@@ -638,7 +642,7 @@ class ChatHistoryService:
         """Retrieve all feedback for a specific message."""
         await self._ensure_initialized()
         if not message_id or not message_id.strip():
-                    raise ValueError("Message ID cannot be empty")
+            raise ValueError("Message ID cannot be empty")
 
         feedbacks = await self.db_manager.find_documents(
             self.feedback_collection,
@@ -747,7 +751,9 @@ class ChatHistoryService:
         logger.info(f"Retrieved {len(files)} message files for user {user_id}")
         return files
 
-    async def get_files_by_message(self, message_id: str, limit: int = 50) -> list[dict]:
+    async def get_files_by_message(
+        self, message_id: str, limit: int = 50
+    ) -> list[dict]:
         """Retrieve all files associated with a specific message."""
         await self._ensure_initialized()
         if not message_id or not message_id.strip():
@@ -766,7 +772,9 @@ class ChatHistoryService:
         if not file_id or not file_id.strip():
             raise ValueError("File ID cannot be empty")
 
-        files = await self.db_manager.find_documents(self.files_collection, {"_id": file_id})
+        files = await self.db_manager.find_documents(
+            self.files_collection, {"_id": file_id}
+        )
 
         if files:
             logger.info(f"Retrieved file with file_id: {file_id}")
@@ -779,7 +787,7 @@ class ChatHistoryService:
         self, file_id: str, status: str, ocr_result: str | None = None
     ) -> dict:
         """Update file processing status and OCR result."""
-        await self._ensure_initialized()       
+        await self._ensure_initialized()
         if not file_id or not file_id.strip():
             raise ValueError("File ID cannot be empty")
 

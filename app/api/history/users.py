@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Response, status, HTTPException
+from fastapi import APIRouter, HTTPException, Response, status
 
+from app.core.dependencies import get_chat_history_service
 from app.models.chat_history import UserCreateRequest, UserCreateResponse
-from app.services.chat_history_service import ChatHistoryService
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-chat_history_service = ChatHistoryService()
+chat_history_service = get_chat_history_service()
 
 
 def create_response(data: dict, message: str) -> dict:

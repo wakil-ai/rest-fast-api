@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from app.core.config import settings
+from app.core.dependencies import get_mongo_handler, get_promo_code_service
 from app.core.logger import logger
-from app.db.mongo_handler import MongoHandler
 
 RateLimitAssistantType = Literal[
     "main", "soliq", "deepresearch", "mamuriy_sud", "shartnoma"
@@ -24,16 +24,14 @@ class RateLimitService:
     RATE_LIMIT_COLLECTION = settings.RATE_LIMIT_COLLECTION
 
     def __init__(self):
-        self.mongo_handler = MongoHandler()
+        self.mongo_handler = get_mongo_handler()
         self._promo_code_service = None
 
     @property
     def promo_code_service(self):
         """Lazy initialization of PromoCodeService to avoid circular imports."""
         if self._promo_code_service is None:
-            from app.services.promo_code_service import PromoCodeService
-
-            self._promo_code_service = PromoCodeService()
+            self._promo_code_service = get_promo_code_service()
         return self._promo_code_service
 
     def _get_today_date(self) -> str:

@@ -1,5 +1,8 @@
 import os
 
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # FastAPI imports
 from contextlib import asynccontextmanager
 
@@ -14,7 +17,6 @@ from app.api import (
     admin,
     auth,
     chat,
-    health,
     logs,
     memory,
     payme,
@@ -97,12 +99,6 @@ def create_app() -> FastAPI:
         logs.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_super_admin_key)],
-    )
-    # Health check router (no authentication required)
-    app.include_router(
-        health.router,
-        prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
     )
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)

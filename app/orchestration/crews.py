@@ -6,7 +6,7 @@ from typing import Any
 import yaml
 from crewai import Agent, Crew, Process, Task
 
-from app.orchestration.agents import Agents
+from app.core.dependencies import get_agents
 
 
 class Crews:
@@ -19,7 +19,7 @@ class Crews:
     def __init__(self) -> None:
         if not self._TASKS_CONFIG:
             self._load_tasks_config()
-        self.agents_factory = Agents()
+        self.agents_factory = get_agents()
 
     @classmethod
     def _load_tasks_config(cls) -> None:

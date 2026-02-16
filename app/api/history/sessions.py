@@ -1,18 +1,22 @@
 # app/routers/history/sessions.py
 from fastapi import APIRouter, HTTPException, status
 
+from app.core.dependencies import get_chat_history_service
 from app.models.chat_history import (
-    SessionCreateRequest, SessionCreateResponse, SessionResponse
+    SessionCreateRequest,
+    SessionCreateResponse,
+    SessionResponse,
 )
-from app.services.chat_history_service import ChatHistoryService
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
 
-chat_history_service = ChatHistoryService()
+chat_history_service = get_chat_history_service()
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=SessionCreateResponse)
+@router.post(
+    "", status_code=status.HTTP_201_CREATED, response_model=SessionCreateResponse
+)
 @handle_service_error
 async def create_session(request: SessionCreateRequest):
     session = await chat_history_service.create_session(
@@ -47,7 +51,9 @@ async def get_session(user_id: str, session_id: str):
 
 @router.patch("/{session_id}", response_model=SessionResponse)
 @handle_service_error
-async def update_session(session_id: str, title: str | None = None, tags: list[str] | None = None):
+async def update_session(
+    session_id: str, title: str | None = None, tags: list[str] | None = None
+):
     session = await chat_history_service.edit_session(session_id, title, tags)
     return serialize_mongo_id(session)
 

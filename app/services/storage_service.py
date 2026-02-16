@@ -17,20 +17,8 @@ class StorageService:
     """
     Service for handling file uploads to Google Cloud Storage.
     """
-
-    _instance = None
-    _initialized = False
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(StorageService, cls).__new__(cls)
-        return cls._instance
-
     def __init__(self):
         """Initialize Google Cloud Storage client."""
-        if self._initialized:
-            return
-
         try:
             if settings.GCS_CREDENTIALS_PATH and os.path.exists(
                 settings.GCS_CREDENTIALS_PATH
@@ -54,7 +42,6 @@ class StorageService:
         except Exception as e:
             logger.error(f"[StorageService] Failed to initialize GCS client: {str(e)}")
             raise
-        StorageService._initialized = True
 
     def upload_file(
         self,

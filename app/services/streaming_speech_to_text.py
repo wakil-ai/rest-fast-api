@@ -4,6 +4,7 @@ import queue as _q
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
+from functools import lru_cache
 
 from app.core.config import settings
 
@@ -301,6 +302,7 @@ class AzureStreamingSTTService(StreamingSTTService):
             yield item
 
 
+@lru_cache
 def get_streaming_stt_service(provider: str) -> StreamingSTTService:
     provider = (provider or "").lower()
     if provider == "google":

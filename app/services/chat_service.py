@@ -1,12 +1,11 @@
-import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi.responses import StreamingResponse
 
-from app.chains.chat_chain import ChatChain
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
+from app.core.dependencies import get_chat_chain, get_rate_limit_service
 from app.core.exceptions import (
     ChatGenerationException,
     InsufficientCreditsException,
@@ -15,7 +14,7 @@ from app.core.exceptions import (
 from app.core.logger import logger
 from app.models.chat import AgenticRAGRequest, ChatResponse, MessagePair
 from app.orchestration.flow import AgenticRAGFlow
-from app.services.rate_limit_service import RateLimitAssistantType, RateLimitService
+from app.services.rate_limit_service import RateLimitAssistantType
 from app.utils.streaming import format_streaming_response, get_streaming_headers
 
 
@@ -23,8 +22,8 @@ class ChatService:
     """Service class to handle user questions and generate answers."""
 
     def __init__(self):
-        self.chat_chain = ChatChain()
-        self.rate_limit_service = RateLimitService()
+        self.chat_chain = get_chat_chain()
+        self.rate_limit_service = get_rate_limit_service()
 
     @staticmethod
     def validate_query_length(query: str) -> None:
@@ -42,9 +41,11 @@ class ChatService:
     ) -> None:
         """Verify user has sufficient credits and deduct them."""
         try:
-            is_allowed, credits_remaining, limit = await self.rate_limit_service.check_and_decrement_credits(
-                user_id=user_id,
-                assistant_type=assistant_type,
+            is_allowed, credits_remaining, limit = (
+                await self.rate_limit_service.check_and_decrement_credits(
+                    user_id=user_id,
+                    assistant_type=assistant_type,
+                )
             )
 
             if not is_allowed:

@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from app.assistants.base import BaseAssistant, RetrievalResult
-from app.chains.intent_classifier import IntentClassifier
 from app.core.config import settings
+from app.core.dependencies import get_intent_classifier, get_storage_service
 from app.core.logger import logger
-from app.services.storage_service import StorageService
 from app.utils.text_cleaning import TextCleaner
 
 
@@ -22,8 +21,8 @@ class ShartnomaAssistant(BaseAssistant):
 
     def __init__(self):
         super().__init__(collection_name=settings.MILVUS_SHARTNOMA)
-        self.storage_service = StorageService()
-        self.intent_classifier = IntentClassifier()
+        self.storage_service = get_storage_service()
+        self.intent_classifier = get_intent_classifier()
 
     # Retrieve — classification + multi-collection retrieval
     async def retrieve(

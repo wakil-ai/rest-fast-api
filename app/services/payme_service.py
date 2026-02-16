@@ -3,13 +3,13 @@ import time
 from math import floor
 
 from app.core.config import settings
-from app.db.mongo_handler import MongoHandler
+from app.core.dependencies import get_mongo_handler
 from app.models.payme import PaymeData, PaymeError, TransactionError, TransactionState
 
 
 class TransactionService:
     def __init__(self):
-        self.db_handler = MongoHandler()
+        self.db_handler = get_mongo_handler()
         self.users_collection = settings.USERS_COLLECTION
         self.transaction_collection = settings.TRANSACTION_COLLECTION
 

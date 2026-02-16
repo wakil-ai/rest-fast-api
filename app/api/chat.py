@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
+from app.core.dependencies import get_agentic_rag_flow_streaming, get_chat_service
 from app.core.exceptions import (
     ChatException,
     ChatGenerationException,
@@ -17,13 +18,11 @@ from app.models.chat import (
     ChatResponse,
     ModelInfoResponse,
 )
-from app.orchestration.flow import AgenticRAGFlow
-from app.services.chat_service import ChatService
 from app.utils.streaming import format_streaming_response, get_streaming_headers
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
-chat_service = ChatService()
+chat_service = get_chat_service()
 
 
 @router.post("/ask", summary="Ask a legal question")
@@ -90,37 +89,6 @@ async def ask_question(request: ChatRequest):
         raise ChatGenerationException()
 
 
-@router.post("/agent", summary="Ask a legal question via agentic RAG")
-async def run_agentic_rag(request: AgenticRAGRequest) -> ChatResponse:
-    """Execute legal QA flow using agentic RAG approach."""
-    try:
-        chat_service.validate_query_length(request.query)
-
-        await chat_service.verify_user_credits(
-            user_id=request.user_id,
-            assistant_type="deepresearch",
-            required_credits=settings.CREDIT_COST_DEEPRESEARCH,
-        )
-
-        flow_service = AgenticRAGFlow()
-        initial_state = chat_service.build_agentic_state(request)
-
-        logger.info(f"Starting Legal QA Flow for query: {request.query[:100]}...")
-
-        answer = await flow_service.kickoff_async(initial_state)
-        debug_context = chat_service.extract_debug_context(flow_service)
-
-        return chat_service.create_response(answer, debug_context)
-
-    except ChatException:
-        raise
-    except Exception as e:
-        logger.error(
-            f"[AgenticRAG] Unexpected error in run_agentic_rag: {str(e)}", exc_info=True
-        )
-        raise FlowExecutionException()
-
-
 @router.post("/agent/stream", summary="Stream legal question answer via agentic RAG")
 async def stream_agentic_rag(request: AgenticRAGRequest):
     """
@@ -145,9 +113,7 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
         async def progress_callback(event: dict):
             await progress_queue.put(event)
 
-        flow = AgenticRAGFlow(
-            enable_progress_stream=True, progress_callback=progress_callback
-        )
+        flow = get_agentic_rag_flow_streaming(progress_callback)
 
         initial_state = chat_service.build_agentic_state(request)
 

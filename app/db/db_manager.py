@@ -1,34 +1,21 @@
 from typing import Any
 
 from app.core.config import VectorDBType, settings
+from app.core.dependencies import (
+    get_milvus_handler,
+    get_mongo_handler,
+    get_pinecone_handler,
+)
 from app.core.logger import logger
-from app.db.milvus_handler import MilvusHandler
-from app.db.mongo_handler import MongoHandler
-from app.db.pinecone_handler import PineconeHandler
-from app.db.vector_db_handler import VectorDBHandler
 
 
 class DBManager:
     """
     Database manager for MongoDB, MySQL, and vector databases (Pinecone, or Milvus).
     """
-
-    # Prevent multiple instances
-    _instance = None
-    _initialized = False
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(DBManager, cls).__new__(cls)
-        return cls._instance
-
     def __init__(self):
-        if self._initialized:
-            return
-
-        self._initialized = True
         self.vector_handler = self._initialize_vector_db()
-        self.mongo_handler = MongoHandler()  # For automatic ingestions
+        self.mongo_handler = get_mongo_handler()
 
     async def create_collection(self, collection_name: str) -> None:
         """Create a MongoDB collection if it doesn't exist."""
@@ -42,20 +29,20 @@ class DBManager:
         await self.mongo_handler.db.create_collection(collection_name)
 
     # Initialize vector database handler
-    def _initialize_vector_db(self) -> VectorDBHandler:
+    def _initialize_vector_db(self):
         """Create vector database handler based on configuration."""
         if settings.VECTOR_DB_TYPE == "milvus":
-            milvus_handler = MilvusHandler()
+            handler = get_milvus_handler()
             logger.info(
-                f"[DBManager] Initialized MilvusHandler with collection: {settings.MILVUS_MAIN_NAME}"
+                f"[DBManager] Initialized MilvusHandler with collection: {settings.MILVUS_URI}"
             )
-            return milvus_handler
+            return handler
         elif settings.VECTOR_DB_TYPE == "pinecone":
-            pinecone_handler = PineconeHandler()
+            handler = get_pinecone_handler()
             logger.info(
                 f"[DBManager] Initialized PineconeHandler with namespace: {settings.NAMESPACE_NAME}"
             )
-            return pinecone_handler
+            return handler
         else:
             raise ValueError(
                 f"[DBManager] Invalid vector database type: {settings.VECTOR_DB_TYPE}. Please choose from {VectorDBType.values()}"
@@ -86,7 +73,9 @@ class DBManager:
         result = await collection.update_one(query, update, upsert=upsert)
         return result.modified_count
 
-    async def delete_documents(self, collection_name: str, query: dict[str, Any]) -> Any:
+    async def delete_documents(
+        self, collection_name: str, query: dict[str, Any]
+    ) -> Any:
         """Delete documents from MongoDB collection."""
         collection = self.mongo_handler.db[collection_name]
         result = await collection.delete_many(query)

@@ -11,13 +11,16 @@ from app.assistants import (
     ShartnomaAssistant,
     SoliqAssistant,
 )
-from app.chains.prompts_registry import PromptRegistry
 from app.core.config import settings
+from app.core.dependencies import (
+    get_chat_history_service,
+    get_fallback_llm,
+    get_memory_service,
+    get_prompt_registry,
+    get_retrieval_service,
+)
 from app.core.logger import logger
 from app.llms import LLM, ChatGPT, Claude, Gemini, Novita
-from app.retrieval.retrieval_service import RetrievalService
-from app.services.chat_history_service import ChatHistoryService
-from app.services.memory_service import ChatMemoryService
 from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 
@@ -55,12 +58,12 @@ class ChatChain:
         self._assistant_cache: dict[str, BaseAssistant] = {}
 
         # Generic retrieval (for agentic RAG flow only)
-        self.retrieval = RetrievalService()
+        self.retrieval = get_retrieval_service()
 
-        self.memory = ChatMemoryService()
-        self.history_service = ChatHistoryService()
-        self.fallback_llm = ChatGPT()
-        self.prompts_registry = PromptRegistry()
+        self.memory = get_memory_service()
+        self.history_service = get_chat_history_service()
+        self.fallback_llm = get_fallback_llm()
+        self.prompts_registry = get_prompt_registry()
 
     def _get_assistant(self, name: str) -> BaseAssistant:
         """Get or create an assistant instance by name."""

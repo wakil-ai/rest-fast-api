@@ -3,12 +3,16 @@ from typing import Any
 
 from crewai.flow.flow import Flow, listen, router, start
 
-from app.chains.chat_chain import ChatChain, GenerationContext
-from app.chains.prompts_registry import PromptRegistry
+from app.chains.chat_chain import GenerationContext
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
+from app.core.dependencies import (
+    get_chat_chain,
+    get_crews,
+    get_memory_service,
+    get_prompt_registry,
+)
 from app.core.logger import logger
-from app.orchestration.crews import Crews
 from app.orchestration.schemas import (
     AgenticRAGState,
     ContextEvaluationResponse,
@@ -17,7 +21,6 @@ from app.orchestration.schemas import (
     RetrievalStrategyResponse,
     WebSearchResponse,
 )
-from app.services.memory_service import ChatMemoryService
 from app.utils.streaming import format_progress_event
 
 
@@ -43,13 +46,13 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
     def _initialize_services(self) -> None:
         """Initialize all required services."""
-        self.chat_chain = ChatChain()
-        self.memory_service = ChatMemoryService()
-        self.prompt_registry = PromptRegistry()
+        self.chat_chain = get_chat_chain()
+        self.memory_service = get_memory_service()
+        self.prompt_registry = get_prompt_registry()
 
     def _initialize_crews(self) -> None:
         """Initialize and cache all crews once."""
-        crews_factory = Crews()
+        crews_factory = get_crews()
         self.memory_crew = crews_factory.memory_crew()
         self.retrieval_strategy_crew = crews_factory.retrieval_strategy_crew()
         self.evaluation_crew = crews_factory.evaluation_crew()

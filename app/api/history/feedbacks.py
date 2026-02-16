@@ -1,16 +1,19 @@
 # app/routers/history/feedbacks.py
 from fastapi import APIRouter, status
 
+# Get dependencies
+from app.core.dependencies import get_chat_history_service
 from app.models.chat_history import FeedbackCreateRequest, FeedbackCreateResponse
-from app.services.chat_history_service import ChatHistoryService
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/feedback", tags=["Feedback"])
 
-chat_history_service = ChatHistoryService()
+chat_history_service = get_chat_history_service()
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=FeedbackCreateResponse)
+@router.post(
+    "", status_code=status.HTTP_201_CREATED, response_model=FeedbackCreateResponse
+)
 @handle_service_error
 async def create_feedback(request: FeedbackCreateRequest):
     fb = await chat_history_service.submit_feedback(
