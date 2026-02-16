@@ -125,6 +125,9 @@ class MessageCreateRequest(BaseModel):
     message_id: str | None = Field(
         None, description="Optional Message ID (auto-generated if missing)"
     )
+    file_ids: list[str] | None = Field(
+        None, description="Optional file ID if this message is a file attachment"
+    )
     content: MessageContent = Field(..., description="Message content")
     metadata: dict[str, Any] | None = Field(None, description="Optional metadata")
 

@@ -29,6 +29,7 @@ async def create_message(request: MessageCreateRequest):
     msg = await chat_history_service.add_message(
         session_id=request.session_id,
         message_id=request.message_id,
+        file_ids=request.file_ids,
         content=request.content,
         metadata=request.metadata,
     )

@@ -433,6 +433,7 @@ class ChatHistoryService:
         self,
         session_id: str,
         message_id: str | None,
+        file_ids: list[str] | None,
         content: dict | BaseModel,
         metadata: dict | None = None,
     ) -> dict:
@@ -461,11 +462,20 @@ class ChatHistoryService:
 
         if isinstance(content, BaseModel):
             content = content.model_dump()
+            
+        # Check whether file_id is existed
+        for file_id in (file_ids or []):
+            file = await self.db_manager.find_documents(
+                self.files_collection, {"_id": file_id}
+            )
+            if not file:
+                raise ValueError(f"File {file_id} not found")
 
         message = {
             "_id": message_id,
             "message_id": message_id,  # Ensure message_id field is set to match _id
             "user_id": user_id,  # Auto-populated from session
+            "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "session_id": session_id,
             "content": content,
             "metadata": metadata or {},

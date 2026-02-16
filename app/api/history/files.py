@@ -14,6 +14,11 @@ chat_history_service = ChatHistoryService()
 file_manager = FileManager()
 storage_service = StorageService()
 
+@router.get("/user/{user_id}", response_model=list[FileUploadResponse])
+@handle_service_error
+async def list_user_files(user_id: str, limit: int = 100):
+    files = await chat_history_service.get_files_by_user(user_id=user_id, limit=limit)
+    return [serialize_mongo_id(f) for f in files]
 
 @router.post("/messages", response_model=FileUploadResponse, summary="Upload file for future message")
 async def upload_file_for_message(
