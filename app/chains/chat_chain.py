@@ -274,8 +274,8 @@ class ChatChain:
             full = "".join(buffer)
             logger.debug(f"[STREAM FINAL]\n{full}")
 
-            # Special case: shartnoma → send attachments separately
-            if assistant == "shartnoma" and ctx.attachments:
+            # Send attachments if the assistant provided any
+            if ctx.attachments:
                 yield {"type": "attachments", "attachments": ctx.attachments}
 
         return gen()

@@ -43,6 +43,7 @@ class MamuriyAssistant(BaseAssistant):
         )
         self.intent_classifier = get_intent_classifier()
         self.milvus_agent = get_milvus_query_agent()
+        self.sud_url = 'https://adolatapi1.sud.uz/public/onStream/{pdf_id}'
 
     # Retrieve — classification + domain routing (all internal)
     async def retrieve(
@@ -151,10 +152,11 @@ class MamuriyAssistant(BaseAssistant):
         return documents
 
     # Formatting (sud-specific metadata)
-    async def format_results(self, documents: list[dict[str, Any]]) -> RetrievalResult:
+    async def format_results(self, documents: list[dict[str, Any]], max_attachments: int = 3) -> RetrievalResult:
         """Format documents with administrative-court metadata fields."""
         entries: list[str] = []
         seen: set[str] = set()
+        attachments: list[dict[str, Any]] = []
 
         for doc in documents:
             metadata = doc.get("metadata", {})
@@ -179,15 +181,34 @@ class MamuriyAssistant(BaseAssistant):
             if entry not in seen:
                 seen.add(entry)
                 entries.append(entry)
-
+                
+            # Attachments (up to max_attachments)
+            pdf_id = metadata.get("pdf_id", "")
+            url = self.sud_url.format(pdf_id=pdf_id)
+            filename = (
+                " ".join(
+                    filter(None, [
+                        metadata.get("court_names_uz", "").strip(),
+                        metadata.get("file_name", "").strip()
+                    ])
+                ).strip() + ".pdf"
+            ) or "document.pdf"
+            
+            if pdf_id and filename and len(attachments) < max_attachments:
+                attachments.append({
+                    "name": filename,
+                    "url": url,
+                    "content_type": "application/pdf",
+                })
+                        
         if not entries:
             return RetrievalResult(
-                context="Hech qanday hujjat topilmadi.", attachments=[]
+                context="Hech qanday hujjat topilmadi.", attachments=attachments
             )
 
         return RetrievalResult(
             context="\n\n".join(entries),
-            attachments=[],
+            attachments=attachments,
         )
 
     # Domain-specific retrieval (multi-collection merging)
@@ -198,7 +219,7 @@ class MamuriyAssistant(BaseAssistant):
         # mamuriy_sud portion
         mam_config = RetrievalConfig(
             top_k=settings.ADDITIONAL_TOP_K,
-            collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
+            collection_name=settings.MILVUS_MAMURIY_SUD,
             filter=filter,
         )
         effective = f"{query}\n\n\n{file_context}" if file_context else query
