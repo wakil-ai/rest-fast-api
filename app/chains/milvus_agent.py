@@ -1,14 +1,13 @@
-from app.chains.prompts_registry import PromptRegistry
+from app.core.dependencies import get_fallback_llm, get_prompt_registry
 from app.core.logger import logger
-from app.llms import ChatGPT
 
 
 class MilvusQueryAgent:
     """Agent to determine the appropriate Milvus collection for a given query."""
 
     def __init__(self):
-        self.llm = ChatGPT()
-        self.prompt_registry = PromptRegistry()
+        self.llm = get_fallback_llm()
+        self.prompt_registry = get_prompt_registry()
         self.prompt = self.prompt_registry.get_prompt("milvus_query_agent").template
 
     def _build_prompt(self, query, chat_history, file_context):

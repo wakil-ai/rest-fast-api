@@ -1,5 +1,8 @@
 import os
 
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # FastAPI imports
 from contextlib import asynccontextmanager
 
@@ -14,14 +17,12 @@ from app.api import (
     admin,
     auth,
     chat,
-    chat_history,
-    health,
     logs,
     memory,
     payme,
-    retrieval,
     speech_to_text,
 )
+from app.api.history import router as chat_history
 from app.core.config import settings
 from app.core.logger import logger
 from app.security import get_current_username, verify_api_key, verify_super_admin_key
@@ -72,21 +73,9 @@ def create_app() -> FastAPI:
         same_site="lax",
     )
 
-    # Middleware to handle HTTPS redirect behind proxy
-    @app.middleware("http")
-    async def proxy_protocol_middleware(request, call_next):
-        if request.headers.get("x-forwarded-proto") == "https":
-            request.scope["scheme"] = "https"
-        return await call_next(request)
-
     # Mount routers with API key authentication
     app.include_router(
         chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
-    app.include_router(
-        retrieval.router,
-        prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_super_admin_key)],
     )
     app.include_router(
         chat_history.router,
@@ -110,12 +99,6 @@ def create_app() -> FastAPI:
         logs.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_super_admin_key)],
-    )
-    # Health check router (no authentication required)
-    app.include_router(
-        health.router,
-        prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
     )
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)

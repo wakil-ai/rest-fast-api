@@ -7,6 +7,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.dependencies import get_transaction_service
 from app.core.logger import logger
 from app.models.payme import (
     PaymeError,
@@ -15,10 +16,9 @@ from app.models.payme import (
     PaymentLinkResponse,
     TransactionError,
 )
-from app.services.payme_service import TransactionService
 
 router = APIRouter(prefix="/transaction", tags=["Payme"])
-transaction_service = TransactionService()
+transaction_service = get_transaction_service()
 
 
 def verify_api_key(x_api_key: str | None = Header(None)):

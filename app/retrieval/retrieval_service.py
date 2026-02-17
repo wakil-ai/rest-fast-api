@@ -4,10 +4,12 @@ from typing import Any, Optional
 
 from app.assistants.base import RetrievalConfig
 from app.core.config import settings
+from app.core.dependencies import (
+    get_context_formatter,
+    get_db_manager,
+    get_embedding_manager,
+)
 from app.core.logger import logger
-from app.db.db_manager import DBManager
-from app.retrieval.context_formatter import StandardContextFormatter
-from app.retrieval.embedding_manager import EmbeddingManager
 
 
 class RetrievalService:
@@ -21,9 +23,9 @@ class RetrievalService:
     """
 
     def __init__(self):
-        self._db = DBManager()
-        self._embedder = EmbeddingManager()
-        self._formatter = StandardContextFormatter()
+        self._db = get_db_manager()
+        self._embedder = get_embedding_manager()
+        self._formatter = get_context_formatter()
 
     # Generic retrieval (API endpoints)
     async def retrieve_context(

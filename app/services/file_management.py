@@ -5,24 +5,26 @@ import uuid
 from fastapi import UploadFile
 
 from app.core.config import settings
+from app.core.dependencies import (
+    get_chat_history_service,
+    get_db_manager,
+    get_embedding_manager,
+    get_ocr_service,
+    get_storage_service,
+)
 from app.core.logger import logger
-from app.db.db_manager import DBManager
 from app.models.chat_history import FileUploadResponse
-from app.retrieval.embedding_manager import EmbeddingManager
-from app.services.chat_history_service import ChatHistoryService
-from app.services.ocr_service import OCRService
-from app.services.storage_service import StorageService
 
 
 class FileManager:
     """Handles file upload, OCR processing, storage and metadata persistence."""
 
     def __init__(self):
-        self.storage = StorageService()
-        self.ocr = OCRService()
-        self.db = DBManager()
-        self.history = ChatHistoryService()
-        self.embedding_manager = EmbeddingManager()
+        self.storage = get_storage_service()
+        self.ocr = get_ocr_service()
+        self.db = get_db_manager()
+        self.history = get_chat_history_service()
+        self.embedding_manager = get_embedding_manager()
         self.vector_db_collection = settings.MILVUS_PROJECT_FILES
 
     async def upload_file_to_project(
@@ -32,7 +34,7 @@ class FileManager:
         Process file upload for a project: validate → OCR → store → save metadata
         Returns: (status_code, response_or_error_message)
         """
-        project = self.history.get_project(project_id)
+        project = await self.history.get_project(project_id)
         if not project:
             return 404, "Project not found"
 
@@ -55,7 +57,7 @@ class FileManager:
 
             metadata = self._create_file_metadata(file, content, gcs_path)
 
-            record = self.history.add_file_upload(
+            record = await self.history.add_file_upload(
                 user_id=user_id,
                 file_id=file_id,
                 file_url=file_url,
@@ -124,7 +126,7 @@ class FileManager:
 
             metadata = self._create_file_metadata(file, content, gcs_path)
 
-            record = self.history.add_file_upload(
+            record = await self.history.add_file_upload(
                 user_id=user_id,
                 file_id=file_id,
                 file_url=file_url,

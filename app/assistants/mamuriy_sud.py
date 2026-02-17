@@ -5,10 +5,9 @@ import os
 from typing import Any
 
 from app.assistants.base import BaseAssistant, RetrievalConfig, RetrievalResult
-from app.chains.intent_classifier import IntentClassifier
-from app.chains.milvus_agent import MilvusQueryAgent
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
+from app.core.dependencies import get_intent_classifier, get_milvus_query_agent
 from app.core.logger import logger
 
 
@@ -42,8 +41,8 @@ class MamuriyAssistant(BaseAssistant):
             collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
             top_k=settings.TOP_K,
         )
-        self.intent_classifier = IntentClassifier()
-        self.milvus_agent = MilvusQueryAgent()
+        self.intent_classifier = get_intent_classifier()
+        self.milvus_agent = get_milvus_query_agent()
 
     # Retrieve — classification + domain routing (all internal)
     async def retrieve(

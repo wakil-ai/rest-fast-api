@@ -1,6 +1,7 @@
 import io
 import os
 from abc import ABC, abstractmethod
+from functools import lru_cache
 
 import requests
 from pydub import AudioSegment
@@ -204,6 +205,7 @@ def _is_running_in_docker() -> bool:
     )
 
 
+@lru_cache  # Cache the service instance for efficiency
 def get_speech_to_text_service() -> SpeechToTextService:
     """
     Factory function to get the speech-to-text service based on the provider setting.

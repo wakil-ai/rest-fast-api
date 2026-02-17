@@ -8,17 +8,7 @@ from app.core.config import settings
 
 
 class RedisService:
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def __init__(self):
-        if hasattr(self, "_initialized"):
-            return
-        self._initialized = True
         self.redis = redis.Redis(
             host=settings.REDIS_HOST,
             port=settings.REDIS_PORT,

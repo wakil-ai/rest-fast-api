@@ -2,15 +2,15 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.config import settings
+from app.core.dependencies import get_chat_history_service
 from app.core.logger import logger
 from app.models.auth import TelegramAuth
-from app.services.auth_service import validate_telegram_data
-from app.services.chat_history_service import ChatHistoryService
+from app.services import validate_telegram_data
 
 router = APIRouter(prefix="/auth", tags=["Auth for Login"])
 
 # Services
-chat_history_service = ChatHistoryService()
+chat_history_service = get_chat_history_service()
 
 
 # Google OAuth2 setup
@@ -67,7 +67,7 @@ async def auth_callback(request: Request):
         # Use email or sub as internal user_id
         internal_user_id = email or user_id
 
-        user = chat_history_service.create_user(
+        user = await chat_history_service.create_user(
             user_id=internal_user_id,
             username=email,
             first_name=user_info.get("given_name"),

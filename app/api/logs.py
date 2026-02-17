@@ -3,11 +3,11 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from app.services.redis_service import RedisService
+from app.core.dependencies import get_redis_service
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
 
-redis_service = RedisService()
+redis_service = get_redis_service()
 
 
 class LogLevel(str, Enum):

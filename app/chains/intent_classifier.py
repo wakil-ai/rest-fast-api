@@ -1,16 +1,15 @@
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import ValidationError
 
-from app.chains.prompts_registry import PromptRegistry
+from app.core.dependencies import get_fallback_llm, get_prompt_registry
 from app.core.logger import logger
-from app.llms import ChatGPT
 from app.models.intent_types import DomainType, IntentOutput, LegalIntent
 
 
 class IntentClassifier:
     def __init__(self):
-        self.prompt_registry = PromptRegistry()
-        self.llm = ChatGPT()
+        self.prompt_registry = get_prompt_registry()
+        self.llm = get_fallback_llm()
 
         # Structured output parser
         self.output_parser = PydanticOutputParser(pydantic_object=IntentOutput)

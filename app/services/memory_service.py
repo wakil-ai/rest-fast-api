@@ -3,13 +3,13 @@ from typing import Any
 from mem0 import AsyncMemoryClient
 
 from app.core.config import settings
+from app.core.dependencies import get_db_manager
 from app.core.logger import logger
-from app.db.db_manager import DBManager
 
 
 class ChatMemoryService:
     def __init__(self):
-        self.db_manager = DBManager()
+        self.db_manager = get_db_manager()
         self.client = AsyncMemoryClient(
             api_key=settings.MEM0_API_KEY,
             org_id=settings.MEM0_ORG_ID,
