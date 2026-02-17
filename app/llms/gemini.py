@@ -37,7 +37,7 @@ class Gemini(LLM):
     async def _generate_streaming(
         self, system_prompt: str, user_prompt: str
     ) -> AsyncGenerator[str, None]:
-        """Generate streaming response (offloaded to thread)."""
+        """Generate streaming response (offloaded to thread via queue)."""
         contents = [
             types.Content(
                 role="user",
@@ -59,12 +59,38 @@ class Gemini(LLM):
             ),
         )
 
-        for chunk in self.client.models.generate_content_stream(
-            model=self.model,
-            contents=contents,
-            config=generate_content_config,
-        ):
-            yield chunk.text
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+        loop = asyncio.get_event_loop()
+
+        def _sync_stream():
+            """Run the synchronous Gemini streaming in a thread, pushing chunks to the queue."""
+            try:
+                for chunk in self.client.models.generate_content_stream(
+                    model=self.model,
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    if chunk.text:
+                        loop.call_soon_threadsafe(queue.put_nowait, chunk.text)
+            except Exception as e:
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        # Run the blocking stream in a background thread
+        thread_future = loop.run_in_executor(None, _sync_stream)
+
+        # Yield chunks as they arrive from the thread
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+        # Ensure the thread has finished
+        await thread_future
 
     async def _generate_complete(self, system_prompt: str, user_prompt: str) -> str:
         """Generate complete response (offloaded to thread)."""
