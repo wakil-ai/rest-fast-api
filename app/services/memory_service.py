@@ -22,7 +22,7 @@ class ChatMemoryService:
         """Retrieve previous conversation memory for a user session."""
         try:
             filter = {"user_id": user_id, "session_id": session_id}
-            session_memories = self.db_manager.find_documents(
+            session_memories = await self.db_manager.find_documents(
                 collection_name=settings.MESSAGES_COLLECTION,
                 query=filter,
                 limit=limit,
