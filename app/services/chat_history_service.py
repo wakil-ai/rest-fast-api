@@ -1,5 +1,4 @@
 from datetime import datetime
-from pyexpat.errors import messages
 
 from bson import ObjectId
 from pydantic import BaseModel
@@ -7,9 +6,8 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.core.dependencies import get_db_manager
 from app.core.logger import logger
-from app.utils.user_management import generate_short_id
-
 from app.models.chat_history import ShareResponse
+from app.utils.user_management import generate_short_id
 
 
 class ChatHistoryService:
@@ -599,16 +597,18 @@ class ChatHistoryService:
             self.messages_collection, {"_id": message_id}
         )
         return messages[0] if messages else None
-    
-    async def share_message(self, user_id: str, message_id: str, id_length: int = 32) -> dict:
+
+    async def share_message(
+        self, user_id: str, message_id: str, id_length: int = 32
+    ) -> dict:
         """Share a message with another user."""
         await self._ensure_initialized()
-        
+
         # Get message to share
         message = await self.get_message(message_id)
         if not message:
             raise ValueError(f"Message {message_id} not found")
-        
+
         if message.get("shared"):
             share_record = {
                 "share_id": message.get("share_id"),
@@ -616,7 +616,9 @@ class ChatHistoryService:
                 "url": f"share/{message.get('share_id')}",
                 "created_at": message.get("shared_at"),
             }
-            logger.info(f"Message {message_id} is already shared, returning existing share record.")
+            logger.info(
+                f"Message {message_id} is already shared, returning existing share record."
+            )
             return share_record
 
         # Generate share_id with user_id, session_id, message_id hash
@@ -630,7 +632,7 @@ class ChatHistoryService:
             "url": f"share/{share_id}",
             "created_at": datetime.utcnow(),
         }
-        
+
         # Insert share record to message with shared flag
         update_result = await self.db_manager.update_documents(
             self.messages_collection,
@@ -646,22 +648,22 @@ class ChatHistoryService:
         )
         if update_result == 0:
             raise ValueError("Failed to update message with share information")
-        
+
         return share_record
-    
+
     async def get_share(self, share_id: str) -> ShareResponse | None:
         """Get share by share_id."""
         await self._ensure_initialized()
         if not share_id or not share_id.strip():
             raise ValueError("Share ID cannot be empty")
-        
+
         message = await self.db_manager.find_documents(
             self.messages_collection, {"share_id": share_id}
         )
         message = message[0] if message else None
         if not message:
             raise ValueError(f"Share {share_id} not found")
-        
+
         return ShareResponse(
             share_id=share_id,
             question=message["content"].get("query"),

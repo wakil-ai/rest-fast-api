@@ -17,6 +17,7 @@ class StorageService:
     """
     Service for handling file uploads to Google Cloud Storage.
     """
+
     def __init__(self):
         """Initialize Google Cloud Storage client."""
         try:

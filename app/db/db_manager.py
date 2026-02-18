@@ -13,6 +13,7 @@ class DBManager:
     """
     Database manager for MongoDB, MySQL, and vector databases (Pinecone, or Milvus).
     """
+
     def __init__(self):
         self.vector_handler = self._initialize_vector_db()
         self.mongo_handler = get_mongo_handler()

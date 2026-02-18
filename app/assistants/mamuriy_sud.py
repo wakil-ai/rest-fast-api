@@ -179,8 +179,7 @@ class MamuriyAssistant(BaseAssistant):
             if entry not in seen:
                 seen.add(entry)
                 entries.append(entry)
-                
-                        
+
         if not entries:
             return RetrievalResult(
                 context="Hech qanday hujjat topilmadi.", attachments=[]
