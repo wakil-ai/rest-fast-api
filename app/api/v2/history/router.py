@@ -1,11 +1,11 @@
 # app/routers/history/router.py
 from fastapi import APIRouter
 
-from app.api.history.feedbacks import router as feedbacks_router
-from app.api.history.files import router as files_router
-from app.api.history.messages import router as messages_router
-from app.api.history.sessions import router as sessions_router
-from app.api.history.users import router as users_router
+from app.api.v2.history.feedbacks import router as feedbacks_router
+from app.api.v2.history.files import router as files_router
+from app.api.v2.history.messages import router as messages_router
+from app.api.v2.history.sessions import router as sessions_router
+from app.api.v2.history.users import router as users_router
 from app.core.dependencies import get_chat_history_service
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 

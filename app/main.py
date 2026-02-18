@@ -13,7 +13,7 @@ from fastapi.openapi.utils import get_openapi
 from starlette.middleware.sessions import SessionMiddleware
 
 # Internal imports
-from app.api import (
+from app.api.v2 import (
     admin,
     auth,
     chat,
@@ -22,8 +22,8 @@ from app.api import (
     payme,
     speech_to_text,
 )
-from app.api.history.router import router as chat_history
-from app.api.history.share import router as share_router
+from app.api.v2.history.router import router as chat_history
+from app.api.v2.history.share import router as share_router
 from app.core.config import settings
 from app.core.logger import logger
 from app.security import get_current_username, verify_api_key, verify_super_admin_key
