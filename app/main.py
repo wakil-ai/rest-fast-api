@@ -1,79 +1,32 @@
 import os
-import secrets
+
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # FastAPI imports
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
 from starlette.middleware.sessions import SessionMiddleware
 
 # Internal imports
-from app.api import (
+from app.api.v2 import (
     admin,
     auth,
     chat,
-    chat_history,
-    count,
-    google_auth,
+    logs,
     memory,
-    ocr,
     payme,
-    retrieval,
     speech_to_text,
-    ws_stt,
 )
+from app.api.v2.history.router import router as chat_history
+from app.api.v2.history.share import router as share_router
 from app.core.config import settings
 from app.core.logger import logger
-
-security = HTTPBasic()
-
-# API Key authentication
-api_key_header = APIKeyHeader(
-    name=settings.API_KEY_NAME.lower(),  # make sure it matches lowercase
-    auto_error=False,
-    description="HBAI API Key",
-)
-
-
-def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(credentials.username, settings.DOCS_USER)
-    correct_password = secrets.compare_digest(
-        credentials.password, settings.DOCS_PASSWORD
-    )
-    if not (correct_username and correct_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
-
-def verify_api_key(api_key: str = Security(api_key_header)):
-    """
-    Verify API key authentication
-    Checks both API key name and API key value from settings
-    """
-    if api_key is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API Key required",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
-
-    # Check if the provided API key matches the one in settings
-    if not secrets.compare_digest(api_key, settings.API_KEY):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API Key",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
-
-    return True
+from app.security import get_current_username, verify_api_key, verify_super_admin_key
 
 
 @asynccontextmanager
@@ -88,7 +41,6 @@ async def lifespan(app: FastAPI):
 
     yield
     # Shutdown (if needed)
-    pass
 
 
 def create_app() -> FastAPI:
@@ -105,7 +57,9 @@ def create_app() -> FastAPI:
     # Add CORS middleware first
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=(
+            settings.ALLOWED_ORIGINS if not settings.DEVELOPMENT_MODE else ["*"]
+        ),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -120,24 +74,12 @@ def create_app() -> FastAPI:
         same_site="lax",
     )
 
-    # Middleware to handle HTTPS redirect behind proxy
-    @app.middleware("http")
-    async def proxy_protocol_middleware(request, call_next):
-        if request.headers.get("x-forwarded-proto") == "https":
-            request.scope["scheme"] = "https"
-        return await call_next(request)
-
     # Mount routers with API key authentication
     app.include_router(
         chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
     )
     app.include_router(
-        retrieval.router,
-        prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
-    )
-    app.include_router(
-        chat_history.router,
+        chat_history,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)],
     )
@@ -147,17 +89,6 @@ def create_app() -> FastAPI:
         dependencies=[Depends(verify_api_key)],
     )
     app.include_router(
-        ocr.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
-    app.include_router(
-        count.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
-    app.include_router(
-        ws_stt.router,
-        prefix=settings.API_PREFIX,
-    )
-
-    app.include_router(
         memory.router,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)],
@@ -165,20 +96,17 @@ def create_app() -> FastAPI:
     app.include_router(
         admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
     )
+    app.include_router(
+        logs.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_super_admin_key)],
+    )
     # Auth routers without API prefix
-    app.include_router(
-        auth.router,
-    )
-    app.include_router(google_auth.router, prefix=settings.API_PREFIX)
-    # Payme payment routes
-    # Transaction endpoint (no API key - uses Payme merchant auth)
-    # Payment link creation endpoint (requires API key)
-    app.include_router(
-        payme.router,
-        prefix=f"{settings.API_PREFIX}/transaction",
-        tags=["Payme"],
-        # Only payment link creation requires API key, merchant API uses its own auth
-    )
+    app.include_router(auth.router, prefix=settings.API_PREFIX)
+    app.include_router(payme.router, prefix=settings.API_PREFIX)
+
+    # Public share router without API key dependency
+    app.include_router(share_router, prefix=settings.API_PREFIX, tags=["Public"])
 
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"], include_in_schema=False)
@@ -188,15 +116,15 @@ def create_app() -> FastAPI:
 
     # Documentation endpoints (Basic Auth protected)
     @app.get("/docs")
-    async def get_documentation(username: str = Depends(get_current_username)):
+    async def docs(username: str = Depends(get_current_username)):
         return get_swagger_ui_html(openapi_url="/openapi.json", title="docs")
 
     @app.get("/redoc")
-    async def get_documentation(username: str = Depends(get_current_username)):
+    async def redoc(username: str = Depends(get_current_username)):
         return get_redoc_html(openapi_url="/openapi.json", title="redocs")
 
     @app.get("/swagger-ui.html")
-    async def get_documentation(username: str = Depends(get_current_username)):
+    async def swagger_ui(username: str = Depends(get_current_username)):
         return get_swagger_ui_html(openapi_url="/openapi.json", title="docs")
 
     @app.get("/openapi.json")

@@ -10,5 +10,7 @@ main_llm = LLM(
 )
 
 tiny_llm = LLM(
-    model="openai/gpt-4.1-mini", temperature=0.0, stream=False  # deterministic
+    model="openai/gpt-4.1-mini",
+    temperature=0.0,
+    stream=False,  # deterministic
 )

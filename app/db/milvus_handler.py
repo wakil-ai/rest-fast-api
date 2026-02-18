@@ -22,14 +22,34 @@ class MilvusHandler(VectorDBHandler):
         self.milvus_collections = [
             settings.MILVUS_MAIN_NAME,
             settings.MILVUS_SOLIQ_ASSISTANT_NAME,
+            settings.MILVUS_PROJECT_FILES,
+            settings.MILVUS_MAMURIY_SUD,
+            settings.MILVUS_MAMURIY_SUD_ALL,
+            settings.MILVUS_SHARTNOMA,
         ]
         self.client = MilvusClient(
             uri=settings.MILVUS_URI,
             user=settings.MILVUS_USER,
             password=settings.MILVUS_PASSWORD,
         )
+
+        # Create and load all collections at startup
         for col in self.milvus_collections:
             self.create_collection(col)
+
+        # Ensure all collections are loaded into memory at startup
+        self._load_all_collections()
+
+    def _load_all_collections(self) -> None:
+        """
+        Load all collections into memory at startup to avoid latency during queries.
+        """
+        for collection_name in self.milvus_collections:
+            try:
+                if self.client.has_collection(collection_name):
+                    self.client.load_collection(collection_name)
+            except Exception as e:
+                logger.error(f"Failed to load collection '{collection_name}': {e}")
 
     def create_collection(self, collection_name: str):
         # Drop existing collection if it exists
@@ -73,7 +93,10 @@ class MilvusHandler(VectorDBHandler):
     ) -> None:
         milvus_data = []
 
-        partition_name = self.create_partition(partition_name)
+        if partition_name and not self.client.has_partition(
+            collection_name=collection_name, partition_name=partition_name
+        ):
+            partition_name = self.create_partition(partition_name)
 
         for doc in documents:
             if "id" not in doc or "embedding" not in doc:
@@ -107,6 +130,28 @@ class MilvusHandler(VectorDBHandler):
                 logger.error(f"Error upserting to Milvus: {str(e)}")
                 raise
 
+    def query(
+        self,
+        filter: str = str,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> list[dict[str, Any]]:
+        """
+        Perform direct search using filter
+        """
+        results = self.client.query(
+            collection_name=collection_name,
+            filter=filter,
+            output_fields=["text", "metadata"],
+        )
+
+        format_results = []
+        for res in results:
+            format_results.append(
+                {"metadata": res.get("metadata", {}), "text": res.get("text", "")}
+            )
+
+        return format_results
+
     def query_hybrid(
         self,
         dense_vector: list[float],
@@ -115,20 +160,22 @@ class MilvusHandler(VectorDBHandler):
         alpha: float = settings.ALPHA,
         collection_name: str = settings.MILVUS_MAIN_NAME,
         partitions: list[str] = None,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """
         Perform hybrid search using both dense vectors and BM25 sparse vectors
         """
         logger.debug(
-            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}"
+            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}, filter: {expr}"
         )
 
         # Create search requests for both dense and sparse vectors
         dense_search = AnnSearchRequest(
             data=[dense_vector],
             anns_field="text_dense",
-            param={"metric_type": "COSINE", "nprobe": 30},
+            param={"metric_type": "COSINE"},
             limit=top_k,
+            expr=expr,
         )
 
         sparse_search = AnnSearchRequest(
@@ -136,6 +183,7 @@ class MilvusHandler(VectorDBHandler):
             anns_field="text_sparse",
             param={"drop_ratio_search": 0.2},
             limit=top_k,
+            expr=expr,
         )
 
         # Perform hybrid search with weighted ranking - pass weights as separate arguments
@@ -226,38 +274,6 @@ class MilvusHandler(VectorDBHandler):
 
         # Parse results
         search_results = self._parse_results(results)
-
-        return search_results
-
-    def query_soliq_assistant(
-        self,
-        dense_vector: list[float],
-        top_k: int = settings.TOP_K,
-        collection_name: str = settings.MILVUS_SOLIQ_ASSISTANT_NAME,
-    ) -> list[dict[str, Any]]:
-        """
-        Perform specific sparse vector search using keyword matching
-        """
-        filters = [
-            'metadata["url"] like "%lex.uz%"',
-            'metadata["url"] like "%buxgalter.uz%"',
-            None,
-        ]
-        search_results = []
-        for expr in filters:
-            # make top-k on half of the top_k
-            top_k_half = top_k // 2
-            if expr is None:
-                top_k_half = (
-                    top_k  # increase the top_k for none filter because of duplicates
-                )
-            results = self.query_dense(
-                dense_vector=dense_vector,
-                top_k=top_k_half,
-                collection_name=collection_name,
-                expr=expr,
-            )
-            search_results.extend(results)
 
         return search_results
 

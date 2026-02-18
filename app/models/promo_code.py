@@ -42,6 +42,9 @@ class PromoCodeCreate(BaseModel):
     description: str | None = Field(
         default=None, description="Description or notes about the promo code"
     )
+    super_secret_admin_key: str = Field(
+        ..., description="Admin key required to create promo codes"
+    )
 
 
 class PromoCodeResponse(BaseModel):

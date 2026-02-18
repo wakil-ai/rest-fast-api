@@ -22,6 +22,9 @@ class ChatModel(str, Enum):
     # WakilAI models
     GPT_OSS_120B = "gpt-oss-120b"
     GEMMA_3_27B = "gemma-3-27b"
+    # Gemini models
+    GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
+    GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
 
 
 class MessagePair(BaseModel):
@@ -38,6 +41,15 @@ class AssistantType(str, Enum):
 
     MAIN = "main"
     SOLIQ = "soliq"
+    MAMURIY_SUD = "mamuriy_sud"
+    SHARTNOMA = "shartnoma"
+
+    @classmethod
+    def get_available_types(cls):
+        """Get all available assistant types from configuration."""
+        from app.core.assistants import AssistantConfig
+
+        return AssistantConfig.get_assistant_names()
 
 
 class ChatRequest(BaseModel):
@@ -61,6 +73,9 @@ class ChatRequest(BaseModel):
     assistant: AssistantType | None = Field(
         default=AssistantType.MAIN, description="Assistant type: main or soliq"
     )
+    file_ids: list[str] | None = Field(
+        default=None, description="Optional list of file IDs to use as context"
+    )
 
 
 class ChatResponse(BaseModel):
@@ -71,6 +86,11 @@ class ChatResponse(BaseModel):
     answer: str
     retrieved_contents: str | None = Field(
         default=None, description="Retrieved documents (dev mode only)"
+    )
+
+    attachments: list[dict[str, str]] | None = Field(
+        default=None,
+        description="Optional attachments (e.g., shartnoma docx links)",
     )
 
 
@@ -136,3 +156,7 @@ class AgenticRAGRequest(BaseModel):
     )
     user_id: str = Field(default="user_123", description="User identifier")
     session_id: str = Field(default="default", description="Session identifier")
+    project_id: str | None = Field(default=None, description="Optional project ID")
+    file_ids: list[str] | None = Field(
+        default=None, description="List of file IDs attached to the current message"
+    )

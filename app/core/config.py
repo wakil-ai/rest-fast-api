@@ -38,13 +38,17 @@ class Settings(BaseSettings):
     # General
     # App settings
     APP_NAME: str = "WakilAI Chatbot"
-    API_PREFIX: str = "/api"
+    API_PREFIX: str = "/api/v2"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
-    DEVELOPMENT_MODE: bool = (
-        False  # Enable development mode to send retrieved contents and logs to UI
-    )
+    DEVELOPMENT_MODE: bool = False
+    HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Enable tracing for agents and crews
+
+    ALLOWED_ORIGINS: list[str] = [
+        "https://chat.wakil.ai",
+        "https://dev-chat.wakil.ai",
+    ]  # CORS allowed origins
 
     # Memory Service API Key
     MEM0_API_KEY: str = None  # Mem
@@ -78,6 +82,10 @@ class Settings(BaseSettings):
     # Milvus
     MILVUS_MAIN_NAME: str = "lexuz"
     MILVUS_SOLIQ_ASSISTANT_NAME: str = "soliq"
+    MILVUS_PROJECT_FILES: str = "project_files"
+    MILVUS_MAMURIY_SUD: str = "mamuriy_sud"
+    MILVUS_MAMURIY_SUD_ALL: str = "mamuriy_sud_all"  # For general domain
+    MILVUS_SHARTNOMA: str = "shartnoma"
     MILVUS_URI: str = "http://localhost:19530"
     MILVUS_USER: str | None = None
     MILVUS_PASSWORD: str | None = None
@@ -121,6 +129,7 @@ class Settings(BaseSettings):
 
     # EMBEDDING MODEL
     EMBEDDING_MODEL: EmbeddingModel = EmbeddingModel.qwen
+    EMBEDDING_DIM: int = 2560
 
     SPEECH_TO_TEXT_PROVIDER: SpeechToTextProvider = SpeechToTextProvider.azure
     AZURE_SPEECH_KEY: str | None = None
@@ -128,6 +137,8 @@ class Settings(BaseSettings):
 
     # OCR Service
     DATALAB_API_KEY: str | None = None
+    FILE_CONTENT_TOKEN_LIMIT: int = 10_000  # Max tokens for file content extraction
+    MAX_RETRIEVAL_DOCS_TOKEN_LIMIT: int = 200_000  # Max tokens for retrieved documents
 
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
@@ -138,30 +149,36 @@ class Settings(BaseSettings):
 
     # SECURITY
     # Docs User
-    DOCS_USER: str  # Default user for accessing docs
-    DOCS_PASSWORD: str  # Default password for accessing docs
+    DOCS_USER: str = "admin"
+    DOCS_PASSWORD: str = "admin"
 
     # API Key Authentication
-    API_KEY_NAME: str
-    API_KEY: str
+    API_KEY_NAME: str = "admin"
+    API_KEY: str = "admin"
+    SUPER_ADMIN_KEY_NAME: str = "x-super-admin-key"
+    SUPER_ADMIN_API_KEY: str = "super-admin"
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
     TOP_K: int = 10
+    ADDITIONAL_TOP_K: int = (
+        3  # For multi-collection retrievals (e.g. shartnoma assistant + main e.g)
+    )
     ALPHA: float = 0.8
 
     # TEMPERATURE
     TEMPERATURE: float = 0.1
     CHAT_HISTORY_LIMIT: int = 5
-    OUTPUT_MAX_TOKENS: int = 4096
+    OUTPUT_MAX_TOKENS: int = 8192
+    MAX_QUERY_LENGTH: int = 5000
 
     LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
 
     # Auth (For Telegram Login)
-    TELEGRAM_BOT_TOKEN: str
-    TELEGRAM_BOT_LOGIN: str
+    TELEGRAM_BOT_TOKEN: str = None
+    TELEGRAM_BOT_LOGIN: str = None
     TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3  # 3 day in seconds
 
     # Web Scraping
@@ -170,8 +187,12 @@ class Settings(BaseSettings):
     # Credit System Configuration
     DAILY_CREDITS_LIMIT: int = 100  # Total daily credits per user
     CREDIT_COST_MAIN_ASSISTANT: int = 10  # Credits for main assistant (umumiy)
-    CREDIT_COST_SOLIQ_ASSISTANT: int = 15  # Credits for soliq specialized assistant
-    CREDIT_COST_DEEPRESEARCH: int = 25  # Credits for deep research / agentic RAG
+    CREDIT_COST_SOLIQ_ASSISTANT: int = 20  # Credits for soliq specialized assistant
+    CREDIT_COST_SUD_ASSISTANT: int = 25  # Credits for sud specialized assistant
+    CREDIT_COST_SHARTNOMA_ASSISTANT: int = (
+        25  # Credits for shartnoma specialized assistant
+    )
+    CREDIT_COST_DEEPRESEARCH: int = 20  # Credits for deep research / agentic RAG
 
     # Payme Payment Configuration
     PAYME_MERCHANT_ID: str = None  # Payme merchant ID
@@ -180,33 +201,58 @@ class Settings(BaseSettings):
         "https://checkout.paycom.uz/"  # Base URL for payment links
     )
 
-    # EMBEDDING DIM
-    @property
-    def EMBEDDING_DIM(self) -> int:
-        if (
-            EmbeddingModel.qwen == self.EMBEDDING_MODEL
-            or EmbeddingModel.deepinfra == self.EMBEDDING_MODEL
-            or EmbeddingModel.siliconflow == self.EMBEDDING_MODEL
-        ):  # Qwen3-Embedding-4B
-            return 2560
-        elif EmbeddingModel.openai == self.EMBEDDING_MODEL:  # Text-Embedding-Ada-002
-            return 1536
-        elif EmbeddingModel.novita_qwen == self.EMBEDDING_MODEL:  # Qwen3-Embedding-8B
-            return 4096
-        else:
-            raise ValueError(f"Unknown embedding model: {self.EMBEDDING_MODEL}")
-
     # Google Auth
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_CLIENT_SECRET: str | None = None
     GOOGLE_REDIRECT_URI: str | None = None
     AUTH_SECRET_KEY: str = "secret-key-change-me"
 
+    GEMINI_API_KEY: str | None = None
+
+    # Caching
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_EXPIRATION_SECONDS: int = 86400 * 3  # 3 days in seconds
+
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="allow",  # Allow extra fields in the environment
     )
+
+    def model_post_init(self, __context) -> None:
+        # Build assistants using the already-defined variables
+        self.ASSISTANTS = {
+            "main": {
+                "name": "main",
+                "collection_name": self.MILVUS_MAIN_NAME,
+                "credit_cost": self.CREDIT_COST_MAIN_ASSISTANT,
+                "description": "General legal assistant",
+            },
+            "soliq": {
+                "name": "soliq",
+                "collection_name": self.MILVUS_SOLIQ_ASSISTANT_NAME,
+                "credit_cost": self.CREDIT_COST_SOLIQ_ASSISTANT,
+                "description": "Tax specialized assistant",
+            },
+            "mamuriy_sud": {
+                "name": "mamuriy_sud",
+                "collection_name": self.MILVUS_MAMURIY_SUD,
+                "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
+                "description": "Administrative court specialized assistant",
+            },
+            "shartnoma": {
+                "name": "shartnoma",
+                "collection_name": self.MILVUS_SHARTNOMA,
+                "credit_cost": self.CREDIT_COST_SHARTNOMA_ASSISTANT,
+                "description": "Contract specialized assistant",
+            },
+            "deepresearch": {
+                "name": "deepresearch",
+                "credit_cost": self.CREDIT_COST_DEEPRESEARCH,
+                "description": "Deep research assistant with agentic RAG",
+            },
+        }
 
 
 settings = Settings()

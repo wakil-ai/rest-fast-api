@@ -1,11 +1,12 @@
 from typing import Any
 
 from app.core.config import VectorDBType, settings
+from app.core.dependencies import (
+    get_milvus_handler,
+    get_mongo_handler,
+    get_pinecone_handler,
+)
 from app.core.logger import logger
-from app.db.milvus_handler import MilvusHandler
-from app.db.mongo_handler import MongoHandler
-from app.db.pinecone_handler import PineconeHandler
-from app.db.vector_db_handler import VectorDBHandler
 
 
 class DBManager:
@@ -13,68 +14,55 @@ class DBManager:
     Database manager for MongoDB, MySQL, and vector databases (Pinecone, or Milvus).
     """
 
-    # Prevent multiple instances
-    _instance = None
-    _initialized = False
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(DBManager, cls).__new__(cls)
-        return cls._instance
-
     def __init__(self):
-        if self._initialized:
-            return
-
-        self._initialized = True
         self.vector_handler = self._initialize_vector_db()
-        self.mongo_handler = MongoHandler()  # For automatic ingestions
+        self.mongo_handler = get_mongo_handler()
 
-    def create_collection(self, collection_name: str) -> None:
+    async def create_collection(self, collection_name: str) -> None:
         """Create a MongoDB collection if it doesn't exist."""
         # List existing collections first
-        existing_collections = self.mongo_handler.db.list_collection_names()
+        existing_collections = await self.mongo_handler.db.list_collection_names()
 
         if collection_name in existing_collections:
             # logger.info(f"[DBManager] Collection {collection_name} already exists in MongoDB.")
             return
 
-        self.mongo_handler.db.create_collection(collection_name)
-        
+        await self.mongo_handler.db.create_collection(collection_name)
+
     # Initialize vector database handler
-    def _initialize_vector_db(self) -> VectorDBHandler:
+    def _initialize_vector_db(self):
         """Create vector database handler based on configuration."""
         if settings.VECTOR_DB_TYPE == "milvus":
-            milvus_handler = MilvusHandler()
+            handler = get_milvus_handler()
             logger.info(
-                f"[DBManager] Initialized MilvusHandler with collection: {settings.MILVUS_MAIN_NAME}"
+                f"[DBManager] Initialized MilvusHandler with collection: {settings.MILVUS_URI}"
             )
-            return milvus_handler
+            return handler
         elif settings.VECTOR_DB_TYPE == "pinecone":
-            pinecone_handler = PineconeHandler()
+            handler = get_pinecone_handler()
             logger.info(
                 f"[DBManager] Initialized PineconeHandler with namespace: {settings.NAMESPACE_NAME}"
             )
-            return pinecone_handler
+            return handler
         else:
             raise ValueError(
                 f"[DBManager] Invalid vector database type: {settings.VECTOR_DB_TYPE}. Please choose from {VectorDBType.values()}"
             )
 
-    # MongoDB operations - synchronous
-    def find_documents(
+    # MongoDB operations - asynchronous
+    async def find_documents(
         self, collection_name: str, query: dict[str, Any], limit: int = 50
     ) -> list[dict[str, Any]]:
         """Find documents in MongoDB based on query."""
-        return self.mongo_handler.find_documents(collection_name, query, limit)
+        return await self.mongo_handler.find_documents(collection_name, query, limit)
 
-    def insert_documents(
+    async def insert_documents(
         self, collection_name: str, documents: list[dict[str, Any]]
     ) -> list:
         """Insert documents into MongoDB collection and return inserted IDs."""
-        return self.mongo_handler.insert_documents(collection_name, documents)
+        return await self.mongo_handler.insert_documents(collection_name, documents)
 
-    def update_documents(
+    async def update_documents(
         self,
         collection_name: str,
         query: dict[str, Any],
@@ -83,29 +71,27 @@ class DBManager:
     ) -> Any:
         """Update documents in MongoDB collection."""
         collection = self.mongo_handler.db[collection_name]
-        return collection.update_one(query, update, upsert=upsert)
+        result = await collection.update_one(query, update, upsert=upsert)
+        return result.modified_count
 
-    def delete_documents(self, collection_name: str, query: dict[str, Any]) -> Any:
+    async def delete_documents(
+        self, collection_name: str, query: dict[str, Any]
+    ) -> Any:
         """Delete documents from MongoDB collection."""
         collection = self.mongo_handler.db[collection_name]
-        return collection.delete_many(query)
-
-    # Vector database operations (Pinecone, or Milvus)
-    def upsert_vectors(
-        self, documents: list[dict[str, Any]], partition_name: str = None
-    ) -> None:
-        """Upsert vectors into vector database."""
-        self.vector_handler.upsert_vectors(documents, partition_name)
+        result = await collection.delete_many(query)
+        return {"deleted_count": result.deleted_count}
 
     def search_dense(
         self,
         dense_vector: list[float],
         top_k: int = settings.TOP_K,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """Dense-only search."""
         return self.vector_handler.query_dense(
-            dense_vector, top_k, collection_name=collection_name
+            dense_vector, top_k, collection_name=collection_name, expr=expr
         )
 
     def search_sparse(
@@ -126,10 +112,16 @@ class DBManager:
         top_k: int = settings.TOP_K,
         alpha: float = settings.ALPHA,
         collection_name: str = settings.MILVUS_MAIN_NAME,
+        expr: str = None,
     ) -> list[dict[str, Any]]:
         """Hybrid search (dense + sparse)."""
         return self.vector_handler.query_hybrid(
-            dense_vector, text_query, top_k, alpha, collection_name=collection_name
+            dense_vector,
+            text_query,
+            top_k,
+            alpha,
+            collection_name=collection_name,
+            expr=expr,
         )
 
     def search_specific(
@@ -147,12 +139,18 @@ class DBManager:
             # Return empty list
             return []
 
-    def upsert_vectors(self, documents: list[dict[str, Any]]) -> None:
+    def _upsert_vectors(
+        self,
+        documents: list[dict[str, Any]],
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+        partition_name: str = None,
+    ) -> None:
         """Upsert vectors into vector database."""
-        # Splitting logic here
-
-        # 
-        self.vector_handler.upsert_vectors(documents)
+        self.vector_handler.upsert_vectors(
+            documents=documents,
+            collection_name=collection_name,
+            partition_name=partition_name,
+        )
 
     def close_all_connections(self):
         """Close all database connections."""

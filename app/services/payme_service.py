@@ -3,13 +3,13 @@ import time
 from math import floor
 
 from app.core.config import settings
-from app.db.mongo_handler import MongoHandler
+from app.core.dependencies import get_mongo_handler
 from app.models.payme import PaymeData, PaymeError, TransactionError, TransactionState
 
 
 class TransactionService:
     def __init__(self):
-        self.db_handler = MongoHandler()
+        self.db_handler = get_mongo_handler()
         self.users_collection = settings.USERS_COLLECTION
         self.transaction_collection = settings.TRANSACTION_COLLECTION
 
@@ -29,10 +29,7 @@ class TransactionService:
             )
 
         # Validate order_id in account
-        if (
-            "order_id" not in account
-            or not account["order_id"]
-        ):
+        if "order_id" not in account or not account["order_id"]:
             raise TransactionError(PaymeError.UserNotFound, request_id, "order_id")
 
         # Validate amount parameter exists and is valid
