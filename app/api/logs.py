@@ -33,7 +33,7 @@ async def get_logs_by_level(
     - **level**: one of `debug`, `info`, `success`, `warning`, `error`
     - **limit**: number of most-recent entries (1–1000, default 100)
     """
-    logs = redis_service.get_logs(level.value, limit=limit)
+    logs = await redis_service.get_logs(level.value, limit=limit)
     return {"level": level.value, "count": len(logs), "logs": logs}
 
 
@@ -48,7 +48,7 @@ async def get_all_logs(
     """Retrieve the latest log entries across every level."""
     result: dict[str, Any] = {}
     for lvl in LogLevel:
-        entries = redis_service.get_logs(lvl.value, limit=limit)
+        entries = await redis_service.get_logs(lvl.value, limit=limit)
         result[lvl.value] = {"count": len(entries), "logs": entries}
     return result
 
@@ -59,5 +59,5 @@ async def get_all_logs(
 )
 async def clear_logs_by_level(level: LogLevel):
     """Delete all stored log entries for a given level."""
-    removed = redis_service.clear_logs(level.value)
+    removed = await redis_service.clear_logs(level.value)
     return {"level": level.value, "removed": removed}
