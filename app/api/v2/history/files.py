@@ -24,12 +24,7 @@ async def list_user_files(user_id: str, limit: int = 100):
     return [serialize_mongo_id(f) for f in files]
 
 @router.post(
-    "/",
-    response_model=FileUploadResponse,
-    summary="Upload file for future message",
-)
-@router.post(
-    "/messages",
+    "",
     response_model=FileUploadResponse,
     summary="Upload file for future message",
 )
