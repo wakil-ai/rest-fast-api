@@ -144,7 +144,29 @@ class MessageResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
+    
+class MessageSharedResponse(BaseModel):
+    """Response model for shared message data"""
 
+    share_id: str = Field(..., description="Share ID (stored as _id)", alias="_id")
+    message_id: str = Field(..., description="Message ID")
+    url: str = Field(..., description="Public URL to access the shared message")
+    created_at: datetime
+    model_config = {"populate_by_name": True}
+    
+class MessageSharedRequest(BaseModel):
+    user_id: str = Field(..., description="User ID who is sharing the message")
+    
+class ShareResponse(BaseModel):
+    """Response model for shared message data"""
+        
+    share_id: str = Field(..., description="Share ID (stored as _id)", alias="_id")
+    question: str = Field(..., description="Original user query")
+    answer: str = Field(..., description="Original assistant response")
+    assistant: str | None = Field(None, description="Assistant name/model if available")
+    created_at: datetime
+    model_config = {"populate_by_name": True}
+    
 
 class MessageCreateResponse(BaseModel):
     """Standardized response for message operations"""

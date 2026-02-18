@@ -22,7 +22,8 @@ from app.api import (
     payme,
     speech_to_text,
 )
-from app.api.history import router as chat_history
+from app.api.history.router import router as chat_history
+from app.api.history.share import router as share_router
 from app.core.config import settings
 from app.core.logger import logger
 from app.security import get_current_username, verify_api_key, verify_super_admin_key
@@ -78,7 +79,7 @@ def create_app() -> FastAPI:
         chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
     )
     app.include_router(
-        chat_history.router,
+        chat_history,
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key)],
     )
@@ -103,6 +104,9 @@ def create_app() -> FastAPI:
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
     app.include_router(payme.router, prefix=settings.API_PREFIX)
+
+    # Public share router without API key dependency
+    app.include_router(share_router, prefix=settings.API_PREFIX, tags=["Public"])
 
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"], include_in_schema=False)

@@ -6,6 +6,8 @@ from app.models.chat_history import (
     MessageCreateRequest,
     MessageCreateResponse,
     MessageResponse,
+    MessageSharedResponse,
+    MessageSharedRequest,
 )
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
@@ -57,3 +59,12 @@ async def get_message(session_id: str, message_id: str):
     if msg["session_id"] != session_id:
         raise HTTPException(403, "Message does not belong to this session")
     return serialize_mongo_id(msg)
+
+
+@router.post("/{message_id}/share", response_model=MessageSharedResponse)
+@handle_service_error
+async def share_message(message_id: str, request: MessageSharedRequest):
+    share = await chat_history_service.share_message(
+        message_id=message_id, user_id=request.user_id
+    )
+    return serialize_mongo_id(share)
