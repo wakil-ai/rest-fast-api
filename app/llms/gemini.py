@@ -57,6 +57,7 @@ class Gemini(LLM):
             thinking_config=types.ThinkingConfig(
                 thinking_level="HIGH",
             ),
+            temperature=settings.TEMPERATURE,
         )
 
         queue: asyncio.Queue[str | None] = asyncio.Queue()
