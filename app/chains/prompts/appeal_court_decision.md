@@ -188,108 +188,106 @@ _Қуйидаги ҳолатлар мавжудлигини матндан ёк�
 
 -------------------------------------------------------------
 ### ADDRESS OF COURT DECISION APPEALED
+Note: Use it when it is needed to mention the address.
 
-```markdown
-|<p>**Туманлараро маъмурий судларнинг** </p><p>**Манзиллари** </p><p></p><p>**(Изоҳ: мазкур судлар “Биринчи инстанция” сифатида ишларни кўрувчи судлар ҳисобланади)**</p><p></p><p></p>||||
-| :-: | :- | :- | :- |
-|**Суднинг номи**|**Хизмат телефони**|**Электрон почта**|**Манзили**|
-|Нукус туманлараро маъмурий суди|**(0-361)** 224-36-98|m.nukus.t@sud.uz|Қорақалпоғистон Республикаси, Нукус шаҳри, Чимбой гузори кўчаси, рақамсиз уй, почта индекси 230100|
-|**Тошкент туманлараро маъмурий суди**|<p></p><p>**(0-371) 207-09-46**</p>|**m.toshkent.t@sud.uz**|**Тошкент шаҳри, Юнусобод тумани, Амир Темур кучаси, 118 А уй**|
-|Андижон туманлараро маъмурий суди|(0-374) 228-39-16|m.andijon.sh@sud.uz|Андижон вилояти, Андижон шаҳри, Бобур шоҳкўчаси, 26-уй, почта индекси 170100|
-|Бухоро туманлараро маъмурий суди|**(0-365)** 221-39-80|m.buxoro.t@sud.uz|Бухоро вилояти, Бухоро шаҳри, Янгиобод кўчаси, 29-уй, почта индекси 200101|
-|Жиззах туманлараро маъмурий суди|(0-372) 342-11-49|m.jizzax.t@sud.uz|Ш.Рашидов тумани, Учтепа даҳаси, Пахтакор кўчаси, рақамсиз уй, почта индекси 131100|
-|Навоий туманлараро маъмурий суди|**(0-436)** 225-46-08|m.navoiy.t@sud.uz|Навоий вилояти, Навоий шаҳри,Садриддин Айний кўчаси , 1-уй, почта индекси 210100|
-|Наманган туманлараро маъмурий суди|**(0-369)** 227-17-66|m.namangan.t@sud.uz|Наманган вилояти, Наманган шаҳри, Лутфий кўчаси, 6-уй, почта индекси 160136|
-|Самарқанд туманлараро маъмурий суди|**(0-366)** 231-03-58|m.samarqand.t@sud.uz|Самарқанд вилояти, Самарқанд шаҳри, Кўксарой майдони кўчаси, 3-уй, почта индекси 140157|
-|Термиз туманлараро маъмурий суди|**(0-376)** 227-28-62|m.termiz@sud.uz|Термиз шаҳар Истиқлол кўчаси 67 уй, почта индекси 190100|
-|Гулистон туманлараро маъмурий суди|**(0-367)** 227-55-37|m.guliston.t@sud.uz|Сирдарё вилояти, Гулистон шаҳри, Ўзбекистон кўчаси, 68-уй, почта индекси 120100|
-|Нурафшон туманлараро маъмурий суди|**(370)** 762-38-37|m.nurafshon@sud.uz|Тошкент вилояти Нурафшон шаҳри “Янгиобод” МФЙ Янгиобод кўчаси 73-уй|
-|Фарғона туманлараро маъмурий суди|**(0-373)** 244-67-30|m.fargona.t@sud.uz|Фарғона вилояти, Фарғона шаҳри, Ал-Фарғоний кўчаси, 47-уй, почта индекси 150100|
-|Урганч туманлараро маъмурий суди|**(0-362)** 226-01-56|m.urganch.t@sud.uz|Хоразм вилояти, Урганч шаҳри, Ал-Хоразмий кўчаси, 95-уй, почта индекси 220100|
-|Қарши туманлараро маъмурий суди|**(0-375)** 230-14-73|m.qarshi.t@sud.uz|Қашқадарё вилояти, Қарши шаҳри, Бунёдкорлик кўчаси, 7-уй, почта индекси 180000|
+|     |     |     |     |
+| --- | --- | --- | --- |
+| **Туманлараро маъмурий судларнинг** **Манзиллари** **(Изоҳ: мазкур судлар “Биринчи инстанция” сифатида ишларни кўрувчи судлар ҳисобланади)** |     |     |     |
+| **Суднинг номи** | **Хизмат телефони** | **Электрон почта** | **Манзили** |
+| Нукус туманлараро маъмурий суди | **(0-361)** 224-36-98 | m.nukus.t@sud.uz | Қорақалпоғистон Республикаси, Нукус шаҳри, Чимбой гузори кўчаси, рақамсиз уй, почта индекси 230100 |
+| **Тошкент туманлараро маъмурий суди** | **(0-371) 207-09-46** | **m.toshkent.t@sud.uz** | **Тошкент шаҳри, Юнусобод тумани, Амир Темур кучаси, 118 А уй** |
+| Андижон туманлараро маъмурий суди | (0-374) 228-39-16 | m.andijon.sh@sud.uz | Андижон вилояти, Андижон шаҳри, Бобур шоҳкўчаси, 26-уй, почта индекси 170100 |
+| Бухоро туманлараро маъмурий суди | **(0-365)** 221-39-80 | m.buxoro.t@sud.uz | Бухоро вилояти, Бухоро шаҳри, Янгиобод кўчаси, 29-уй, почта индекси 200101 |
+| Жиззах туманлараро маъмурий суди | (0-372) 342-11-49 | m.jizzax.t@sud.uz | Ш.Рашидов тумани, Учтепа даҳаси, Пахтакор кўчаси, рақамсиз уй, почта индекси 131100 |
+| Навоий туманлараро маъмурий суди | **(0-436)** 225-46-08 | m.navoiy.t@sud.uz | Навоий вилояти, Навоий шаҳри,Садриддин Айний кўчаси , 1-уй, почта индекси 210100 |
+| Наманган туманлараро маъмурий суди | **(0-369)** 227-17-66 | m.namangan.t@sud.uz | Наманган вилояти, Наманган шаҳри, Лутфий кўчаси, 6-уй, почта индекси 160136 |
+| Самарқанд туманлараро маъмурий суди | **(0-366)** 231-03-58 | m.samarqand.t@sud.uz | Самарқанд вилояти, Самарқанд шаҳри, Кўксарой майдони кўчаси, 3-уй, почта индекси 140157 |
+| Термиз туманлараро маъмурий суди | **(0-376)** 227-28-62 | m.termiz@sud.uz | Термиз шаҳар Истиқлол кўчаси 67 уй, почта индекси 190100 |
+| Гулистон туманлараро маъмурий суди | **(0-367)** 227-55-37 | m.guliston.t@sud.uz | Сирдарё вилояти, Гулистон шаҳри, Ўзбекистон кўчаси, 68-уй, почта индекси 120100 |
+| Нурафшон туманлараро маъмурий суди | **(370)** 762-38-37 | m.nurafshon@sud.uz | Тошкент вилояти Нурафшон шаҳри “Янгиобод” МФЙ Янгиобод кўчаси 73-уй |
+| Фарғона туманлараро маъмурий суди | **(0-373)** 244-67-30 | m.fargona.t@sud.uz | Фарғона вилояти, Фарғона шаҳри, Ал-Фарғоний кўчаси, 47-уй, почта индекси 150100 |
+| Урганч туманлараро маъмурий суди | **(0-362)** 226-01-56 | m.urganch.t@sud.uz | Хоразм вилояти, Урганч шаҳри, Ал-Хоразмий кўчаси, 95-уй, почта индекси 220100 |
+| Қарши туманлараро маъмурий суди | **(0-375)** 230-14-73 | m.qarshi.t@sud.uz | Қашқадарё вилояти, Қарши шаҳри, Бунёдкорлик кўчаси, 7-уй, почта индекси 180000 |
 
+  
+**Тошкент шаҳар ва вилоят маъмурий судларининг**
 
-**Тошкент шаҳар ва вилоят маъмурий судларининг** 
-
-**Манзиллари** 
+**Манзиллари**
 
 **(Изоҳ: Мазкур судар “апелляция ёки кассация, тегишли тафтиш инстанциялари” сифатида ишларни кўрувчи судлар ҳисобланади)**
 
-
-|**Суднинг номи**|**Хизмат телефони**|**Электрон почта**|**Манзили**|
-| :-: | :-: | :-: | :-: |
-|Қорақалпоғистон Республикаси маъмурий суди|<p>+998(55)-1024065 </p><p>(96005)</p>|m .qr@sud.uz|Қорақалпоғистон Республикаси, Нукус шаҳри, Чимбой гузори кўчаси, 37-уй, почта индекси 230100|
-|**Тошкент шаҳар маъмурий суди**|<p>**(55) 501-11-14 (03027)**</p><p></p>|**m.toshkent@sud.uz**|<p>**Тошкент шаҳри, Яккасарой тумани, Шота Руставелли кўчаси, 93-уй, почта индекси 100059**</p><p></p>|
-|Андижон вилояти маъмурий суди|<p>+998(74)-2241700</p><p>(61002)</p>|m.andijon@sud.uz|Андижон вилояти, Андижон шаҳри, Бобур шоҳкўчаси, 26-уй, почта индекси 170100|
-|Бухоро вилояти маъмурий суди|<p>+998(65)-2200772</p><p>(82008)</p>|m.buxoro@sud.uz|Бухоро вилояти, Бухоро шаҳри, Янгиобод кўчаси, 29-уй, почта индекси 200101|
-|Жиззах вилояти маъмурий суди|<p>+998(55)-1520549</p><p>(21007)</p>|m.jizzax@sud.uz|Жиззах вилояти, Жиззах шаҳри, Заргарлик маҳалласи, Заргарлик кўчаси, 15А-уй, 25-хонадон|
-|Навоий вилояти маъмурий суди|<p>+998(79)-2100226</p><p>(86010)</p>|m.navoiy@sud.uz|Навоий вилояти, Навоий шаҳри,Садриддин Айний кўчаси , 1-уй, почта индекси 210100|
-|Наманган вилояти маъмурий суди|<p>+998(69)-2111131</p><p>(51007)</p>|m.namangan@sud.uz|Наманган вилояти, Наманган шаҳри, Лутфий кўчаси, 6-уй, почта индекси 160136|
-|Самарқанд вилояти маъмурий суди|<p>+998(55)-7067002</p><p>(31011)</p>|m.samarqand@sud.uz|Самарқанд вилояти, Самарқанд шаҳри, Кўксарой майдони кўчаси, 3-уй, почта индекси 140157|
-|Сурхондарё вилояти маъмурий суди|<p>+998(55)-4531900</p><p>(75809)</p>|m.surxondaryo@sud.uz|Сурхондарё вилояти, Термиз шаҳри, Навбоғ кўчаси, 12-уй, почта индекси 190100|
-|Сирдарё вилояти маъмурий суди|<p>+998(55)-6513500</p><p>(21007)</p>|m.sirdaryo@sud.uz|Сирдарё вилояти, Гулистон шаҳри, Ўзбекистон кўчаси, 68-уй, почта индекси 120100|
-|Тошкент вилояти маъмурий суди|<p>+998(55)-5170215</p><p>(12-116)</p>|m.toshkent.v@sud.uz|Тошкент вилояти Нурафшон шаҳри “Янгиобод” МФЙ Янгиобод кўчаси 73-уй|
-|Фарғона вилояти маъмурий суди|<p>+998(73)-2497001</p><p>(41020)</p>|m.fargona@sud.uz|Фарғона вилояти, Фарғона шаҳри, Ал-Фарғоний кўчаси, 47-уй, почта индекси 150100|
-|Хоразм вилояти маъмурий суди|<p>+998(62)-2277877</p><p>(91020)</p>|m.xorazm@sud.uz|Хоразм вилояти, Урганч шаҳри, Ал-Хоразмий кўчаси, 95-уй, почта индекси 230100|
-|Қашқадарё вилояти маъмурий суди|<p>+998(55)-4040701</p><p>(71011)</p>|m.qashqadaryo@sud.uz|Қашқадарё вилояти, Қарши шаҳри, Бунёдкорлик кўчаси, 7-уй, почта индекси 180000|
-
+|     |     |     |     |
+| --- | --- | --- | --- |
+| **Суднинг номи** | **Хизмат телефони** | **Электрон почта** | **Манзили** |
+| Қорақалпоғистон Республикаси маъмурий суди | +998(55)-1024065  (96005) | m.qr@sud.uz | Қорақалпоғистон Республикаси, Нукус шаҳри, Чимбой гузори кўчаси, 37-уй, почта индекси 230100 |
+| **Тошкент шаҳар маъмурий суди** | **(55) 501-11-14 (03027)** | **m.toshkent@sud.uz** | **Тошкент шаҳри, Яккасарой тумани, Шота Руставелли кўчаси, 93-уй, почта индекси 100059** |
+| Андижон вилояти маъмурий суди | +998(74)-2241700 (61002) | m.andijon@sud.uz | Андижон вилояти, Андижон шаҳри, Бобур шоҳкўчаси, 26-уй, почта индекси 170100 |
+| Бухоро вилояти маъмурий суди | +998(65)-2200772 (82008) | m.buxoro@sud.uz | Бухоро вилояти, Бухоро шаҳри, Янгиобод кўчаси, 29-уй, почта индекси 200101 |
+| Жиззах вилояти маъмурий суди | +998(55)-1520549 (21007) | m.jizzax@sud.uz | Жиззах вилояти, Жиззах шаҳри, Заргарлик маҳалласи, Заргарлик кўчаси, 15А-уй, 25-хонадон |
+| Навоий вилояти маъмурий суди | +998(79)-2100226 (86010) | m.navoiy@sud.uz | Навоий вилояти, Навоий шаҳри,Садриддин Айний кўчаси , 1-уй, почта индекси 210100 |
+| Наманган вилояти маъмурий суди | +998(69)-2111131 (51007) | m.namangan@sud.uz | Наманган вилояти, Наманган шаҳри, Лутфий кўчаси, 6-уй, почта индекси 160136 |
+| Самарқанд вилояти маъмурий суди | +998(55)-7067002 (31011) | m.samarqand@sud.uz | Самарқанд вилояти, Самарқанд шаҳри, Кўксарой майдони кўчаси, 3-уй, почта индекси 140157 |
+| Сурхондарё вилояти маъмурий суди | +998(55)-4531900 (75809) | m.surxondaryo@sud.uz | Сурхондарё вилояти, Термиз шаҳри, Навбоғ кўчаси, 12-уй, почта индекси 190100 |
+| Сирдарё вилояти маъмурий суди | +998(55)-6513500 (21007) | m.sirdaryo@sud.uz | Сирдарё вилояти, Гулистон шаҳри, Ўзбекистон кўчаси, 68-уй, почта индекси 120100 |
+| Тошкент вилояти маъмурий суди | +998(55)-5170215 (12-116) | m.toshkent.v@sud.uz | Тошкент вилояти Нурафшон шаҳри “Янгиобод” МФЙ Янгиобод кўчаси 73-уй |
+| Фарғона вилояти маъмурий суди | +998(73)-2497001 (41020) | m.fargona@sud.uz | Фарғона вилояти, Фарғона шаҳри, Ал-Фарғоний кўчаси, 47-уй, почта индекси 150100 |
+| Хоразм вилояти маъмурий суди | +998(62)-2277877 (91020) | m.xorazm@sud.uz | Хоразм вилояти, Урганч шаҳри, Ал-Хоразмий кўчаси, 95-уй, почта индекси 230100 |
+| Қашқадарё вилояти маъмурий суди | +998(55)-4040701 (71011) | m.qashqadaryo@sud.uz | Қашқадарё вилояти, Қарши шаҳри, Бунёдкорлик кўчаси, 7-уй, почта индекси 180000 |
 
 **Ўзбекистон Республикаси Олий судининг**
 
-` `**Маъмурий ишлар бўйича судлов ҳайати**
+**Маъмурий ишлар бўйича судлов ҳайати**
 
 **(Изоҳ: Мазкур суд тафтиш инстанцияи сифатида ишларни кўрувчи суд ҳисобланади)**
 
-|**Суднинг номи**|**Хизмат телефони**|**Электрон почта**|**Манзили**|
-| :-: | :-: | :-: | :-: |
-|<p>**Ўзбекистн Республикаси Олий суди** </p><p>**Маъмурий ишлар бўйича судлов ҳайати**</p><p></p>|(+998 71) 239-02-13 |<p><mib.oliy@sud.uz></p><p><info@supcourt.uz></p><p></p><p></p>|100186, Тошкент ш., А. Қодирий кўч., 1.|
+|     |     |     |     |
+| --- | --- | --- | --- |
+| **Суднинг номи** | **Хизмат телефони** | **Электрон почта** | **Манзили** |
+| **Ўзбекистн Республикаси Олий суди** **Маъмурий ишлар бўйича судлов ҳайати** | (+998 71) 239-02-13 | [mib.oliy@sud.uz](mailto:mib.oliy@sud.uz) [info@supcourt.uz](mailto:info@supcourt.uz) | 100186, Тошкент ш., А. Қодирий кўч., 1. |
 
+|     |     |     |     |
+| --- | --- | --- | --- |
+| **Tumanlararo ma’muriy sudlarning** **Manzillari** **(Izoh: mazkur sudlar “Birinchi instansiya” sifatida ishlarni ko‘ruvchi sudlar hisoblanadi)** |     |     |     |
+| **Sudning nomi** | **Xizmat telefoni** | **Elektron pochta** | **Manzili** |
+| Nukus tumanlararo ma’muriy sudi | **(0-361)** 224-36-98 | m.nukus.t@sud.uz | Qoraqalpog‘iston Respublikasi, Nukus shahri, Chimboy guzori ko‘chasi, raqamsiz uy, pochta indeksi 230100 |
+| **Toshkent tumanlararo ma’muriy sudi** | **1-bino,** **(0-371) 207-09-46** | **m.toshkent.t@sud.uz** | **Shayxontohur tumani, Beruniy ko‘chasi, 3/4-uy, Indeks: 100174** |
+| Andijon tumanlararo ma’muriy sudi | (0-374) 228-39-16 | m.andijon.sh@sud.uz | Andijon viloyati, Andijon shahri, Bobur shohko‘chasi, 26-uy, pochta indeksi 170100 |
+| Buxoro tumanlararo ma’muriy sudi | **(0-365)** 221-39-80 | m.buxoro.t@sud.uz | Buxoro viloyati, Buxoro shahri, Yangiobod ko‘chasi, 29-uy, pochta indeksi 200101 |
+| Jizzax tumanlararo ma’muriy sudi | (0-372) 342-11-49 | m.jizzax.t@sud.uz | Sh.Rashidov tumani, Uchtepa dahasi, Paxtakor ko‘chasi, raqamsiz uy, pochta indeksi 131100 |
+| Navoiy tumanlararo ma’muriy sudi | **(0-436)** 225-46-08 | m.navoiy.t@sud.uz | Navoiy viloyati, Navoiy shahri,Sadriddin Ayniy ko‘chasi , 1-uy, pochta indeksi 210100 |
+| Namangan tumanlararo ma’muriy sudi | **(0-369)** 227-17-66 | m.namangan.t@sud.uz | Namangan viloyati, Namangan shahri, Lutfiy ko‘chasi, 6-uy, pochta indeksi 160136 |
+| Samarqand tumanlararo ma’muriy sudi | **(0-366)** 231-03-58 | m.samarqand.t@sud.uz | Samarqand viloyati, Samarqand shahri, Ko‘ksaroy maydoni ko‘chasi, 3-uy, pochta indeksi 140157 |
+| Termiz tumanlararo ma’muriy sudi | **(0-376)** 227-28-62 | m.termiz@sud.uz | Termiz shahar Istiqlol ko‘chasi 67 uy, pochta indeksi 190100 |
+| Guliston tumanlararo ma’muriy sudi | **(0-367)** 227-55-37 | m.guliston.t@sud.uz | Sirdaryo viloyati, Guliston shahri, O‘zbekiston ko‘chasi, 68-uy, pochta indeksi 120100 |
+| Nurafshon tumanlararo ma’muriy sudi | **(370)** 762-38-37 | m.nurafshon@sud.uz | Toshkent viloyati, Nurafshon shahri, Toshkent yoʻli ko‘chasi, 248-uy, pochta indeksi 111500 |
+| Farg‘ona tumanlararo ma’muriy sudi | **(0-373)** 244-67-30 | m.fargona.t@sud.uz | Farg‘ona viloyati, Farg‘ona shahri, Al-Farg‘oniy ko‘chasi, 47-uy, pochta indeksi 150100 |
+| Urganch tumanlararo ma’muriy sudi | **(0-362)** 226-01-56 | m.urganch.t@sud.uz | Xorazm viloyati, Urganch shahri, Al-Xorazmiy ko‘chasi, 95-uy, pochta indeksi 220100 |
+| Qarshi tumanlararo ma’muriy sudi | **(0-375)** 230-14-73 | m.qarshi.t@sud.uz | Qashqadaryo viloyati, Qarshi shahri, Bunyodkorlik ko‘chasi, 7-uy, pochta indeksi 180000 |
 
+  
+**Toshkent shahar va viloyat ma’muriy sudlarining**
 
-|<p>**Tumanlararo ma’muriy sudlarning** </p><p>**Manzillari** </p><p></p><p>**(Izoh: mazkur sudlar “Birinchi instansiya” sifatida ishlarni ko‘ruvchi sudlar hisoblanadi)**</p><p></p><p></p>||||
-| :-: | :- | :- | :- |
-|**Sudning nomi**|**Xizmat telefoni**|**Elektron pochta**|**Manzili**|
-|Nukus tumanlararo ma’muriy sudi|**(0-361)** 224-36-98|m.nukus.t@sud.uz|Qoraqalpog‘iston Respublikasi, Nukus shahri, Chimboy guzori ko‘chasi, raqamsiz uy, pochta indeksi 230100|
-|**Toshkent tumanlararo ma’muriy sudi**|<p></p><p>**1-bino,**</p><p>**(0-371) 207-09-46**</p>|**m.toshkent.t@sud.uz**|**Shayxontohur tumani, Beruniy ko‘chasi, 3/4-uy, Indeks: 100174**|
-|Andijon tumanlararo ma’muriy sudi|(0-374) 228-39-16|m.andijon.sh@sud.uz|Andijon viloyati, Andijon shahri, Bobur shohko‘chasi, 26-uy, pochta indeksi 170100|
-|Buxoro tumanlararo ma’muriy sudi|**(0-365)** 221-39-80|m.buxoro.t@sud.uz|Buxoro viloyati, Buxoro shahri, Yangiobod ko‘chasi, 29-uy, pochta indeksi 200101|
-|Jizzax tumanlararo ma’muriy sudi|(0-372) 342-11-49|m.jizzax.t@sud.uz|Sh.Rashidov tumani, Uchtepa dahasi, Paxtakor ko‘chasi, raqamsiz uy, pochta indeksi 131100|
-|Navoiy tumanlararo ma’muriy sudi|**(0-436)** 225-46-08|m.navoiy.t@sud.uz|Navoiy viloyati, Navoiy shahri,Sadriddin Ayniy ko‘chasi , 1-uy, pochta indeksi 210100|
-|Namangan tumanlararo ma’muriy sudi|**(0-369)** 227-17-66|m.namangan.t@sud.uz|Namangan viloyati, Namangan shahri, Lutfiy ko‘chasi, 6-uy, pochta indeksi 160136|
-|Samarqand tumanlararo ma’muriy sudi|**(0-366)** 231-03-58|m.samarqand.t@sud.uz|Samarqand viloyati, Samarqand shahri, Ko‘ksaroy maydoni ko‘chasi, 3-uy, pochta indeksi 140157|
-|Termiz tumanlararo ma’muriy sudi|**(0-376)** 227-28-62|m.termiz@sud.uz|Termiz shahar Istiqlol ko‘chasi 67 uy, pochta indeksi 190100|
-|Guliston tumanlararo ma’muriy sudi|**(0-367)** 227-55-37|m.guliston.t@sud.uz|Sirdaryo viloyati, Guliston shahri, O‘zbekiston ko‘chasi, 68-uy, pochta indeksi 120100|
-|Nurafshon tumanlararo ma’muriy sudi|**(370)** 762-38-37|m.nurafshon@sud.uz|Toshkent viloyati, Nurafshon shahri, Toshkent yoʻli ko‘chasi, 248-uy, pochta indeksi 111500|
-|Farg‘ona tumanlararo ma’muriy sudi|**(0-373)** 244-67-30|m.fargona.t@sud.uz|Farg‘ona viloyati, Farg‘ona shahri, Al-Farg‘oniy ko‘chasi, 47-uy, pochta indeksi 150100|
-|Urganch tumanlararo ma’muriy sudi|**(0-362)** 226-01-56|m.urganch.t@sud.uz|Xorazm viloyati, Urganch shahri, Al-Xorazmiy ko‘chasi, 95-uy, pochta indeksi 220100|
-|Qarshi tumanlararo ma’muriy sudi|**(0-375)** 230-14-73|m.qarshi.t@sud.uz|Qashqadaryo viloyati, Qarshi shahri, Bunyodkorlik ko‘chasi, 7-uy, pochta indeksi 180000|
-
-
-
-**Toshkent shahar va viloyat ma’muriy sudlarining** 
-
-**Manzillari** 
+**Manzillari**
 
 **(Izoh: Mazkur sudlar “apellyatsiya yoki kassatsiya, tegishli taftish instansiyalari” sifatida ishlarni ko‘ruvchi sudlar hisoblanadi)**
 
-
-|**Sudning nomi**|**Xizmat telefoni**|**Elektron pochta**|**Manzili**|
-| :-: | :-: | :-: | :-: |
-|Qoraqalpog‘iston Respublikasi ma’muriy sudi|<p>+998(55)-1024065 </p><p>(96005)</p>|m .qr@sud.uz|Qoraqalpog‘iston Respublikasi, Nukus shahri, Chimboy guzori ko‘chasi, 37-uy, pochta indeksi 230100|
-|**Toshkent shahar ma’muriy sudi**|**(55) 501-11-14 (03027)**|**m.toshkent@sud.uz**|**Toshkent shahri, Yunusobod tumani, Amir Temur koʻchasi, 118A uy**|
-|Andijon viloyati ma’muriy sudi|<p>+998(74)-2241700</p><p>(61002)</p>|m.andijon@sud.uz|Andijon viloyati, Andijon shahri, Bobur shohko‘chasi, 26-uy, pochta indeksi 170100|
-|Buxoro viloyati ma’muriy sudi|<p>+998(65)-2200772</p><p>(82008)</p>|m.buxoro@sud.uz|Buxoro viloyati, Buxoro shahri, Yangiobod ko‘chasi, 29-uy, pochta indeksi 200101|
-|Jizzax viloyati ma’muriy sudi|<p>+998(55)-1520549</p><p>(21007)</p>|m.jizzax@sud.uz|Jizzax viloyati, Jizzax shahri, Zargarlik mahallasi, Zargarlik ko‘chasi, 15A-uy, 25-xonadon|
-|Navoiy viloyati ma’muriy sudi|<p>+998(79)-2100226</p><p>(86010)</p>|m.navoiy@sud.uz|Navoiy viloyati, Navoiy shahri,Sadriddin Ayniy ko‘chasi , 1-uy, pochta indeksi 210100|
-|Namangan viloyati ma’muriy sudi|<p>+998(69)-2111131</p><p>(51007)</p>|m.namangan@sud.uz|Namangan viloyati, Namangan shahri, Lutfiy ko‘chasi, 6-uy, pochta indeksi 160136|
-|Samarqand viloyati ma’muriy sudi|<p>+998(55)-7067002</p><p>(31011)</p>|m.samarqand@sud.uz|Samarqand viloyati, Samarqand shahri, Ko‘ksaroy maydoni ko‘chasi, 3-uy, pochta indeksi 140157|
-|Surxondaryo viloyati ma’muriy sudi|<p>+998(55)-4531900</p><p>(75809)</p>|m.surxondaryo@sud.uz|Surxondaryo viloyati, Termiz shahri, Navbog‘ ko‘chasi, 12-uy, pochta indeksi 190100|
-|Sirdaryo viloyati ma’muriy sudi|<p>+998(55)-6513500</p><p>(21007)</p>|m.sirdaryo@sud.uz|Sirdaryo viloyati, Guliston shahri, O‘zbekiston ko‘chasi, 68-uy, pochta indeksi 120100|
-|Toshkent viloyati ma’muriy sudi|<p>+998(55)-5170215</p><p>(12111)</p>|m.toshkent.v@sud.uz|Toshkent shahri, Yakkasaroy tumani, Shota Rustavelli ko‘chasi, 93-uy, pochta indeksi 100059|
-|Farg‘ona viloyati ma’muriy sudi|<p>+998(73)-2497001</p><p>(41020)</p>|m.fargona@sud.uz|Farg‘ona viloyati, Farg‘ona shahri, Al - Farg‘oniy ko‘chasi, 47-uy, pochta indeksi 150100|
-|Xorazm viloyati ma’muriy sudi|<p>+998(62)-2277877</p><p>(91020)</p>|m.xorazm@sud.uz|Xorazm viloyati, Urganch shahri, Al-Xorazmiy ko‘chasi, 95-uy, pochta indeksi 230100|
-|Qashqadaryo viloyati ma’muriy sudi|<p>+998(55)-4040701</p><p>(71011)</p>|m.qashqadaryo@sud.uz|Qashqadaryo viloyati, Qarshi shahri, Bunyodkorlik ko‘chasi, 7-uy, pochta indeksi 180000|
-
+|     |     |     |     |
+| --- | --- | --- | --- |
+| **Sudning nomi** | **Xizmat telefoni** | **Elektron pochta** | **Manzili** |
+| Qoraqalpog‘iston Respublikasi ma’muriy sudi | +998(55)-1024065  (96005) | m .qr@sud.uz | Qoraqalpog‘iston Respublikasi, Nukus shahri, Chimboy guzori ko‘chasi, 37-uy, pochta indeksi 230100 |
+| **Toshkent shahar ma’muriy sudi** | **(55) 501-11-14 (03027)** | **m.toshkent@sud.uz** | **Toshkent shahri, Yunusobod tumani, Amir Temur koʻchasi, 118A uy** |
+| Andijon viloyati ma’muriy sudi | +998(74)-2241700 (61002) | m.andijon@sud.uz | Andijon viloyati, Andijon shahri, Bobur shohko‘chasi, 26-uy, pochta indeksi 170100 |
+| Buxoro viloyati ma’muriy sudi | +998(65)-2200772 (82008) | m.buxoro@sud.uz | Buxoro viloyati, Buxoro shahri, Yangiobod ko‘chasi, 29-uy, pochta indeksi 200101 |
+| Jizzax viloyati ma’muriy sudi | +998(55)-1520549 (21007) | m.jizzax@sud.uz | Jizzax viloyati, Jizzax shahri, Zargarlik mahallasi, Zargarlik ko‘chasi, 15A-uy, 25-xonadon |
+| Navoiy viloyati ma’muriy sudi | +998(79)-2100226 (86010) | m.navoiy@sud.uz | Navoiy viloyati, Navoiy shahri,Sadriddin Ayniy ko‘chasi , 1-uy, pochta indeksi 210100 |
+| Namangan viloyati ma’muriy sudi | +998(69)-2111131 (51007) | m.namangan@sud.uz | Namangan viloyati, Namangan shahri, Lutfiy ko‘chasi, 6-uy, pochta indeksi 160136 |
+| Samarqand viloyati ma’muriy sudi | +998(55)-7067002 (31011) | m.samarqand@sud.uz | Samarqand viloyati, Samarqand shahri, Ko‘ksaroy maydoni ko‘chasi, 3-uy, pochta indeksi 140157 |
+| Surxondaryo viloyati ma’muriy sudi | +998(55)-4531900 (75809) | m.surxondaryo@sud.uz | Surxondaryo viloyati, Termiz shahri, Navbog‘ ko‘chasi, 12-uy, pochta indeksi 190100 |
+| Sirdaryo viloyati ma’muriy sudi | +998(55)-6513500 (21007) | m.sirdaryo@sud.uz | Sirdaryo viloyati, Guliston shahri, O‘zbekiston ko‘chasi, 68-uy, pochta indeksi 120100 |
+| Toshkent viloyati ma’muriy sudi | +998(55)-5170215 (12111) | m.toshkent.v@sud.uz | Toshkent shahri, Yakkasaroy tumani, Shota Rustavelli ko‘chasi, 93-uy, pochta indeksi 100059 |
+| Farg‘ona viloyati ma’muriy sudi | +998(73)-2497001 (41020) | m.fargona@sud.uz | Farg‘ona viloyati, Farg‘ona shahri, Al - Farg‘oniy ko‘chasi, 47-uy, pochta indeksi 150100 |
+| Xorazm viloyati ma’muriy sudi | +998(62)-2277877 (91020) | m.xorazm@sud.uz | Xorazm viloyati, Urganch shahri, Al-Xorazmiy ko‘chasi, 95-uy, pochta indeksi 230100 |
+| Qashqadaryo viloyati ma’muriy sudi | +998(55)-4040701 (71011) | m.qashqadaryo@sud.uz | Qashqadaryo viloyati, Qarshi shahri, Bunyodkorlik ko‘chasi, 7-uy, pochta indeksi 180000 |
 
 **O‘zbekiston Respublikasi Oliy sudining**
 
@@ -297,10 +295,10 @@ _Қуйидаги ҳолатлар мавжудлигини матндан ёк�
 
 **(Izoh: Mazkur sud taftish instansiyasi sifatida ishlarni ko‘ruvchi sud hisoblanadi)**
 
-|**Sudning nomi**|**Xizmat telefoni**|**Elektron pochta**|**Manzili**|
-| :-: | :-: | :-: | :-: |
-|<p>**Oʻzbekiston Respublikasi Oliy sudi** </p><p>**Ma’muriy ishlar bo‘yicha sudlov hayʼati**</p>|(+998 71) 239-02-13 |<p><mib.oliy@sud.uz></p><p><info@supcourt.uz></p><p></p>|*100186, Toshkent sh., A. Qodiriy ko‘ch., 1.*|
-```
+|     |     |     |     |
+| --- | --- | --- | --- |
+| **Sudning nomi** | **Xizmat telefoni** | **Elektron pochta** | **Manzili** |
+| **Oʻzbekiston Respublikasi Oliy sudi** **Ma’muriy ishlar bo‘yicha sudlov hayʼati** | (+998 71) 239-02-13 | [mib.oliy@sud.uz](mailto:mib.oliy@sud.uz) [info@supcourt.uz](mailto:info@supcourt.uz) | 100186, Toshkent sh., A. Qodiriy ko‘ch., 1. |
 
 ### КОНТЕКСТ
 {context}
