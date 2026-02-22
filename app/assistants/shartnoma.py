@@ -130,15 +130,23 @@ class ShartnomaAssistant(BaseAssistant):
     async def _create_attachment(
         self, metadata: dict[str, Any]
     ) -> Optional[dict[str, Any]]:
-        content_type = (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-        docx_blob_path = metadata.get("gcs_docx_path", "")
+        content_type_map = {
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "doc": "application/msword",
+            "pdf": "application/pdf",
+        }
+        blob_path = metadata.get("gcs_docx_path", metadata.get("gcs_file_path", ""))
+        file_full_path = metadata.get("file_full_path", "")
+        ext = Path(file_full_path).suffix.lower()[1:]
+        
+        logger.info(f"Creating attachment for file: {file_full_path} with ext: {ext}")
+        
+        content_type = content_type_map.get(ext, "")
 
-        if docx_blob_path:
-            public_url = self.storage_service.get_signed_url(docx_blob_path)
+        if blob_path:
+            public_url = self.storage_service.get_signed_url(blob_path)
             hierarchy_path = metadata.get("hierarchy_path", "")
-            filename = hierarchy_path.split("/")[-1] + ".docx"
+            filename = hierarchy_path.split("/")[-1] + f".{ext}"
             return {"name": filename, "url": public_url, "content_type": content_type}
 
         md_blob_path = metadata.get("gcs_md_path", "")
@@ -146,10 +154,10 @@ class ShartnomaAssistant(BaseAssistant):
             return None
 
         try:
-            docx_blob_path = self._md_to_docx_gcs_path(md_blob_path)
-            public_url = self.storage_service.get_signed_url(docx_blob_path)
+            blob_path = self._md_to_docx_gcs_path(md_blob_path)
+            public_url = self.storage_service.get_signed_url(blob_path)
             hierarchy_path = metadata.get("hierarchy_path", "")
-            filename = hierarchy_path.split("/")[-1] + ".docx"
+            filename = hierarchy_path.split("/")[-1] + f".{ext}"
             return {"name": filename, "url": public_url, "content_type": content_type}
         except Exception as e:
             logger.error(f"Failed to create attachment: {e}")
