@@ -102,7 +102,7 @@ class StandardContextFormatter:
             filename = filename.replace(".md", "")
             if self.path_converter.is_valid_lex_id(filename):
                 return f"Source: https://lex.uz/docs/{filename}\n"
-            return "Source: WakilAI ichki hujjatlari\n"
+            return ""
 
         return ""
 
