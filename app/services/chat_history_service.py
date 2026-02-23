@@ -256,7 +256,7 @@ class ChatHistoryService:
         self._validate_project_id(project_id)
 
         # Verify ownership before deletion
-        project = self.get_project(project_id)
+        project = await self.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
         if project.get("user_id") != user_id:
@@ -407,7 +407,7 @@ class ChatHistoryService:
         self._validate_session_id(session_id)
 
         # Get session first to check if it exists
-        session = self.get_session(session_id)
+        session = await self.get_session(session_id)
         if not session:
             raise ValueError("Session not found")
 
@@ -543,7 +543,7 @@ class ChatHistoryService:
                 feedback_map[msg_id]["total_dislikes"] += 1
 
         # Get session to know the user_id for "user_feedback" context
-        session = self.get_session(session_id)
+        session = await self.get_session(session_id)
         current_user_id = session.get("user_id") if session else None
 
         # Re-populate feedback map with user context
