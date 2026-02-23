@@ -23,6 +23,7 @@ async def list_user_files(user_id: str, limit: int = 100):
     files = await chat_history_service.get_files_by_user(user_id=user_id, limit=limit)
     return [serialize_mongo_id(f) for f in files]
 
+
 @router.post(
     "",
     response_model=FileUploadResponse,

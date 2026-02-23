@@ -38,7 +38,7 @@ async def get_user_rate_limit(user_id: str):
             daily_credit_limit=settings.DAILY_CREDITS_LIMIT,
             credit_costs={
                 "main": settings.CREDIT_COST_MAIN_ASSISTANT,
-                "soliq": settings.CREDIT_COST_SOLIQ_ASSISTANT,
+                "tax": settings.CREDIT_COST_SOLIQ_ASSISTANT,
                 "deepresearch": settings.CREDIT_COST_DEEPRESEARCH,
             },
         )

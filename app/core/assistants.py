@@ -6,6 +6,18 @@ from app.core.config import settings
 class AssistantConfig:
     """Configuration manager for assistants."""
 
+    # Backward-compatible assistant name aliases.
+    # Public API can keep using old names while internal code uses canonical ones.
+    ASSISTANT_ALIASES: dict[str, str] = {
+        "mamuriy_sud": "administrative_court",
+        "administrative court": "administrative_court",
+        "admin court": "administrative_court",
+        "soliq": "tax",
+        "tax assistant": "tax",
+        "shartnoma": "contract_analyzer",
+        "contract analyzer": "contract_analyzer",
+    }
+
     @classmethod
     def get_assistants(cls) -> dict[str, dict[str, Any]]:
         """Get all assistant configurations."""
@@ -15,9 +27,13 @@ class AssistantConfig:
     def get_assistant_config(cls, assistant_name: str) -> dict[str, Any]:
         """Get configuration for a specific assistant."""
         assistants = cls.get_assistants()
-        if assistant_name not in assistants:
+
+        raw = assistant_name.strip()
+        canonical = cls.ASSISTANT_ALIASES.get(raw.lower(), raw)
+
+        if canonical not in assistants:
             raise ValueError(f"Assistant '{assistant_name}' not found in configuration")
-        return assistants[assistant_name]
+        return assistants[canonical]
 
     @classmethod
     def get_assistant_names(cls) -> list[str]:
@@ -53,14 +69,17 @@ class AssistantConfig:
         if assistant_name is None:
             return "main"
 
+        raw = assistant_name.strip()
+        canonical = cls.ASSISTANT_ALIASES.get(raw.lower(), raw)
+
         # Try exact match first
-        if cls.is_assistant_available(assistant_name):
-            return assistant_name
+        if cls.is_assistant_available(canonical):
+            return canonical
 
         # Try case-insensitive match
         available_assistants = cls.get_assistant_names()
         for assistant in available_assistants:
-            if assistant.lower() == assistant_name.lower():
+            if assistant.lower() == canonical.lower():
                 return assistant
 
         # Return default if no match found

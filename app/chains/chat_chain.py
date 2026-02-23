@@ -5,12 +5,14 @@ from typing import Any
 from langchain_core.prompts import PromptTemplate
 
 from app.assistants import (
+    AdministrativeCourtAssistant,
     BaseAssistant,
+    ContractAnalyzerAssistant,
+    CriminalCourtAssistant,
     MainAssistant,
-    MamuriyAssistant,
-    ShartnomaAssistant,
-    SoliqAssistant,
+    TaxAssistant,
 )
+from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
     get_chat_history_service,
@@ -48,9 +50,10 @@ class ChatChain:
     ASSISTANT_REGISTRY: dict[str, type[BaseAssistant]] = {
         "main": MainAssistant,
         "umumiy": MainAssistant,
-        "soliq": SoliqAssistant,
-        "mamuriy_sud": MamuriyAssistant,
-        "shartnoma": ShartnomaAssistant,
+        "tax": TaxAssistant,
+        "administrative_court": AdministrativeCourtAssistant,
+        "contract_analyzer": ContractAnalyzerAssistant,
+        "criminal_court": CriminalCourtAssistant,
     }
 
     def __init__(self):
@@ -67,10 +70,11 @@ class ChatChain:
 
     def _get_assistant(self, name: str) -> BaseAssistant:
         """Get or create an assistant instance by name."""
-        if name not in self._assistant_cache:
-            cls = self.ASSISTANT_REGISTRY.get(name, MainAssistant)
-            self._assistant_cache[name] = cls()
-        return self._assistant_cache[name]
+        canonical = AssistantConfig.validate_assistant_or_default(name)
+        if canonical not in self._assistant_cache:
+            cls = self.ASSISTANT_REGISTRY.get(canonical, MainAssistant)
+            self._assistant_cache[canonical] = cls()
+        return self._assistant_cache[canonical]
 
     #  Public API
     async def generate_answer(
@@ -87,6 +91,8 @@ class ChatChain:
         Main entry point to generate a response (streaming or not).
         """
         try:
+            assistant = AssistantConfig.validate_assistant_or_default(assistant)
+
             ctx = await self._prepare_generation_context(
                 user_id=user_id,
                 query=query,
@@ -146,13 +152,15 @@ class ChatChain:
         full_history_text = "\n".join(filter(None, [history_formatted, memory_text]))
 
         # 3. Retrieval — each assistant handles its own classification / filtering
-        retrieved_context, attachments, template_override = (
-            await self._retrieve_relevant_context(
-                query=query,
-                file_context=file_context,
-                chat_history=history_formatted,
-                assistant=assistant,
-            )
+        (
+            retrieved_context,
+            attachments,
+            template_override,
+        ) = await self._retrieve_relevant_context(
+            query=query,
+            file_context=file_context,
+            chat_history=history_formatted,
+            assistant=assistant,
         )
 
         # 4. Prompt template (assistant may override via intent classification)
@@ -305,7 +313,7 @@ class ChatChain:
         )
 
         meta = {
-            "attachments": ctx.attachments if assistant == "shartnoma" else [],
+            "attachments": ctx.attachments if assistant == "contract_analyzer" else [],
         }
 
         if settings.DEVELOPMENT_MODE:

@@ -21,11 +21,12 @@ class MilvusHandler(VectorDBHandler):
         # Connect to Milvus given URI
         self.milvus_collections = [
             settings.MILVUS_MAIN_NAME,
-            settings.MILVUS_SOLIQ_ASSISTANT_NAME,
+            settings.MILVUS_TAX_COLLECTION,
             settings.MILVUS_PROJECT_FILES,
-            settings.MILVUS_MAMURIY_SUD,
-            settings.MILVUS_MAMURIY_SUD_ALL,
-            settings.MILVUS_SHARTNOMA,
+            settings.MILVUS_ADMINISTRATIVE_COURT,
+            settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
+            settings.MILVUS_CONTRACT_ANALYZER,
+            settings.MILVUS_CRIMINAL_COURT,
         ]
         self.client = MilvusClient(
             uri=settings.MILVUS_URI,

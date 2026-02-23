@@ -27,7 +27,7 @@ class AgenticRAGState(BaseModel):
         default=None, description="Resolved query with context"
     )
     selected_assistant: str | None = Field(
-        default=None, description="Selected assistant/collection (soliq/umumiy)"
+        default=None, description="Selected assistant/collection (tax/main)"
     )
     memory_output: dict[str, Any] | None = Field(
         default=None, description="Structured memory data"
@@ -87,7 +87,8 @@ class RetrievalStrategyResponse(BaseModel):
         default_factory=dict, description="Query translated to en, ru, uz"
     )
     assistant: str = Field(
-        default="umumiy", description="Selected assistant/collection: soliq or umumiy"
+        default="umumiy",
+        description="Selected assistant/collection (supports legacy aliases)",
     )
     reasoning: str | None = Field(
         default=None, description="Explanation for strategy selection"

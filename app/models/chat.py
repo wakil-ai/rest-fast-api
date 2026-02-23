@@ -2,6 +2,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from app.core.assistants import AssistantConfig
 from app.core.config import settings
 
 
@@ -40,15 +41,17 @@ class AssistantType(str, Enum):
     """Supported assistant types."""
 
     MAIN = "main"
-    SOLIQ = "soliq"
-    MAMURIY_SUD = "mamuriy_sud"
-    SHARTNOMA = "shartnoma"
+    ADMINISTRATIVE_COURT = "administrative_court"
+    ADMINISTRATIVE_COURT_LEGACY = "mamuriy_sud"
+    TAX = "tax"
+    TAX_LEGACY = "soliq"
+    CONTRACT_ANALYZER = "contract_analyzer"
+    CONTRACT_ANALYZER_LEGACY = "shartnoma"
+    CRIMINAL_COURT = "criminal_court"
 
     @classmethod
     def get_available_types(cls):
         """Get all available assistant types from configuration."""
-        from app.core.assistants import AssistantConfig
-
         return AssistantConfig.get_assistant_names()
 
 
@@ -71,7 +74,8 @@ class ChatRequest(BaseModel):
         default=None, description="LLM model to use for generation"
     )
     assistant: AssistantType | None = Field(
-        default=AssistantType.MAIN, description="Assistant type: main or soliq"
+        default=AssistantType.MAIN,
+        description="Assistant type (supports legacy aliases like soliq/shartnoma/mamuriy_sud)",
     )
     file_ids: list[str] | None = Field(
         default=None, description="Optional list of file IDs to use as context"
@@ -90,7 +94,7 @@ class ChatResponse(BaseModel):
 
     attachments: list[dict[str, str]] | None = Field(
         default=None,
-        description="Optional attachments (e.g., shartnoma docx links)",
+        description="Optional attachments (e.g., DOCX links)",
     )
 
 
@@ -139,7 +143,8 @@ class AskFileRequest(BaseModel):
         default=settings.STREAM, description="Whether to stream the response"
     )
     assistant: AssistantType | None = Field(
-        default=AssistantType.MAIN, description="Assistant type: main or soliq"
+        default=AssistantType.MAIN,
+        description="Assistant type (supports legacy aliases like soliq/shartnoma/mamuriy_sud)",
     )
     model: ChatModel | None = Field(
         default=None, description="LLM model to use for generation"

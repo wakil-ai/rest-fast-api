@@ -11,7 +11,7 @@ from app.core.dependencies import get_intent_classifier, get_milvus_query_agent
 from app.core.logger import logger
 
 
-class MamuriyAssistant(BaseAssistant):
+class AdministrativeCourtAssistant(BaseAssistant):
     """Administrative-court assistant with file-level retrieval and domain routing.
 
     Owns its own:
@@ -38,7 +38,7 @@ class MamuriyAssistant(BaseAssistant):
 
     def __init__(self):
         super().__init__(
-            collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
+            collection_name=settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
             top_k=settings.TOP_K,
         )
         self.intent_classifier = get_intent_classifier()
@@ -64,7 +64,7 @@ class MamuriyAssistant(BaseAssistant):
                 query, chat_history, file_context
             )
             logger.info(
-                f"[MamuriyAssistant] Intent classified as domain: {domain_type}"
+                f"[AdministrativeCourtAssistant] Intent classified as domain: {domain_type}"
             )
 
             # Milvus filter expression (court, instance, category)
@@ -84,7 +84,9 @@ class MamuriyAssistant(BaseAssistant):
             return result
 
         except Exception as e:
-            logger.error(f"[MamuriyAssistant] Retrieval failed: {e}", exc_info=True)
+            logger.error(
+                f"[AdministrativeCourtAssistant] Retrieval failed: {e}", exc_info=True
+            )
             return self._error_result()
 
     # Search strategy (file-level)
@@ -194,48 +196,48 @@ class MamuriyAssistant(BaseAssistant):
     async def _retrieve_tax(
         self, query: str, file_context: str, filter: str
     ) -> RetrievalResult:
-        """Merge results from mamuriy_sud + soliq collections."""
-        # mamuriy_sud portion
+        """Merge results from administrative court + tax collections."""
+        # Administrative-court portion
         mam_config = RetrievalConfig(
             top_k=settings.ADDITIONAL_TOP_K,
-            collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
+            collection_name=settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
             filter=filter,
         )
         effective = f"{query}\n\n\n{file_context}" if file_context else query
         mam_docs = await self.asearch(effective, mam_config)
         mam_result = await self.format_results(mam_docs)
 
-        # soliq portion (standard hybrid search + standard formatting)
-        soliq_coll = AssistantConfig.get_collection_name("soliq")
-        sol_embedding = await self.embedder.aembed_query(effective)
-        sol_docs = await asyncio.to_thread(
+        # tax portion (standard hybrid search + standard formatting)
+        tax_coll = AssistantConfig.get_collection_name("tax")
+        tax_embedding = await self.embedder.aembed_query(effective)
+        tax_docs = await asyncio.to_thread(
             self.db.search_hybrid,
-            dense_vector=sol_embedding,
+            dense_vector=tax_embedding,
             text_query=effective,
             top_k=settings.ADDITIONAL_TOP_K,
-            collection_name=soliq_coll,
+            collection_name=tax_coll,
         )
-        sol_result = await self.formatter.format_results(sol_docs)
+        tax_result = await self.formatter.format_results(tax_docs)
 
-        combined_ctx = f"{mam_result.context}\n\n{'=' * 60}\n\n{sol_result.context}"
+        combined_ctx = f"{mam_result.context}\n\n{'=' * 60}\n\n{tax_result.context}"
         if file_context:
             combined_ctx += f"\n\n\n{file_context}"
 
         return RetrievalResult(
             context=combined_ctx,
-            attachments=mam_result.attachments + sol_result.attachments,
+            attachments=mam_result.attachments + tax_result.attachments,
         )
 
     async def _retrieve_general(
         self, query: str, file_context: str, filter: str
     ) -> RetrievalResult:
-        """Merge results from mamuriy_sud + main (lexuz) collections."""
+        """Merge results from administrative court + main (lexuz) collections."""
         effective = f"{query}\n\n\n{file_context}" if file_context else query
 
-        # mamuriy_sud portion
+        # Administrative-court portion
         mam_config = RetrievalConfig(
             top_k=settings.TOP_K,
-            collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
+            collection_name=settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
             filter=filter,
         )
         mam_docs = await self.asearch(effective, mam_config)

@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
-from typing import Literal
+from typing import TypeAlias
 
+from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import get_mongo_handler, get_promo_code_service
 from app.core.logger import logger
 
-RateLimitAssistantType = Literal[
-    "main", "soliq", "deepresearch", "mamuriy_sud", "shartnoma"
-]
+# Assistant id used for rate limiting.
+# We intentionally keep this as a plain string (not a Literal union), because
+# assistant names are configuration-driven and may change over time.
+RateLimitAssistantType: TypeAlias = str
 
 
 class RateLimitService:
@@ -40,15 +42,11 @@ class RateLimitService:
 
     def _get_credit_cost(self, assistant_type: RateLimitAssistantType) -> int:
         """Get credit cost for a specific assistant type."""
-        # TODO replace with AssistantConfig method
-        cost_map = {
-            "main": settings.CREDIT_COST_MAIN_ASSISTANT,
-            "soliq": settings.CREDIT_COST_SOLIQ_ASSISTANT,
-            "deepresearch": settings.CREDIT_COST_DEEPRESEARCH,
-            "mamuriy_sud": settings.CREDIT_COST_SUD_ASSISTANT,
-            "shartnoma": settings.CREDIT_COST_SUD_ASSISTANT,
-        }
-        return cost_map[assistant_type]
+        canonical = AssistantConfig.validate_assistant_or_default(assistant_type)
+        try:
+            return AssistantConfig.get_credit_cost(canonical)
+        except Exception:
+            return settings.CREDIT_COST_MAIN_ASSISTANT
 
     async def check_and_decrement_credits(
         self, user_id: str, assistant_type: RateLimitAssistantType = "main"
@@ -59,9 +57,10 @@ class RateLimitService:
         """
         try:
             # Check if user has a promo code and get their credit limit
-            has_promo, promo_credit_limit = (
-                await self.promo_code_service.get_user_promo_status(user_id)
-            )
+            (
+                has_promo,
+                promo_credit_limit,
+            ) = await self.promo_code_service.get_user_promo_status(user_id)
 
             # Calculate total daily limit
             daily_limit = settings.DAILY_CREDITS_LIMIT  # Start with default (100)
@@ -145,9 +144,10 @@ class RateLimitService:
         """
         try:
             # Check if user has a promo code and get their credit limit
-            has_promo, promo_credit_limit = (
-                await self.promo_code_service.get_user_promo_status(user_id)
-            )
+            (
+                has_promo,
+                promo_credit_limit,
+            ) = await self.promo_code_service.get_user_promo_status(user_id)
 
             daily_limit = settings.DAILY_CREDITS_LIMIT
             if has_promo:

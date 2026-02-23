@@ -139,6 +139,6 @@ class RetrievalService:
     # Helpers
     @staticmethod
     def _error_response(collection_name: str) -> tuple[str, list]:
-        if collection_name == settings.MILVUS_SHARTNOMA:
+        if collection_name == settings.MILVUS_CONTRACT_ANALYZER:
             return ("", [])
         return ("No relevant documents found.", [])
