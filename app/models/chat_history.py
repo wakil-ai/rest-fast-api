@@ -15,6 +15,11 @@ class UserCreateRequest(BaseModel):
     picture: str | None = None
 
 
+class UserPhoneUpdateRequest(BaseModel):
+    user_id: str = Field(..., description="User ID (stored as _id)")
+    phone_number: str = Field(..., description="User phone number")
+
+
 class UserResponse(BaseModel):
     """Response model for user data"""
 
@@ -23,6 +28,7 @@ class UserResponse(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     picture: str | None = None
+    phone_number: str | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}

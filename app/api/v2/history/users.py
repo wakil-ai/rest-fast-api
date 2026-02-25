@@ -1,7 +1,11 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
 from app.core.dependencies import get_chat_history_service
-from app.models.chat_history import UserCreateRequest, UserCreateResponse
+from app.models.chat_history import (
+    UserCreateRequest,
+    UserCreateResponse,
+    UserPhoneUpdateRequest,
+)
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -39,3 +43,17 @@ async def get_user(user_id: str):
     if not user:
         raise HTTPException(404, f"User {user_id} not found")
     return create_response(user, "User retrieved")
+
+
+@router.patch(
+    "/phone-number", status_code=status.HTTP_200_OK, response_model=UserCreateResponse
+)
+@handle_service_error
+async def update_user_phone_number(request: UserPhoneUpdateRequest):
+    user = await chat_history_service.update_user_phone_number(
+        user_id=request.user_id,
+        phone_number=request.phone_number,
+    )
+    if not user:
+        raise HTTPException(404, f"User {request.user_id} not found")
+    return create_response(user, "User phone number updated")

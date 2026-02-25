@@ -136,6 +136,7 @@ class ChatHistoryService:
             "first_name": first_name,
             "last_name": last_name,
             "picture": picture,
+            "phone_number": None,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -165,6 +166,35 @@ class ChatHistoryService:
             self.users_collection, {"_id": user_id}
         )
         return users[0] if users else None
+
+    async def update_user_phone_number(
+        self, user_id: str, phone_number: str
+    ) -> dict | None:
+        """Update a user's phone number and return updated user."""
+        await self._ensure_initialized()
+        self._validate_user_id(user_id)
+
+        phone_number = (phone_number or "").strip()
+        if not phone_number:
+            raise ValueError("Phone number cannot be empty")
+
+        user = await self.get_user(user_id)
+        if not user:
+            return None
+
+        update_fields = {
+            "phone_number": phone_number,
+            "updated_at": datetime.utcnow(),
+        }
+
+        # Even if modified_count is 0 (e.g. same value), we still return the current document.
+        await self.db_manager.update_documents(
+            self.users_collection,
+            {"_id": user_id},
+            {"$set": update_fields},
+        )
+
+        return await self.get_user(user_id)
 
     # PROJECT MANAGEMENT
     async def create_project(
@@ -664,12 +694,16 @@ class ChatHistoryService:
         if not message:
             raise ValueError(f"Share {share_id} not found")
 
-        return ShareResponse(
-            share_id=share_id,
-            question=message["content"].get("query"),
-            answer=message["content"].get("response"),
-            assistant=message["metadata"].get("assistant"),
-            created_at=message.get("shared_at"),
+        created_at = message.get("shared_at") or datetime.utcnow()
+
+        return ShareResponse.model_validate(
+            {
+                "_id": share_id,
+                "question": message["content"].get("query"),
+                "answer": message["content"].get("response"),
+                "assistant": message["metadata"].get("assistant"),
+                "created_at": created_at,
+            }
         )
 
     # FEEDBACK MANAGEMENT
@@ -881,6 +915,8 @@ class ChatHistoryService:
 
         file = await self.get_file_by_id(file_id)
         logger.info(f"Updated file status for file_id: {file_id} to {status}")
+        if not file:
+            raise ValueError("File not found after update")
         return file
 
     async def update_file_message_id(self, file_id: str, message_id: str) -> None:
