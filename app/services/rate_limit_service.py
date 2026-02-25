@@ -50,6 +50,31 @@ class RateLimitService:
         }
         return cost_map[assistant_type]
 
+    async def _get_active_subscription_daily_limit(self, user_id: str) -> int | None:
+        """Return subscription daily credits if active, else None."""
+
+        try:
+            users = self.mongo_handler.db[settings.USERS_COLLECTION]
+            user = await users.find_one({"_id": user_id})
+            if not user:
+                user = await users.find_one({"user_id": user_id})
+            if not user:
+                return None
+
+            sub = user.get("subscription")
+            if not isinstance(sub, dict):
+                return None
+
+            daily = int(sub.get("daily_credits") or 0)
+            end_ms = int(sub.get("end_ms") or 0)
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+            if daily > 0 and end_ms > now_ms:
+                return daily
+            return None
+        except Exception:
+            return None
+
     async def check_and_decrement_credits(
         self, user_id: str, assistant_type: RateLimitAssistantType = "main"
     ) -> tuple[bool, int, int]:
@@ -58,13 +83,22 @@ class RateLimitService:
         Users with valid promo codes may have custom credit limits or unlimited access.
         """
         try:
-            # Check if user has a promo code and get their credit limit
-            has_promo, promo_credit_limit = (
-                await self.promo_code_service.get_user_promo_status(user_id)
+            subscription_daily = await self._get_active_subscription_daily_limit(
+                user_id
             )
 
+            # Check if user has a promo code and get their credit limit
+            (
+                has_promo,
+                promo_credit_limit,
+            ) = await self.promo_code_service.get_user_promo_status(user_id)
+
             # Calculate total daily limit
-            daily_limit = settings.DAILY_CREDITS_LIMIT  # Start with default (100)
+            daily_limit = (
+                subscription_daily
+                if subscription_daily is not None
+                else settings.DAILY_CREDITS_LIMIT
+            )
 
             if has_promo:
                 if promo_credit_limit is None:
@@ -74,8 +108,8 @@ class RateLimitService:
                     )
                     return True, -1, -1  # -1 indicates unlimited
                 else:
-                    # ADD promo credits to default credits
-                    daily_limit = settings.DAILY_CREDITS_LIMIT + promo_credit_limit
+                    # ADD promo credits to base credits (subscription or default)
+                    daily_limit = daily_limit + promo_credit_limit
             else:
                 logger.info(
                     f"[RateLimitService] User {user_id} using default {daily_limit} daily credits"
@@ -144,12 +178,21 @@ class RateLimitService:
             int: Number of remaining credits (-1 for unlimited)
         """
         try:
-            # Check if user has a promo code and get their credit limit
-            has_promo, promo_credit_limit = (
-                await self.promo_code_service.get_user_promo_status(user_id)
+            subscription_daily = await self._get_active_subscription_daily_limit(
+                user_id
             )
 
-            daily_limit = settings.DAILY_CREDITS_LIMIT
+            # Check if user has a promo code and get their credit limit
+            (
+                has_promo,
+                promo_credit_limit,
+            ) = await self.promo_code_service.get_user_promo_status(user_id)
+
+            daily_limit = (
+                subscription_daily
+                if subscription_daily is not None
+                else settings.DAILY_CREDITS_LIMIT
+            )
             if has_promo:
                 if promo_credit_limit is None:
                     # Unlimited credits
@@ -179,6 +222,29 @@ class RateLimitService:
                 f"[RateLimitService] Error getting remaining credits for user {user_id}: {str(e)}"
             )
             return settings.DAILY_CREDITS_LIMIT
+
+    async def get_daily_credit_limit(self, user_id: str) -> int:
+        """Return effective daily credit limit for a user (-1 for unlimited)."""
+
+        subscription_daily = await self._get_active_subscription_daily_limit(user_id)
+
+        (
+            has_promo,
+            promo_credit_limit,
+        ) = await self.promo_code_service.get_user_promo_status(user_id)
+
+        daily_limit = (
+            subscription_daily
+            if subscription_daily is not None
+            else settings.DAILY_CREDITS_LIMIT
+        )
+
+        if has_promo:
+            if promo_credit_limit is None:
+                return -1
+            return daily_limit + promo_credit_limit
+
+        return daily_limit
 
     def reset_user_limit(self, user_id: str) -> bool:
         """

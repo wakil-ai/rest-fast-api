@@ -204,6 +204,16 @@ class Settings(BaseSettings):
         "payme_invoices"  # Stores pre-created payment intents/invoices
     )
 
+    # Payme Subscriptions 
+    PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 350_000
+    PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 3_500_000
+    PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM: int = 1_000_000
+    PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM: int = 10_000_000
+
+    # Testing plan 
+    PAYME_SUBSCRIPTION_TEST_MONTHLY_PRICE_SUM: int = 10_000
+    PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM: int = 20_000
+
     # Google Auth
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_CLIENT_SECRET: str | None = None

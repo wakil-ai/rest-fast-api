@@ -15,12 +15,74 @@ class TransactionService:
         self.transaction_collection = settings.TRANSACTION_COLLECTION
         self.invoices_collection = settings.PAYME_INVOICES_COLLECTION
 
+        self._subscription_catalog = {
+            "standard": {
+                "daily_credits": 200,
+                "monthly": {
+                    "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM,
+                    "days": 30,
+                },
+                "yearly": {
+                    "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM,
+                    "days": 360,
+                },
+            },
+            "pro": {
+                "daily_credits": 600,
+                "monthly": {
+                    "price_sum": settings.PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM,
+                    "days": 30,
+                },
+                "yearly": {
+                    "price_sum": settings.PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM,
+                    "days": 360,
+                },
+            },
+            # Test plan (for sandbox/testing)
+            "test": {
+                "daily_credits": 50,
+                "monthly": {
+                    "price_sum": settings.PAYME_SUBSCRIPTION_TEST_MONTHLY_PRICE_SUM,
+                    "days": 30,
+                },
+                "yearly": {
+                    "price_sum": settings.PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM,
+                    "days": 360,
+                },
+            },
+        }
+
+    def _get_subscription_quote(self, tier: str, period: str) -> dict:
+        tier_cfg = self._subscription_catalog.get(tier)
+        if not tier_cfg:
+            raise ValueError("Invalid subscription tier")
+        period_cfg = tier_cfg.get(period)
+        if not period_cfg:
+            raise ValueError("Invalid subscription period")
+
+        daily = int(tier_cfg["daily_credits"])
+        days = int(period_cfg["days"])
+        price_sum = int(period_cfg["price_sum"])
+
+        return {
+            "tier": tier,
+            "period": period,
+            "daily_credits": daily,
+            "days": days,
+            "total_credits": daily * days,
+            "amount_sum": price_sum,
+            "amount_tiyin": price_sum * 100,
+        }
+
     async def init_payment(
         self,
-        amount_sum: int,
+        *,
+        amount_sum: int | None,
         user_id: str,
         callback_url: str,
         order_id: str | None = None,
+        subscription_tier: str | None = None,
+        subscription_period: str | None = None,
     ) -> dict:
         """Create a local invoice (order_id) and return a Payme checkout link.
 
@@ -28,12 +90,28 @@ class TransactionService:
         methods (CheckPerformTransaction/CreateTransaction/...) using the encoded account fields.
         """
 
+        quote = None
+        if subscription_tier or subscription_period:
+            if not (subscription_tier and subscription_period):
+                raise ValueError(
+                    "subscription_tier and subscription_period are both required"
+                )
+            quote = self._get_subscription_quote(subscription_tier, subscription_period)
+            expected = quote["amount_sum"]
+            if amount_sum is not None and amount_sum != expected:
+                raise ValueError("Amount does not match subscription price")
+            amount_sum = expected
+
         if not isinstance(amount_sum, int) or amount_sum <= 0:
             raise ValueError("Invalid amount")
 
         user = await self.db_handler.find_one(
             self.users_collection, {"user_id": user_id}
         )
+        if not user:
+            user = await self.db_handler.find_one(
+                self.users_collection, {"_id": user_id}
+            )
         if not user:
             raise ValueError("User not found")
 
@@ -57,6 +135,17 @@ class TransactionService:
                 "callback_url": callback_url,
                 "status": "pending",
                 "provider": "payme",
+                "purpose": "subscription" if quote else "payment",
+                "subscription": quote,
+                "subscription_applied": False,
+                "requisites": {
+                    # These must match the titles configured in Payme Business cabinet
+                    # (they will appear under params.account in Merchant API calls).
+                    "user_id": user_id,
+                    "order_id": invoice_id,
+                    "subscription_type": quote["tier"] if quote else None,
+                    "Duration": quote["period"] if quote else None,
+                },
                 "created_at": now_ms,
                 "updated_at": now_ms,
             },
@@ -67,9 +156,71 @@ class TransactionService:
             user_id=user_id,
             callback_url=callback_url,
             order_id=invoice_id,
+            subscription_type=quote["tier"] if quote else None,
+            duration=quote["period"] if quote else None,
         )
 
         return {"order_id": invoice_id, "link": link}
+
+    async def _apply_subscription_from_invoice(
+        self, *, invoice_id: str | None, transaction_id: str | None, now_ms: int
+    ) -> None:
+        if not invoice_id:
+            return
+
+        invoice = await self.db_handler.find_one(
+            self.invoices_collection, {"invoice_id": invoice_id}
+        )
+        if not invoice:
+            return
+
+        quote = invoice.get("subscription")
+        if not quote:
+            return
+
+        if invoice.get("subscription_applied") is True:
+            return
+
+        user_id = invoice.get("user_id")
+        if not user_id:
+            return
+
+        user = await self.db_handler.find_one(self.users_collection, {"_id": user_id})
+        user_query = {"_id": user_id}
+        if not user:
+            user = await self.db_handler.find_one(
+                self.users_collection, {"user_id": user_id}
+            )
+            user_query = {"user_id": user_id}
+        if not user:
+            return
+
+        sub = user.get("subscription") if isinstance(user, dict) else None
+        existing_end = int(sub.get("end_ms") or 0) if isinstance(sub, dict) else 0
+
+        start_ms = max(now_ms, existing_end)
+        end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
+
+        subscription_update = {
+            "tier": quote["tier"],
+            "period": quote["period"],
+            "daily_credits": int(quote["daily_credits"]),
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+            "last_invoice_id": invoice_id,
+            "last_transaction_id": transaction_id,
+            "updated_at_ms": now_ms,
+        }
+
+        await self.db_handler.update_one(
+            self.users_collection, user_query, {"subscription": subscription_update}
+        )
+
+        await self.db_handler.update_one(
+            self.invoices_collection,
+            {"invoice_id": invoice_id},
+            {"subscription_applied": True, "updated_at": now_ms},
+        )
 
     async def check_perform_transaction(self, params, request_id):
         if not params or "account" not in params:
@@ -101,12 +252,32 @@ class TransactionService:
         if not invoice:
             raise TransactionError(PaymeError.UserNotFound, request_id, "order_id")
 
+        # If this invoice represents a subscription, validate requisites if provided by Payme.
+        invoice_quote = invoice.get("subscription")
+        if invoice_quote:
+            acct_sub = account.get("subscription_type")
+            # Payme cabinet can define title as "Duration" (capital D)
+            acct_duration = account.get("Duration") or account.get("duration")
+
+            if acct_sub is not None and acct_sub != invoice_quote.get("tier"):
+                raise TransactionError(
+                    PaymeError.UserNotFound, request_id, "subscription_type"
+                )
+            if acct_duration is not None and acct_duration != invoice_quote.get(
+                "period"
+            ):
+                raise TransactionError(PaymeError.UserNotFound, request_id, "Duration")
+
         if invoice.get("amount_tiyin") != amount_tiyin:
             raise TransactionError(PaymeError.InvalidAmount, request_id)
 
         user = await self.db_handler.find_one(
             self.users_collection, {"user_id": user_id}
         )
+        if not user:
+            user = await self.db_handler.find_one(
+                self.users_collection, {"_id": user_id}
+            )
         if not user:
             raise TransactionError(
                 PaymeError.UserNotFound, request_id, PaymeData.UserId
@@ -155,6 +326,11 @@ class TransactionService:
         time_ms = params["time"]
         transaction_id = params["id"]
 
+        txn_user_id = account.get("user_id")
+        txn_order_id = account.get("order_id")
+        txn_subscription_type = account.get("subscription_type")
+        txn_duration = account.get("Duration") or account.get("duration")
+
         # Primary check: Search by transaction ID, user_id, and order_id
         transaction = await self.db_handler.find_one(
             self.transaction_collection,
@@ -196,21 +372,36 @@ class TransactionService:
         existing_tx = await self.db_handler.find_one(
             self.transaction_collection,
             {
-                "user": account["user_id"],
-                "order_id": account["order_id"],
+                "order_id": txn_order_id,
+                "$or": [
+                    {"user_id": txn_user_id},
+                    {"user": txn_user_id},
+                ],
             },
         )
         if existing_tx:
             if existing_tx["state"] == TransactionState.Pending:
                 raise TransactionError(PaymeError.Pending, request_id)
 
+        # If invoice is a subscription, normalize subscription fields from invoice.
+        invoice = await self.db_handler.find_one(
+            self.invoices_collection,
+            {"invoice_id": txn_order_id, "user_id": txn_user_id},
+        )
+        invoice_quote = invoice.get("subscription") if invoice else None
+        if invoice_quote:
+            txn_subscription_type = invoice_quote.get("tier")
+            txn_duration = invoice_quote.get("period")
+
         # Create new transaction - transaction ID is the primary key
         new_transaction = {
             "id": transaction_id,
             "state": TransactionState.Pending,
             "amount": amount,
-            "user": account["user_id"],
-            "order_id": account["order_id"],
+            "user_id": txn_user_id,
+            "order_id": txn_order_id,
+            "subscription_type": txn_subscription_type,
+            "duration": txn_duration,
             "create_time": time_ms,
             "provider": "payme",
         }
@@ -220,7 +411,7 @@ class TransactionService:
         # Link transaction to invoice for easier reconciliation
         await self.db_handler.update_one(
             self.invoices_collection,
-            {"invoice_id": account["order_id"], "user_id": account["user_id"]},
+            {"invoice_id": txn_order_id, "user_id": txn_user_id},
             {
                 "payme_transaction_id": transaction_id,
                 "updated_at": int(time.time() * 1000),
@@ -244,6 +435,11 @@ class TransactionService:
 
         # If already paid, return existing perform_time (IDEMPOTENT)
         if transaction["state"] == TransactionState.Paid:
+            await self._apply_subscription_from_invoice(
+                invoice_id=transaction.get("order_id"),
+                transaction_id=transaction.get("id"),
+                now_ms=current_time,
+            )
             return {
                 "create_time": transaction["create_time"],
                 "perform_time": transaction.get("perform_time", 0),
@@ -285,9 +481,15 @@ class TransactionService:
             self.invoices_collection,
             {
                 "invoice_id": transaction.get("order_id"),
-                "user_id": transaction.get("user"),
+                "user_id": transaction.get("user_id") or transaction.get("user"),
             },
             {"status": "paid", "updated_at": current_time},
+        )
+
+        await self._apply_subscription_from_invoice(
+            invoice_id=transaction.get("order_id"),
+            transaction_id=transaction.get("id"),
+            now_ms=current_time,
         )
 
         # Return complete transaction details
@@ -324,7 +526,7 @@ class TransactionService:
                 self.invoices_collection,
                 {
                     "invoice_id": transaction.get("order_id"),
-                    "user_id": transaction.get("user"),
+                    "user_id": transaction.get("user_id") or transaction.get("user"),
                 },
                 {"status": "canceled", "updated_at": current_time},
             )
@@ -358,8 +560,10 @@ class TransactionService:
                     "time": tx["create_time"],
                     "amount": tx["amount"] * 100,
                     "account": {
-                        "user_id": tx.get("user"),
+                        "user_id": tx.get("user_id") or tx.get("user"),
                         "order_id": tx.get("order_id"),
+                        "subscription_type": tx.get("subscription_type"),
+                        "Duration": tx.get("duration"),
                     },
                     "create_time": tx["create_time"],
                     "perform_time": tx.get("perform_time", 0),
@@ -373,7 +577,13 @@ class TransactionService:
         return result
 
     async def create_payment_link(
-        self, amount: int, user_id: str, callback_url: str, order_id: str | None = None
+        self,
+        amount: int,
+        user_id: str,
+        callback_url: str,
+        order_id: str | None = None,
+        subscription_type: str | None = None,
+        duration: str | None = None,
     ) -> str:
         """
         Create a Payme payment link for the specified amount and user.
@@ -384,6 +594,10 @@ class TransactionService:
             self.users_collection, {"user_id": user_id}
         )
         if not user:
+            user = await self.db_handler.find_one(
+                self.users_collection, {"_id": user_id}
+            )
+        if not user:
             raise ValueError("User not found")
 
         amount = amount * 100  # Convert to tiyin (smallest currency unit)
@@ -391,6 +605,11 @@ class TransactionService:
         raw_string = f"m={settings.PAYME_MERCHANT_ID};ac.user_id={user_id};"
         if order_id:
             raw_string += f"ac.order_id={order_id};"
+        if subscription_type:
+            raw_string += f"ac.subscription_type={subscription_type};"
+        if duration:
+            # Title configured in cabinet is "Duration" (capital D)
+            raw_string += f"ac.Duration={duration};"
         raw_string += f"a={amount};c={callback_url};"
 
         encoded = base64.b64encode(raw_string.encode()).decode()

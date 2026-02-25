@@ -176,6 +176,8 @@ async def init_payme_payment(
             user_id=request.user_id,
             callback_url=request.callback_url,
             order_id=request.order_id,
+            subscription_tier=request.subscription_tier,
+            subscription_period=request.subscription_period,
         )
 
         logger.info(
@@ -183,6 +185,9 @@ async def init_payme_payment(
         )
 
         return PaymeInitResponse(order_id=result["order_id"], link=result["link"])
+    except ValueError as e:
+        # Client-side error (invalid amount, invalid subscription, etc.)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Error initializing Payme payment: {e}")
         raise HTTPException(

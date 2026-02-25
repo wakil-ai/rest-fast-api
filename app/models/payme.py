@@ -1,8 +1,10 @@
 from datetime import datetime
 from enum import IntEnum
+from typing import Literal
 
 from bson import ObjectId
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from pydantic.aliases import AliasChoices
 
 
 # Methods
@@ -50,10 +52,10 @@ class TransactionModel:
         state: int,
         amount: int,
         provider: str,
-        create_time: int = None,
+        create_time: int | None = None,
         perform_time: int = 0,
         cancel_time: int = 0,
-        reason: int = None,
+        reason: int | None = None,
     ):
         self.id = id
         self.user = user
@@ -209,10 +211,20 @@ class PaymentLinkResponse(BaseModel):
 
 
 class PaymeInitRequest(BaseModel):
-    amount: int  # Amount in SUM (UZS)
+    # If `subscription_tier` + `subscription_period` are provided, amount can be omitted
+    # and will be derived server-side from the subscription catalog.
+    amount: int | None = None  # Amount in SUM (UZS)
     user_id: str
     callback_url: str
     order_id: str | None = None  # If not provided, server generates a new one
+    subscription_tier: Literal["standard", "pro", "test"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("subscription_tier", "subscription_type"),
+    )
+    subscription_period: Literal["monthly", "yearly"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("subscription_period", "duration", "Duration"),
+    )
 
 
 class PaymeInitResponse(BaseModel):
