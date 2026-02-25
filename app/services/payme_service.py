@@ -1,4 +1,5 @@
 import base64
+import secrets
 import time
 import uuid
 from math import floor
@@ -132,7 +133,6 @@ class TransactionService:
         amount_sum: int | None,
         user_id: str,
         callback_url: str,
-        order_id: str | None = None,
         subscription_tier: str | None = None,
         subscription_period: str | None = None,
     ) -> dict:
@@ -167,7 +167,7 @@ class TransactionService:
         if not user:
             raise ValueError("User not found")
 
-        invoice_id = order_id or str(uuid.uuid4())
+        invoice_id = order_id or secrets.token_hex(8)
         amount_tiyin = amount_sum * 100
         now_ms = int(time.time() * 1000)
 

@@ -178,7 +178,6 @@ async def init_payme_payment(
             amount_sum=request.amount,
             user_id=request.user_id,
             callback_url=request.callback_url,
-            order_id=request.order_id,
             subscription_tier=request.subscription_tier,
             subscription_period=request.subscription_period,
         )
