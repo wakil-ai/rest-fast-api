@@ -196,13 +196,28 @@ class TransactionState(IntEnum):
 
 
 class PaymentLinkRequest(BaseModel):
-    amount: int  # Amount in smallest currency unit (e.g. cents)
+    # For this API, `amount` is expected to be in SUM (UZS).
+    # Payme Merchant API itself uses TIYIN, but checkout link generation in our backend accepts SUM.
+    amount: int
     user_id: str  # ID of the user for whom the link is created
+    order_id: str | None = None  # Optional order/invoice id to include in `ac.order_id`
     callback_url: str  # URL to redirect after payment
 
 
 class PaymentLinkResponse(BaseModel):
     link: str  # Generated payment link URL
+
+
+class PaymeInitRequest(BaseModel):
+    amount: int  # Amount in SUM (UZS)
+    user_id: str
+    callback_url: str
+    order_id: str | None = None  # If not provided, server generates a new one
+
+
+class PaymeInitResponse(BaseModel):
+    order_id: str
+    link: str
 
 
 class FiscalData(BaseModel):

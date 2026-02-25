@@ -1,5 +1,6 @@
 import base64
 import time
+import uuid
 from math import floor
 
 from app.core.config import settings
@@ -12,46 +13,99 @@ class TransactionService:
         self.db_handler = get_mongo_handler()
         self.users_collection = settings.USERS_COLLECTION
         self.transaction_collection = settings.TRANSACTION_COLLECTION
+        self.invoices_collection = settings.PAYME_INVOICES_COLLECTION
+
+    async def init_payment(
+        self,
+        amount_sum: int,
+        user_id: str,
+        callback_url: str,
+        order_id: str | None = None,
+    ) -> dict:
+        """Create a local invoice (order_id) and return a Payme checkout link.
+
+        This endpoint is meant for our clients. Payme itself will later call Merchant API
+        methods (CheckPerformTransaction/CreateTransaction/...) using the encoded account fields.
+        """
+
+        if not isinstance(amount_sum, int) or amount_sum <= 0:
+            raise ValueError("Invalid amount")
+
+        user = await self.db_handler.find_one(
+            self.users_collection, {"user_id": user_id}
+        )
+        if not user:
+            raise ValueError("User not found")
+
+        invoice_id = order_id or str(uuid.uuid4())
+        amount_tiyin = amount_sum * 100
+        now_ms = int(time.time() * 1000)
+
+        existing_invoice = await self.db_handler.find_one(
+            self.invoices_collection, {"invoice_id": invoice_id}
+        )
+        if existing_invoice:
+            raise ValueError("order_id already exists")
+
+        await self.db_handler.insert_one(
+            self.invoices_collection,
+            {
+                "invoice_id": invoice_id,
+                "user_id": user_id,
+                "amount_sum": amount_sum,
+                "amount_tiyin": amount_tiyin,
+                "callback_url": callback_url,
+                "status": "pending",
+                "provider": "payme",
+                "created_at": now_ms,
+                "updated_at": now_ms,
+            },
+        )
+
+        link = await self.create_payment_link(
+            amount=amount_sum,
+            user_id=user_id,
+            callback_url=callback_url,
+            order_id=invoice_id,
+        )
+
+        return {"order_id": invoice_id, "link": link}
 
     async def check_perform_transaction(self, params, request_id):
-        # Validate account parameter exists
-        if "account" not in params:
+        if not params or "account" not in params:
+            raise TransactionError(PaymeError.UserNotFound, request_id, "account")
+
+        account = params["account"] or {}
+
+        user_id = account.get("user_id")
+        if not user_id:
             raise TransactionError(
                 PaymeError.UserNotFound, request_id, PaymeData.UserId
             )
 
-        account = params["account"]
-
-        # Validate user_id in account
-        if "user_id" not in account or not account["user_id"]:
-            raise TransactionError(
-                PaymeError.UserNotFound, request_id, PaymeData.UserId
-            )
-
-        # Validate order_id in account
-        if "order_id" not in account or not account["order_id"]:
+        order_id = account.get("order_id")
+        if not order_id:
             raise TransactionError(PaymeError.UserNotFound, request_id, "order_id")
 
-        # Validate amount parameter exists and is valid
         if "amount" not in params:
             raise TransactionError(PaymeError.InvalidAmount, request_id)
 
-        amount = params["amount"]
-
-        # Amount must be positive integer
-        if not isinstance(amount, (int, float)) or amount <= 0:
+        amount_tiyin = params["amount"]
+        if not isinstance(amount_tiyin, int) or amount_tiyin <= 0:
             raise TransactionError(PaymeError.InvalidAmount, request_id)
 
-        # Convert from tiyin to sum (divide by 100)
-        amount = floor(amount / 100)
+        invoice = await self.db_handler.find_one(
+            self.invoices_collection,
+            {"invoice_id": order_id, "user_id": user_id, "status": "pending"},
+        )
+        if not invoice:
+            raise TransactionError(PaymeError.UserNotFound, request_id, "order_id")
 
-        # Only allow specific payment amounts: 1000, 5000, or 15000 sum
-        if isinstance(amount, int) and amount > 0:
+        if invoice.get("amount_tiyin") != amount_tiyin:
             raise TransactionError(PaymeError.InvalidAmount, request_id)
 
-        # Check if user exists
-        user = self.db_handler.find_documents(
-            self.users_collection, {"user_id": account["user_id"]}
+        user = await self.db_handler.find_one(
+            self.users_collection, {"user_id": user_id}
         )
         if not user:
             raise TransactionError(
@@ -59,7 +113,7 @@ class TransactionService:
             )
 
     async def check_transaction(self, params, request_id):
-        transaction = self.db_handler.find_one(
+        transaction = await self.db_handler.find_one(
             self.transaction_collection, {"id": params["id"]}
         )
         if not transaction:
@@ -72,7 +126,7 @@ class TransactionService:
 
             # If timeout exceeded, cancel with reason 4 (ONE TIME ONLY)
             if time_diff_ms >= 43200000:
-                self.db_handler.update_one(
+                await self.db_handler.update_one(
                     self.transaction_collection,
                     {"id": params["id"]},
                     {
@@ -102,7 +156,7 @@ class TransactionService:
         transaction_id = params["id"]
 
         # Primary check: Search by transaction ID, user_id, and order_id
-        transaction = self.db_handler.find_one(
+        transaction = await self.db_handler.find_one(
             self.transaction_collection,
             {
                 "id": transaction_id,
@@ -117,7 +171,7 @@ class TransactionService:
                 # Check timeout: 12 hours = 43,200,000 milliseconds
                 time_diff_ms = current_time - transaction["create_time"]
                 if time_diff_ms >= 43200000:
-                    self.db_handler.update_one(
+                    await self.db_handler.update_one(
                         self.transaction_collection,
                         {"id": transaction_id},
                         {
@@ -139,7 +193,7 @@ class TransactionService:
 
         await self.check_perform_transaction(params, request_id)
 
-        existing_tx = self.db_handler.find_one(
+        existing_tx = await self.db_handler.find_one(
             self.transaction_collection,
             {
                 "user": account["user_id"],
@@ -161,7 +215,17 @@ class TransactionService:
             "provider": "payme",
         }
 
-        self.db_handler.insert_one(self.transaction_collection, new_transaction)
+        await self.db_handler.insert_one(self.transaction_collection, new_transaction)
+
+        # Link transaction to invoice for easier reconciliation
+        await self.db_handler.update_one(
+            self.invoices_collection,
+            {"invoice_id": account["order_id"], "user_id": account["user_id"]},
+            {
+                "payme_transaction_id": transaction_id,
+                "updated_at": int(time.time() * 1000),
+            },
+        )
 
         return {
             "transaction": transaction_id,
@@ -172,7 +236,7 @@ class TransactionService:
     async def perform_transaction(self, params, request_id):
         current_time = int(time.time() * 1000)
 
-        transaction = self.db_handler.find_one(
+        transaction = await self.db_handler.find_one(
             self.transaction_collection, {"id": params["id"]}
         )
         if not transaction:
@@ -196,7 +260,7 @@ class TransactionService:
         # Check timeout: 12 hours = 43,200,000 milliseconds
         time_diff_ms = current_time - transaction["create_time"]
         if time_diff_ms >= 43200000:
-            self.db_handler.update_one(
+            await self.db_handler.update_one(
                 self.transaction_collection,
                 {"id": params["id"]},
                 {
@@ -208,13 +272,22 @@ class TransactionService:
             raise TransactionError(PaymeError.CantDoOperation, request_id)
 
         # Perform the transaction
-        self.db_handler.update_one(
+        await self.db_handler.update_one(
             self.transaction_collection,
             {"id": params["id"]},
             {
                 "state": TransactionState.Paid,
                 "perform_time": current_time,
             },
+        )
+
+        await self.db_handler.update_one(
+            self.invoices_collection,
+            {
+                "invoice_id": transaction.get("order_id"),
+                "user_id": transaction.get("user"),
+            },
+            {"status": "paid", "updated_at": current_time},
         )
 
         # Return complete transaction details
@@ -228,7 +301,7 @@ class TransactionService:
         }
 
     async def cancel_transaction(self, params, request_id):
-        transaction = self.db_handler.find_one(
+        transaction = await self.db_handler.find_one(
             self.transaction_collection, {"id": params["id"]}
         )
         if not transaction:
@@ -237,7 +310,7 @@ class TransactionService:
         current_time = int(time.time() * 1000)
 
         if transaction["state"] > 0:
-            self.db_handler.update_one(
+            await self.db_handler.update_one(
                 self.transaction_collection,
                 {"id": params["id"]},
                 {
@@ -245,6 +318,15 @@ class TransactionService:
                     "cancel_time": current_time,
                     "reason": params.get("reason", 0),
                 },
+            )
+
+            await self.db_handler.update_one(
+                self.invoices_collection,
+                {
+                    "invoice_id": transaction.get("order_id"),
+                    "user_id": transaction.get("user"),
+                },
+                {"status": "canceled", "updated_at": current_time},
             )
 
         return {
@@ -269,14 +351,15 @@ class TransactionService:
         )
 
         result = []
-        for tx in cursor:  # Regular for loop (MongoHandler is synchronous)
+        async for tx in cursor:
             result.append(
                 {
                     "id": tx["id"],
                     "time": tx["create_time"],
-                    "amount": tx["amount"] * 100,  # Convert sum to tiyin
+                    "amount": tx["amount"] * 100,
                     "account": {
-                        "user_id": tx["user"],
+                        "user_id": tx.get("user"),
+                        "order_id": tx.get("order_id"),
                     },
                     "create_time": tx["create_time"],
                     "perform_time": tx.get("perform_time", 0),
@@ -290,18 +373,25 @@ class TransactionService:
         return result
 
     async def create_payment_link(
-        self, amount: int, user_id: str, callback_url: str
+        self, amount: int, user_id: str, callback_url: str, order_id: str | None = None
     ) -> str:
         """
         Create a Payme payment link for the specified amount and user.
+
+        `amount` is in SUM; Payme checkout link requires amount in TIYIN.
         """
-        user = self.db_handler.find_one(self.users_collection, {"user_id": user_id})
+        user = await self.db_handler.find_one(
+            self.users_collection, {"user_id": user_id}
+        )
         if not user:
             raise ValueError("User not found")
 
         amount = amount * 100  # Convert to tiyin (smallest currency unit)
 
-        raw_string = f"m={settings.PAYME_MERCHANT_ID};ac.user_id={user_id};a={amount};c={callback_url};"
+        raw_string = f"m={settings.PAYME_MERCHANT_ID};ac.user_id={user_id};"
+        if order_id:
+            raw_string += f"ac.order_id={order_id};"
+        raw_string += f"a={amount};c={callback_url};"
 
         encoded = base64.b64encode(raw_string.encode()).decode()
 
@@ -327,7 +417,7 @@ class TransactionService:
             raise TransactionError(PaymeError.InvalidParams, request_id)
 
         # Find transaction
-        transaction = self.db_handler.find_one(
+        transaction = await self.db_handler.find_one(
             self.transaction_collection, {"id": transaction_id}
         )
 
@@ -340,7 +430,7 @@ class TransactionService:
         )
 
         # Update transaction with fiscal data
-        self.db_handler.update_one(
+        await self.db_handler.update_one(
             self.transaction_collection,
             {"id": transaction_id},
             {fiscal_field: fiscal_data},

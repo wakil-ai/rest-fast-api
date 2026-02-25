@@ -200,6 +200,9 @@ class Settings(BaseSettings):
     PAYME_PAYMENT_LINK_BASE: str = (
         "https://checkout.paycom.uz/"  # Base URL for payment links
     )
+    PAYME_INVOICES_COLLECTION: str = (
+        "payme_invoices"  # Stores pre-created payment intents/invoices
+    )
 
     # Google Auth
     GOOGLE_CLIENT_ID: str | None = None

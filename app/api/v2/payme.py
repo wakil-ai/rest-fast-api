@@ -3,15 +3,18 @@
 import base64
 import secrets
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.dependencies import get_transaction_service
 from app.core.logger import logger
+from app.security import verify_api_key
 from app.models.payme import (
     PaymeError,
     PaymeMethod,
+    PaymeInitRequest,
+    PaymeInitResponse,
     PaymentLinkRequest,
     PaymentLinkResponse,
     TransactionError,
@@ -19,17 +22,6 @@ from app.models.payme import (
 
 router = APIRouter(prefix="/transaction", tags=["Payme"])
 transaction_service = get_transaction_service()
-
-
-def verify_api_key(x_api_key: str | None = Header(None)):
-    """Verify API key for payment link creation"""
-    if x_api_key is None:
-        raise HTTPException(status_code=401, detail="API Key required")
-
-    if not secrets.compare_digest(x_api_key, settings.API_KEY):
-        raise HTTPException(status_code=401, detail="Invalid API Key")
-
-    return True
 
 
 def verify_payme_authorization(authorization: str | None) -> bool:
@@ -63,6 +55,7 @@ def verify_payme_authorization(authorization: str | None) -> bool:
 
 @router.post("/payme/")
 async def payme(request: Request):
+    request_id = None
     try:
         body = await request.json()
         method = body.get("method")
@@ -87,7 +80,7 @@ async def payme(request: Request):
 
         if method == PaymeMethod.CheckPerformTransaction:
             await transaction_service.check_perform_transaction(params, request_id)
-            return {"result": {"allow": True}}
+            return {"result": {"allow": True}, "id": request_id}
 
         if method == PaymeMethod.CheckTransaction:
             result = await transaction_service.check_transaction(params, request_id)
@@ -107,14 +100,14 @@ async def payme(request: Request):
 
         if method == PaymeMethod.GetStatement:
             result = await transaction_service.get_statement(params)
-            return {"result": {"transactions": result}}
+            return {"result": {"transactions": result}, "id": request_id}
 
         if method == PaymeMethod.SetFiscalData:
             result = await transaction_service.set_fiscal_data(params, request_id)
             return {"result": result, "id": request_id}
 
         return JSONResponse(
-            status_code=400,
+            status_code=200,
             content={
                 "error": {"code": -32601, "message": "Method not found"},
                 "id": request_id,
@@ -138,7 +131,10 @@ async def payme(request: Request):
 
 
 @router.post("/payme/callback", response_model=PaymentLinkResponse)
-async def create_payment_link(request: PaymentLinkRequest):
+async def create_payment_link(
+    request: PaymentLinkRequest,
+    _auth: bool = Depends(verify_api_key),
+):
     """
     Create a Payme payment link
 
@@ -150,6 +146,7 @@ async def create_payment_link(request: PaymentLinkRequest):
             amount=request.amount,
             user_id=request.user_id,
             callback_url=request.callback_url,
+            order_id=request.order_id,
         )
 
         logger.info(f"Created payment link for user {request.user_id}: {payment_link}")
@@ -159,4 +156,35 @@ async def create_payment_link(request: PaymentLinkRequest):
         logger.exception(f"Error creating payment link: {e}")
         raise HTTPException(
             status_code=500, detail=f"Failed to create payment link: {str(e)}"
+        )
+
+
+@router.post("/payme/init", response_model=PaymeInitResponse)
+async def init_payme_payment(
+    request: PaymeInitRequest,
+    _auth: bool = Depends(verify_api_key),
+):
+    """Create a local invoice and return a Payme checkout link.
+
+    This is the single endpoint our client apps should call to start a payment.
+    Payme will later call /transaction/payme/ (Merchant API) to create/perform the transaction.
+    """
+
+    try:
+        result = await transaction_service.init_payment(
+            amount_sum=request.amount,
+            user_id=request.user_id,
+            callback_url=request.callback_url,
+            order_id=request.order_id,
+        )
+
+        logger.info(
+            f"Initialized Payme payment for user {request.user_id}, order_id={result['order_id']}"
+        )
+
+        return PaymeInitResponse(order_id=result["order_id"], link=result["link"])
+    except Exception as e:
+        logger.exception(f"Error initializing Payme payment: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to init Payme payment: {str(e)}"
         )
