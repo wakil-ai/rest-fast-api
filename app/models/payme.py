@@ -232,6 +232,29 @@ class PaymeInitResponse(BaseModel):
     link: str
 
 
+class SubscriptionPlan(BaseModel):
+    tier: str
+    period: str
+    amount_sum: int
+    daily_credits: int
+    total_credits: int
+    days: int
+
+
+class SubscriptionCatalogResponse(BaseModel):
+    plans: list[SubscriptionPlan]
+
+
+class UserSubscriptionResponse(BaseModel):
+    user_id: str
+    active: bool
+    tier: str | None = None
+    period: str | None = None
+    daily_credits: int | None = None
+    start_ms: int | None = None
+    end_ms: int | None = None
+
+
 class FiscalData(BaseModel):
     receipt_id: int | str
     status_code: int

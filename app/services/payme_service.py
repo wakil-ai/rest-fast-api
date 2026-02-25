@@ -74,6 +74,58 @@ class TransactionService:
             "amount_tiyin": price_sum * 100,
         }
 
+    def get_subscription_catalog(self) -> list[dict]:
+        """Return subscription plans derived from the configured catalog."""
+
+        plans: list[dict] = []
+        for tier, cfg in self._subscription_catalog.items():
+            daily = int(cfg.get("daily_credits") or 0)
+            for period in ("monthly", "yearly"):
+                if period not in cfg:
+                    continue
+                quote = self._get_subscription_quote(tier, period)
+                plans.append(
+                    {
+                        "tier": quote["tier"],
+                        "period": quote["period"],
+                        "amount_sum": quote["amount_sum"],
+                        "daily_credits": daily,
+                        "total_credits": quote["total_credits"],
+                        "days": quote["days"],
+                    }
+                )
+
+        # Stable ordering for clients
+        plans.sort(key=lambda p: (p["tier"], p["period"]))
+        return plans
+
+    async def get_user_subscription(self, user_id: str) -> dict:
+        user = await self.db_handler.find_one(self.users_collection, {"_id": user_id})
+        if not user:
+            user = await self.db_handler.find_one(
+                self.users_collection, {"user_id": user_id}
+            )
+        if not user:
+            return {"user_id": user_id, "active": False}
+
+        sub = user.get("subscription")
+        if not isinstance(sub, dict):
+            return {"user_id": user_id, "active": False}
+
+        now_ms = int(time.time() * 1000)
+        end_ms = int(sub.get("end_ms") or 0)
+        active = bool(end_ms > now_ms and (sub.get("daily_credits") or 0) > 0)
+
+        return {
+            "user_id": user_id,
+            "active": active,
+            "tier": sub.get("tier"),
+            "period": sub.get("period"),
+            "daily_credits": sub.get("daily_credits"),
+            "start_ms": sub.get("start_ms"),
+            "end_ms": sub.get("end_ms"),
+        }
+
     async def init_payment(
         self,
         *,

@@ -15,6 +15,9 @@ from app.models.payme import (
     PaymeMethod,
     PaymeInitRequest,
     PaymeInitResponse,
+    SubscriptionCatalogResponse,
+    SubscriptionPlan,
+    UserSubscriptionResponse,
     PaymentLinkRequest,
     PaymentLinkResponse,
     TransactionError,
@@ -193,3 +196,18 @@ async def init_payme_payment(
         raise HTTPException(
             status_code=500, detail=f"Failed to init Payme payment: {str(e)}"
         )
+
+
+@router.get("/payme/subscriptions/catalog", response_model=SubscriptionCatalogResponse)
+async def get_subscription_catalog(_auth: bool = Depends(verify_api_key)):
+    plans = transaction_service.get_subscription_catalog()
+    return SubscriptionCatalogResponse(plans=[SubscriptionPlan(**p) for p in plans])
+
+
+@router.get(
+    "/payme/subscriptions/{user_id}",
+    response_model=UserSubscriptionResponse,
+)
+async def get_user_subscription(user_id: str, _auth: bool = Depends(verify_api_key)):
+    data = await transaction_service.get_user_subscription(user_id)
+    return UserSubscriptionResponse(**data)
