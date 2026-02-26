@@ -4,6 +4,7 @@ import time
 from math import floor
 
 from app.core.config import settings
+from app.core.logger import logger
 from app.core.dependencies import get_mongo_handler
 from app.models.payme import PaymeData, PaymeError, TransactionError, TransactionState
 
@@ -455,6 +456,8 @@ class TransactionService:
             "create_time": time_ms,
             "provider": "payme",
         }
+        
+        logger.info(f"Creating new transaction: {new_transaction}")
 
         await self.db_handler.insert_one(self.transaction_collection, new_transaction)
 
