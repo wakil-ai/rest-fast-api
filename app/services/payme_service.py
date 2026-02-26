@@ -1,7 +1,6 @@
 import base64
 import secrets
 import time
-import uuid
 from math import floor
 
 from app.core.config import settings
