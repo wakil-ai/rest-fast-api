@@ -203,6 +203,7 @@ class Settings(BaseSettings):
     PAYME_INVOICES_COLLECTION: str = (
         "payme_invoices"  # Stores pre-created payment intents/invoices
     )
+    PAYME_FISCAL_COLLECTION: str = "payme_fiscal"  # Stores SetFiscalData payloads
 
     # Payme Subscriptions
     PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 350_000

@@ -14,6 +14,7 @@ class TransactionService:
         self.users_collection = settings.USERS_COLLECTION
         self.transaction_collection = settings.TRANSACTION_COLLECTION
         self.invoices_collection = settings.PAYME_INVOICES_COLLECTION
+        self.fiscal_collection = settings.PAYME_FISCAL_COLLECTION
 
         self._subscription_catalog = {
             "standard": {
@@ -190,8 +191,6 @@ class TransactionService:
                 "subscription": quote,
                 "subscription_applied": False,
                 "requisites": {
-                    # These must match the titles configured in Payme Business cabinet
-                    # (they will appear under params.account in Merchant API calls).
                     "user_id": user_id,
                     "order_id": invoice_id,
                     "subscription_type": quote["tier"] if quote else None,
@@ -672,12 +671,12 @@ class TransactionService:
         Save fiscal data for a transaction.
         Payme sends fiscal receipt data after successful payment or cancellation.
         """
-        transaction_id = params.get("id")
-        fiscal_type = params.get("type")  # "PERFORM" or "CANCEL"
+        check_id = params.get("id")
+        fiscal_type = params.get("type") 
         fiscal_data = params.get("fiscal_data")
 
         # Validate required parameters
-        if not transaction_id:
+        if not check_id:
             raise TransactionError(PaymeError.InvalidParams, request_id)
 
         if not fiscal_type or fiscal_type not in ["PERFORM", "CANCEL"]:
@@ -686,24 +685,23 @@ class TransactionService:
         if not fiscal_data:
             raise TransactionError(PaymeError.InvalidParams, request_id)
 
-        # Find transaction
-        transaction = await self.db_handler.find_one(
-            self.transaction_collection, {"id": transaction_id}
-        )
+        if not isinstance(fiscal_data, dict):
+            raise TransactionError(PaymeError.InvalidParams, request_id)
 
-        if not transaction:
-            raise TransactionError(PaymeError.FiscalReceiptNotFound, request_id)
-
-        # Prepare fiscal data update
-        fiscal_field = (
-            "fiscal_perform_data" if fiscal_type == "PERFORM" else "fiscal_cancel_data"
-        )
-
-        # Update transaction with fiscal data
-        await self.db_handler.update_one(
-            self.transaction_collection,
-            {"id": transaction_id},
-            {fiscal_field: fiscal_data},
+        # Store payload (idempotent upsert per check_id + type)
+        collection = self.db_handler.db[self.fiscal_collection]
+        await collection.update_one(
+            {"check_id": check_id, "type": fiscal_type},
+            {
+                "$set": {
+                    "check_id": check_id,
+                    "type": fiscal_type,
+                    "fiscal_data": fiscal_data,
+                    "updated_at": int(time.time() * 1000),
+                },
+                "$setOnInsert": {"created_at": int(time.time() * 1000)},
+            },
+            upsert=True,
         )
 
         return {"success": True}
