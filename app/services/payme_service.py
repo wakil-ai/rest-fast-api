@@ -134,6 +134,7 @@ class TransactionService:
         amount_sum: int | None,
         user_id: str,
         callback_url: str,
+        order_id: str | None = None,
         subscription_tier: str | None = None,
         subscription_period: str | None = None,
     ) -> dict:
@@ -168,12 +169,13 @@ class TransactionService:
         if not user:
             raise ValueError("User not found")
 
-        invoice_id = secrets.token_hex(8)
+        order_id_value = order_id or secrets.token_hex(8)
         amount_tiyin = amount_sum * 100
         now_ms = int(time.time() * 1000)
 
         existing_invoice = await self.db_handler.find_one(
-            self.invoices_collection, {"invoice_id": invoice_id}
+            self.invoices_collection,
+            {"$or": [{"order_id": order_id_value}, {"invoice_id": order_id_value}]},
         )
         if existing_invoice:
             raise ValueError("order_id already exists")
@@ -181,7 +183,7 @@ class TransactionService:
         await self.db_handler.insert_one(
             self.invoices_collection,
             {
-                "invoice_id": invoice_id,
+                "order_id": order_id_value,
                 "user_id": user_id,
                 "amount_sum": amount_sum,
                 "amount_tiyin": amount_tiyin,
@@ -193,7 +195,7 @@ class TransactionService:
                 "subscription_applied": False,
                 "requisites": {
                     "user_id": user_id,
-                    "order_id": invoice_id,
+                    "order_id": order_id_value,
                     "subscription_type": quote["tier"] if quote else None,
                     "Duration": quote["period"] if quote else None,
                 },
@@ -206,21 +208,22 @@ class TransactionService:
             amount=amount_sum,
             user_id=user_id,
             callback_url=callback_url,
-            order_id=invoice_id,
+            order_id=order_id_value,
             subscription_type=quote["tier"] if quote else None,
             duration=quote["period"] if quote else None,
         )
 
-        return {"order_id": invoice_id, "link": link}
+        return {"order_id": order_id_value, "link": link}
 
-    async def _apply_subscription_from_invoice(
-        self, *, invoice_id: str | None, transaction_id: str | None, now_ms: int
+    async def _apply_subscription_from_order(
+        self, *, order_id: str | None, transaction_id: str | None, now_ms: int
     ) -> None:
-        if not invoice_id:
+        if not order_id:
             return
 
         invoice = await self.db_handler.find_one(
-            self.invoices_collection, {"invoice_id": invoice_id}
+            self.invoices_collection,
+            {"$or": [{"order_id": order_id}, {"invoice_id": order_id}]},
         )
         if not invoice:
             return
@@ -258,7 +261,7 @@ class TransactionService:
             "daily_credits": int(quote["daily_credits"]),
             "start_ms": start_ms,
             "end_ms": end_ms,
-            "last_invoice_id": invoice_id,
+            "last_order_id": order_id,
             "last_transaction_id": transaction_id,
             "updated_at_ms": now_ms,
         }
@@ -269,7 +272,7 @@ class TransactionService:
 
         await self.db_handler.update_one(
             self.invoices_collection,
-            {"invoice_id": invoice_id},
+            {"$or": [{"order_id": order_id}, {"invoice_id": order_id}]},
             {"subscription_applied": True, "updated_at": now_ms},
         )
 
@@ -298,7 +301,11 @@ class TransactionService:
 
         invoice = await self.db_handler.find_one(
             self.invoices_collection,
-            {"invoice_id": order_id, "user_id": user_id, "status": "pending"},
+            {
+                "$or": [{"order_id": order_id}, {"invoice_id": order_id}],
+                "user_id": user_id,
+                "status": "pending",
+            },
         )
         if not invoice:
             raise TransactionError(PaymeError.UserNotFound, request_id, "order_id")
@@ -437,7 +444,10 @@ class TransactionService:
         # If invoice is a subscription, normalize subscription fields from invoice.
         invoice = await self.db_handler.find_one(
             self.invoices_collection,
-            {"invoice_id": txn_order_id, "user_id": txn_user_id},
+            {
+                "$or": [{"order_id": txn_order_id}, {"invoice_id": txn_order_id}],
+                "user_id": txn_user_id,
+            },
         )
         invoice_quote = invoice.get("subscription") if invoice else None
         if invoice_quote:
@@ -456,7 +466,7 @@ class TransactionService:
             "create_time": time_ms,
             "provider": "payme",
         }
-        
+
         logger.info(f"Creating new transaction: {new_transaction}")
 
         await self.db_handler.insert_one(self.transaction_collection, new_transaction)
@@ -464,7 +474,10 @@ class TransactionService:
         # Link transaction to invoice for easier reconciliation
         await self.db_handler.update_one(
             self.invoices_collection,
-            {"invoice_id": txn_order_id, "user_id": txn_user_id},
+            {
+                "$or": [{"order_id": txn_order_id}, {"invoice_id": txn_order_id}],
+                "user_id": txn_user_id,
+            },
             {
                 "payme_transaction_id": transaction_id,
                 "updated_at": int(time.time() * 1000),
@@ -488,8 +501,8 @@ class TransactionService:
 
         # If already paid, return existing perform_time (IDEMPOTENT)
         if transaction["state"] == TransactionState.Paid:
-            await self._apply_subscription_from_invoice(
-                invoice_id=transaction.get("order_id"),
+            await self._apply_subscription_from_order(
+                order_id=transaction.get("order_id"),
                 transaction_id=transaction.get("id"),
                 now_ms=current_time,
             )
@@ -533,14 +546,17 @@ class TransactionService:
         await self.db_handler.update_one(
             self.invoices_collection,
             {
-                "invoice_id": transaction.get("order_id"),
+                "$or": [
+                    {"order_id": transaction.get("order_id")},
+                    {"invoice_id": transaction.get("order_id")},
+                ],
                 "user_id": transaction.get("user_id") or transaction.get("user"),
             },
             {"status": "paid", "updated_at": current_time},
         )
 
-        await self._apply_subscription_from_invoice(
-            invoice_id=transaction.get("order_id"),
+        await self._apply_subscription_from_order(
+            order_id=transaction.get("order_id"),
             transaction_id=transaction.get("id"),
             now_ms=current_time,
         )
@@ -578,7 +594,10 @@ class TransactionService:
             await self.db_handler.update_one(
                 self.invoices_collection,
                 {
-                    "invoice_id": transaction.get("order_id"),
+                    "$or": [
+                        {"order_id": transaction.get("order_id")},
+                        {"invoice_id": transaction.get("order_id")},
+                    ],
                     "user_id": transaction.get("user_id") or transaction.get("user"),
                 },
                 {"status": "canceled", "updated_at": current_time},
@@ -674,37 +693,35 @@ class TransactionService:
         Save fiscal data for a transaction.
         Payme sends fiscal receipt data after successful payment or cancellation.
         """
-        check_id = params.get("id")
-        fiscal_type = params.get("type") 
-        fiscal_data = params.get("fiscal_data")
+        # Per Payme docs this method is optional, but Payme may still call it.
+        # Never fail the payment flow due to fiscal data delivery; ACK success.
+        try:
+            params = params or {}
+            check_id = params.get("id")
+            fiscal_type = params.get("type") or "PERFORM"
+            fiscal_data = params.get("fiscal_data") or {}
 
-        # Validate required parameters
-        if not check_id:
-            raise TransactionError(PaymeError.InvalidParams, request_id)
+            if fiscal_type not in ["PERFORM", "CANCEL"]:
+                fiscal_type = "PERFORM"
 
-        if not fiscal_type or fiscal_type not in ["PERFORM", "CANCEL"]:
-            raise TransactionError(PaymeError.InvalidParams, request_id)
-
-        if not fiscal_data:
-            raise TransactionError(PaymeError.InvalidParams, request_id)
-
-        if not isinstance(fiscal_data, dict):
-            raise TransactionError(PaymeError.InvalidParams, request_id)
-
-        # Store payload (idempotent upsert per check_id + type)
-        collection = self.db_handler.db[self.fiscal_collection]
-        await collection.update_one(
-            {"check_id": check_id, "type": fiscal_type},
-            {
-                "$set": {
-                    "check_id": check_id,
-                    "type": fiscal_type,
-                    "fiscal_data": fiscal_data,
-                    "updated_at": int(time.time() * 1000),
-                },
-                "$setOnInsert": {"created_at": int(time.time() * 1000)},
-            },
-            upsert=True,
-        )
+            if check_id:
+                collection = self.db_handler.db[self.fiscal_collection]
+                now_ms = int(time.time() * 1000)
+                await collection.update_one(
+                    {"check_id": check_id, "type": fiscal_type},
+                    {
+                        "$set": {
+                            "check_id": check_id,
+                            "type": fiscal_type,
+                            "fiscal_data": fiscal_data,
+                            "updated_at": now_ms,
+                            "request_id": request_id,
+                        },
+                        "$setOnInsert": {"created_at": now_ms},
+                    },
+                    upsert=True,
+                )
+        except Exception:
+            pass
 
         return {"success": True}

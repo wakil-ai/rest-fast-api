@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.dependencies import get_transaction_service
+from app.core.dependencies import get_mongo_handler, get_transaction_service
 from app.core.logger import logger
 from app.models.payme import (
     PaymeError,
@@ -25,6 +25,34 @@ from app.security import verify_api_key
 
 router = APIRouter(prefix="/transaction", tags=["Payme"])
 transaction_service = get_transaction_service()
+
+
+async def _maybe_log_payme_rpc(
+    *,
+    request_body: dict,
+    response_body: dict,
+    auth_ok: bool,
+    client_ip: str | None,
+) -> None:
+    if not getattr(settings, "PAYME_DEBUG_LOGS", False):
+        return
+
+    try:
+        mongo = get_mongo_handler()
+        await mongo.insert_one(
+            settings.PAYME_RPC_LOGS_COLLECTION,
+            {
+                "ts_ms": int(__import__("time").time() * 1000),
+                "client_ip": client_ip,
+                "auth_ok": auth_ok,
+                "method": request_body.get("method"),
+                "id": request_body.get("id"),
+                "request": request_body,
+                "response": response_body,
+            },
+        )
+    except Exception:
+        return
 
 
 def _rpc_success(request_id: int | str | None, result: dict) -> dict:
@@ -83,6 +111,7 @@ async def payme(request: Request):
         method = body.get("method")
         params = body.get("params")
         request_id = body.get("id")
+        client_ip = request.client.host if request.client else None
 
         logger.info(
             f"Received Payme request: method={method}, id={request_id}, params={params}"
@@ -90,64 +119,133 @@ async def payme(request: Request):
 
         # Verify authorization header
         authorization = request.headers.get("Authorization")
-        if not verify_payme_authorization(authorization):
+        auth_ok = verify_payme_authorization(authorization)
+        if not auth_ok:
             error = PaymeError.InvalidAuthorization
-            return JSONResponse(
-                status_code=200,
-                content=_rpc_error(
-                    request_id,
-                    {"code": error["code"], "message": error["message"]},
-                ),
+            resp = _rpc_error(
+                request_id,
+                {"code": error["code"], "message": error["message"]},
             )
+            await _maybe_log_payme_rpc(
+                request_body=body,
+                response_body=resp,
+                auth_ok=False,
+                client_ip=client_ip,
+            )
+            return JSONResponse(status_code=200, content=resp)
 
         if method == PaymeMethod.CheckPerformTransaction:
             await transaction_service.check_perform_transaction(params, request_id)
-            return _rpc_success(request_id, {"allow": True})
+            resp = _rpc_success(request_id, {"allow": True})
+            await _maybe_log_payme_rpc(
+                request_body=body,
+                response_body=resp,
+                auth_ok=True,
+                client_ip=client_ip,
+            )
+            return resp
 
         if method == PaymeMethod.CheckTransaction:
             result = await transaction_service.check_transaction(params, request_id)
-            return _rpc_success(request_id, result)
+            resp = _rpc_success(request_id, result)
+            await _maybe_log_payme_rpc(
+                request_body=body,
+                response_body=resp,
+                auth_ok=True,
+                client_ip=client_ip,
+            )
+            return resp
 
         if method == PaymeMethod.CreateTransaction:
             result = await transaction_service.create_transaction(params, request_id)
-            return _rpc_success(request_id, result)
+            resp = _rpc_success(request_id, result)
+            await _maybe_log_payme_rpc(
+                request_body=body,
+                response_body=resp,
+                auth_ok=True,
+                client_ip=client_ip,
+            )
+            return resp
 
         if method == PaymeMethod.PerformTransaction:
             result = await transaction_service.perform_transaction(params, request_id)
-            return _rpc_success(request_id, result)
+            resp = _rpc_success(request_id, result)
+            await _maybe_log_payme_rpc(
+                request_body=body,
+                response_body=resp,
+                auth_ok=True,
+                client_ip=client_ip,
+            )
+            return resp
 
         if method == PaymeMethod.CancelTransaction:
             result = await transaction_service.cancel_transaction(params, request_id)
-            return _rpc_success(request_id, result)
+            resp = _rpc_success(request_id, result)
+            await _maybe_log_payme_rpc(
+                request_body=body,
+                response_body=resp,
+                auth_ok=True,
+                client_ip=client_ip,
+            )
+            return resp
 
         if method == PaymeMethod.GetStatement:
             result = await transaction_service.get_statement(params)
-            return _rpc_success(request_id, {"transactions": result})
+            resp = _rpc_success(request_id, {"transactions": result})
+            await _maybe_log_payme_rpc(
+                request_body=body,
+                response_body=resp,
+                auth_ok=True,
+                client_ip=client_ip,
+            )
+            return resp
 
         if method == PaymeMethod.SetFiscalData:
             result = await transaction_service.set_fiscal_data(params, request_id)
-            return _rpc_success(request_id, result)
+            resp = _rpc_success(request_id, result)
+            await _maybe_log_payme_rpc(
+                request_body=body,
+                response_body=resp,
+                auth_ok=True,
+                client_ip=client_ip,
+            )
+            return resp
 
-        return JSONResponse(
-            status_code=200,
-            content=_rpc_error(
-                request_id,
-                {"code": -32601, "message": "Method not found"},
-            ),
+        resp = _rpc_error(request_id, {"code": -32601, "message": "Method not found"})
+        await _maybe_log_payme_rpc(
+            request_body=body,
+            response_body=resp,
+            auth_ok=True,
+            client_ip=client_ip,
         )
+        return JSONResponse(status_code=200, content=resp)
 
     except TransactionError as err:
+        client_ip = request.client.host if request.client else None
+        resp = _rpc_error(err.request_id, err.to_payme_response())
+        await _maybe_log_payme_rpc(
+            request_body=body,
+            response_body=resp,
+            auth_ok=True,
+            client_ip=client_ip,
+        )
         return JSONResponse(
             status_code=200,  # Payme requires 200 even for errors
-            content=_rpc_error(err.request_id, err.to_payme_response()),
+            content=resp,
         )
 
     except Exception:
+        client_ip = request.client.host if request.client else None
+        resp = _rpc_error(request_id, {"code": -32603, "message": "Internal error"})
+        await _maybe_log_payme_rpc(
+            request_body=body,
+            response_body=resp,
+            auth_ok=True,
+            client_ip=client_ip,
+        )
         return JSONResponse(
             status_code=200,
-            content=_rpc_error(
-                request_id, {"code": -32603, "message": "Internal error"}
-            ),
+            content=resp,
         )
 
 
