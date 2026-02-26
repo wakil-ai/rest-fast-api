@@ -27,6 +27,24 @@ router = APIRouter(prefix="/transaction", tags=["Payme"])
 transaction_service = get_transaction_service()
 
 
+def _rpc_success(request_id: int | str | None, result: dict) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "result": result,
+        "error": None,
+    }
+
+
+def _rpc_error(request_id: int | str | None, error: dict) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "result": None,
+        "error": error,
+    }
+
+
 def verify_payme_authorization(authorization: str | None) -> bool:
     """Verify Payme authorization header"""
     if not authorization:
@@ -59,6 +77,7 @@ def verify_payme_authorization(authorization: str | None) -> bool:
 @router.post("/payme/")
 async def payme(request: Request):
     request_id = None
+    body: dict = {}
     try:
         body = await request.json()
         method = body.get("method")
@@ -75,61 +94,60 @@ async def payme(request: Request):
             error = PaymeError.InvalidAuthorization
             return JSONResponse(
                 status_code=200,
-                content={
-                    "error": {"code": error["code"], "message": error["message"]},
-                    "id": request_id,
-                },
+                content=_rpc_error(
+                    request_id,
+                    {"code": error["code"], "message": error["message"]},
+                ),
             )
 
         if method == PaymeMethod.CheckPerformTransaction:
             await transaction_service.check_perform_transaction(params, request_id)
-            return {"result": {"allow": True}, "id": request_id}
+            return _rpc_success(request_id, {"allow": True})
 
         if method == PaymeMethod.CheckTransaction:
             result = await transaction_service.check_transaction(params, request_id)
-            return {"result": result, "id": request_id}
+            return _rpc_success(request_id, result)
 
         if method == PaymeMethod.CreateTransaction:
             result = await transaction_service.create_transaction(params, request_id)
-            return {"result": result, "id": request_id}
+            return _rpc_success(request_id, result)
 
         if method == PaymeMethod.PerformTransaction:
             result = await transaction_service.perform_transaction(params, request_id)
-            return {"result": result, "id": request_id}
+            return _rpc_success(request_id, result)
 
         if method == PaymeMethod.CancelTransaction:
             result = await transaction_service.cancel_transaction(params, request_id)
-            return {"result": result, "id": request_id}
+            return _rpc_success(request_id, result)
 
         if method == PaymeMethod.GetStatement:
             result = await transaction_service.get_statement(params)
-            return {"result": {"transactions": result}, "id": request_id}
+            return _rpc_success(request_id, {"transactions": result})
 
         if method == PaymeMethod.SetFiscalData:
             result = await transaction_service.set_fiscal_data(params, request_id)
-            return {"result": result, "id": request_id}
+            return _rpc_success(request_id, result)
 
         return JSONResponse(
             status_code=200,
-            content={
-                "error": {"code": -32601, "message": "Method not found"},
-                "id": request_id,
-            },
+            content=_rpc_error(
+                request_id,
+                {"code": -32601, "message": "Method not found"},
+            ),
         )
 
     except TransactionError as err:
         return JSONResponse(
             status_code=200,  # Payme requires 200 even for errors
-            content={"error": err.to_payme_response(), "id": err.request_id},
+            content=_rpc_error(err.request_id, err.to_payme_response()),
         )
 
     except Exception:
         return JSONResponse(
             status_code=200,
-            content={
-                "error": {"code": -32603, "message": "Internal error"},
-                "id": request_id,
-            },
+            content=_rpc_error(
+                request_id, {"code": -32603, "message": "Internal error"}
+            ),
         )
 
 
