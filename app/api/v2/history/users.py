@@ -60,9 +60,11 @@ async def update_user_phone_number(request: UserPhoneUpdateRequest):
     return create_response(user, "User phone number updated")
 
 
-# Endpoint for changing user information 
+# Endpoint for changing user information
 @router.patch(
-    "/change/info/{user_id}", status_code=status.HTTP_200_OK, response_model=UserCreateResponse
+    "/change/info/{user_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=UserCreateResponse,
 )
 @handle_service_error
 async def update_user_info(user_id: str, request: UserUpdateRequest):
@@ -74,3 +76,30 @@ async def update_user_info(user_id: str, request: UserUpdateRequest):
     if not user:
         raise HTTPException(404, f"User {user_id} not found")
     return create_response(user, "User information updated")
+
+
+# Endpoint for blocking a user
+@router.patch(
+    "/block/{user_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=UserCreateResponse,
+)
+@handle_service_error
+async def block_user(user_id: str, reason: str | None = None):
+    user = await chat_history_service.block_user(user_id=user_id, reason=reason)
+    if not user:
+        raise HTTPException(404, f"User {user_id} not found")
+    return create_response(user, "User blocked successfully")
+
+
+@router.patch(
+    "/unblock/{user_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=UserCreateResponse,
+)
+@handle_service_error
+async def unblock_user(user_id: str):
+    user = await chat_history_service.unblock_user(user_id=user_id)
+    if not user:
+        raise HTTPException(404, f"User {user_id} not found")
+    return create_response(user, "User unblocked successfully")

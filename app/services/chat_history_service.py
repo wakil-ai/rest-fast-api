@@ -194,6 +194,10 @@ class ChatHistoryService:
             "last_name": last_name,
             "picture": picture,
             "phone_number": None,
+            "is_blocked": False,
+            "blocked_at": None,
+            "blocked_reason": None,
+            "unblocked_at": None,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -223,8 +227,10 @@ class ChatHistoryService:
             self.users_collection, {"_id": user_id}
         )
         return users[0] if users else None
-    
-    async def update_user_info(self, user_id: str, field: str, value: str) -> dict | None:
+
+    async def update_user_info(
+        self, user_id: str, field: str, value: str
+    ) -> dict | None:
         """Update a user's information (username, first_name, last_name, picture)."""
         await self._ensure_initialized()
         self._validate_user_id(user_id)
@@ -275,6 +281,72 @@ class ChatHistoryService:
         )
 
         return await self.get_user(user_id)
+
+    async def block_user(self, user_id: str, reason: str | None = None) -> dict | None:
+        """Block a user so they cannot log in until unblocked.
+
+        If the user does not exist yet, a minimal user document is created.
+        """
+        await self._ensure_initialized()
+        self._validate_user_id(user_id)
+
+        now = datetime.utcnow()
+        reason = (reason or "").strip() or None
+
+        await self.db_manager.update_documents(
+            self.users_collection,
+            {"_id": user_id},
+            {
+                "$set": {
+                    "is_blocked": True,
+                    "blocked_at": now,
+                    "blocked_reason": reason,
+                    "unblocked_at": None,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "_id": user_id,
+                    "username": None,
+                    "first_name": None,
+                    "last_name": None,
+                    "picture": None,
+                    "phone_number": None,
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+        )
+
+        return await self.get_user(user_id)
+
+    async def unblock_user(self, user_id: str) -> dict | None:
+        """Unblock a previously blocked user."""
+        await self._ensure_initialized()
+        self._validate_user_id(user_id)
+
+        now = datetime.utcnow()
+        user = await self.get_user(user_id)
+        if not user:
+            return None
+
+        await self.db_manager.update_documents(
+            self.users_collection,
+            {"_id": user_id},
+            {
+                "$set": {
+                    "is_blocked": False,
+                    "unblocked_at": now,
+                    "updated_at": now,
+                }
+            },
+        )
+
+        return await self.get_user(user_id)
+
+    async def is_user_blocked(self, user_id: str) -> bool:
+        """Return True if user exists and is blocked."""
+        user = await self.get_user(user_id)
+        return bool(user and user.get("is_blocked"))
 
     # PROJECT MANAGEMENT
     async def create_project(
