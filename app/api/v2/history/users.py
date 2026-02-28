@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.dependencies import get_chat_history_service
 from app.models.chat_history import (
@@ -8,6 +8,7 @@ from app.models.chat_history import (
     UserUpdateRequest,
 )
 from app.utils.user_management import handle_service_error, serialize_mongo_id
+from app.security import verify_super_admin_key
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -83,6 +84,7 @@ async def update_user_info(user_id: str, request: UserUpdateRequest):
     "/block/{user_id}",
     status_code=status.HTTP_200_OK,
     response_model=UserCreateResponse,
+    dependencies=[Depends(verify_super_admin_key)],
 )
 @handle_service_error
 async def block_user(user_id: str, reason: str | None = None):
@@ -96,6 +98,7 @@ async def block_user(user_id: str, reason: str | None = None):
     "/unblock/{user_id}",
     status_code=status.HTTP_200_OK,
     response_model=UserCreateResponse,
+    dependencies=[Depends(verify_super_admin_key)],
 )
 @handle_service_error
 async def unblock_user(user_id: str):
