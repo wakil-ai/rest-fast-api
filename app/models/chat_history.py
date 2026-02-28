@@ -13,6 +13,10 @@ class UserCreateRequest(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     picture: str | None = None
+    
+class UserUpdateRequest(BaseModel):
+    field: str = Field(..., description="Field to update (username, first_name, last_name, picture)")
+    value: str = Field(..., description="New value for the specified field")
 
 
 class UserPhoneUpdateRequest(BaseModel):

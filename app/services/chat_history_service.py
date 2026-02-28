@@ -223,6 +223,29 @@ class ChatHistoryService:
             self.users_collection, {"_id": user_id}
         )
         return users[0] if users else None
+    
+    async def update_user_info(self, user_id: str, field: str, value: str) -> dict | None:
+        """Update a user's information (username, first_name, last_name, picture)."""
+        await self._ensure_initialized()
+        self._validate_user_id(user_id)
+
+        user = await self.get_user(user_id)
+        if not user:
+            return None
+
+        update_fields = {
+            field: value,
+            "updated_at": datetime.utcnow(),
+        }
+
+        # Even if modified_count is 0 (e.g. same value), we still return the current document.
+        await self.db_manager.update_documents(
+            self.users_collection,
+            {"_id": user_id},
+            {"$set": update_fields},
+        )
+
+        return await self.get_user(user_id)
 
     async def update_user_phone_number(
         self, user_id: str, phone_number: str

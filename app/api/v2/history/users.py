@@ -5,6 +5,7 @@ from app.models.chat_history import (
     UserCreateRequest,
     UserCreateResponse,
     UserPhoneUpdateRequest,
+    UserUpdateRequest,
 )
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
@@ -57,3 +58,19 @@ async def update_user_phone_number(request: UserPhoneUpdateRequest):
     if not user:
         raise HTTPException(404, f"User {request.user_id} not found")
     return create_response(user, "User phone number updated")
+
+
+# Endpoint for changing user information 
+@router.patch(
+    "/change/info/{user_id}", status_code=status.HTTP_200_OK, response_model=UserCreateResponse
+)
+@handle_service_error
+async def update_user_info(user_id: str, request: UserUpdateRequest):
+    user = await chat_history_service.update_user_info(
+        user_id=user_id,
+        field=request.field,
+        value=request.value,
+    )
+    if not user:
+        raise HTTPException(404, f"User {user_id} not found")
+    return create_response(user, "User information updated")
