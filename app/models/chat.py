@@ -60,6 +60,9 @@ class ChatRequest(BaseModel):
     user_id: str = Field(
         ..., example="user_12345", description="Unique identifier for the user"
     )
+    message_id: str | None = Field(
+        default=None, description="Unique identifier for the message"
+    )
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
     chat_history: list[MessagePair] | None = Field(
         default=None, description="Previous question-answer pairs"

@@ -4,8 +4,8 @@ import time
 from math import floor
 
 from app.core.config import settings
-from app.core.logger import logger
 from app.core.dependencies import get_mongo_handler
+from app.core.logger import logger
 from app.models.payme import PaymeData, PaymeError, TransactionError, TransactionState
 
 

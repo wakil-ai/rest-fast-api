@@ -13,6 +13,17 @@ class Gemini(LLM):
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.model = model_name
 
+    async def count_tokens(self, text: str) -> int:
+        """Count tokens for the given text using the Gemini API."""
+        try:
+            ct = self.client.models.count_tokens(
+                model=self.model,
+                contents=text,
+            )
+            return ct.total_tokens
+        except Exception as e:
+            raise e
+
     async def generate_response(
         self,
         user_prompt: str,

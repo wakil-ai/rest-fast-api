@@ -53,6 +53,7 @@ async def ask_question(request: ChatRequest):
 
         response = await chat_service.ask_question(
             user_id=request.user_id,
+            message_id=request.message_id,
             query=request.query,
             chat_history=request.chat_history,
             stream=should_stream,

@@ -28,6 +28,7 @@ class ChatHistoryService:
         self.feedback_collection = settings.FEEDBACK_COLLECTION
         self.files_collection = settings.FILES_COLLECTION
         self.projects_collection = settings.PROJECTS_COLLECTION
+        self.token_counting_collection = settings.TOKEN_COUNTING_COLLECTION
         self._collections_initialized = False
 
     async def _ensure_initialized(self):
@@ -46,6 +47,7 @@ class ChatHistoryService:
             self.messages_collection,
             self.feedback_collection,
             self.files_collection,
+            self.token_counting_collection,
         ]:
             await self.db_manager.create_collection(collection)
 
@@ -89,9 +91,64 @@ class ChatHistoryService:
                 self.projects_collection
             ].create_index([("user_id", 1)])
 
+            # Token counts - query by session/user
+            await self.db_manager.mongo_handler.db[
+                self.token_counting_collection
+            ].create_index([("session_id", 1), ("created_at", -1)])
+            await self.db_manager.mongo_handler.db[
+                self.token_counting_collection
+            ].create_index([("user_id", 1), ("created_at", -1)])
+
             logger.info("[ChatHistoryService] Successfully created database indexes")
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
+
+    async def upsert_token_stats(
+        self,
+        message_id: str,
+        *,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        model: str | None = None,
+        input_token: int | None = None,
+        context_token: int | None = None,
+        output_token: int | None = None,
+        embedding_input_token: int | None = None,
+    ) -> None:
+        """Upsert per-message token stats into MongoDB."""
+        if not message_id or not message_id.strip():
+            return
+
+        now = datetime.utcnow()
+
+        update: dict = {"updated_at": now}
+        if user_id is not None:
+            update["user_id"] = user_id
+        if session_id is not None:
+            update["session_id"] = session_id
+        if model is not None:
+            update["model"] = model
+        if input_token is not None:
+            update["input_token"] = int(input_token)
+        if context_token is not None:
+            update["context_token"] = int(context_token)
+        if output_token is not None:
+            update["output_token"] = int(output_token)
+        if embedding_input_token is not None:
+            update["embedding_input_token"] = int(embedding_input_token)
+
+        await self.db_manager.update_documents(
+            self.token_counting_collection,
+            {"_id": message_id},
+            {
+                "$set": update,
+                "$setOnInsert": {
+                    "created_at": now,
+                    "message_id": message_id,
+                },
+            },
+            upsert=True,
+        )
 
     def _validate_user_id(self, user_id: str) -> None:
         """Validate user ID."""

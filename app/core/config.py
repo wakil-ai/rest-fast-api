@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     USER_PROMO_CODE_COLLECTION: str = "user-promos"
     TRANSACTION_COLLECTION: str = "transactions"
     RATE_LIMIT_COLLECTION: str = "creditusage"
+    TOKEN_COUNTING_COLLECTION: str = "token_counts"
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None

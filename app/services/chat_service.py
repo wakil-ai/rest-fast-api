@@ -117,6 +117,7 @@ class ChatService:
     async def ask_question(
         self,
         user_id: str,
+        message_id: str | None,
         query: str,
         chat_history: list[MessagePair] | None = None,
         stream: bool = settings.STREAM,
@@ -147,6 +148,7 @@ class ChatService:
         try:
             answer = await self.chat_chain.generate_answer(
                 user_id=user_id,
+                message_id=message_id,
                 query=query,
                 chat_history=chat_history,
                 stream=stream,
