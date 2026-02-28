@@ -1,54 +1,32 @@
 from datetime import datetime, timezone
-from typing import Literal
 
+from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import get_mongo_handler, get_promo_code_service
 from app.core.logger import logger
-
-RateLimitAssistantType = Literal[
-    "main", "soliq", "deepresearch", "mamuriy_sud", "shartnoma"
-]
+from app.models.chat import AssistantType
 
 
 class RateLimitService:
     """
     Service to manage credit-based rate limiting for users.
     Tracks daily credit usage and enforces limits.
-    Credit costs per assistant type:
-    - Main assistant (umumiy): 10 credits per request
-    - Soliq specialized assistant: 15 credits per request
-    - Deep research / agentic RAG: 25 credits per request
-    Daily limit: 100 credits per user (configurable)
+    Credit costs per assistant type are defined in the configuration.
     """
 
     RATE_LIMIT_COLLECTION = settings.RATE_LIMIT_COLLECTION
 
     def __init__(self):
         self.mongo_handler = get_mongo_handler()
-        self._promo_code_service = None
-
-    @property
-    def promo_code_service(self):
-        """Lazy initialization of PromoCodeService to avoid circular imports."""
-        if self._promo_code_service is None:
-            self._promo_code_service = get_promo_code_service()
-        return self._promo_code_service
+        self.promo_code_service = get_promo_code_service()
 
     def _get_today_date(self) -> str:
         """Get today's date in YYYY-MM-DD format."""
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    def _get_credit_cost(self, assistant_type: RateLimitAssistantType) -> int:
+    def _get_credit_cost(self, assistant_type: AssistantType) -> int:
         """Get credit cost for a specific assistant type."""
-        # TODO replace with AssistantConfig method
-        cost_map = {
-            "main": settings.CREDIT_COST_MAIN_ASSISTANT,
-            "soliq": settings.CREDIT_COST_SOLIQ_ASSISTANT,
-            "deepresearch": settings.CREDIT_COST_DEEPRESEARCH,
-            "mamuriy_sud": settings.CREDIT_COST_SUD_ASSISTANT,
-            "shartnoma": settings.CREDIT_COST_SUD_ASSISTANT,
-        }
-        return cost_map[assistant_type]
+        return AssistantConfig.get_credit_cost(assistant_type)
 
     async def _get_active_subscription_daily_limit(self, user_id: str) -> int | None:
         """Return subscription daily credits if active, else None."""
@@ -76,7 +54,7 @@ class RateLimitService:
             return None
 
     async def check_and_decrement_credits(
-        self, user_id: str, assistant_type: RateLimitAssistantType = "main"
+        self, user_id: str, assistant_type: AssistantType = "main"
     ) -> tuple[bool, int, int]:
         """
         Check if user has enough credits and decrement if available (sync).

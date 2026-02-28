@@ -7,8 +7,8 @@ from app.models.chat_history import (
     UserPhoneUpdateRequest,
     UserUpdateRequest,
 )
-from app.utils.user_management import handle_service_error, serialize_mongo_id
 from app.security import verify_super_admin_key
+from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
 

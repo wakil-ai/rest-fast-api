@@ -12,9 +12,8 @@ from app.core.exceptions import (
     QueryTooLongException,
 )
 from app.core.logger import logger
-from app.models.chat import AgenticRAGRequest, ChatResponse, MessagePair
+from app.models.chat import AgenticRAGRequest, AssistantType, ChatResponse, MessagePair
 from app.orchestration.flow import AgenticRAGFlow
-from app.services.rate_limit_service import RateLimitAssistantType
 from app.utils.streaming import format_streaming_response, get_streaming_headers
 
 
@@ -36,7 +35,7 @@ class ChatService:
     async def verify_user_credits(
         self,
         user_id: str,
-        assistant_type: RateLimitAssistantType,
+        assistant_type: AssistantType = "main",
         required_credits: int = 1,
     ) -> None:
         """Verify user has sufficient credits and deduct them."""
