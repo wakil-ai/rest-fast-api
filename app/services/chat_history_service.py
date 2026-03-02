@@ -172,6 +172,7 @@ class ChatHistoryService:
         username: str | None = None,
         first_name: str | None = None,
         last_name: str | None = None,
+        phone_number: str | None = None,
         picture: str | None = None,
     ) -> dict:
         """Create or retrieve an existing user. Uses user_id as _id."""
@@ -189,11 +190,12 @@ class ChatHistoryService:
 
         user = {
             "_id": user_id,  # Use user_id as _id
+            "user_id": user_id,  # Also store user_id in a separate field for easier querying
             "username": username,
             "first_name": first_name,
             "last_name": last_name,
             "picture": picture,
-            "phone_number": None,
+            "phone_number": phone_number,
             "is_blocked": False,
             "blocked_at": None,
             "blocked_reason": None,

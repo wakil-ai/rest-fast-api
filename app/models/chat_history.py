@@ -11,6 +11,7 @@ class UserCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID (e.g., Telegram ID)")
     username: str | None = None
     first_name: str | None = None
+    phone_number: str | None = None
     last_name: str | None = None
     picture: str | None = None
 

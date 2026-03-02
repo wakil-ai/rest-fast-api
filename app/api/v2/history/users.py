@@ -31,6 +31,7 @@ async def create_or_get_user(request: UserCreateRequest, response: Response):
         user_id=request.user_id,
         username=request.username,
         first_name=request.first_name,
+        phone_number=request.phone_number,
         last_name=request.last_name,
         picture=request.picture,
     )
