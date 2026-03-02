@@ -196,8 +196,6 @@ class TransactionService:
                 "requisites": {
                     "user_id": user_id,
                     "order_id": order_id_value,
-                    "subscription_type": quote["tier"] if quote else None,
-                    "Duration": quote["period"] if quote else None,
                 },
                 "created_at": now_ms,
                 "updated_at": now_ms,
@@ -209,8 +207,6 @@ class TransactionService:
             user_id=user_id,
             callback_url=callback_url,
             order_id=order_id_value,
-            subscription_type=quote["tier"] if quote else None,
-            duration=quote["period"] if quote else None,
         )
 
         return {"order_id": order_id_value, "link": link}
@@ -310,22 +306,6 @@ class TransactionService:
         if not invoice:
             raise TransactionError(PaymeError.UserNotFound, request_id, "order_id")
 
-        # If this invoice represents a subscription, validate requisites if provided by Payme.
-        invoice_quote = invoice.get("subscription")
-        if invoice_quote:
-            acct_sub = account.get("subscription_type")
-            # Payme cabinet can define title as "Duration" (capital D)
-            acct_duration = account.get("Duration") or account.get("duration")
-
-            if acct_sub is not None and acct_sub != invoice_quote.get("tier"):
-                raise TransactionError(
-                    PaymeError.UserNotFound, request_id, "subscription_type"
-                )
-            if acct_duration is not None and acct_duration != invoice_quote.get(
-                "period"
-            ):
-                raise TransactionError(PaymeError.UserNotFound, request_id, "Duration")
-
         if invoice.get("amount_tiyin") != amount_tiyin:
             raise TransactionError(PaymeError.InvalidAmount, request_id)
 
@@ -386,8 +366,8 @@ class TransactionService:
 
         txn_user_id = account.get("user_id")
         txn_order_id = account.get("order_id")
-        txn_subscription_type = account.get("subscription_type")
-        txn_duration = account.get("Duration") or account.get("duration")
+        txn_subscription_type = None
+        txn_duration = None
 
         # Primary check: Search by transaction ID, user_id, and order_id
         transaction = await self.db_handler.find_one(
@@ -441,7 +421,8 @@ class TransactionService:
             if existing_tx["state"] == TransactionState.Pending:
                 raise TransactionError(PaymeError.Pending, request_id)
 
-        # If invoice is a subscription, normalize subscription fields from invoice.
+        # Store subscription metadata in DB based on our invoice.
+        # Payme requisites/account fields remain only {user_id, order_id}.
         invoice = await self.db_handler.find_one(
             self.invoices_collection,
             {
@@ -634,8 +615,6 @@ class TransactionService:
                     "account": {
                         "user_id": tx.get("user_id") or tx.get("user"),
                         "order_id": tx.get("order_id"),
-                        "subscription_type": tx.get("subscription_type"),
-                        "Duration": tx.get("duration"),
                     },
                     "create_time": tx["create_time"],
                     "perform_time": tx.get("perform_time", 0),
@@ -654,8 +633,6 @@ class TransactionService:
         user_id: str,
         callback_url: str,
         order_id: str | None = None,
-        subscription_type: str | None = None,
-        duration: str | None = None,
     ) -> str:
         """
         Create a Payme payment link for the specified amount and user.
@@ -677,11 +654,6 @@ class TransactionService:
         raw_string = f"m={settings.PAYME_MERCHANT_ID};ac.user_id={user_id};"
         if order_id:
             raw_string += f"ac.order_id={order_id};"
-        if subscription_type:
-            raw_string += f"ac.subscription_type={subscription_type};"
-        if duration:
-            # Title configured in cabinet is "Duration" (capital D)
-            raw_string += f"ac.Duration={duration};"
         raw_string += f"a={amount};c={callback_url};"
 
         encoded = base64.b64encode(raw_string.encode()).decode()
