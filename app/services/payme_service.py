@@ -26,18 +26,18 @@ class TransactionService:
                 },
                 "yearly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM,
-                    "days": 365,
+                    "days": 360,
                 },
             },
             "pro": {
-                "daily_credits": 600,
+                "daily_credits": 400,
                 "monthly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM,
                     "days": 30,
                 },
                 "yearly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM,
-                    "days": 365,
+                    "days": 360,
                 },
             },
         }
