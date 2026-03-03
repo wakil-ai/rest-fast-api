@@ -26,7 +26,7 @@ class TransactionService:
                 },
                 "yearly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM,
-                    "days": 360,
+                    "days": 365,
                 },
             },
             "pro": {
@@ -37,22 +37,25 @@ class TransactionService:
                 },
                 "yearly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM,
-                    "days": 360,
-                },
-            },
-            # Test plan (for sandbox/testing)
-            "test": {
-                "daily_credits": 50,
-                "monthly": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_TEST_MONTHLY_PRICE_SUM,
-                    "days": 30,
-                },
-                "yearly": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM,
-                    "days": 360,
+                    "days": 365,
                 },
             },
         }
+        
+        if settings.DEVELOPMENT_MODE:
+            # Test plan (for sandbox/testing)
+            self._subscription_catalog["test"] = {
+                "daily_credits": 70,
+                "monthly": {
+                    "price_sum": 1000,
+                    "days": 30,
+                },
+                "yearly": {
+                    "price_sum": 10000,
+                    "days": 360,
+                },
+            }
+
 
     def _get_subscription_quote(self, tier: str, period: str) -> dict:
         tier_cfg = self._subscription_catalog.get(tier)
