@@ -43,6 +43,7 @@ class AssistantType(str, Enum):
     SOLIQ = "soliq"
     MAMURIY_SUD = "mamuriy_sud"
     SHARTNOMA = "shartnoma"
+    DEEPRESEARCH = "deepresearch"
 
     @classmethod
     def get_available_types(cls):
@@ -59,6 +60,9 @@ class ChatRequest(BaseModel):
 
     user_id: str = Field(
         ..., example="user_12345", description="Unique identifier for the user"
+    )
+    message_id: str | None = Field(
+        default=None, description="Unique identifier for the message"
     )
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
     chat_history: list[MessagePair] | None = Field(

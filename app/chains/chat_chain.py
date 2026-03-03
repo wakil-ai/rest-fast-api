@@ -21,6 +21,7 @@ from app.core.dependencies import (
 )
 from app.core.logger import logger
 from app.llms import LLM, ChatGPT, Claude, Gemini, Novita
+from app.retrieval.embedding_manager import get_instruction
 from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 
@@ -28,6 +29,8 @@ from app.utils.tokens import count_tokens, truncate_to_token_limit
 class GenerationContext:
     """All context needed for response generation."""
 
+    user_id: str
+    message_id: str | None
     context: str
     system_prompt: str
     chat_history: str
@@ -65,6 +68,43 @@ class ChatChain:
         self.fallback_llm = get_fallback_llm()
         self.prompts_registry = get_prompt_registry()
 
+    async def _record_token_stats(
+        self,
+        *,
+        message_id: str | None,
+        user_id: str,
+        model: str | None,
+        query: str,
+        system_prompt: str,
+        answer: str,
+    ) -> None:
+        """Best-effort token stats upsert (never raises)."""
+        if not message_id:
+            return
+        try:
+            token_llm = self._select_llm(model)
+
+            input_token = await token_llm.count_tokens(query)
+            context_token = await token_llm.count_tokens(system_prompt)
+            output_token = await token_llm.count_tokens(answer)
+
+            embedding_text = ""
+            if query:
+                embedding_text = get_instruction(query)
+            embedding_input_token = await token_llm.count_tokens(embedding_text)
+
+            await self.history_service.upsert_token_stats(
+                message_id=message_id,
+                user_id=user_id,
+                model=model,
+                input_token=input_token,
+                context_token=context_token,
+                output_token=output_token,
+                embedding_input_token=embedding_input_token,
+            )
+        except Exception as e:
+            logger.warning(f"Token stats upsert failed: {e}", exc_info=True)
+
     def _get_assistant(self, name: str) -> BaseAssistant:
         """Get or create an assistant instance by name."""
         if name not in self._assistant_cache:
@@ -76,6 +116,7 @@ class ChatChain:
     async def generate_answer(
         self,
         user_id: str,
+        message_id: str,
         query: str,
         chat_history: list | None = None,
         stream: bool = settings.STREAM,
@@ -89,6 +130,7 @@ class ChatChain:
         try:
             ctx = await self._prepare_generation_context(
                 user_id=user_id,
+                message_id=message_id,
                 query=query,
                 chat_history=chat_history,
                 file_ids=file_ids,
@@ -131,6 +173,7 @@ class ChatChain:
     async def _prepare_generation_context(
         self,
         user_id: str,
+        message_id: str | None,
         query: str,
         chat_history: list | None,
         file_ids: list[str] | None,
@@ -146,13 +189,15 @@ class ChatChain:
         full_history_text = "\n".join(filter(None, [history_formatted, memory_text]))
 
         # 3. Retrieval — each assistant handles its own classification / filtering
-        retrieved_context, attachments, template_override = (
-            await self._retrieve_relevant_context(
-                query=query,
-                file_context=file_context,
-                chat_history=history_formatted,
-                assistant=assistant,
-            )
+        (
+            retrieved_context,
+            attachments,
+            template_override,
+        ) = await self._retrieve_relevant_context(
+            query=query,
+            file_context=file_context,
+            chat_history=history_formatted,
+            assistant=assistant,
         )
 
         # 4. Prompt template (assistant may override via intent classification)
@@ -182,6 +227,8 @@ class ChatChain:
         logger.debug(f"[SYSTEM PROMPT]\n{system_prompt}")
 
         return GenerationContext(
+            user_id=user_id,
+            message_id=message_id,
             context=retrieved_context,
             system_prompt=system_prompt,
             chat_history=history_formatted,
@@ -266,6 +313,7 @@ class ChatChain:
                     async for chunk in self._stream_from_llm(
                         self.fallback_llm, query, ctx.system_prompt
                     ):
+                        buffer.append(chunk)
                         yield chunk
                 except Exception:
                     logger.error("Fallback LLM also failed", exc_info=True)
@@ -273,6 +321,15 @@ class ChatChain:
 
             full = "".join(buffer)
             logger.debug(f"[STREAM FINAL]\n{full}")
+
+            await self._record_token_stats(
+                message_id=ctx.message_id,
+                user_id=ctx.user_id,
+                model=getattr(llm, "model", None),
+                query=query,
+                system_prompt=ctx.system_prompt,
+                answer=full,
+            )
 
             # Send attachments if the assistant provided any
             if ctx.attachments:
@@ -302,6 +359,15 @@ class ChatChain:
         cleaned = self._clean_text(raw)
         logger.info(
             f"LLM response: {cleaned[:300]}{'...' if len(cleaned) > 300 else ''}"
+        )
+
+        await self._record_token_stats(
+            message_id=ctx.message_id,
+            user_id=ctx.user_id,
+            model=getattr(llm, "model", None),
+            query=query,
+            system_prompt=ctx.system_prompt,
+            answer=cleaned,
         )
 
         meta = {

@@ -11,8 +11,16 @@ class UserCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID (e.g., Telegram ID)")
     username: str | None = None
     first_name: str | None = None
+    phone_number: str | None = None
     last_name: str | None = None
     picture: str | None = None
+
+
+class UserUpdateRequest(BaseModel):
+    field: str = Field(
+        ..., description="Field to update (username, first_name, last_name, picture)"
+    )
+    value: str = Field(..., description="New value for the specified field")
 
 
 class UserPhoneUpdateRequest(BaseModel):
@@ -29,6 +37,10 @@ class UserResponse(BaseModel):
     last_name: str | None = None
     picture: str | None = None
     phone_number: str | None = None
+    is_blocked: bool | None = None
+    blocked_at: datetime | None = None
+    blocked_reason: str | None = None
+    unblocked_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
