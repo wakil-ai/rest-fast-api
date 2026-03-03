@@ -135,8 +135,10 @@ async def payme(request: Request):
             return JSONResponse(status_code=200, content=resp)
 
         if method == PaymeMethod.CheckPerformTransaction:
-            await transaction_service.check_perform_transaction(params, request_id)
-            resp = _rpc_success(request_id, {"allow": True})
+            result = await transaction_service.check_perform_transaction(
+                params, request_id
+            )
+            resp = _rpc_success(request_id, result or {"allow": True})
             await _maybe_log_payme_rpc(
                 request_body=body,
                 response_body=resp,
@@ -294,6 +296,7 @@ async def init_payme_payment(
             amount_sum=request.amount,
             user_id=request.user_id,
             callback_url=request.callback_url,
+            order_id=request.order_id,
             subscription_tier=request.subscription_tier,
             subscription_period=request.subscription_period,
         )

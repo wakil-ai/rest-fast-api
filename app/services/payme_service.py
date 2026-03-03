@@ -169,15 +169,63 @@ class TransactionService:
         if not user:
             raise ValueError("User not found")
 
+        now_ms = int(time.time() * 1000)
+
+        # If this is a subscription init, reuse an existing pending invoice
+        # for the same user + tier + period (avoid opening duplicates).
+        if quote and not order_id:
+            existing_sub_invoice = await self.db_handler.find_one(
+                self.invoices_collection,
+                {
+                    "user_id": user_id,
+                    "provider": "payme",
+                    "purpose": "subscription",
+                    "status": "pending",
+                    "subscription.tier": quote.get("tier"),
+                    "subscription.period": quote.get("period"),
+                },
+            )
+            if existing_sub_invoice:
+                existing_order_id = existing_sub_invoice.get(
+                    "order_id"
+                ) or existing_sub_invoice.get("invoice_id")
+                if existing_order_id:
+                    link = await self.create_payment_link(
+                        amount=int(
+                            existing_sub_invoice.get("amount_sum") or amount_sum
+                        ),
+                        user_id=user_id,
+                        callback_url=str(
+                            existing_sub_invoice.get("callback_url") or callback_url
+                        ),
+                        order_id=str(existing_order_id),
+                    )
+                    return {"order_id": str(existing_order_id), "link": link}
+
         order_id_value = order_id or secrets.token_hex(8)
         amount_tiyin = amount_sum * 100
-        now_ms = int(time.time() * 1000)
 
         existing_invoice = await self.db_handler.find_one(
             self.invoices_collection,
             {"$or": [{"order_id": order_id_value}, {"invoice_id": order_id_value}]},
         )
         if existing_invoice:
+            # If the client re-uses order_id for the same pending invoice, return the same link.
+            if (
+                existing_invoice.get("user_id") == user_id
+                and existing_invoice.get("status") == "pending"
+                and existing_invoice.get("provider") == "payme"
+            ):
+                link = await self.create_payment_link(
+                    amount=int(existing_invoice.get("amount_sum") or amount_sum),
+                    user_id=user_id,
+                    callback_url=str(
+                        existing_invoice.get("callback_url") or callback_url
+                    ),
+                    order_id=order_id_value,
+                )
+                return {"order_id": order_id_value, "link": link}
+
             raise ValueError("order_id already exists")
 
         await self.db_handler.insert_one(
@@ -320,6 +368,37 @@ class TransactionService:
             raise TransactionError(
                 PaymeError.UserNotFound, request_id, PaymeData.UserId
             )
+
+        if not settings.PAYME_FISCAL_IKPU_CODE and not settings.PAYME_FISCAL_PACKAGE_CODE:
+            logger.error(
+                "Payme fiscalization IKPU code and package code are not set. Fiscal details will be empty."
+            )
+            raise TransactionError(
+                PaymeError.CantDoOperation,
+                request_id,
+                "Fiscalization details are not configured",
+            )
+
+        return {
+            "allow": True,
+            "additional": {
+                "order_id": order_id,
+                "user_id": user_id,
+            },
+            "detail": {
+                "receipt_type": settings.PAYME_FISCAL_RECEIPT_TYPE,
+                "items": [
+                    {
+                        "title": settings.PAYME_FISCAL_RECEIPT_TITLE,
+                        "price": int(amount_tiyin),
+                        "count": 1,
+                        "code": settings.PAYME_FISCAL_IKPU_CODE,
+                        "vat_percent": settings.PAYME_FISCAL_VAT_PERCENT,
+                        "package_code": settings.PAYME_FISCAL_PACKAGE_CODE,
+                    }
+                ],
+            },
+        }
 
     async def check_transaction(self, params, request_id):
         transaction = await self.db_handler.find_one(

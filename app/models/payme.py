@@ -225,6 +225,7 @@ class PaymeInitRequest(BaseModel):
         default=None,
         validation_alias=AliasChoices("subscription_period", "duration", "Duration"),
     )
+    order_id: str | None = None  # Optional order/invoice id to include in `ac.order_id`
 
 
 class PaymeInitResponse(BaseModel):

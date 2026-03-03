@@ -206,6 +206,13 @@ class Settings(BaseSettings):
     )
     PAYME_FISCAL_COLLECTION: str = "payme_fiscal"  # Stores SetFiscalData payloads
 
+    # Payme Fiscal (CheckPerformTransaction detail)
+    PAYME_FISCAL_RECEIPT_TITLE: str = "Online Payment"  # Title for fiscal receipt items
+    PAYME_FISCAL_IKPU_CODE: str | None = None  # IKPU code for fiscalization
+    PAYME_FISCAL_PACKAGE_CODE: str | None = None  # Package code
+    PAYME_FISCAL_VAT_PERCENT: int = 15  # VAT percent
+    PAYME_FISCAL_RECEIPT_TYPE: int = 0  # Fiscal receipt type
+
     # Payme Subscriptions
     PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 350_000
     PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 3_500_000
