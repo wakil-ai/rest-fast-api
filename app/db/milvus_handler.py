@@ -27,6 +27,8 @@ class MilvusHandler(VectorDBHandler):
             settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
             settings.MILVUS_CONTRACT_ANALYZER,
             settings.MILVUS_CRIMINAL_COURT,
+            settings.MILVUS_ECONOMIC_COURT,
+            settings.MILVUS_CIVIL_COURT,
         ]
         self.client = MilvusClient(
             uri=settings.MILVUS_URI,

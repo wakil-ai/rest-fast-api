@@ -48,6 +48,9 @@ class AssistantType(str, Enum):
     CONTRACT_ANALYZER = "contract_analyzer"
     CONTRACT_ANALYZER_LEGACY = "shartnoma"
     CRIMINAL_COURT = "criminal_court"
+    CIVIL_COURT = "civil_court"
+    ECONOMIC_COURT = "economic_court"
+
 
     @classmethod
     def get_available_types(cls):

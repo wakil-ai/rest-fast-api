@@ -6,9 +6,11 @@ from langchain_core.prompts import PromptTemplate
 
 from app.assistants import (
     AdministrativeCourtAssistant,
+    CriminalCourtAssistant,
+    EconomicCourtAssistant,
+    CivilCourtAssistant,
     BaseAssistant,
     ContractAnalyzerAssistant,
-    CriminalCourtAssistant,
     MainAssistant,
     TaxAssistant,
 )
@@ -57,6 +59,8 @@ class ChatChain:
         "administrative_court": AdministrativeCourtAssistant,
         "contract_analyzer": ContractAnalyzerAssistant,
         "criminal_court": CriminalCourtAssistant,
+        "economic_court": EconomicCourtAssistant,
+        "civil_court": CivilCourtAssistant,
     }
 
     def __init__(self):
