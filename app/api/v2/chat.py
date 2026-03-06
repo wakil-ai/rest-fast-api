@@ -49,10 +49,11 @@ async def ask_question(request: ChatRequest):
         )
 
         model_name = request.model.value if request.model else None
-        should_stream = request.stream or settings.STREAM
+        should_stream = settings.STREAM if request.stream is None else request.stream
 
         response = await chat_service.ask_question(
             user_id=request.user_id,
+            message_id=request.message_id,
             query=request.query,
             chat_history=request.chat_history,
             stream=should_stream,

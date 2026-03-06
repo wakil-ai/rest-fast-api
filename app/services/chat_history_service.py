@@ -28,6 +28,7 @@ class ChatHistoryService:
         self.feedback_collection = settings.FEEDBACK_COLLECTION
         self.files_collection = settings.FILES_COLLECTION
         self.projects_collection = settings.PROJECTS_COLLECTION
+        self.token_counting_collection = settings.TOKEN_COUNTING_COLLECTION
         self._collections_initialized = False
 
     async def _ensure_initialized(self):
@@ -46,6 +47,7 @@ class ChatHistoryService:
             self.messages_collection,
             self.feedback_collection,
             self.files_collection,
+            self.token_counting_collection,
         ]:
             await self.db_manager.create_collection(collection)
 
@@ -89,9 +91,64 @@ class ChatHistoryService:
                 self.projects_collection
             ].create_index([("user_id", 1)])
 
+            # Token counts - query by session/user
+            await self.db_manager.mongo_handler.db[
+                self.token_counting_collection
+            ].create_index([("session_id", 1), ("created_at", -1)])
+            await self.db_manager.mongo_handler.db[
+                self.token_counting_collection
+            ].create_index([("user_id", 1), ("created_at", -1)])
+
             logger.info("[ChatHistoryService] Successfully created database indexes")
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
+
+    async def upsert_token_stats(
+        self,
+        message_id: str,
+        *,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        model: str | None = None,
+        input_token: int | None = None,
+        context_token: int | None = None,
+        output_token: int | None = None,
+        embedding_input_token: int | None = None,
+    ) -> None:
+        """Upsert per-message token stats into MongoDB."""
+        if not message_id or not message_id.strip():
+            return
+
+        now = datetime.utcnow()
+
+        update: dict = {"updated_at": now}
+        if user_id is not None:
+            update["user_id"] = user_id
+        if session_id is not None:
+            update["session_id"] = session_id
+        if model is not None:
+            update["model"] = model
+        if input_token is not None:
+            update["input_token"] = int(input_token)
+        if context_token is not None:
+            update["context_token"] = int(context_token)
+        if output_token is not None:
+            update["output_token"] = int(output_token)
+        if embedding_input_token is not None:
+            update["embedding_input_token"] = int(embedding_input_token)
+
+        await self.db_manager.update_documents(
+            self.token_counting_collection,
+            {"_id": message_id},
+            {
+                "$set": update,
+                "$setOnInsert": {
+                    "created_at": now,
+                    "message_id": message_id,
+                },
+            },
+            upsert=True,
+        )
 
     def _validate_user_id(self, user_id: str) -> None:
         """Validate user ID."""
@@ -115,6 +172,7 @@ class ChatHistoryService:
         username: str | None = None,
         first_name: str | None = None,
         last_name: str | None = None,
+        phone_number: str | None = None,
         picture: str | None = None,
     ) -> dict:
         """Create or retrieve an existing user. Uses user_id as _id."""
@@ -132,10 +190,16 @@ class ChatHistoryService:
 
         user = {
             "_id": user_id,  # Use user_id as _id
+            "user_id": user_id,  # Also store user_id in a separate field for easier querying
             "username": username,
             "first_name": first_name,
             "last_name": last_name,
             "picture": picture,
+            "phone_number": phone_number,
+            "is_blocked": False,
+            "blocked_at": None,
+            "blocked_reason": None,
+            "unblocked_at": None,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -165,6 +229,126 @@ class ChatHistoryService:
             self.users_collection, {"_id": user_id}
         )
         return users[0] if users else None
+
+    async def update_user_info(
+        self, user_id: str, field: str, value: str
+    ) -> dict | None:
+        """Update a user's information (username, first_name, last_name, picture)."""
+        await self._ensure_initialized()
+        self._validate_user_id(user_id)
+
+        user = await self.get_user(user_id)
+        if not user:
+            return None
+
+        update_fields = {
+            field: value,
+            "updated_at": datetime.utcnow(),
+        }
+
+        # Even if modified_count is 0 (e.g. same value), we still return the current document.
+        await self.db_manager.update_documents(
+            self.users_collection,
+            {"_id": user_id},
+            {"$set": update_fields},
+        )
+
+        return await self.get_user(user_id)
+
+    async def update_user_phone_number(
+        self, user_id: str, phone_number: str
+    ) -> dict | None:
+        """Update a user's phone number and return updated user."""
+        await self._ensure_initialized()
+        self._validate_user_id(user_id)
+
+        phone_number = (phone_number or "").strip()
+        if not phone_number:
+            raise ValueError("Phone number cannot be empty")
+
+        user = await self.get_user(user_id)
+        if not user:
+            return None
+
+        update_fields = {
+            "phone_number": phone_number,
+            "updated_at": datetime.utcnow(),
+        }
+
+        # Even if modified_count is 0 (e.g. same value), we still return the current document.
+        await self.db_manager.update_documents(
+            self.users_collection,
+            {"_id": user_id},
+            {"$set": update_fields},
+        )
+
+        return await self.get_user(user_id)
+
+    async def block_user(self, user_id: str, reason: str | None = None) -> dict | None:
+        """Block a user so they cannot log in until unblocked.
+
+        If the user does not exist yet, a minimal user document is created.
+        """
+        await self._ensure_initialized()
+        self._validate_user_id(user_id)
+
+        now = datetime.utcnow()
+        reason = (reason or "").strip() or None
+
+        await self.db_manager.update_documents(
+            self.users_collection,
+            {"_id": user_id},
+            {
+                "$set": {
+                    "is_blocked": True,
+                    "blocked_at": now,
+                    "blocked_reason": reason,
+                    "unblocked_at": None,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "_id": user_id,
+                    "username": None,
+                    "first_name": None,
+                    "last_name": None,
+                    "picture": None,
+                    "phone_number": None,
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+        )
+
+        return await self.get_user(user_id)
+
+    async def unblock_user(self, user_id: str) -> dict | None:
+        """Unblock a previously blocked user."""
+        await self._ensure_initialized()
+        self._validate_user_id(user_id)
+
+        now = datetime.utcnow()
+        user = await self.get_user(user_id)
+        if not user:
+            return None
+
+        await self.db_manager.update_documents(
+            self.users_collection,
+            {"_id": user_id},
+            {
+                "$set": {
+                    "is_blocked": False,
+                    "unblocked_at": now,
+                    "updated_at": now,
+                }
+            },
+        )
+
+        return await self.get_user(user_id)
+
+    async def is_user_blocked(self, user_id: str) -> bool:
+        """Return True if user exists and is blocked."""
+        user = await self.get_user(user_id)
+        return bool(user and user.get("is_blocked"))
 
     # PROJECT MANAGEMENT
     async def create_project(
@@ -664,12 +848,16 @@ class ChatHistoryService:
         if not message:
             raise ValueError(f"Share {share_id} not found")
 
-        return ShareResponse(
-            share_id=share_id,
-            question=message["content"].get("query"),
-            answer=message["content"].get("response"),
-            assistant=message["metadata"].get("assistant"),
-            created_at=message.get("shared_at"),
+        created_at = message.get("shared_at") or datetime.utcnow()
+
+        return ShareResponse.model_validate(
+            {
+                "_id": share_id,
+                "question": message["content"].get("query"),
+                "answer": message["content"].get("response"),
+                "assistant": message["metadata"].get("assistant"),
+                "created_at": created_at,
+            }
         )
 
     # FEEDBACK MANAGEMENT
@@ -881,6 +1069,8 @@ class ChatHistoryService:
 
         file = await self.get_file_by_id(file_id)
         logger.info(f"Updated file status for file_id: {file_id} to {status}")
+        if not file:
+            raise ValueError("File not found after update")
         return file
 
     async def update_file_message_id(self, file_id: str, message_id: str) -> None:

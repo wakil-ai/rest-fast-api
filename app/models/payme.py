@@ -1,8 +1,10 @@
 from datetime import datetime
 from enum import IntEnum
+from typing import Literal
 
 from bson import ObjectId
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from pydantic.aliases import AliasChoices
 
 
 # Methods
@@ -50,10 +52,10 @@ class TransactionModel:
         state: int,
         amount: int,
         provider: str,
-        create_time: int = None,
+        create_time: int | None = None,
         perform_time: int = 0,
         cancel_time: int = 0,
-        reason: int = None,
+        reason: int | None = None,
     ):
         self.id = id
         self.user = user
@@ -196,13 +198,62 @@ class TransactionState(IntEnum):
 
 
 class PaymentLinkRequest(BaseModel):
-    amount: int  # Amount in smallest currency unit (e.g. cents)
+    # For this API, `amount` is expected to be in SUM (UZS).
+    # Payme Merchant API itself uses TIYIN, but checkout link generation in our backend accepts SUM.
+    amount: int
     user_id: str  # ID of the user for whom the link is created
+    order_id: str | None = None  # Optional order/invoice id to include in `ac.order_id`
     callback_url: str  # URL to redirect after payment
 
 
 class PaymentLinkResponse(BaseModel):
     link: str  # Generated payment link URL
+
+
+class PaymeInitRequest(BaseModel):
+    # If `subscription_tier` + `subscription_period` are provided, amount can be omitted
+    # and will be derived server-side from the subscription catalog.
+    amount: int | None = None  # Amount in SUM (UZS)
+    user_id: str
+    callback_url: str
+    order_id: str | None = None  # If not provided, server generates a new one
+    subscription_tier: Literal["standard", "pro", "test"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("subscription_tier", "subscription_type"),
+    )
+    subscription_period: Literal["monthly", "yearly"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("subscription_period", "duration", "Duration"),
+    )
+    order_id: str | None = None  # Optional order/invoice id to include in `ac.order_id`
+
+
+class PaymeInitResponse(BaseModel):
+    order_id: str
+    link: str
+
+
+class SubscriptionPlan(BaseModel):
+    tier: str
+    period: str
+    amount_sum: int
+    daily_credits: int
+    total_credits: int
+    days: int
+
+
+class SubscriptionCatalogResponse(BaseModel):
+    plans: list[SubscriptionPlan]
+
+
+class UserSubscriptionResponse(BaseModel):
+    user_id: str
+    active: bool
+    tier: str | None = None
+    period: str | None = None
+    daily_credits: int | None = None
+    start_ms: int | None = None
+    end_ms: int | None = None
 
 
 class FiscalData(BaseModel):

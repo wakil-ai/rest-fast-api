@@ -1,7 +1,13 @@
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.dependencies import get_chat_history_service
-from app.models.chat_history import UserCreateRequest, UserCreateResponse
+from app.models.chat_history import (
+    UserCreateRequest,
+    UserCreateResponse,
+    UserPhoneUpdateRequest,
+    UserUpdateRequest,
+)
+from app.security import verify_super_admin_key
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -25,6 +31,7 @@ async def create_or_get_user(request: UserCreateRequest, response: Response):
         user_id=request.user_id,
         username=request.username,
         first_name=request.first_name,
+        phone_number=request.phone_number,
         last_name=request.last_name,
         picture=request.picture,
     )
@@ -39,3 +46,64 @@ async def get_user(user_id: str):
     if not user:
         raise HTTPException(404, f"User {user_id} not found")
     return create_response(user, "User retrieved")
+
+
+@router.patch(
+    "/phone-number", status_code=status.HTTP_200_OK, response_model=UserCreateResponse
+)
+@handle_service_error
+async def update_user_phone_number(request: UserPhoneUpdateRequest):
+    user = await chat_history_service.update_user_phone_number(
+        user_id=request.user_id,
+        phone_number=request.phone_number,
+    )
+    if not user:
+        raise HTTPException(404, f"User {request.user_id} not found")
+    return create_response(user, "User phone number updated")
+
+
+# Endpoint for changing user information
+@router.patch(
+    "/change/info/{user_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=UserCreateResponse,
+)
+@handle_service_error
+async def update_user_info(user_id: str, request: UserUpdateRequest):
+    user = await chat_history_service.update_user_info(
+        user_id=user_id,
+        field=request.field,
+        value=request.value,
+    )
+    if not user:
+        raise HTTPException(404, f"User {user_id} not found")
+    return create_response(user, "User information updated")
+
+
+# Endpoint for blocking a user
+@router.patch(
+    "/block/{user_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=UserCreateResponse,
+    dependencies=[Depends(verify_super_admin_key)],
+)
+@handle_service_error
+async def block_user(user_id: str, reason: str | None = None):
+    user = await chat_history_service.block_user(user_id=user_id, reason=reason)
+    if not user:
+        raise HTTPException(404, f"User {user_id} not found")
+    return create_response(user, "User blocked successfully")
+
+
+@router.patch(
+    "/unblock/{user_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=UserCreateResponse,
+    dependencies=[Depends(verify_super_admin_key)],
+)
+@handle_service_error
+async def unblock_user(user_id: str):
+    user = await chat_history_service.unblock_user(user_id=user_id)
+    if not user:
+        raise HTTPException(404, f"User {user_id} not found")
+    return create_response(user, "User unblocked successfully")

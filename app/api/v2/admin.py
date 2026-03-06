@@ -32,10 +32,11 @@ async def get_user_rate_limit(user_id: str):
     """
     try:
         remaining = await rate_limit_service.get_remaining_credits(user_id)
+        daily_limit = await rate_limit_service.get_daily_credit_limit(user_id)
         return RateLimitResponse(
             user_id=user_id,
             remaining_credits=remaining,
-            daily_credit_limit=settings.DAILY_CREDITS_LIMIT,
+            daily_credit_limit=daily_limit,
             credit_costs={
                 "main": settings.CREDIT_COST_MAIN_ASSISTANT,
                 "tax": settings.CREDIT_COST_SOLIQ_ASSISTANT,

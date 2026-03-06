@@ -67,6 +67,13 @@ async def auth_callback(request: Request):
         # Use email or sub as internal user_id
         internal_user_id = email or user_id
 
+        existing = await chat_history_service.get_user(internal_user_id)
+        if existing and existing.get("is_blocked"):
+            raise HTTPException(
+                status_code=403,
+                detail="User is blocked. Please contact support to unblock your account.",
+            )
+
         user = await chat_history_service.create_user(
             user_id=internal_user_id,
             username=email,
@@ -86,6 +93,8 @@ async def auth_callback(request: Request):
             "message": "Authentication successful",
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[GoogleAuth] Error during callback: {e}")
         raise HTTPException(status_code=400, detail=f"Authentication failed: {str(e)}")
@@ -111,10 +120,34 @@ async def telegram_login(query_params: TelegramAuth = Depends(TelegramAuth)):
         validated_data = validate_telegram_data(telegram_token, query_params)
 
         if validated_data:
+            telegram_id = validated_data.get("id")
+            if telegram_id is None:
+                raise HTTPException(status_code=400, detail="Missing Telegram user id")
+
+            internal_user_id = str(telegram_id)
+            existing = await chat_history_service.get_user(internal_user_id)
+            if existing and existing.get("is_blocked"):
+                raise HTTPException(
+                    status_code=403,
+                    detail="User is blocked. Please contact support to unblock your account.",
+                )
+
+            user = await chat_history_service.create_user(
+                user_id=internal_user_id,
+                username=validated_data.get("username"),
+                first_name=validated_data.get("first_name"),
+                last_name=validated_data.get("last_name"),
+                picture=validated_data.get("photo_url"),
+            )
+
             # Return validated user data as JSON
             return {
                 "success": True,
-                "user": validated_data,
+                "user": {
+                    **validated_data,
+                    "user_id": user.get("_id") or internal_user_id,
+                    "is_blocked": bool(user.get("is_blocked")),
+                },
                 "message": "Authentication successful",
             }
         else:
