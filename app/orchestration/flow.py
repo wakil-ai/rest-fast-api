@@ -550,6 +550,8 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         return GenerationContext(
             context=self.state.retrieval_docs,
             system_prompt=system_prompt,
+            user_id=self.state.user_id,
+            message_id=self.state.message_id,
             chat_history=self.state.memory_docs,
         )
 

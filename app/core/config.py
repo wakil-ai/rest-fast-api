@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     USER_PROMO_CODE_COLLECTION: str = "user-promos"
     TRANSACTION_COLLECTION: str = "transactions"
     RATE_LIMIT_COLLECTION: str = "creditusage"
+    TOKEN_COUNTING_COLLECTION: str = "token_counts"
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
@@ -200,6 +201,27 @@ class Settings(BaseSettings):
     PAYME_PAYMENT_LINK_BASE: str = (
         "https://checkout.paycom.uz/"  # Base URL for payment links
     )
+    PAYME_INVOICES_COLLECTION: str = (
+        "payme_invoices"  # Stores pre-created payment intents/invoices
+    )
+    PAYME_FISCAL_COLLECTION: str = "payme_fiscal"  # Stores SetFiscalData payloads
+
+    # Payme Fiscal (CheckPerformTransaction detail)
+    PAYME_FISCAL_RECEIPT_TITLE: str = "Online Payment"  # Title for fiscal receipt items
+    PAYME_FISCAL_IKPU_CODE: str | None = None  # IKPU code for fiscalization
+    PAYME_FISCAL_PACKAGE_CODE: str | None = None  # Package code
+    PAYME_FISCAL_VAT_PERCENT: int = 15  # VAT percent
+    PAYME_FISCAL_RECEIPT_TYPE: int = 0  # Fiscal receipt type
+
+    # Payme Subscriptions
+    PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 300_000
+    PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 3_000_000
+    PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM: int = 600_000
+    PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM: int = 6_000_000
+
+    # Testing plan
+    PAYME_SUBSCRIPTION_TEST_MONTHLY_PRICE_SUM: int = 10_000
+    PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM: int = 20_000
 
     # Google Auth
     GOOGLE_CLIENT_ID: str | None = None

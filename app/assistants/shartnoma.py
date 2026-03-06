@@ -138,9 +138,9 @@ class ShartnomaAssistant(BaseAssistant):
         blob_path = metadata.get("gcs_docx_path", metadata.get("gcs_file_path", ""))
         file_full_path = metadata.get("file_full_path", "")
         ext = Path(file_full_path).suffix.lower()[1:]
-        
+
         logger.info(f"Creating attachment for file: {file_full_path} with ext: {ext}")
-        
+
         content_type = content_type_map.get(ext, "")
 
         if blob_path:
