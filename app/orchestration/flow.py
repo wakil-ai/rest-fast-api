@@ -474,13 +474,15 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             # Get LLM
             llm = self.chat_chain._select_llm(self.state.llm_model)
 
+            assistant_name = str(self.state.selected_assistant or "main")
+
             # Handle streaming vs non-streaming
             if self.enable_progress_stream:
                 response = self.chat_chain._generate_streaming(
                     llm=llm,
                     query=query,
                     ctx=self._create_chat_context(system_prompt),
-                    assistant=self.state.selected_assistant,
+                    assistant=assistant_name,
                 )
                 return await self._handle_streaming_response(response)
             else:
@@ -488,7 +490,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                     llm=llm,
                     query=query,
                     ctx=self._create_chat_context(system_prompt),
-                    assistant=self.state.selected_assistant,
+                    assistant=assistant_name,
                 )
                 return self._handle_non_streaming_response(response)
 
@@ -517,42 +519,37 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             return self._build_standard_system_prompt()
 
     def _build_project_system_prompt(self) -> str:
-        """Build system prompt for project context."""
-        parts = self.state.retrieval_docs.split("\n\nGENERAL LAWS:\n")
-        project_ctx = parts[0].replace("PROJECT FILES:\n", "")
-        main_ctx = parts[1] if len(parts) > 1 else ""
+        """Build system prompt for project context.
 
-        template = self._get_assistant_prompt_template("project_file")
+        We keep the same assistant prompt template and pass the full retrieved context,
+        which already includes project files + general laws markers.
+        """
+        assistant_name = self.state.selected_assistant or "main"
+        prompt_template = self.prompt_registry.get_assistant_prompt(assistant_name)
 
-        return template.format(
-            project_context=project_ctx,
-            main_context=main_ctx,
-            chat_history=self.state.memory_docs,
+        return prompt_template.format(
+            context=self.state.retrieval_docs or "",
+            chat_history=self.state.memory_docs or "",
         )
 
     def _build_standard_system_prompt(self) -> str:
         """Build standard system prompt."""
-        prompt_template = self.prompt_registry.get_assistant_prompt(
-            self.state.selected_assistant
-        )
+        assistant_name = self.state.selected_assistant or "main"
+        prompt_template = self.prompt_registry.get_assistant_prompt(assistant_name)
 
         return prompt_template.format(
-            context=self.state.retrieval_docs,
-            chat_history=self.state.memory_docs,
+            context=self.state.retrieval_docs or "",
+            chat_history=self.state.memory_docs or "",
         )
-
-    def _get_assistant_prompt_template(self, assistant_name: str) -> str:
-        """Get prompt template for a specific assistant."""
-        return AssistantConfig.get_assistant_prompt_template(assistant_name)
 
     def _create_chat_context(self, system_prompt: str) -> Any:
         """Create GenerationContext object for chat chain."""
         return GenerationContext(
-            context=self.state.retrieval_docs,
+            context=self.state.retrieval_docs or "",
             system_prompt=system_prompt,
             user_id=self.state.user_id,
             message_id=self.state.message_id,
-            chat_history=self.state.memory_docs,
+            chat_history=self.state.memory_docs or "",
         )
 
     async def _handle_streaming_response(self, response) -> str:

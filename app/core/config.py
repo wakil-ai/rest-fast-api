@@ -287,7 +287,7 @@ class Settings(BaseSettings):
             },
             "economic_court": {
                 "name": "economic_court",
-                "collection_name": self.MILVUS_MAIN_NAME,  # untill updated
+                "collection_name": self.MILVUS_ECONOMIC_COURT,  # untill updated
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Economic court specialized assistant",
             },

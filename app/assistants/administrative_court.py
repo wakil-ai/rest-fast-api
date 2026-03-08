@@ -69,7 +69,10 @@ class AdministrativeCourtAssistant(BaseAssistant):
 
             # Milvus filter expression (court, instance, category)
             milvus_filter = await self.milvus_agent.generate_filter(
-                query, chat_history, file_context
+                query,
+                chat_history,
+                file_context,
+                assistant="administrative_court",
             )
 
             # Route by domain

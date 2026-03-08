@@ -1,0 +1,147 @@
+assistants:
+  administrative_court:
+    court_names_uz:
+      - "Андижон туманлараро маъмурий суди"
+      - "Бухоро туманлараро маъмурий суди"
+      - "Фарғона туманлараро маъмурий суди"
+      - "Урганч туманлараро маъмурий суди"
+      - "Самарқанд туманлараро маъмурий суди"
+      - "Термиз туманлараро маъмурий суди"
+      - "Тошкент туманлараро маъмурий суди"
+      - "Навоий туманлараро маъмурий суди"
+      - "Қарши туманлараро маъмурий суди"
+      - "Наманган туманлараро маъмурий суди"
+      - "Ўзбекистон Республикаси Олий суди"
+      - "Нукус туманлараро маъмурий суди"
+      - "Жиззах туманлараро маъмурий суди"
+      - "Гулистон туманлараро маъмурий суди"
+      - "Нурафшон туманлараро маъмурий суди"
+      - "Тошкент шаҳар маъмурий суди"
+      - "Бухоро вилоят маъмурий суди"
+      - "Хоразм вилоят маъмурий суди"
+      - "Қорақалпоғистон Республикаси маъмурий суди"
+      - "Фарғона вилоят маъмурий суди"
+      - "Қашқадарё вилоят маъмурий суди"
+      - "Самарқанд вилоят маъмурий суди"
+      - "Жиззах вилоят маъмурий суди"
+      - "Сирдарё вилоят маъмурий суди"
+    categories_uz:
+      - "Маъмурий органларнинг ва фуқаролар ўзини ўзи бошқариш органларининг улар мансабдор шахсларининг қарорлари ҳаракатлари (ҳаракатсизлиги) юзасидан"
+      - "Давлат рўйхатидан ўтказишни рад этиш ёхуд белгиланган муддатда давлат рўйхатидан ўтказишдан бўйин товлаш юзасидан"
+      - "Фуқаролик ҳолати далолатномаларини ёзишни рўйхатга олишни рад этганлик ёки мансабдор шахсининг ҳаракати (ҳаракатсизлиги)ни юзасидан"
+      - "Нотариал ҳаракатни амалга оширишни рад этганлик ёки нотариуснинг ҳаракатлари (ҳаракатсизлиги) юзасидан"
+      - "Лицензиянинг амал қилишини тўхтатиб туриш"
+      - "Сайлов комиссияларининг хатти-ҳаракатлари (қарорлари) юзасидан"
+      - "Идоравий норматив-ҳуқуқий ҳужжатни ҳақиқий эмас деб топиш"
+      - "Лицензиянинг амал қилишини тугатиш"
+      - "Boshqa shartnomalar yuzasidan"
+      - "Boshqa asoslar bo'yicha"
+      - "Мансабдор шахсларининг ҳаракатлари (ҳаракатсизлиги) юзасидан низолар"
+      - "Кадастр ҳужжатини тайёрлашга тўсқинлик қилмаслик (кадастр ҳужжатларини тайёрлаб бериш) мажбуриятини юклашга доир низолар"
+      - "Қарорни ҳақиқий эмас деб топиш юзасидан"
+      - "Moliyaviy Jarima qo'llash"
+      - "Ҳаракат(сизлик)ни қонунга хилоф деб топиш юзасидан"
+      - "Yerga oid huquqiy munosabatlardan kelib chiqqan nizolar"
+      - "Ер майдонидан чиқаришга доир низолар"
+      - "Фуқаро фойдасига пенсия ва бошқа ижтимоий тўловларни ундиришга доир"
+      - "Юридик аҳамиятга эга бўлган бошқа фактларни аниқлаш"
+
+  economic_court:
+    court_names_uz: 
+        - 'Жиззах туманлараро иқтисодий суди'
+        - 'Андижон туманлараро иқтисодий суди'
+        - 'Нурафшон туманлараро иқтисодий суди'
+        - 'Самарқанд туманлараро иқтисодий суди'
+        - 'Термиз туманлараро иқтисодий суди'
+        - 'Тошкент туманлараро иқтисодий суди'
+        - 'Наманган туманлараро иқтисодий суди'
+        - 'Фарғона туманлараро иқтисодий суди'
+        - 'Бухоро туманлараро иқтисодий суди'
+        - 'Қарши туманлараро иқтисодий суди'
+        - 'Урганч туманлараро иқтисодий суди'
+        - 'Фарғона вилоят суди (Иқтисодий)'
+        - 'Нукус туманлараро иқтисодий суди'
+        - 'Navoiy tumanlararo iqtisodiy sudi'
+        - 'Гулистон туманлараро иқтисодий суди'
+        - 'Тошкент шаҳар суди (Иқтисодий)' 
+        - 'Хоразм вилоят суди (Иқтисодий)'
+        - 'Тошкент вилоят суди (Иқтисодий)'
+        - 'Андижон вилоят суди (Иқтисодий)'
+        - 'Наманган вилоят суди (Иқтисодий)'
+        - 'Qoraqalpog‘iston Respublikasi sudi'
+        - 'Жиззах вилоят суди (Иқтисодий)'
+        - 'Сурхондарё вилоят суди (Иқтисодий)'
+        - 'Самарқанд вилоят суди (Иқтисодий)'
+        - 'Бухоро вилоят суди (Иқтисодий)'
+        - 'Сирдарё вилоят суди (Иқтисодий)'
+        - 'Навоий вилоят суди (Иқтисодий)'
+        - 'Ўзбекистон Республикаси Олий суди (Иқтисодий)'
+        - 'Қашқадарё вилоят суди (Иқтисодий)'
+    categories_uz:
+       - 'Banklardagi hisobvaraqalar bo‘yicha operatsiyalarni to‘xtatib qo‘yish'
+       - 'Pudrat shartnomasi yuzasidan' 
+       - 'Kredit shartnomasi yuzasidan'
+       - 'Ijara shartnomasi yuzasidan' 
+       - 'Oldi-sotdi shartnomasi yuzasidan'
+       - 'Yerga oid huquqiy munosabatlardan kelib chiqqan nizolar'
+       - 'Kommunal xizmat ko‘rsatish shartnomasi yuzasidan'
+       - 'Kontraktatsiya shartnomasi yuzasidan'
+       - 'Haq evaziga xizmat ko‘rsatish shartnomasi yuzasidan'
+       - 'Korporativ nizolar yuzasidan' 
+       - 'Фьючерс шартномаси юзасидан'
+       - 'Mahsulot yetkazib berish shartnomasi yuzasidan'
+       - 'Lizing shartnomasi yuzasidan'
+       - 'Huquqiy xizmat ko‘rsatish shartnomasi yuzasidan'
+       - 'Рақобатга оид ишлар' 
+       - 'Бошқа шартномалар юзасидан'
+       - 'Yuridik shaxsni tugatish yuzasidan'
+       - 'To‘lovga qobiliyatsiz deb topish yuzasidan'
+       - 'Sug‘urta shartnomasi yuzasidan' 
+       - 'Faoliyatni to‘xtatib turish'
+       - 'Ҳакамлик муҳокамаси билан боғлиқ ишлар'
+       - 'Tadbirkorlik faoliyatining ayrim turlari bilan shug‘ullanish litsenziyalari (ruxsatnomalari)ni o‘n ish kunidan ko‘proq muddatga to‘xtatib qo‘yish'
+       - 'Investitsion nizolar yuzasidan'
+       - 'Молиявий ёрдам кўрсатиш шартномаси юзасидан'
+       - 'Moliyaviy jarima qo‘llash' 
+       - 'Yuk tashish shartnomasi yuzasidan'
+       - 'Qarz shartnomasi yuzasidan'
+       - 'Atrof muhitni muhofaza etish haqidagi qonunlarni buzilishi yuzasidan'
+       - 'Boshqa asoslar bo‘yicha'
+       - 'Интеллектуал мулк соҳасида келиб чиқадиган низолар '
+       - 'Bojxona idoralari bilan bog‘liq nizolar'
+       - 'Soliq qarzdorligini soliq to‘lovchining mol-mulki hisobidan undirish yuzasidan'
+       - 'Chet davlat sudining topshirig‘ini ijro etish yuzasidan'
+       - 'Пенсия жамғармасига тўловларни ундириш ҳақида'
+       - 'Chet davlat sudi yoki hakamlik qarorini tan olish va ijroga qaratish yuzasidan'
+       - 'Aloqa xizmati shartnomasi yuzasidan'
+       - 'Qimmatli qog‘ozlar yuzasidan'
+       - 'Tadbirkorlik faoliyatining ayrim turlari bilan shug‘ullanish litsenziyalari (ruxsatnomalari)ni bekor qilish'
+       - 'Қўшилган қиймат солиғини ундириш юзасидан'
+       - 'Арбитраж муҳокамаси билан боғлиқ ишлар'
+       - 'Кредит шартномасига доир' 
+       - 'Oldi-sotdi shartnomasi  yuzasidan '
+       - "Moliyaviy Jarima qo'llash"
+       - 'Mol-mulk munosabatlaridan kelib chiqadigan nizolar'
+       - 'Faoliyatni taqiqlash' 
+       - "Boshqa asoslar bo'yicha"
+       - 'Yuridik ahamiyatga ega bo‘lgan faktlarni aniqlash yuzasidan'
+       - 'Ноқонуний қурилган қурилмани бузиш ҳақида'
+       - 'Undirish so‘zsiz (akseptsiz) tartibda amalga oshiriladigan ijro hujjatini yoki boshqa hujjatni ijro etilishi mumkin emas deb topish yuzasidan'
+       - 'Ўзбошимчалик билан эгаллаб олинган ерларни қайтаришга доир низолар '
+       - 'Bank omonati va hisob varag‘i shartnomasi yuzasidan'
+       - 'Tadbirkorlik faoliyatining ayrim turlari bilan shug‘ullanish litsenziyalari (ruxsatnomalari)ni amal qilishini tugatish'
+       - 'Nazorat vakolatiga ega bo‘lgan organlar tomonidan nizosiz tartibda undirilgan mablag‘ni budjetdan qaytarib olib berish yuzasidan'
+       - 'Omonatni saqlash shartnomasi yuzasidan'
+       - 'Soliq qarzdorligini soliq to‘lovchi bo‘lmagan shaxsdan undirish yuzasidan'
+       - "To'lovga qobiliyatsiz deb topish yuzasidan"
+       - 'Faoliyatni cheklash'
+       - "Kommunal xizmat ko'rsatish shartnomasi yuzasidan"
+       - "Sug'urta shartnomasi yuzasidan"
+       - "Haq evaziga xizmat ko'rsatish shartnomasi yuzasidan"
+       - 'Atrof tabiiy muhitga zararli ta’sir ko‘rsatayotgan obyektlar faoliyatini tugatish va (yoki) qayta ixtisoslashtirish'
+       - 'Mediativ kelishuvni majburiy ijro etish uchun ijro varaqasi berish to‘g‘risida'
+       - 'Солиқ ва бошқа мажбурий тўловлардан қарздорликларни ундиришга доир'
+       - 'Boshqa shartnomalar yuzasidan'
+       - "Bank omonati va hisob varag'i shartnomasi yuzasidan"
+       - 'Ўзбошимчалик билан қурилган уй-жойларни бузиш билан боғлиқ низолар'
+       - 'Vositachilik shartnomasi yuzasidan'

@@ -15,30 +15,8 @@ The Milvus collection contains the following filterable fields:
 The metadata for documents is structured as a JSON field named 'metadata' with the following keys:
 
 - **court_names_uz**: This is a string key in the metadata JSON representing the name of the court in Uzbek Cyrillic. It is the primary filtering attribute and should be applied first in filter generation to scope queries to specific courts. The key contains one of the following unique values:
-  - Андижон туманлараро маъмурий суди
-  - Бухоро туманлараро маъмурий суди
-  - Фарғона туманлараро маъмурий суди
-  - Урганч туманлараро маъмурий суди
-  - Самарқанд туманлараро маъмурий суди
-  - Термиз туманлараро маъмурий суди
-  - Тошкент туманлараро маъмурий суди
-  - Навоий туманлараро маъмурий суди
-  - Қарши туманлараро маъмурий суди
-  - Наманган туманлараро маъмурий суди
-  - Ўзбекистон Республикаси Олий суди
-  - Нукус туманлараро маъмурий суди
-  - Жиззах туманлараро маъмурий суди
-  - Гулистон туманлараро маъмурий суди
-  - Нурафшон туманлараро маъмурий суди
-  - Тошкент шаҳар маъмурий суди
-  - Бухоро вилоят маъмурий суди
-  - Хоразм вилоят маъмурий суди
-  - Қорақалпоғистон Республикаси маъмурий суди
-  - Фарғона вилоят маъмурий суди
-  - Қашқадарё вилоят маъмурий суди
-  - Самарқанд вилоят маъмурий суди
-  - Жиззах вилоят маъмурий суди
-  - Сирдарё вилоят маъмурий суди
+
+{court_names_uz_values}
 
 - **instance**: This is a string key in the metadata JSON representing the judicial instance level. It is the next key filtering attribute after `court_names_uz`. The key contains one of the following unique values (stored in English):
   - FIRST
@@ -59,25 +37,8 @@ The metadata for documents is structured as a JSON field named 'metadata' with t
   - "Rayosat" → "PRESIDIUM"
 
 - **categories_uz**: This is a string key in the metadata JSON representing the category of the judicial matter in Uzbek Cyrillic. The key contains one of the following unique values:
-  - Маъмурий органларнинг ва фуқаролар ўзини ўзи бошқариш органларининг, улар мансабдор шахсларининг қарорлари, ҳаракатлари (ҳаракатсизлиги) юзасидан
-  - Давлат рўйхатидан ўтказишни рад этиш ёхуд белгиланган муддатда давлат рўйхатидан ўтказишдан бўйин товлаш юзасидан
-  - Фуқаролик ҳолати далолатномаларини ёзишни рўйхатга олишни рад этганлик ёки мансабдор шахсининг ҳаракати (ҳаракатсизлиги)ни юзасидан
-  - Нотариал ҳаракатни амалга оширишни рад этганлик ёки нотариуснинг ҳаракатлари (ҳаракатсизлиги) юзасидан
-  - Лицензиянинг амал қилишини тўхтатиб туриш
-  - Сайлов комиссияларининг хатти-ҳаракатлари (қарорлари) юзасидан
-  - Идоравий норматив-ҳуқуқий ҳужжатни ҳақиқий эмас деб топиш
-  - Лицензиянинг амал қилишини тугатиш
-  - Boshqa shartnomalar yuzasidan
-  - "Boshqa asoslar bo'yicha"
-  - Мансабдор шахсларининг ҳаракатлари (ҳаракатсизлиги) юзасидан низолар
-  - Кадастр ҳужжатини тайёрлашга тўсқинлик қилмаслик (кадастр ҳужжатларини тайёрлаб бериш) мажбуриятини юклашга доир низолар
-  - Қарорни ҳақиқий эмас деб топиш юзасидан
-  - "Moliyaviy Jarima qo'llash"
-  - Ҳаракат(сизлик)ни қонунга хилоф деб топиш юзасидан
-  - "Yerga oid huquqiy munosabatlardan kelib chiqqan nizolar"
-  - Ер майдонидан чиқаришга доир низолар
-  - Фуқаро фойдасига пенсия ва бошқа ижтимоий тўловларни ундиришга доир
-  - Юридик аҳамиятга эга бўлган бошқа фактларни аниқлаш 
+
+{categories_uz_values}
 
 ### 2. Text Field (String)
 The 'text' field contains the full document content in Uzbek Cyrillic. This field should be used for content-based filtering when users search for specific keywords, topics, or phrases within the documents.
