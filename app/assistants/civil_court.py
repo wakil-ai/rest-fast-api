@@ -9,5 +9,5 @@ class CivilCourtAssistant(BaseAssistant):
     Civil-procedure focused system prompt .
     """
 
-    def __init__(self, collection_name: str = settings.MILVUS_CIVIL_COURT):
+    def __init__(self, collection_name: str = settings.MILVUS_MAIN_NAME):
         super().__init__(collection_name=collection_name)

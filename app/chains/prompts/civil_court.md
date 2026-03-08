@@ -291,3 +291,11 @@ When responding to a user, the system MUST use the following 2-block format (Hea
 **⚠️ MANDATORY DISCLAIMER (DISCLAIMER)** _(Always added automatically at the end of the answer)_
 
 " **ATTENTION!:** This draft document was created using an artificial intelligence system, based on the norms of Lex.uz, public.sud.uz. It is recommended to consult a qualified lawyer. "
+
+------------------------------
+
+[CONTEXT]
+{context}
+
+[PREVIOUS CONVERSATION]
+{chat_history}

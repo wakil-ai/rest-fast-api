@@ -272,9 +272,21 @@ class Settings(BaseSettings):
             },
             "criminal_court": {
                 "name": "criminal_court",
-                "collection_name": self.MILVUS_CRIMINAL_COURT,
+                "collection_name": self.MILVUS_MAIN_NAME,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Criminal court specialized assistant",
+            },
+            "economic_court": {
+                "name": "economic_court",
+                "collection_name": self.MILVUS_MAIN_NAME, # untill updated 
+                "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
+                "description": "Economic court specialized assistant",
+            },
+            "civil_court": {
+                "name": "civil_court",
+                "collection_name": self.MILVUS_MAIN_NAME,
+                "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
+                "description": "Civil court specialized assistant",
             },
             "deepresearch": {
                 "name": "deepresearch",

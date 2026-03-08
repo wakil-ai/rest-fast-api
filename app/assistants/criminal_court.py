@@ -9,5 +9,5 @@ class CriminalCourtAssistant(BaseAssistant):
     criminal-procedure focused system prompt .
     """
 
-    def __init__(self, collection_name: str = settings.MILVUS_CRIMINAL_COURT):
+    def __init__(self, collection_name: str = settings.MILVUS_MAIN_NAME):
         super().__init__(collection_name=collection_name)
