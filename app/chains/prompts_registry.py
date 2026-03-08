@@ -25,7 +25,7 @@ class PromptRegistry:
         "milvus_query_agent": "milvus_agent.md",
         "criminal_court": "criminal_court.md",
         "economic_court": "economic_court.md",
-        "civil_court": "civil_court.md"
+        "civil_court": "civil_court.md",
     }
 
     ASSISTANT_MAPPING = {
@@ -36,7 +36,7 @@ class PromptRegistry:
         "contract_analyzer": "contract_template_generation",
         "criminal_court": "criminal_court",
         "economic_court": "economic_court",
-        "civil_court": "civil_court"
+        "civil_court": "civil_court",
     }
 
     def __init__(self):

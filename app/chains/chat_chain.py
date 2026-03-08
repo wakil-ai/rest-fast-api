@@ -6,11 +6,11 @@ from langchain_core.prompts import PromptTemplate
 
 from app.assistants import (
     AdministrativeCourtAssistant,
+    BaseAssistant,
+    CivilCourtAssistant,
+    ContractAnalyzerAssistant,
     CriminalCourtAssistant,
     EconomicCourtAssistant,
-    CivilCourtAssistant,
-    BaseAssistant,
-    ContractAnalyzerAssistant,
     MainAssistant,
     TaxAssistant,
 )

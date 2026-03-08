@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from typing import TypeAlias
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings

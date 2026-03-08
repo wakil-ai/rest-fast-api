@@ -41,7 +41,7 @@ class TransactionService:
                 },
             },
         }
-        
+
         if settings.DEVELOPMENT_MODE:
             # Test plan (for sandbox/testing)
             self._subscription_catalog["test"] = {
@@ -55,7 +55,6 @@ class TransactionService:
                     "days": 360,
                 },
             }
-
 
     def _get_subscription_quote(self, tier: str, period: str) -> dict:
         tier_cfg = self._subscription_catalog.get(tier)
@@ -372,7 +371,10 @@ class TransactionService:
                 PaymeError.UserNotFound, request_id, PaymeData.UserId
             )
 
-        if not settings.PAYME_FISCAL_IKPU_CODE and not settings.PAYME_FISCAL_PACKAGE_CODE:
+        if (
+            not settings.PAYME_FISCAL_IKPU_CODE
+            and not settings.PAYME_FISCAL_PACKAGE_CODE
+        ):
             logger.error(
                 "Payme fiscalization IKPU code and package code are not set. Fiscal details will be empty."
             )

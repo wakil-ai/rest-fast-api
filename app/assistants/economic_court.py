@@ -5,7 +5,6 @@ import os
 from typing import Any
 
 from app.assistants.base import BaseAssistant, RetrievalConfig, RetrievalResult
-from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import get_milvus_query_agent, get_prompt_registry
 from app.core.logger import logger

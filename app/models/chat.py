@@ -51,7 +51,6 @@ class AssistantType(str, Enum):
     CIVIL_COURT = "civil_court"
     ECONOMIC_COURT = "economic_court"
 
-
     @classmethod
     def get_available_types(cls):
         """Get all available assistant types from configuration."""

@@ -3,11 +3,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.core.logger import logger
 from app.core.dependencies import get_click_service
+from app.core.logger import logger
 from app.models.click import ClickInitRequest, ClickInitResponse
 from app.security import verify_api_key
-
 
 router = APIRouter(prefix="/transaction", tags=["Click"])
 click_service = get_click_service()
