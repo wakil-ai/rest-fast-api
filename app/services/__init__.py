@@ -4,6 +4,7 @@ from app.services.chat_service import ChatService
 from app.services.file_management import FileManager
 from app.services.memory_service import ChatMemoryService
 from app.services.ocr_service import OCRService
+from app.services.click_service import ClickService
 from app.services.payme_service import TransactionService
 from app.services.promo_code_service import PromoCodeService
 from app.services.rate_limit_service import RateLimitService
@@ -31,6 +32,7 @@ __all__ = [
     "FileManager",
     "ChatMemoryService",
     "OCRService",
+    "ClickService",
     "TransactionService",
     "PromoCodeService",
     "RateLimitService",

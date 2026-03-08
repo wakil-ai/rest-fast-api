@@ -214,6 +214,15 @@ class Settings(BaseSettings):
     PAYME_FISCAL_VAT_PERCENT: int = 15  # VAT percent
     PAYME_FISCAL_RECEIPT_TYPE: int = 0  # Fiscal receipt type
 
+    # Click Payment Configuration (SHOP-API: prepare/complete + payment button)
+    CLICK_MERCHANT_ID: int | None = None
+    CLICK_SERVICE_ID: int | None = None
+    CLICK_SECRET_KEY: str | None = None
+    CLICK_MERCHANT_USER_ID: int | None = None
+    CLICK_PAYMENT_LINK_BASE: str = "https://my.click.uz/services/pay"
+    CLICK_INVOICES_COLLECTION: str = "click_invoices"
+    CLICK_TRANSACTIONS_COLLECTION: str = "click_transactions"
+
     # Payme Subscriptions
     PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 300_000
     PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 3_000_000
@@ -278,7 +287,7 @@ class Settings(BaseSettings):
             },
             "economic_court": {
                 "name": "economic_court",
-                "collection_name": self.MILVUS_MAIN_NAME, # untill updated 
+                "collection_name": self.MILVUS_MAIN_NAME,  # untill updated
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Economic court specialized assistant",
             },
