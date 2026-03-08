@@ -351,17 +351,11 @@ class PromoCodeService:
             # Get user's promo code assignment
             assignment = await self.get_user_promo_code(user_id)
             if not assignment:
-                logger.info(
-                    f"[PromoCodeService] No promo code assignment found for user {user_id}"
-                )
                 return False, None
 
             # Check if the promo code is still active
             promo_code = assignment.get("promo_code")
             if not promo_code:
-                logger.warning(
-                    f"[PromoCodeService] No promo code in assignment for user {user_id}"
-                )
                 return False, None
 
             promo = await self.get_promo_code(promo_code)
