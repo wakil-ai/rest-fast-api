@@ -18,6 +18,8 @@ The metadata for documents is structured as a JSON field named 'metadata' with t
 
 {court_names_uz_values}
 
+Note: Please use exactly the name mentioned on the list in *court_names_uz* without changing to cyrilic or any other format.
+
 - **instance**: This is a string key in the metadata JSON representing the judicial instance level. It is the next key filtering attribute after `court_names_uz`. The key contains one of the following unique values (stored in English):
   - FIRST
   - INSPECTION
@@ -39,6 +41,8 @@ The metadata for documents is structured as a JSON field named 'metadata' with t
 - **categories_uz**: This is a string key in the metadata JSON representing the category of the judicial matter in Uzbek Cyrillic. The key contains one of the following unique values:
 
 {categories_uz_values}
+
+Note: Please use exactly the name mentioned on the list in *categories_uz* without changing to cyrilic or any other format.
 
 ### 2. Text Field (String)
 The 'text' field contains the full document content in Uzbek Cyrillic. This field should be used for content-based filtering when users search for specific keywords, topics, or phrases within the documents.
