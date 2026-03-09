@@ -26,6 +26,7 @@ class AdministrativeCourtAssistant(BaseAssistant):
 
     # Metadata fields rendered in formatted output
     METADATA_LABELS: dict[str, str] = {
+        "case_number": "Ish raqami",
         "responsible_judge_name": "Masul Sudya nomi",
         "speaker_judge_name": "Ma'ruzachi sudya",
         "hearing_date": "Sud majlisi sanasi",
