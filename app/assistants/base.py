@@ -99,6 +99,6 @@ class BaseAssistant:
 
     def _error_result(self) -> RetrievalResult:
         """Sensible fallback when retrieval fails."""
-        if self.collection_name == settings.MILVUS_SHARTNOMA:
+        if self.collection_name == settings.MILVUS_CONTRACT_ANALYZER:
             return RetrievalResult(context="", attachments=[])
         return RetrievalResult(context="No relevant documents found.", attachments=[])

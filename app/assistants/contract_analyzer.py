@@ -11,8 +11,8 @@ from app.core.logger import logger
 from app.utils.text_cleaning import TextCleaner
 
 
-class ShartnomaAssistant(BaseAssistant):
-    """Contract assistant with intent classification and attachment-aware formatting.
+class ContractAnalyzerAssistant(BaseAssistant):
+    """Contract analyzer assistant with intent classification and attachment-aware formatting.
 
     Owns its own:
     - Intent classification (template generation vs risk analysis)
@@ -20,7 +20,7 @@ class ShartnomaAssistant(BaseAssistant):
     """
 
     def __init__(self):
-        super().__init__(collection_name=settings.MILVUS_SHARTNOMA)
+        super().__init__(collection_name=settings.MILVUS_CONTRACT_ANALYZER)
         self.storage_service = get_storage_service()
         self.intent_classifier = get_intent_classifier()
 
@@ -35,7 +35,7 @@ class ShartnomaAssistant(BaseAssistant):
     ) -> RetrievalResult:
         """
         1. Classify intent → domain_type + prompt template
-        2. Retrieve full top_k from shartnoma (contract formatting)
+        2. Retrieve full top_k from contract analyzer collection (contract formatting)
         3. Retrieve half top_k from main/lexuz (standard formatting)
         4. Merge both results
         """
@@ -45,19 +45,19 @@ class ShartnomaAssistant(BaseAssistant):
                 query, chat_history, file_context
             )
             logger.info(
-                f"[ShartnomaAssistant] Contract intent classified as domain: {domain_type}"
+                f"[ContractAnalyzerAssistant] Contract intent classified as domain: {domain_type}"
             )
 
             effective_query = f"{query}\n\n\n{file_context}" if file_context else query
 
-            # Shartnoma portion — full top_k, contract formatting
-            shartnoma_config = self._build_config()
-            shartnoma_docs = await self.asearch(effective_query, shartnoma_config)
-            shartnoma_result = await self.format_results(shartnoma_docs)
+            # Contract-analyzer portion — full top_k, contract formatting
+            contract_config = self._build_config()
+            contract_docs = await self.asearch(effective_query, contract_config)
+            contract_result = await self.format_results(contract_docs)
 
             # Main (lexuz) portion — half top_k, standard formatting
             logger.info(
-                f"[ShartnomaAssistant] Retrieving {self.top_k} from shartnoma + {settings.ADDITIONAL_TOP_K} from main"
+                f"[ContractAnalyzerAssistant] Retrieving {self.top_k} from contract_analyzer + {settings.ADDITIONAL_TOP_K} from main"
             )
             main_embedding = await self.embedder.aembed_query(effective_query)
             main_docs = await asyncio.to_thread(
@@ -70,7 +70,7 @@ class ShartnomaAssistant(BaseAssistant):
             main_result = await self.formatter.format_results(main_docs)
 
             # Merge results
-            combined_ctx = shartnoma_result.context
+            combined_ctx = contract_result.context
             if main_result.context:
                 combined_ctx += f"\n\n{'=' * 60}\n\n{main_result.context}"
             if file_context and combined_ctx:
@@ -78,13 +78,15 @@ class ShartnomaAssistant(BaseAssistant):
 
             result = RetrievalResult(
                 context=combined_ctx,
-                attachments=shartnoma_result.attachments,
+                attachments=contract_result.attachments,
                 prompt_template=template,
             )
             return result
 
         except Exception as e:
-            logger.error(f"[ShartnomaAssistant] Retrieval failed: {e}", exc_info=True)
+            logger.error(
+                f"[ContractAnalyzerAssistant] Retrieval failed: {e}", exc_info=True
+            )
             return self._error_result()
 
     # Search: inherits default hybrid search from BaseAssistant

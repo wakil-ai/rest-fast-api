@@ -17,6 +17,7 @@ from app.api.v2 import (
     admin,
     auth,
     chat,
+    click,
     logs,
     memory,
     payme,
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
     app.include_router(payme.router, prefix=settings.API_PREFIX)
+    app.include_router(click.router, prefix=settings.API_PREFIX)
 
     # Public share router without API key dependency
     app.include_router(share_router, prefix=settings.API_PREFIX, tags=["Public"])

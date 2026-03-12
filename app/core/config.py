@@ -82,11 +82,14 @@ class Settings(BaseSettings):
 
     # Milvus
     MILVUS_MAIN_NAME: str = "lexuz"
-    MILVUS_SOLIQ_ASSISTANT_NAME: str = "soliq"
+    MILVUS_TAX_COLLECTION: str = "soliq"
     MILVUS_PROJECT_FILES: str = "project_files"
-    MILVUS_MAMURIY_SUD: str = "mamuriy_sud"
-    MILVUS_MAMURIY_SUD_ALL: str = "mamuriy_sud_all"  # For general domain
-    MILVUS_SHARTNOMA: str = "shartnoma"
+    MILVUS_ADMINISTRATIVE_COURT: str = "mamuriy_sud"
+    MILVUS_ADMINISTRATIVE_COURT_ALL: str = "mamuriy_sud_all"
+    MILVUS_CONTRACT_ANALYZER: str = "shartnoma"
+    MILVUS_ECONOMIC_COURT: str = "economic_court"
+    MILVUS_CIVIL_COURT: str = "civil_court"
+    MILVUS_CRIMINAL_COURT: str = "criminal_court"
     MILVUS_URI: str = "http://localhost:19530"
     MILVUS_USER: str | None = None
     MILVUS_PASSWORD: str | None = None
@@ -163,7 +166,7 @@ class Settings(BaseSettings):
     STREAM: bool = True  # Whether to use streaming responses
     TOP_K: int = 10
     ADDITIONAL_TOP_K: int = (
-        3  # For multi-collection retrievals (e.g. shartnoma assistant + main e.g)
+        3  # For multi-collection retrievals (e.g. contract analyzer + main)
     )
     ALPHA: float = 0.8
 
@@ -188,11 +191,9 @@ class Settings(BaseSettings):
     # Credit System Configuration
     DAILY_CREDITS_LIMIT: int = 100  # Total daily credits per user
     CREDIT_COST_MAIN_ASSISTANT: int = 10  # Credits for main assistant (umumiy)
-    CREDIT_COST_SOLIQ_ASSISTANT: int = 20  # Credits for soliq specialized assistant
+    CREDIT_COST_SOLIQ_ASSISTANT: int = 20  # Credits for tax specialized assistant
     CREDIT_COST_SUD_ASSISTANT: int = 25  # Credits for sud specialized assistant
-    CREDIT_COST_SHARTNOMA_ASSISTANT: int = (
-        25  # Credits for shartnoma specialized assistant
-    )
+    CREDIT_COST_SHARTNOMA_ASSISTANT: int = 25  # Credits for contract analyzer assistant
     CREDIT_COST_DEEPRESEARCH: int = 20  # Credits for deep research / agentic RAG
 
     # Payme Payment Configuration
@@ -212,6 +213,15 @@ class Settings(BaseSettings):
     PAYME_FISCAL_PACKAGE_CODE: str | None = None  # Package code
     PAYME_FISCAL_VAT_PERCENT: int = 15  # VAT percent
     PAYME_FISCAL_RECEIPT_TYPE: int = 0  # Fiscal receipt type
+
+    # Click Payment Configuration (SHOP-API: prepare/complete + payment button)
+    CLICK_MERCHANT_ID: int | None = None
+    CLICK_SERVICE_ID: int | None = None
+    CLICK_SECRET_KEY: str | None = None
+    CLICK_MERCHANT_USER_ID: int | None = None
+    CLICK_PAYMENT_LINK_BASE: str = "https://my.click.uz/services/pay"
+    CLICK_INVOICES_COLLECTION: str = "click_invoices"
+    CLICK_TRANSACTIONS_COLLECTION: str = "click_transactions"
 
     # Payme Subscriptions
     PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 300_000
@@ -251,23 +261,41 @@ class Settings(BaseSettings):
                 "credit_cost": self.CREDIT_COST_MAIN_ASSISTANT,
                 "description": "General legal assistant",
             },
-            "soliq": {
-                "name": "soliq",
-                "collection_name": self.MILVUS_SOLIQ_ASSISTANT_NAME,
+            "tax": {
+                "name": "tax",
+                "collection_name": self.MILVUS_TAX_COLLECTION,
                 "credit_cost": self.CREDIT_COST_SOLIQ_ASSISTANT,
                 "description": "Tax specialized assistant",
             },
-            "mamuriy_sud": {
-                "name": "mamuriy_sud",
-                "collection_name": self.MILVUS_MAMURIY_SUD,
+            "administrative_court": {
+                "name": "administrative_court",
+                "collection_name": self.MILVUS_ADMINISTRATIVE_COURT_ALL,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Administrative court specialized assistant",
             },
-            "shartnoma": {
-                "name": "shartnoma",
-                "collection_name": self.MILVUS_SHARTNOMA,
+            "contract_analyzer": {
+                "name": "contract_analyzer",
+                "collection_name": self.MILVUS_CONTRACT_ANALYZER,
                 "credit_cost": self.CREDIT_COST_SHARTNOMA_ASSISTANT,
-                "description": "Contract specialized assistant",
+                "description": "Contract analyzer assistant",
+            },
+            "criminal_court": {
+                "name": "criminal_court",
+                "collection_name": self.MILVUS_MAIN_NAME,
+                "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
+                "description": "Criminal court specialized assistant",
+            },
+            "economic_court": {
+                "name": "economic_court",
+                "collection_name": self.MILVUS_ECONOMIC_COURT,  # untill updated
+                "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
+                "description": "Economic court specialized assistant",
+            },
+            "civil_court": {
+                "name": "civil_court",
+                "collection_name": self.MILVUS_MAIN_NAME,
+                "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
+                "description": "Civil court specialized assistant",
             },
             "deepresearch": {
                 "name": "deepresearch",

@@ -5,20 +5,16 @@ import os
 from typing import Any
 
 from app.assistants.base import BaseAssistant, RetrievalConfig, RetrievalResult
-from app.core.assistants import AssistantConfig
 from app.core.config import settings
-from app.core.dependencies import get_intent_classifier, get_milvus_query_agent
+from app.core.dependencies import get_milvus_query_agent, get_prompt_registry
 from app.core.logger import logger
 
 
-class MamuriyAssistant(BaseAssistant):
-    """Administrative-court assistant with file-level retrieval and domain routing.
+class EconomicCourtAssistant(BaseAssistant):
+    """Economic-court assistant.
 
-    Owns its own:
-    - Intent classification (tax vs general domain)
-    - Milvus filter generation (court/instance/category)
-    - File-level search expansion
-    - Court-specific metadata formatting
+    Uses the default hybrid retrieval from BaseAssistant, but with a
+    Economic-procedure focused system prompt .
     """
 
     # Number of unique files to return per search
@@ -26,6 +22,7 @@ class MamuriyAssistant(BaseAssistant):
 
     # Metadata fields rendered in formatted output
     METADATA_LABELS: dict[str, str] = {
+        "case_number": "Ish raqami",
         "responsible_judge_name": "Masul Sudya nomi",
         "speaker_judge_name": "Ma'ruzachi sudya",
         "hearing_date": "Sud majlisi sanasi",
@@ -38,11 +35,11 @@ class MamuriyAssistant(BaseAssistant):
 
     def __init__(self):
         super().__init__(
-            collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
+            collection_name=settings.MILVUS_ECONOMIC_COURT,
             top_k=settings.TOP_K,
         )
-        self.intent_classifier = get_intent_classifier()
         self.milvus_agent = get_milvus_query_agent()
+        self.prompt_registry = get_prompt_registry()
 
     # Retrieve — classification + domain routing (all internal)
     async def retrieve(
@@ -54,37 +51,29 @@ class MamuriyAssistant(BaseAssistant):
         **kwargs,
     ) -> RetrievalResult:
         """
-        1. Classify intent  → domain_type + prompt template
-        2. Generate Milvus filter expression
-        3. Route to the correct multi-collection strategy
+        1. Generate Milvus filter expression
+        2. Route to the correct multi-collection strategy
         """
         try:
-            # Intent classification (returns domain str + PromptTemplate)
-            domain_type, template = await self.intent_classifier.classify_intent(
-                query, chat_history, file_context
-            )
-            logger.info(
-                f"[MamuriyAssistant] Intent classified as domain: {domain_type}"
-            )
+            template = self.prompt_registry.get_assistant_prompt("economic_court")
 
             # Milvus filter expression (court, instance, category)
             milvus_filter = await self.milvus_agent.generate_filter(
-                query, chat_history, file_context
+                query,
+                chat_history,
+                file_context,
+                assistant="economic_court",
             )
 
-            # Route by domain
-            if domain_type == "tax":
-                result = await self._retrieve_tax(query, file_context, milvus_filter)
-            else:
-                result = await self._retrieve_general(
-                    query, file_context, milvus_filter
-                )
+            result = await self._retrieve_general(query, file_context, milvus_filter)
 
             result.prompt_template = template
             return result
 
         except Exception as e:
-            logger.error(f"[MamuriyAssistant] Retrieval failed: {e}", exc_info=True)
+            logger.error(
+                f"[EconomicCourtAssistant] Retrieval failed: {e}", exc_info=True
+            )
             return self._error_result()
 
     # Search strategy (file-level)
@@ -190,58 +179,22 @@ class MamuriyAssistant(BaseAssistant):
             attachments=[],
         )
 
-    # Domain-specific retrieval (multi-collection merging)
-    async def _retrieve_tax(
-        self, query: str, file_context: str, filter: str
-    ) -> RetrievalResult:
-        """Merge results from mamuriy_sud + soliq collections."""
-        # mamuriy_sud portion
-        mam_config = RetrievalConfig(
-            top_k=settings.ADDITIONAL_TOP_K,
-            collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
-            filter=filter,
-        )
-        effective = f"{query}\n\n\n{file_context}" if file_context else query
-        mam_docs = await self.asearch(effective, mam_config)
-        mam_result = await self.format_results(mam_docs)
-
-        # soliq portion (standard hybrid search + standard formatting)
-        soliq_coll = AssistantConfig.get_collection_name("soliq")
-        sol_embedding = await self.embedder.aembed_query(effective)
-        sol_docs = await asyncio.to_thread(
-            self.db.search_hybrid,
-            dense_vector=sol_embedding,
-            text_query=effective,
-            top_k=settings.ADDITIONAL_TOP_K,
-            collection_name=soliq_coll,
-        )
-        sol_result = await self.formatter.format_results(sol_docs)
-
-        combined_ctx = f"{mam_result.context}\n\n{'=' * 60}\n\n{sol_result.context}"
-        if file_context:
-            combined_ctx += f"\n\n\n{file_context}"
-
-        return RetrievalResult(
-            context=combined_ctx,
-            attachments=mam_result.attachments + sol_result.attachments,
-        )
-
     async def _retrieve_general(
         self, query: str, file_context: str, filter: str
     ) -> RetrievalResult:
-        """Merge results from mamuriy_sud + main (lexuz) collections."""
+        """Merge results from economic court + main (lexuz) collections."""
         effective = f"{query}\n\n\n{file_context}" if file_context else query
 
-        # mamuriy_sud portion
-        mam_config = RetrievalConfig(
+        # Administrative-court portion
+        eco_config = RetrievalConfig(
             top_k=settings.TOP_K,
-            collection_name=settings.MILVUS_MAMURIY_SUD_ALL,
+            collection_name=settings.MILVUS_ECONOMIC_COURT,
             filter=filter,
         )
-        mam_docs = await self.asearch(effective, mam_config)
-        mam_result = await self.format_results(mam_docs)
+        eco_docs = await self.asearch(effective, eco_config)
+        eco_result = await self.format_results(eco_docs)
 
-        # main (lexuz) portion (standard hybrid search + standard formatting)
+        # Main (lexuz) portion (standard hybrid search + standard formatting)
         main_embedding = await self.embedder.aembed_query(effective)
         main_docs = await asyncio.to_thread(
             self.db.search_hybrid,
@@ -252,13 +205,13 @@ class MamuriyAssistant(BaseAssistant):
         )
         main_result = await self.formatter.format_results(main_docs)
 
-        combined_ctx = f"{mam_result.context}\n\n{'=' * 60}\n\n{main_result.context}"
+        combined_ctx = f"{eco_result.context}\n\n{'=' * 60}\n\n{main_result.context}"
         if file_context:
             combined_ctx += f"\n\n\n{file_context}"
 
         return RetrievalResult(
             context=combined_ctx,
-            attachments=mam_result.attachments + main_result.attachments,
+            attachments=eco_result.attachments + main_result.attachments,
         )
 
     # Helpers

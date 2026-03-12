@@ -47,8 +47,10 @@ class RateLimitService:
             end_ms = int(sub.get("end_ms") or 0)
             now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
-            if daily > 0 and end_ms > now_ms:
-                return daily
+            # If subscription is active, always use its daily_credits even if it's 0.
+            # This allows explicitly disabling access by setting daily_credits=0.
+            if end_ms > now_ms and "daily_credits" in sub:
+                return max(0, daily)
             return None
         except Exception:
             return None
