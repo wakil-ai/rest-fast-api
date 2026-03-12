@@ -23,14 +23,20 @@ class PromptRegistry:
         "contract_risk_analysis": "contract_risk_analysis.md",
         "intent_classification": "intent_classification.md",
         "milvus_query_agent": "milvus_agent.md",
+        "criminal_court": "criminal_court.md",
+        "economic_court": "economic_court.md",
+        "civil_court": "civil_court.md",
     }
 
     ASSISTANT_MAPPING = {
         "main": "system_prompt",
         "umumiy": "system_prompt",
-        "soliq": "soliq_assistant",
-        "mamuriy_sud": "predicting_lawsuit_result",
-        "shartnoma": "contract_template_generation",
+        "tax": "soliq_assistant",
+        "administrative_court": "supreme_admin_litigation",
+        "contract_analyzer": "contract_template_generation",
+        "criminal_court": "criminal_court",
+        "economic_court": "economic_court",
+        "civil_court": "civil_court",
     }
 
     def __init__(self):
@@ -67,7 +73,6 @@ class PromptRegistry:
         domain: DomainType,
         intent: LegalIntent,
     ) -> PromptTemplate:
-
         if domain == DomainType.TAX:
             mapping = {
                 LegalIntent.PREDICTING_LAWSUIT: "predicting_lawsuit_result",

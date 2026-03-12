@@ -27,14 +27,14 @@ API_KEY_VALUE = os.getenv(
 )  # Replace with actual API key
 RESULTS_FILE = os.path.join(os.path.dirname(__file__), "concurrency_results.csv")
 
-ASSISTANTS = ["main", "soliq", "mamuriy_sud", "shartnoma"]
+ASSISTANTS = ["main", "tax", "administrative_court", "contract_analyzer"]
 REQUESTS_PER_ASSISTANT = 5
 
 QUERIES = {
     "main": "Mehnat kodeksining 100-moddasi nimani tartibga soladi?",
-    "soliq": "QQS stavkasi qancha va qachon to'lanadi?",
-    "mamuriy_sud": "Ma'muriy sud ishlarini ko'rish tartibi qanday?",
-    "shartnoma": "Xizmat ko'rsatish shartnomasining asosiy shartlari nimalardan iborat?",
+    "tax": "QQS stavkasi qancha va qachon to'lanadi?",
+    "administrative_court": "Ma'muriy sud ishlarini ko'rish tartibi qanday?",
+    "contract_analyzer": "Xizmat ko'rsatish shartnomasining asosiy shartlari nimalardan iborat?",
 }
 
 
@@ -181,7 +181,7 @@ async def main(base_url: str):
     print(
         f"    {'assistant':15s}  {'avg':>6s}  {'min':>6s}  {'max':>6s}  {'p50':>6s}  {'ok':>3s}"
     )
-    print(f"    {'-'*50}")
+    print(f"    {'-' * 50}")
     for assistant in ASSISTANTS:
         times = sorted(
             [r["latency_s"] for r in results if r["assistant"] == assistant and r["ok"]]

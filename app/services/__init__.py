@@ -1,6 +1,7 @@
 from app.services.auth_service import validate_telegram_data
 from app.services.chat_history_service import ChatHistoryService
 from app.services.chat_service import ChatService
+from app.services.click_service import ClickService
 from app.services.file_management import FileManager
 from app.services.memory_service import ChatMemoryService
 from app.services.ocr_service import OCRService
@@ -31,6 +32,7 @@ __all__ = [
     "FileManager",
     "ChatMemoryService",
     "OCRService",
+    "ClickService",
     "TransactionService",
     "PromoCodeService",
     "RateLimitService",

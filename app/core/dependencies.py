@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         ChatHistoryService,
         ChatMemoryService,
         ChatService,
+        ClickService,
         FileManager,
         OCRService,
         PromoCodeService,
@@ -213,3 +214,10 @@ def get_transaction_service() -> "TransactionService":
     from app.services import TransactionService
 
     return TransactionService()
+
+
+@lru_cache
+def get_click_service() -> "ClickService":
+    from app.services import ClickService
+
+    return ClickService()
