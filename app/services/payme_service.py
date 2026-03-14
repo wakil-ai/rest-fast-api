@@ -117,15 +117,49 @@ class TransactionService:
                 self.users_collection, {"user_id": user_id}
             )
         if not user:
-            return {"user_id": user_id, "active": False}
+            return {
+                "user_id": user_id,
+                "active": False,
+                "daily_pass_active": False,
+                "combined_daily_credits": 0,
+            }
 
         sub = user.get("subscription")
-        if not isinstance(sub, dict):
-            return {"user_id": user_id, "active": False}
+        daily_pass = user.get("daily_pass")
 
         now_ms = int(time.time() * 1000)
+
+        daily_pass_active = False
+        daily_pass_daily = None
+        daily_pass_start_ms = None
+        daily_pass_end_ms = None
+        if isinstance(daily_pass, dict):
+            daily_pass_daily = int(daily_pass.get("daily_credits") or 0)
+            daily_pass_start_ms = daily_pass.get("start_ms")
+            daily_pass_end_ms = daily_pass.get("end_ms")
+            daily_pass_active = bool(
+                int(daily_pass_end_ms or 0) > now_ms and daily_pass_daily > 0
+            )
+
+        if not isinstance(sub, dict):
+            combined = (daily_pass_daily or 0) if daily_pass_active else 0
+            return {
+                "user_id": user_id,
+                "active": False,
+                "daily_pass_active": daily_pass_active,
+                "daily_pass_daily_credits": daily_pass_daily,
+                "daily_pass_start_ms": daily_pass_start_ms,
+                "daily_pass_end_ms": daily_pass_end_ms,
+                "combined_daily_credits": combined,
+            }
+
         end_ms = int(sub.get("end_ms") or 0)
         active = bool(end_ms > now_ms and (sub.get("daily_credits") or 0) > 0)
+
+        sub_daily = int(sub.get("daily_credits") or 0)
+        combined_daily = (sub_daily if active else 0) + (
+            (daily_pass_daily or 0) if daily_pass_active else 0
+        )
 
         return {
             "user_id": user_id,
@@ -135,6 +169,11 @@ class TransactionService:
             "daily_credits": sub.get("daily_credits"),
             "start_ms": sub.get("start_ms"),
             "end_ms": sub.get("end_ms"),
+            "daily_pass_active": daily_pass_active,
+            "daily_pass_daily_credits": daily_pass_daily,
+            "daily_pass_start_ms": daily_pass_start_ms,
+            "daily_pass_end_ms": daily_pass_end_ms,
+            "combined_daily_credits": combined_daily,
         }
 
     async def init_payment(

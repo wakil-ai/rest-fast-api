@@ -255,6 +255,13 @@ class UserSubscriptionResponse(BaseModel):
     start_ms: int | None = None
     end_ms: int | None = None
 
+    # Optional daily pass (pay-per-day) info; does not override subscription.
+    daily_pass_active: bool | None = None
+    daily_pass_daily_credits: int | None = None
+    daily_pass_start_ms: int | None = None
+    daily_pass_end_ms: int | None = None
+    combined_daily_credits: int | None = None
+
 
 class FiscalData(BaseModel):
     receipt_id: int | str
