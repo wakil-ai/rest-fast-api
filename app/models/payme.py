@@ -217,11 +217,11 @@ class PaymeInitRequest(BaseModel):
     user_id: str
     callback_url: str
     order_id: str | None = None  # If not provided, server generates a new one
-    subscription_tier: Literal["standard", "pro", "test"] | None = Field(
+    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = Field(
         default=None,
         validation_alias=AliasChoices("subscription_tier", "subscription_type"),
     )
-    subscription_period: Literal["monthly", "yearly"] | None = Field(
+    subscription_period: Literal["daily", "monthly", "yearly"] | None = Field(
         default=None,
         validation_alias=AliasChoices("subscription_period", "duration", "Duration"),
     )

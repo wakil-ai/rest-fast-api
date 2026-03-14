@@ -18,6 +18,13 @@ class TransactionService:
         self.fiscal_collection = settings.PAYME_FISCAL_COLLECTION
 
         self._subscription_catalog = {
+            "daily": {
+                "daily_credits": 300,
+                "daily": {
+                    "price_sum": settings.PAYME_SUBSCRIPTION_DAILY_PRICE_SUM,
+                    "days": 1,
+                },
+            },
             "standard": {
                 "daily_credits": 200,
                 "monthly": {
@@ -84,7 +91,7 @@ class TransactionService:
         plans: list[dict] = []
         for tier, cfg in self._subscription_catalog.items():
             daily = int(cfg.get("daily_credits") or 0)
-            for period in ("monthly", "yearly"):
+            for period in ("daily", "monthly", "yearly"):
                 if period not in cfg:
                     continue
                 quote = self._get_subscription_quote(tier, period)
@@ -158,6 +165,13 @@ class TransactionService:
                 raise ValueError("Amount does not match subscription price")
             amount_sum = expected
 
+        purpose = "payment"
+        if quote:
+            if quote.get("tier") == "daily" and quote.get("period") == "daily":
+                purpose = "daily_pass"
+            else:
+                purpose = "subscription"
+
         if not isinstance(amount_sum, int) or amount_sum <= 0:
             raise ValueError("Invalid amount")
 
@@ -173,32 +187,30 @@ class TransactionService:
 
         now_ms = int(time.time() * 1000)
 
-        # If this is a subscription init, reuse an existing pending invoice
-        # for the same user + tier + period (avoid opening duplicates).
+        # If this is a plan init (subscription or daily pass), reuse an existing
+        # pending invoice for the same user + tier + period (avoid duplicates).
         if quote and not order_id:
-            existing_sub_invoice = await self.db_handler.find_one(
+            existing_invoice = await self.db_handler.find_one(
                 self.invoices_collection,
                 {
                     "user_id": user_id,
                     "provider": "payme",
-                    "purpose": "subscription",
+                    "purpose": purpose,
                     "status": "pending",
                     "subscription.tier": quote.get("tier"),
                     "subscription.period": quote.get("period"),
                 },
             )
-            if existing_sub_invoice:
-                existing_order_id = existing_sub_invoice.get(
+            if existing_invoice:
+                existing_order_id = existing_invoice.get(
                     "order_id"
-                ) or existing_sub_invoice.get("invoice_id")
+                ) or existing_invoice.get("invoice_id")
                 if existing_order_id:
                     link = await self.create_payment_link(
-                        amount=int(
-                            existing_sub_invoice.get("amount_sum") or amount_sum
-                        ),
+                        amount=int(existing_invoice.get("amount_sum") or amount_sum),
                         user_id=user_id,
                         callback_url=str(
-                            existing_sub_invoice.get("callback_url") or callback_url
+                            existing_invoice.get("callback_url") or callback_url
                         ),
                         order_id=str(existing_order_id),
                     )
@@ -240,7 +252,7 @@ class TransactionService:
                 "callback_url": callback_url,
                 "status": "pending",
                 "provider": "payme",
-                "purpose": "subscription" if quote else "payment",
+                "purpose": purpose,
                 "subscription": quote,
                 "subscription_applied": False,
                 "requisites": {
@@ -295,26 +307,48 @@ class TransactionService:
         if not user:
             return
 
-        sub = user.get("subscription") if isinstance(user, dict) else None
-        existing_end = int(sub.get("end_ms") or 0) if isinstance(sub, dict) else 0
+        if quote.get("tier") == "daily" and quote.get("period") == "daily":
+            daily_pass = user.get("daily_pass") if isinstance(user, dict) else None
+            existing_end = (
+                int(daily_pass.get("end_ms") or 0)
+                if isinstance(daily_pass, dict)
+                else 0
+            )
+            start_ms = max(now_ms, existing_end)
+            end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
 
-        start_ms = max(now_ms, existing_end)
-        end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
+            daily_pass_update = {
+                "daily_credits": int(quote["daily_credits"]),
+                "start_ms": start_ms,
+                "end_ms": end_ms,
+                "last_order_id": order_id,
+                "last_transaction_id": transaction_id,
+                "updated_at_ms": now_ms,
+            }
+            await self.db_handler.update_one(
+                self.users_collection, user_query, {"daily_pass": daily_pass_update}
+            )
+        else:
+            sub = user.get("subscription") if isinstance(user, dict) else None
+            existing_end = int(sub.get("end_ms") or 0) if isinstance(sub, dict) else 0
 
-        subscription_update = {
-            "tier": quote["tier"],
-            "period": quote["period"],
-            "daily_credits": int(quote["daily_credits"]),
-            "start_ms": start_ms,
-            "end_ms": end_ms,
-            "last_order_id": order_id,
-            "last_transaction_id": transaction_id,
-            "updated_at_ms": now_ms,
-        }
+            start_ms = max(now_ms, existing_end)
+            end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
 
-        await self.db_handler.update_one(
-            self.users_collection, user_query, {"subscription": subscription_update}
-        )
+            subscription_update = {
+                "tier": quote["tier"],
+                "period": quote["period"],
+                "daily_credits": int(quote["daily_credits"]),
+                "start_ms": start_ms,
+                "end_ms": end_ms,
+                "last_order_id": order_id,
+                "last_transaction_id": transaction_id,
+                "updated_at_ms": now_ms,
+            }
+
+            await self.db_handler.update_one(
+                self.users_collection, user_query, {"subscription": subscription_update}
+            )
 
         await self.db_handler.update_one(
             self.invoices_collection,

@@ -224,6 +224,8 @@ class Settings(BaseSettings):
     CLICK_TRANSACTIONS_COLLECTION: str = "click_transactions"
 
     # Payme Subscriptions
+    # Daily: pay-per-day plan (300 credits/day)
+    PAYME_SUBSCRIPTION_DAILY_PRICE_SUM: int = 15_000
     PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 300_000
     PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 3_000_000
     PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM: int = 600_000
