@@ -295,7 +295,7 @@ class Settings(BaseSettings):
             },
             "civil_court": {
                 "name": "civil_court",
-                "collection_name": self.MILVUS_MAIN_NAME,
+                "collection_name": self.MILVUS_CIVIL_COURT,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Civil court specialized assistant",
             },
