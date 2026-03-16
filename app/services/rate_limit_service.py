@@ -87,6 +87,14 @@ class RateLimitService:
         Users with valid promo codes may have custom credit limits or unlimited access.
         """
         try:
+            # Check whether user_id is valid
+            users = self.mongo_handler.db[settings.USERS_COLLECTION]
+            user = await users.find_one({"_id": user_id})
+            
+            if not user:
+                logger.warning(f"[RateLimitService] Invalid user ID: {user_id}")
+                return False, 0, 0
+
             subscription_daily = await self._get_active_subscription_daily_limit(
                 user_id
             )
