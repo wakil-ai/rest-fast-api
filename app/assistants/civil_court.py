@@ -8,6 +8,7 @@ from app.assistants.base import BaseAssistant, RetrievalConfig, RetrievalResult
 from app.core.config import settings
 from app.core.dependencies import get_milvus_query_agent, get_prompt_registry
 from app.core.logger import logger
+from app.utils.text_cleaning import clean_pdf_html_text
 
 class CivilCourtAssistant(BaseAssistant):
     """Civil-court assistant.
@@ -118,6 +119,7 @@ class CivilCourtAssistant(BaseAssistant):
                 key=lambda x: self._safe_float(x["metadata"].get("chunk_index", 0))
             )
             file_text = "\n".join(c.get("text", "") for c in file_chunks)
+            file_text = clean_pdf_html_text(file_text) # Cleaning HTML artifacts from PDF extraction (common in court documents)
             file_text = f"File Title: {hierarchy}\n\n{file_text}"
 
             documents.append(
