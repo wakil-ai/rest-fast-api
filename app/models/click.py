@@ -8,8 +8,8 @@ class ClickInitRequest(BaseModel):
     user_id: str
     callback_url: str
     order_id: str | None = None
-    subscription_tier: Literal["standard", "pro", "test"] | None = None
-    subscription_period: Literal["monthly", "yearly"] | None = None
+    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = None
+    subscription_period: Literal["daily", "monthly", "yearly"] | None = None
 
 
 class ClickInitResponse(BaseModel):

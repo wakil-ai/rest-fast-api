@@ -1,4 +1,5 @@
 import re
+import html
 import unicodedata
 
 
@@ -33,6 +34,40 @@ class PathConverter:
         if not isinstance(s, str):
             return False
         return re.fullmatch(r"-?\d+", s) is not None
+
+def clean_pdf_html_text(text: str) -> str:
+    """
+    Clean text extracted from PDF/HTML and return pure readable text
+    while preserving line separation.
+    """
+    # decode html entities
+    text = html.unescape(text)
+
+    # remove GLYPH artifacts
+    text = re.sub(r'GLYPH<[^>]*>', '', text)
+
+    # remove html tags
+    text = re.sub(r'<[^>]+>', '', text)
+
+    # normalize spaces
+    text = re.sub(r'[ \t]+', ' ', text)
+
+    # insert space between lowercase-uppercase
+    text = re.sub(r'([а-яқғҳў])([А-ЯҚҒҲЎ])', r'\1 \2', text)
+
+    # insert space between letter-number
+    text = re.sub(r'([А-Яа-яҚҒҲЎқғҳў])(\d)', r'\1 \2', text)
+
+    # insert space between number-letter
+    text = re.sub(r'(\d)([А-Яа-яҚҒҲЎқғҳў])', r'\1 \2', text)
+
+    # fix repeated spaces
+    text = re.sub(r' +', ' ', text)
+
+    # normalize lines
+    text = re.sub(r'\n+', '\n', text)
+
+    return text.strip()
 
 
 def clean_html_text(text: str) -> str:
