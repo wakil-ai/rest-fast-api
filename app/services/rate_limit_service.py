@@ -55,6 +55,30 @@ class RateLimitService:
         except Exception:
             return None
 
+    async def _get_active_daily_pass_bonus(self, user_id: str) -> int:
+        """Return active daily pass credits to add to the daily limit (0 if none)."""
+
+        try:
+            users = self.mongo_handler.db[settings.USERS_COLLECTION]
+            user = await users.find_one({"_id": user_id})
+            if not user:
+                user = await users.find_one({"user_id": user_id})
+            if not user:
+                return 0
+
+            daily_pass = user.get("daily_pass")
+            if not isinstance(daily_pass, dict):
+                return 0
+
+            daily = int(daily_pass.get("daily_credits") or 0)
+            end_ms = int(daily_pass.get("end_ms") or 0)
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            if end_ms > now_ms and "daily_credits" in daily_pass:
+                return max(0, daily)
+            return 0
+        except Exception:
+            return 0
+
     async def check_and_decrement_credits(
         self, user_id: str, assistant_type: AssistantType = "main"
     ) -> tuple[bool, int, int]:
@@ -63,9 +87,19 @@ class RateLimitService:
         Users with valid promo codes may have custom credit limits or unlimited access.
         """
         try:
+            # Check whether user_id is valid
+            users = self.mongo_handler.db[settings.USERS_COLLECTION]
+            user = await users.find_one({"_id": user_id})
+            
+            if not user:
+                logger.warning(f"[RateLimitService] Invalid user ID: {user_id}")
+                return False, 0, 0
+
             subscription_daily = await self._get_active_subscription_daily_limit(
                 user_id
             )
+
+            daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
 
             # Check if user has a promo code and get their credit limit
             (
@@ -79,6 +113,7 @@ class RateLimitService:
                 if subscription_daily is not None
                 else settings.DAILY_CREDITS_LIMIT
             )
+            daily_limit += daily_pass_bonus
 
             if has_promo:
                 if promo_credit_limit is None:
@@ -162,6 +197,8 @@ class RateLimitService:
                 user_id
             )
 
+            daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
+
             # Check if user has a promo code and get their credit limit
             (
                 has_promo,
@@ -173,6 +210,7 @@ class RateLimitService:
                 if subscription_daily is not None
                 else settings.DAILY_CREDITS_LIMIT
             )
+            daily_limit += daily_pass_bonus
             if has_promo:
                 if promo_credit_limit is None:
                     # Unlimited credits
@@ -207,6 +245,7 @@ class RateLimitService:
         """Return effective daily credit limit for a user (-1 for unlimited)."""
 
         subscription_daily = await self._get_active_subscription_daily_limit(user_id)
+        daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
 
         (
             has_promo,
@@ -218,6 +257,7 @@ class RateLimitService:
             if subscription_daily is not None
             else settings.DAILY_CREDITS_LIMIT
         )
+        daily_limit += daily_pass_bonus
 
         if has_promo:
             if promo_credit_limit is None:
