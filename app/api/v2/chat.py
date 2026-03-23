@@ -168,7 +168,7 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
 async def get_assistants():
     """Returns information about available assistants."""
     try:
-        assistants = AssistantConfig.get_assistants()
+        assistants = AssistantConfig.get_public_assistants()
         return {
             "assistants": [
                 {

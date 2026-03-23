@@ -263,47 +263,62 @@ class Settings(BaseSettings):
                 "collection_name": self.MILVUS_MAIN_NAME,
                 "credit_cost": self.CREDIT_COST_MAIN_ASSISTANT,
                 "description": "General legal assistant",
+                "public": True,
             },
             "tax": {
                 "name": "tax",
                 "collection_name": self.MILVUS_TAX_COLLECTION,
                 "credit_cost": self.CREDIT_COST_SOLIQ_ASSISTANT,
                 "description": "Tax specialized assistant",
+                "public": True,
+            },
+            "court": {
+                "name": "court",
+                "collection_name": self.MILVUS_ADMINISTRATIVE_COURT_ALL,
+                "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
+                "description": "Court assistant that automatically routes to the correct court type",
+                "public": True,
             },
             "administrative_court": {
                 "name": "administrative_court",
                 "collection_name": self.MILVUS_ADMINISTRATIVE_COURT_ALL,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Administrative court specialized assistant",
+                "public": False,
             },
             "contract_analyzer": {
                 "name": "contract_analyzer",
                 "collection_name": self.MILVUS_CONTRACT_ANALYZER,
                 "credit_cost": self.CREDIT_COST_SHARTNOMA_ASSISTANT,
                 "description": "Contract analyzer assistant",
+                "public": True,
             },
             "criminal_court": {
                 "name": "criminal_court",
                 "collection_name": self.MILVUS_MAIN_NAME,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Criminal court specialized assistant",
+                "public": False,
             },
             "economic_court": {
                 "name": "economic_court",
                 "collection_name": self.MILVUS_ECONOMIC_COURT,  # untill updated
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Economic court specialized assistant",
+                "public": False,
             },
             "civil_court": {
                 "name": "civil_court",
                 "collection_name": self.MILVUS_CIVIL_COURT,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Civil court specialized assistant",
+                "public": False,
             },
             "deepresearch": {
                 "name": "deepresearch",
                 "credit_cost": self.CREDIT_COST_DEEPRESEARCH,
                 "description": "Deep research assistant with agentic RAG",
+                "public": True,
             },
         }
 

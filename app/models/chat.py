@@ -41,6 +41,7 @@ class AssistantType(str, Enum):
     """Supported assistant types."""
 
     MAIN = "main"
+    COURT = "court"
     ADMINISTRATIVE_COURT = "administrative_court"
     ADMINISTRATIVE_COURT_LEGACY = "mamuriy_sud"
     TAX = "tax"
@@ -80,7 +81,7 @@ class ChatRequest(BaseModel):
     )
     assistant: AssistantType | None = Field(
         default=AssistantType.MAIN,
-        description="Assistant type (supports legacy aliases like soliq/shartnoma/mamuriy_sud)",
+        description="Assistant type (use `court` for court matters; legacy aliases like soliq/shartnoma/mamuriy_sud are still supported)",
     )
     file_ids: list[str] | None = Field(
         default=None, description="Optional list of file IDs to use as context"
@@ -149,7 +150,7 @@ class AskFileRequest(BaseModel):
     )
     assistant: AssistantType | None = Field(
         default=AssistantType.MAIN,
-        description="Assistant type (supports legacy aliases like soliq/shartnoma/mamuriy_sud)",
+        description="Assistant type (use `court` for court matters; legacy aliases like soliq/shartnoma/mamuriy_sud are still supported)",
     )
     model: ChatModel | None = Field(
         default=None, description="LLM model to use for generation"

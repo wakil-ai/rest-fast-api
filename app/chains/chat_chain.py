@@ -4,6 +4,7 @@ from typing import Any
 
 from langchain_core.prompts import PromptTemplate
 
+from app.chains.court_classifier import CourtRoutingDecision
 from app.assistants import (
     AdministrativeCourtAssistant,
     BaseAssistant,
@@ -18,6 +19,7 @@ from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
     get_chat_history_service,
+    get_court_classifier,
     get_fallback_llm,
     get_memory_service,
     get_prompt_registry,
@@ -38,6 +40,7 @@ class GenerationContext:
     context: str
     system_prompt: str
     chat_history: str
+    assistant_name: str
     attachments: list[dict[str, Any]] | None = None
 
 
@@ -72,6 +75,7 @@ class ChatChain:
 
         self.memory = get_memory_service()
         self.history_service = get_chat_history_service()
+        self.court_classifier = get_court_classifier()
         self.fallback_llm = get_fallback_llm()
         self.prompts_registry = get_prompt_registry()
 
@@ -138,21 +142,39 @@ class ChatChain:
         try:
             assistant = AssistantConfig.validate_assistant_or_default(assistant)
 
+            file_context = await self._collect_file_context(file_ids)
+            history_formatted = self._format_chat_history(chat_history)
+            routing_decision = await self._resolve_court_routing(
+                assistant=assistant,
+                query=query,
+                chat_history=history_formatted,
+                file_context=file_context,
+            )
+
+            if routing_decision.out_of_scope_message:
+                return self._create_static_response(
+                    routing_decision.out_of_scope_message,
+                    stream,
+                )
+
             ctx = await self._prepare_generation_context(
                 user_id=user_id,
                 message_id=message_id,
                 query=query,
                 chat_history=chat_history,
-                file_ids=file_ids,
-                assistant=assistant,
+                assistant=routing_decision.assistant_name or assistant,
+                file_context=file_context,
+                history_formatted=history_formatted,
             )
 
             llm = self._select_llm(model_name)
 
             if stream:
-                return self._generate_streaming(llm, query, ctx, assistant)
+                return self._generate_streaming(llm, query, ctx, ctx.assistant_name)
             else:
-                return await self._generate_non_streaming(llm, query, ctx, assistant)
+                return await self._generate_non_streaming(
+                    llm, query, ctx, ctx.assistant_name
+                )
 
         except Exception as e:
             logger.error(f"Generation failed: {e}", exc_info=True)
@@ -186,19 +208,18 @@ class ChatChain:
         message_id: str | None,
         query: str,
         chat_history: list | None,
-        file_ids: list[str] | None,
         assistant: str,
+        file_context: str,
+        history_formatted: str,
     ) -> GenerationContext:
         """Gather all pieces needed for generation: files, memory, retrieval, prompt."""
-        # 1. File context (OCR results)
-        file_context = await self._collect_file_context(file_ids)
-
-        # 2. Chat history + memory
-        history_formatted = self._format_chat_history(chat_history)
+        # 1. Chat history + memory
         memory_text = await self.memory.search_memory(user_id, query)
-        full_history_text = "\n".join(filter(None, [history_formatted, memory_text]))
+        full_history_text = "\n".join(
+            part for part in [history_formatted, memory_text] if part
+        )
 
-        # 3. Retrieval — each assistant handles its own classification / filtering
+        # 2. Retrieval — each assistant handles its own classification / filtering
         (
             retrieved_context,
             attachments,
@@ -210,12 +231,12 @@ class ChatChain:
             assistant=assistant,
         )
 
-        # 4. Prompt template (assistant may override via intent classification)
+        # 3. Prompt template (assistant may override via intent classification)
         template = template_override or self.prompts_registry.get_assistant_prompt(
             assistant
         )
 
-        # 5. Truncate if necessary
+        # 4. Truncate if necessary
         total_tokens = count_tokens(retrieved_context + full_history_text)
         if total_tokens > settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT:
             logger.warning(
@@ -229,7 +250,7 @@ class ChatChain:
                 retrieved_context, max_ctx_tokens
             )
 
-        # 6. Final system prompt
+        # 5. Final system prompt
         system_prompt = self._build_system_prompt(
             template, retrieved_context, full_history_text
         )
@@ -242,7 +263,24 @@ class ChatChain:
             context=retrieved_context,
             system_prompt=system_prompt,
             chat_history=history_formatted,
+            assistant_name=assistant,
             attachments=attachments,
+        )
+
+    async def _resolve_court_routing(
+        self,
+        assistant: str,
+        query: str,
+        chat_history: str,
+        file_context: str,
+    ) -> CourtRoutingDecision:
+        if assistant != "court":
+            return CourtRoutingDecision(assistant_name=assistant)
+
+        return await self.court_classifier.route_query(
+            query=query,
+            chat_history=chat_history,
+            uploaded_file_context=file_context,
         )
 
     async def _collect_file_context(self, file_ids: list[str] | None) -> str:
@@ -419,10 +457,14 @@ class ChatChain:
     def _create_error_response(self, stream: bool) -> Any:
         msg = "Sorry, I couldn't generate an answer at the moment."
 
+        return self._create_static_response(msg, stream)
+
+    @staticmethod
+    def _create_static_response(message: str, stream: bool) -> Any:
         if not stream:
-            return msg
+            return message
 
         async def err_gen():
-            yield msg
+            yield message
 
         return err_gen()
