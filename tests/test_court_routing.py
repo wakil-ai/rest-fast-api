@@ -23,9 +23,12 @@ def test_court_classifier_maps_expected_labels():
 def test_court_classifier_returns_none_for_non_label_response():
     classifier = CourtClassifier.__new__(CourtClassifier)
 
-    assert classifier._map_response_to_assistant(
-        "I'm optimized only for court-related questions."
-    ) is None
+    assert (
+        classifier._map_response_to_assistant(
+            "I'm optimized only for court-related questions."
+        )
+        is None
+    )
 
 
 def test_public_assistants_hide_internal_court_variants():
@@ -86,7 +89,10 @@ def test_court_classifier_treats_non_label_as_direct_response():
     )
 
     assert decision.assistant_name is None
-    assert decision.out_of_scope_message == "I'm optimized only for court-related questions."
+    assert (
+        decision.out_of_scope_message
+        == "I'm optimized only for court-related questions."
+    )
 
 
 def test_court_classifier_places_file_context_before_chat_history():

@@ -102,7 +102,9 @@ class ChatService:
         return ChatResponse(answer=answer)
 
     @staticmethod
-    def create_streaming_response(generator: AsyncGenerator[Any, None]) -> StreamingResponse:
+    def create_streaming_response(
+        generator: AsyncGenerator[Any, None],
+    ) -> StreamingResponse:
         """Create streaming response with appropriate headers."""
         return StreamingResponse(
             format_streaming_response(generator),

@@ -10,13 +10,14 @@ from app.core.dependencies import get_milvus_query_agent, get_prompt_registry
 from app.core.logger import logger
 from app.utils.text_cleaning import clean_pdf_html_text
 
+
 class CivilCourtAssistant(BaseAssistant):
     """Civil-court assistant.
 
     Uses the default hybrid retrieval from BaseAssistant, but with a
     Civil-procedure focused system prompt .
     """
-    
+
     # Number of unique files to return per search
     TOP_K_FILES = 3  # NOT THE TOP_K
 
@@ -71,9 +72,7 @@ class CivilCourtAssistant(BaseAssistant):
             return result
 
         except Exception as e:
-            logger.error(
-                f"[CivilCourtAssistant] Retrieval failed: {e}", exc_info=True
-            )
+            logger.error(f"[CivilCourtAssistant] Retrieval failed: {e}", exc_info=True)
             return self._error_result()
 
     # Search strategy (file-level)
@@ -119,7 +118,9 @@ class CivilCourtAssistant(BaseAssistant):
                 key=lambda x: self._safe_float(x["metadata"].get("chunk_index", 0))
             )
             file_text = "\n".join(c.get("text", "") for c in file_chunks)
-            file_text = clean_pdf_html_text(file_text) # Cleaning HTML artifacts from PDF extraction (common in court documents)
+            file_text = clean_pdf_html_text(
+                file_text
+            )  # Cleaning HTML artifacts from PDF extraction (common in court documents)
             file_text = f"File Title: {hierarchy}\n\n{file_text}"
 
             documents.append(
@@ -222,4 +223,3 @@ class CivilCourtAssistant(BaseAssistant):
             return float(val)
         except (ValueError, TypeError):
             return 0.0
-

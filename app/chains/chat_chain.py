@@ -1,10 +1,9 @@
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from langchain_core.prompts import PromptTemplate
 
-from app.chains.court_classifier import CourtRoutingDecision
 from app.assistants import (
     AdministrativeCourtAssistant,
     BaseAssistant,
@@ -15,6 +14,7 @@ from app.assistants import (
     MainAssistant,
     TaxAssistant,
 )
+from app.chains.court_classifier import CourtRoutingDecision
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
