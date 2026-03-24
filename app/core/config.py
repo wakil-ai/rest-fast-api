@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     PROMO_CODE_COLLECTION: str = "promos"
     USER_PROMO_CODE_COLLECTION: str = "user-promos"
     TRANSACTION_COLLECTION: str = "transactions"
+    SUBSCRIPTIONS_COLLECTION: str = "subscriptions"
+    DAILY_SUBSCRIPTIONS_COLLECTION: str = "daily_subscriptions"
     RATE_LIMIT_COLLECTION: str = "creditusage"
     TOKEN_COUNTING_COLLECTION: str = "token_counts"
     TELEGRAM_CHATS_COLLECTION: str = "telegram_chats"
@@ -204,6 +206,7 @@ class Settings(BaseSettings):
     PAYME_PAYMENT_LINK_BASE: str = (
         "https://checkout.paycom.uz/"  # Base URL for payment links
     )
+    PAYMENT_INVOICES_COLLECTION: str = "payment_invoices"
     PAYME_INVOICES_COLLECTION: str = (
         "payme_invoices"  # Stores pre-created payment intents/invoices
     )
