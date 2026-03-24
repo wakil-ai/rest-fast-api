@@ -65,11 +65,21 @@ class BasePaymentService:
             return
 
         collection = self.db_handler.db[self.invoices_collection]
+        for index_name in ("provider_1_order_id_1", "provider_1_invoice_id_1"):
+            try:
+                await collection.drop_index(index_name)
+            except Exception:
+                pass
+
         await collection.create_index(
-            [("provider", 1), ("order_id", 1)], unique=True, sparse=True
+            [("provider", 1), ("order_id", 1)],
+            unique=True,
+            partialFilterExpression={"order_id": {"$type": "string"}},
         )
         await collection.create_index(
-            [("provider", 1), ("invoice_id", 1)], unique=True, sparse=True
+            [("provider", 1), ("invoice_id", 1)],
+            unique=True,
+            partialFilterExpression={"invoice_id": {"$type": "string"}},
         )
         await collection.create_index(
             [("provider", 1), ("user_id", 1), ("status", 1), ("purpose", 1)]

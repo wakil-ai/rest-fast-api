@@ -114,8 +114,18 @@ async def _migrate_invoice_collection(
         normalized_invoice.pop("_id", None)
         normalized_invoice["provider"] = provider
 
+        if normalized_invoice.get("order_id") is not None:
+            normalized_invoice["order_id"] = str(normalized_invoice["order_id"])
+        if normalized_invoice.get("invoice_id") is not None:
+            normalized_invoice["invoice_id"] = str(normalized_invoice["invoice_id"])
+
         if not normalized_invoice.get("order_id") and normalized_invoice.get("invoice_id"):
             normalized_invoice["order_id"] = str(normalized_invoice["invoice_id"])
+
+        if normalized_invoice.get("order_id") is None:
+            normalized_invoice.pop("order_id", None)
+        if normalized_invoice.get("invoice_id") is None:
+            normalized_invoice.pop("invoice_id", None)
 
         existing_invoice = await target_collection.find_one(query)
         if existing_invoice and _as_int(existing_invoice.get("updated_at")) >= _as_int(
@@ -131,6 +141,15 @@ async def _migrate_invoice_collection(
     return scanned, migrated, skipped
 
 
+async def _cleanup_shared_invoice_null_fields(target_collection) -> None:
+    await target_collection.update_many(
+        {"order_id": None}, {"$unset": {"order_id": ""}}
+    )
+    await target_collection.update_many(
+        {"invoice_id": None}, {"$unset": {"invoice_id": ""}}
+    )
+
+
 async def _ensure_indexes(db) -> None:
     await db[settings.SUBSCRIPTIONS_COLLECTION].create_index(
         [("user_id", 1)], unique=True
@@ -140,11 +159,23 @@ async def _ensure_indexes(db) -> None:
         [("user_id", 1)], unique=True
     )
     await db[settings.DAILY_SUBSCRIPTIONS_COLLECTION].create_index([("end_ms", -1)])
-    await db[settings.PAYMENT_INVOICES_COLLECTION].create_index(
-        [("provider", 1), ("order_id", 1)], unique=True, sparse=True
+    payment_invoices = db[settings.PAYMENT_INVOICES_COLLECTION]
+
+    for index_name in ("provider_1_order_id_1", "provider_1_invoice_id_1"):
+        try:
+            await payment_invoices.drop_index(index_name)
+        except Exception:
+            pass
+
+    await payment_invoices.create_index(
+        [("provider", 1), ("order_id", 1)],
+        unique=True,
+        partialFilterExpression={"order_id": {"$type": "string"}},
     )
-    await db[settings.PAYMENT_INVOICES_COLLECTION].create_index(
-        [("provider", 1), ("invoice_id", 1)], unique=True, sparse=True
+    await payment_invoices.create_index(
+        [("provider", 1), ("invoice_id", 1)],
+        unique=True,
+        partialFilterExpression={"invoice_id": {"$type": "string"}},
     )
 
 
@@ -166,6 +197,8 @@ async def migrate(*, apply_changes: bool, user_id: str | None, limit: int | None
         click_invoices_collection = db[settings.CLICK_INVOICES_COLLECTION]
 
         await client.admin.command("ping")
+        if apply_changes:
+            await _cleanup_shared_invoice_null_fields(payment_invoices_collection)
         await _ensure_indexes(db)
 
         query: dict = {
