@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         RedisService,
         StorageService,
         TransactionService,
+        SubscriptionStorage
     )
 
 
@@ -236,3 +237,9 @@ def get_click_service() -> "ClickService":
     from app.services import ClickService
 
     return ClickService()
+
+@lru_cache
+def get_subscription_storage() -> "SubscriptionStorage":
+    from app.services import SubscriptionStorage
+
+    return SubscriptionStorage()

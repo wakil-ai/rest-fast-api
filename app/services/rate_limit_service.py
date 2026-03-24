@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.core.dependencies import get_mongo_handler, get_promo_code_service
 from app.core.logger import logger
 from app.models.chat import AssistantType
+from app.services.subscription_storage import SubscriptionStorage
 
 
 class RateLimitService:
@@ -19,6 +20,7 @@ class RateLimitService:
     def __init__(self):
         self.mongo_handler = get_mongo_handler()
         self.promo_code_service = get_promo_code_service()
+        self.subscription_storage = SubscriptionStorage()
 
     def _get_today_date(self) -> str:
         """Get today's date in YYYY-MM-DD format."""
@@ -32,14 +34,7 @@ class RateLimitService:
         """Return subscription daily credits if active, else None."""
 
         try:
-            users = self.mongo_handler.db[settings.USERS_COLLECTION]
-            user = await users.find_one({"_id": user_id})
-            if not user:
-                user = await users.find_one({"user_id": user_id})
-            if not user:
-                return None
-
-            sub = user.get("subscription")
+            sub = await self.subscription_storage.get_subscription(user_id)
             if not isinstance(sub, dict):
                 return None
 
@@ -59,14 +54,7 @@ class RateLimitService:
         """Return active daily pass credits to add to the daily limit (0 if none)."""
 
         try:
-            users = self.mongo_handler.db[settings.USERS_COLLECTION]
-            user = await users.find_one({"_id": user_id})
-            if not user:
-                user = await users.find_one({"user_id": user_id})
-            if not user:
-                return 0
-
-            daily_pass = user.get("daily_pass")
+            daily_pass = await self.subscription_storage.get_daily_subscription(user_id)
             if not isinstance(daily_pass, dict):
                 return 0
 

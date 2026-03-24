@@ -1,8 +1,8 @@
+import base64
 import secrets
 
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
-
 from app.core.config import settings
 
 # HTTP Basic (docs)
@@ -69,3 +69,31 @@ def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
             detail="Invalid Super Admin API Key",
         )
     return True
+
+def verify_payme_authorization(authorization: str | None) -> bool:
+    """Verify Payme authorization header"""
+    if not authorization:
+        return False
+
+    try:
+        # Extract credentials from "Basic base64string"
+        auth_type, credentials = authorization.split(" ", 1)
+        if auth_type.lower() != "basic":
+            return False
+
+        # Decode base64 credentials
+        decoded = base64.b64decode(credentials).decode("utf-8")
+        # Should be in format "Paycom:merchant_key"
+        username, password = decoded.split(":", 1)
+
+        if username != "Paycom":
+            return False
+
+        # Compare with configured merchant key
+        if not secrets.compare_digest(password, settings.PAYME_MERCHANT_KEY):
+            return False
+
+        return True
+
+    except Exception:
+        return False

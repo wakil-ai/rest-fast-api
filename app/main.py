@@ -17,10 +17,9 @@ from app.api.v2 import (
     admin,
     auth,
     chat,
-    click,
     logs,
     memory,
-    payme,
+    payment,
     speech_to_text,
 )
 from app.api.v2.history.router import router as chat_history
@@ -104,10 +103,7 @@ def create_app() -> FastAPI:
     )
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
-    app.include_router(payme.router, prefix=settings.API_PREFIX)
-    app.include_router(click.router, prefix=settings.API_PREFIX)
-
-    # Public share router without API key dependency
+    app.include_router(payment.router, prefix=settings.API_PREFIX)
     app.include_router(share_router, prefix=settings.API_PREFIX, tags=["Public"])
 
     # Health Check Route (no authentication required)
