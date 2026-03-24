@@ -120,7 +120,9 @@ class EconomicCourtAssistant(BaseAssistant):
                 key=lambda x: self._safe_float(x["metadata"].get("chunk_index", 0))
             )
             file_text = "\n".join(c.get("text", "") for c in file_chunks)
-            file_text = clean_pdf_html_text(file_text) # Cleaning HTML artifacts from PDF extraction (common in court documents)
+            file_text = clean_pdf_html_text(
+                file_text
+            )  # Cleaning HTML artifacts from PDF extraction (common in court documents)
             file_text = f"File Title: {hierarchy}\n\n{file_text}"
 
             documents.append(

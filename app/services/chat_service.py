@@ -1,5 +1,5 @@
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, cast
 
 from fastapi.responses import StreamingResponse
 
@@ -35,7 +35,7 @@ class ChatService:
     async def verify_user_credits(
         self,
         user_id: str,
-        assistant_type: AssistantType = "main",
+        assistant_type: AssistantType | str = "main",
         required_credits: int = 1,
     ) -> None:
         """Verify user has sufficient credits and deduct them."""
@@ -43,7 +43,7 @@ class ChatService:
             is_allowed, credits_remaining, limit = (
                 await self.rate_limit_service.check_and_decrement_credits(
                     user_id=user_id,
-                    assistant_type=assistant_type,
+                    assistant_type=cast(AssistantType, assistant_type),
                 )
             )
 
@@ -88,11 +88,8 @@ class ChatService:
             return ""
 
         try:
-            return (
-                flow_service.state.retrieval_docs
-                + "Relevance Score: "
-                + str(flow_service.state.web_search_output)
-            )
+            retrieved_docs = flow_service.state.retrieval_docs or ""
+            return f"{retrieved_docs}Relevance Score: {flow_service.state.web_search_output}"
         except Exception as e:
             logger.warning(f"Could not extract debug context: {e}")
             return "No retrieved contents available."
@@ -105,7 +102,9 @@ class ChatService:
         return ChatResponse(answer=answer)
 
     @staticmethod
-    def create_streaming_response(generator) -> StreamingResponse:
+    def create_streaming_response(
+        generator: AsyncGenerator[Any, None],
+    ) -> StreamingResponse:
         """Create streaming response with appropriate headers."""
         return StreamingResponse(
             format_streaming_response(generator),
@@ -123,7 +122,7 @@ class ChatService:
         file_ids: list[str] | None = None,
         assistant: str = "main",
         model_name: str | None = None,
-    ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
+    ) -> str | AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
         """
         Handle the question by retrieving context and generating an answer.
 
@@ -139,7 +138,7 @@ class ChatService:
         Returns:
             - str: Complete answer if streaming disabled and dev mode disabled
             - Tuple[str, Dict]: Answer + debug data if streaming disabled and dev mode enabled
-            - AsyncGenerator[str, None]: Streaming answer if streaming enabled
+            - AsyncGenerator[Any, None]: Streaming answer if streaming enabled
 
         Raises:
             ChatGenerationException: If answer generation fails

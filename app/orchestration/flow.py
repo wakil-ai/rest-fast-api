@@ -549,6 +549,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             system_prompt=system_prompt,
             user_id=self.state.user_id,
             message_id=self.state.message_id,
+            assistant_name=str(self.state.selected_assistant or "main"),
             chat_history=self.state.memory_docs or "",
         )
 

@@ -27,13 +27,13 @@ API_KEY_VALUE = os.getenv(
 )  # Replace with actual API key
 RESULTS_FILE = os.path.join(os.path.dirname(__file__), "concurrency_results.csv")
 
-ASSISTANTS = ["main", "tax", "administrative_court", "contract_analyzer"]
+ASSISTANTS = ["main", "tax", "court", "contract_analyzer"]
 REQUESTS_PER_ASSISTANT = 5
 
 QUERIES = {
     "main": "Mehnat kodeksining 100-moddasi nimani tartibga soladi?",
     "tax": "QQS stavkasi qancha va qachon to'lanadi?",
-    "administrative_court": "Ma'muriy sud ishlarini ko'rish tartibi qanday?",
+    "court": "Ma'muriy sud ishlarini ko'rish tartibi qanday?",
     "contract_analyzer": "Xizmat ko'rsatish shartnomasining asosiy shartlari nimalardan iborat?",
 }
 

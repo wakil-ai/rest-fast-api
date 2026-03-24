@@ -1,10 +1,41 @@
+import asyncio
 import json
 from collections.abc import AsyncGenerator
-from typing import Optional
+from typing import Any, Optional
+
+from app.core.config import settings
+
+SUPPORTED_STREAM_EVENT_TYPES = {"progress", "chunk", "attachments", "error", "end"}
+KEEPALIVE_EVENT = {"type": "progress", "message": "still working"}
+STREAM_END = object()
+
+
+def _format_sse_message(item: Any) -> str:
+    if isinstance(item, dict):
+        if item.get("type") in SUPPORTED_STREAM_EVENT_TYPES:
+            return f"data: {json.dumps(item)}\n\n"
+
+        debug_event = {"type": "debug", "data": item}
+        return f"data: {json.dumps(debug_event)}\n\n"
+
+    chunk_data = {"type": "chunk", "chunk": item}
+    return f"data: {json.dumps(chunk_data)}\n\n"
+
+
+async def _pump_stream_items(
+    response_generator: AsyncGenerator[Any, None], queue: asyncio.Queue[Any]
+) -> None:
+    try:
+        async for item in response_generator:
+            await queue.put(item)
+    except Exception as exc:
+        await queue.put(exc)
+    finally:
+        await queue.put(STREAM_END)
 
 
 async def format_streaming_response(
-    response_generator: AsyncGenerator[str, None],
+    response_generator: AsyncGenerator[Any, None],
 ) -> AsyncGenerator[str, None]:
     """
     Format streaming response as Server-Sent Events.
@@ -19,33 +50,49 @@ async def format_streaming_response(
     Event types:
         - debug: Development mode debug data (sent once at start if available)
         - progress: Agentic RAG step progress updates
+        - progress: Keepalive heartbeat while long work is still running
         - chunk: Character chunks of the answer
         - end: Stream completion signal
         - error: Error message
     """
+    queue: asyncio.Queue[Any] = asyncio.Queue()
+    producer_task = asyncio.create_task(_pump_stream_items(response_generator, queue))
+
     try:
-        async for item in response_generator:
-            # Handle debug data (sent as dict)
-            if isinstance(item, dict):
-                # Pass through supported structured events.
-                if item.get("type") in ["progress", "chunk", "attachments"]:
-                    yield f"data: {json.dumps(item)}\n\n"
-                else:
-                    debug_event = {"type": "debug", "data": item}
-                    yield f"data: {json.dumps(debug_event)}\n\n"
-            # Handle text chunks
-            else:
-                chunk_data = {"type": "chunk", "chunk": item}
-                yield f"data: {json.dumps(chunk_data)}\n\n"
+        while True:
+            try:
+                item = await asyncio.wait_for(
+                    queue.get(),
+                    timeout=settings.STREAM_KEEPALIVE_INTERVAL_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                yield _format_sse_message(KEEPALIVE_EVENT)
+                continue
+
+            if item is STREAM_END:
+                break
+
+            if isinstance(item, Exception):
+                raise item
+
+            yield _format_sse_message(item)
 
         # Send completion signal
         end_signal = {"type": "end"}
-        yield f"data: {json.dumps(end_signal)}\n\n"
+        yield _format_sse_message(end_signal)
 
     except Exception as e:
         # Send error in streaming format
         error_data = {"type": "error", "error": str(e)}
-        yield f"data: {json.dumps(error_data)}\n\n"
+        yield _format_sse_message(error_data)
+    finally:
+        if not producer_task.done():
+            producer_task.cancel()
+
+        try:
+            await producer_task
+        except asyncio.CancelledError:
+            pass
 
 
 async def format_progress_event(

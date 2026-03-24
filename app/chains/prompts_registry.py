@@ -22,6 +22,7 @@ class PromptRegistry:
         "contract_template_generation": "contract_template_generation.md",
         "contract_risk_analysis": "contract_risk_analysis.md",
         "intent_classification": "intent_classification.md",
+        "court_classify_prompt": "court_classify_prompt.md",
         "milvus_query_agent": "milvus_agent.md",
         "criminal_court": "criminal_court.md",
         "economic_court": "economic_court.md",

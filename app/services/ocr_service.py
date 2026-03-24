@@ -13,7 +13,7 @@ class OCRService:
             output_format="markdown",  # "markdown", "html", "json", "chunks"
             mode="fast",  # "fast", "balanced", "accurate"
             paginate=True,  # Add page delimiters
-            page_range="0-10",  # Process specific pages (0-indexed)
+            page_range="0-200",  # Process specific pages (0-indexed)
         )
         self.token_limit = settings.FILE_CONTENT_TOKEN_LIMIT
         self.client = AsyncDatalabClient(api_key=settings.DATALAB_API_KEY)
@@ -37,7 +37,7 @@ class OCRService:
                     f"[OCR Service] File content exceeds token limit of "
                     f"{self.token_limit} tokens. Truncating content."
                 )
-                truncate_to_token_limit(context, self.token_limit)
+                context = truncate_to_token_limit(context, self.token_limit)
 
             logger.success("[OCR Service] Conversion successful")
             return context

@@ -1,8 +1,14 @@
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
-    from app.chains import ChatChain, IntentClassifier, MilvusQueryAgent, PromptRegistry
+    from app.chains import (
+        ChatChain,
+        CourtClassifier,
+        IntentClassifier,
+        MilvusQueryAgent,
+        PromptRegistry,
+    )
     from app.db import DBManager, MilvusHandler, MongoHandler, PineconeHandler
     from app.llms import ChatGPT
     from app.orchestration import AgenticRAGFlow
@@ -95,6 +101,13 @@ def get_intent_classifier() -> "IntentClassifier":
 
 
 @lru_cache
+def get_court_classifier() -> "CourtClassifier":
+    from app.chains import CourtClassifier
+
+    return CourtClassifier()
+
+
+@lru_cache
 def get_milvus_query_agent() -> "MilvusQueryAgent":
     from app.chains import MilvusQueryAgent
 
@@ -137,7 +150,9 @@ def get_agentic_rag_flow() -> "AgenticRAGFlow":
 
 
 @lru_cache
-def get_agentic_rag_flow_streaming(progress_callback: callable) -> "AgenticRAGFlow":
+def get_agentic_rag_flow_streaming(
+    progress_callback: Callable[..., object],
+) -> "AgenticRAGFlow":
     from app.orchestration import AgenticRAGFlow
 
     return AgenticRAGFlow(
