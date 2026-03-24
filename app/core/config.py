@@ -165,6 +165,7 @@ class Settings(BaseSettings):
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
+    STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 25.0
     TOP_K: int = 10
     ADDITIONAL_TOP_K: int = (
         3  # For multi-collection retrievals (e.g. contract analyzer + main)

@@ -1,4 +1,6 @@
 import asyncio
+from collections.abc import AsyncGenerator
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -25,6 +27,38 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 chat_service = get_chat_service()
 
 
+async def _stream_chat_answer(
+    request: ChatRequest, assistant_name: str
+) -> AsyncGenerator[Any, None]:
+    model_name = request.model.value if request.model else None
+    response = await chat_service.ask_question(
+        user_id=request.user_id,
+        message_id=request.message_id,
+        query=request.query,
+        chat_history=request.chat_history,
+        stream=True,
+        file_ids=request.file_ids,
+        assistant=assistant_name,
+        model_name=model_name,
+    )
+
+    if isinstance(response, tuple):
+        answer, meta = response
+        yield answer
+
+        attachments = meta.get("attachments") if isinstance(meta, dict) else None
+        if attachments:
+            yield {"type": "attachments", "attachments": attachments}
+        return
+
+    if isinstance(response, str):
+        yield response
+        return
+
+    async for item in cast(AsyncGenerator[Any, None], response):
+        yield item
+
+
 @router.post("/ask", summary="Ask a legal question")
 async def ask_question(request: ChatRequest):
     """
@@ -48,8 +82,12 @@ async def ask_question(request: ChatRequest):
             required_credits=credit_cost,
         )
 
-        model_name = request.model.value if request.model else None
         should_stream = settings.STREAM if request.stream is None else request.stream
+
+        if should_stream:
+            return chat_service.create_streaming_response(
+                _stream_chat_answer(request, assistant_name)
+            )
 
         response = await chat_service.ask_question(
             user_id=request.user_id,
@@ -59,11 +97,8 @@ async def ask_question(request: ChatRequest):
             stream=should_stream,
             file_ids=request.file_ids,
             assistant=assistant_name,
-            model_name=model_name,
+            model_name=request.model.value if request.model else None,
         )
-
-        if should_stream:
-            return chat_service.create_streaming_response(response)
 
         if isinstance(response, tuple):
             answer, meta = response
@@ -75,6 +110,11 @@ async def ask_question(request: ChatRequest):
                     else None
                 ),
                 attachments=meta.get("attachments") or None,
+            )
+
+        if not isinstance(response, str):
+            raise ChatGenerationException(
+                "Unexpected streaming response for non-streaming request."
             )
 
         return ChatResponse(answer=response)

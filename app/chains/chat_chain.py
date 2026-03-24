@@ -1,6 +1,6 @@
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.prompts import PromptTemplate
 
@@ -121,21 +121,22 @@ class ChatChain:
         canonical = AssistantConfig.validate_assistant_or_default(name)
         if canonical not in self._assistant_cache:
             cls = self.ASSISTANT_REGISTRY.get(canonical, MainAssistant)
-            self._assistant_cache[canonical] = cls()
+            assistant_cls: Any = cls
+            self._assistant_cache[canonical] = assistant_cls()
         return self._assistant_cache[canonical]
 
     #  Public API
     async def generate_answer(
         self,
         user_id: str,
-        message_id: str,
+        message_id: str | None,
         query: str,
         chat_history: list | None = None,
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
         model_name: str | None = None,
-    ) -> str | AsyncGenerator[str, None] | tuple[str, dict[str, Any]]:
+    ) -> str | AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
         """
         Main entry point to generate a response (streaming or not).
         """
@@ -348,8 +349,8 @@ class ChatChain:
         query: str,
         ctx: GenerationContext,
         assistant: str,
-    ) -> AsyncGenerator[str, None]:
-        async def gen():
+    ) -> AsyncGenerator[Any, None]:
+        async def gen() -> AsyncGenerator[Any, None]:
             buffer = []
             try:
                 async for chunk in self._stream_from_llm(llm, query, ctx.system_prompt):
@@ -418,9 +419,10 @@ class ChatChain:
             answer=cleaned,
         )
 
-        meta = {
-            "attachments": ctx.attachments if assistant == "contract_analyzer" else [],
-        }
+        meta: dict[str, Any] = {}
+        meta["attachments"] = (
+            ctx.attachments if assistant == "contract_analyzer" else []
+        )
 
         if settings.DEVELOPMENT_MODE:
             meta["retrieved_contents"] = ctx.context
@@ -435,6 +437,9 @@ class ChatChain:
             system_prompt=system_prompt,
             stream=True,
         )
+        if isinstance(gen, str):
+            raise TypeError("Expected streaming generator from LLM.")
+
         async for chunk in gen:
             if chunk:
                 yield self._clean_text(chunk)
@@ -442,11 +447,16 @@ class ChatChain:
     async def _get_response(
         self, llm: LLM, user_prompt: str, system_prompt: str
     ) -> str:
-        return await llm.generate_response(
+        response = await llm.generate_response(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             stream=False,
         )
+
+        if not isinstance(response, str):
+            raise TypeError("Expected non-streaming response from LLM.")
+
+        return response
 
     #  Utilities
     @staticmethod
