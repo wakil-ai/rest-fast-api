@@ -90,7 +90,7 @@ class RateLimitService:
             # Check whether user_id is valid
             users = self.mongo_handler.db[settings.USERS_COLLECTION]
             user = await users.find_one({"_id": user_id})
-            
+
             if not user:
                 logger.warning(f"[RateLimitService] Invalid user ID: {user_id}")
                 return False, 0, 0

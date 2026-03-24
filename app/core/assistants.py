@@ -9,6 +9,9 @@ class AssistantConfig:
     # Backward-compatible assistant name aliases.
     # Public API can keep using old names while internal code uses canonical ones.
     ASSISTANT_ALIASES: dict[str, str] = {
+        "court assistant": "court",
+        "court": "court",
+        "sud": "court",
         "mamuriy_sud": "administrative_court",
         "administrative court": "administrative_court",
         "admin court": "administrative_court",
@@ -22,6 +25,15 @@ class AssistantConfig:
     def get_assistants(cls) -> dict[str, dict[str, Any]]:
         """Get all assistant configurations."""
         return settings.ASSISTANTS
+
+    @classmethod
+    def get_public_assistants(cls) -> dict[str, dict[str, Any]]:
+        """Get assistants exposed to API clients."""
+        return {
+            name: config
+            for name, config in cls.get_assistants().items()
+            if config.get("public", True)
+        }
 
     @classmethod
     def get_assistant_config(cls, assistant_name: str) -> dict[str, Any]:
