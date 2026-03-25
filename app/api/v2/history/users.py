@@ -21,23 +21,13 @@ def create_response(data: dict, message: str) -> dict:
 
 @router.post("", status_code=status.HTTP_200_OK, response_model=UserCreateResponse)
 @handle_service_error
-async def create_or_get_user(request: UserCreateRequest, response: Response):
+async def get_user(request: UserCreateRequest, response: Response):
     """Create a new user or return existing one (idempotent)"""
     existing = await chat_history_service.get_user(user_id=request.user_id)
     if existing:
         return create_response(existing, "User already exists")
-
-    user = await chat_history_service.create_user(
-        user_id=request.user_id,
-        username=request.username,
-        first_name=request.first_name,
-        phone_number=request.phone_number,
-        last_name=request.last_name,
-        picture=request.picture,
-    )
-    response.status_code = status.HTTP_201_CREATED
-    return create_response(user, "User created successfully")
-
+    else:
+        raise HTTPException(status_code=404, detail="User not found")
 
 @router.get("/{user_id}", response_model=UserCreateResponse)
 @handle_service_error
