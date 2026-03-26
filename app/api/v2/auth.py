@@ -176,7 +176,7 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
         # Check if user with external_id already exists
         existing_user = await chat_history_service.get_user_by_external_id(request.user_id)
         if existing_user:
-            raise UserAlreadyExistsException(f"User with external ID {request.user_id} already exists")
+            raise UserAlreadyExistsException(request.user_id)
         
         # Generate internal user id
         internal_user_id = chat_history_service.generate_internal_user_id()
@@ -188,12 +188,14 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
             first_name=request.first_name,
             last_name=request.last_name,
             phone_number=request.phone_number,
-            web_client=settings.DT_WEB_CLIENT_NAME,
             external_id=request.user_id,  # Store DT's user_id as external_id
+            web_client=settings.DT_WEB_CLIENT_NAME,
         )
 
         return DTUserCreateResponse(success=True, user_id=internal_user_id)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[DTAuth] Error creating user: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
