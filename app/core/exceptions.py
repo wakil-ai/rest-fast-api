@@ -140,3 +140,12 @@ class UserBlockedError(ChatHistoryException):
             detail=f"User with ID '{user_id}' is blocked and cannot perform this action.",
             status_code=status.HTTP_403_FORBIDDEN,
         )
+
+class UserAlreadyExistsException(ChatHistoryException):
+    """Raised when trying to create a user that already exists."""
+
+    def __init__(self, user_id: str):
+        super().__init__(
+            detail=f"User with ID '{user_id}' already exists.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )

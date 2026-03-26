@@ -6,8 +6,8 @@ from app.core.dependencies import get_chat_history_service
 from app.core.logger import logger
 from app.models.auth import TelegramAuth, DTUserCreateRequest, DTUserCreateResponse
 from app.core.exceptions import UserAlreadyExistsException
-from app.security import verify_dt_server_ip
 from app.services import validate_telegram_data
+from app.security.dependencies import verify_dt_api_key
 
 router = APIRouter(prefix="/auth", tags=["Auth for Login"])
 
@@ -164,12 +164,12 @@ async def telegram_login(query_params: TelegramAuth = Depends(TelegramAuth)):
 
 
 # DT Server Authentication (DT integration)
-@router.post("/dt", dependencies=[Depends(verify_dt_server_ip)], response_model=DTUserCreateResponse)
+@router.post("/dt", dependencies=[Depends(verify_dt_api_key)], response_model=DTUserCreateResponse)
 async def auth_createa_dt_user(request: DTUserCreateRequest):
     """
     Create a user for Birdarcha web client (DT integration).
     
-    Only allows requests from the configured DT server IP (87.192.230.47).
+    Only allows requests from the configured DT server IP.
     Expects JSON body with user details
     """
     try:

@@ -164,8 +164,8 @@ class Settings(BaseSettings):
     API_KEY: str = "admin"
     SUPER_ADMIN_KEY_NAME: str = "x-super-admin-key"
     SUPER_ADMIN_API_KEY: str = "super-admin"
-    DT_TEAM_API_KEY_NAME: str = "x-dt-team-api-key"
-    DT_TEAM_API_KEY: str | None = None  # DT team dedicated API key for backend access
+    DT_API_KEY_NAME: str = "x-dt-team-api-key"
+    DT_API_KEY: str | None = None  # DT team dedicated API key for backend access
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
