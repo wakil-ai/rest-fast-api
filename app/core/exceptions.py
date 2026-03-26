@@ -85,3 +85,58 @@ class TooLongFileContentException(ChatException):
             f"Maximum {max_length} characters allowed, got {content_length} characters."
         )
         super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
+
+
+# Chat History Service Exceptions
+class ChatHistoryException(ChatException):
+    """Base exception for chat history service errors."""
+
+    def __init__(self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST):
+        super().__init__(detail=detail, status_code=status_code)
+
+
+class UserNotFoundError(ChatHistoryException):
+    """Raised when a user cannot be found in the database."""
+
+    def __init__(self, user_id: str):
+        super().__init__(
+            detail=f"User with ID '{user_id}' not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class SessionNotFoundError(ChatHistoryException):
+    """Raised when a session cannot be found in the database."""
+
+    def __init__(self, session_id: str):
+        super().__init__(
+            detail=f"Session with ID '{session_id}' not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class MessageNotFoundError(ChatHistoryException):
+    """Raised when a message cannot be found in the database."""
+
+    def __init__(self, message_id: str):
+        super().__init__(
+            detail=f"Message with ID '{message_id}' not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class InvalidInputError(ChatHistoryException):
+    """Raised when input validation fails."""
+
+    def __init__(self, detail: str):
+        super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
+
+
+class UserBlockedError(ChatHistoryException):
+    """Raised when a user is blocked."""
+
+    def __init__(self, user_id: str):
+        super().__init__(
+            detail=f"User with ID '{user_id}' is blocked and cannot perform this action.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )

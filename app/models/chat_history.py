@@ -93,9 +93,6 @@ class SessionCreateRequest(BaseModel):
         None,
         description="Optional custom session ID (UUID auto-generated if not provided)",
     )
-    project_id: str | None = Field(
-        None, description="Optional project ID for project-based chats"
-    )
     title: str | None = Field("New Chat", description="Session title")
     tags: list[str] = Field(
         default_factory=list, description="Optional tags for categorization"
@@ -107,9 +104,6 @@ class SessionResponse(BaseModel):
 
     session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
     user_id: str = Field(..., description="User ID")
-    project_id: str | None = Field(
-        None, description="Project ID (null for standalone chats)"
-    )
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
     created_at: datetime

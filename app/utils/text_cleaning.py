@@ -1,8 +1,8 @@
+import hashlib
 import html
 import re
 import unicodedata
 from decimal import Decimal, InvalidOperation
-import hashlib
 
 
 # Lightweight text-cleaning helpers (formerly in context_formatter.py)
@@ -129,6 +129,7 @@ def clean_text(text: str) -> str:
 
     return "\n".join(cleaned_lines)
 
+
 def extract_integers(text: str) -> list[int]:
     """Grab all integer numbers from text (e.g., '115, 114' → [115, 114])."""
     return [int(m) for m in re.findall(r"\b\d+\b", text)]
@@ -140,6 +141,7 @@ def remove_braces(text: str) -> str:
     no matter how many times it appears in the text.
     """
     return re.sub(r"\{[^}]*\}", "", text)
+
 
 def _md5_hex(value: str) -> str:
     return hashlib.md5(value.encode("utf-8")).hexdigest()

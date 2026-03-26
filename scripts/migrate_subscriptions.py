@@ -32,7 +32,9 @@ def _derive_days(start_ms: int, end_ms: int, default: int) -> int:
     return max(1, math.ceil((end_ms - start_ms) / milliseconds_per_day))
 
 
-def _normalize_legacy_record(user_id: str, legacy_record: dict, *, is_daily: bool) -> dict:
+def _normalize_legacy_record(
+    user_id: str, legacy_record: dict, *, is_daily: bool
+) -> dict:
     now_ms = int(time.time() * 1000)
     daily_credits = _as_int(legacy_record.get("daily_credits"))
     start_ms = _as_int(legacy_record.get("start_ms"))
@@ -119,7 +121,9 @@ async def _migrate_invoice_collection(
         if normalized_invoice.get("invoice_id") is not None:
             normalized_invoice["invoice_id"] = str(normalized_invoice["invoice_id"])
 
-        if not normalized_invoice.get("order_id") and normalized_invoice.get("invoice_id"):
+        if not normalized_invoice.get("order_id") and normalized_invoice.get(
+            "invoice_id"
+        ):
             normalized_invoice["order_id"] = str(normalized_invoice["invoice_id"])
 
         if normalized_invoice.get("order_id") is None:
@@ -136,7 +140,9 @@ async def _migrate_invoice_collection(
 
         migrated += 1
         if apply_changes:
-            await target_collection.update_one(query, {"$set": normalized_invoice}, upsert=True)
+            await target_collection.update_one(
+                query, {"$set": normalized_invoice}, upsert=True
+            )
 
     return scanned, migrated, skipped
 
@@ -179,7 +185,9 @@ async def _ensure_indexes(db) -> None:
     )
 
 
-async def migrate(*, apply_changes: bool, user_id: str | None, limit: int | None) -> int:
+async def migrate(
+    *, apply_changes: bool, user_id: str | None, limit: int | None
+) -> int:
     client = AsyncIOMotorClient(
         settings.MONGODB_URI,
         server_api=ServerApi("1"),
@@ -259,8 +267,10 @@ async def migrate(*, apply_changes: bool, user_id: str | None, limit: int | None
                     legacy_daily_subscription,
                     is_daily=True,
                 )
-                existing_daily_subscription = await daily_subscriptions_collection.find_one(
-                    {"user_id": canonical_user_id}
+                existing_daily_subscription = (
+                    await daily_subscriptions_collection.find_one(
+                        {"user_id": canonical_user_id}
+                    )
                 )
 
                 if _should_replace(
@@ -296,17 +306,21 @@ async def migrate(*, apply_changes: bool, user_id: str | None, limit: int | None
         else:
             print("No data was written. Re-run with --apply to perform the migration.")
 
-        payme_scanned, payme_migrated, payme_skipped = await _migrate_invoice_collection(
-            source_collection=payme_invoices_collection,
-            target_collection=payment_invoices_collection,
-            provider="payme",
-            apply_changes=apply_changes,
+        payme_scanned, payme_migrated, payme_skipped = (
+            await _migrate_invoice_collection(
+                source_collection=payme_invoices_collection,
+                target_collection=payment_invoices_collection,
+                provider="payme",
+                apply_changes=apply_changes,
+            )
         )
-        click_scanned, click_migrated, click_skipped = await _migrate_invoice_collection(
-            source_collection=click_invoices_collection,
-            target_collection=payment_invoices_collection,
-            provider="click",
-            apply_changes=apply_changes,
+        click_scanned, click_migrated, click_skipped = (
+            await _migrate_invoice_collection(
+                source_collection=click_invoices_collection,
+                target_collection=payment_invoices_collection,
+                provider="click",
+                apply_changes=apply_changes,
+            )
         )
 
         print(f"Payme invoices scanned: {payme_scanned}")

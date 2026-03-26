@@ -22,7 +22,6 @@ async def create_session(request: SessionCreateRequest):
     session = await chat_history_service.create_session(
         user_id=request.user_id,
         session_id=request.session_id,
-        project_id=request.project_id,
         title=request.title,
         tags=request.tags,
     )
@@ -31,10 +30,8 @@ async def create_session(request: SessionCreateRequest):
 
 @router.get("/{user_id}", response_model=list[SessionResponse])
 @handle_service_error
-async def list_sessions(user_id: str, project_id: str | None = None, limit: int = 50):
-    sessions = await chat_history_service.get_sessions(
-        user_id=user_id, project_id=project_id, limit=limit
-    )
+async def list_sessions(user_id: str, limit: int = 50):
+    sessions = await chat_history_service.get_sessions(user_id=user_id, limit=limit)
     return [serialize_mongo_id(s) for s in sessions]
 
 

@@ -22,12 +22,12 @@ class SubscriptionStorage:
             await self.mongo_handler.db[self.subscriptions_collection].create_index(
                 [("end_ms", -1)]
             )
-            await self.mongo_handler.db[self.daily_subscriptions_collection].create_index(
-                [("user_id", 1)], unique=True
-            )
-            await self.mongo_handler.db[self.daily_subscriptions_collection].create_index(
-                [("end_ms", -1)]
-            )
+            await self.mongo_handler.db[
+                self.daily_subscriptions_collection
+            ].create_index([("user_id", 1)], unique=True)
+            await self.mongo_handler.db[
+                self.daily_subscriptions_collection
+            ].create_index([("end_ms", -1)])
             self._indexes_ready = True
         except Exception as exc:
             logger.warning(

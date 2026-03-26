@@ -3,6 +3,7 @@ import secrets
 
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
+
 from app.core.config import settings
 
 # HTTP Basic (docs)
@@ -69,6 +70,7 @@ def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
             detail="Invalid Super Admin API Key",
         )
     return True
+
 
 def verify_payme_authorization(authorization: str | None) -> bool:
     """Verify Payme authorization header"""
