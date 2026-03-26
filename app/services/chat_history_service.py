@@ -745,9 +745,6 @@ class ChatHistoryService:
             self.feedback_collection,
             {"message_id": message_id},
         )
-        logger.info(
-            f"Retrieved {len(feedbacks)} feedback entries for message_id: {message_id}"
-        )
         return feedbacks[-1] if feedbacks else None
 
     # File Management
