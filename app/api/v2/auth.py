@@ -173,13 +173,15 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
     Expects JSON body with user details
     """
     try:
-        # Create internal user id 
+        # Check if user with external_id already exists
+        existing_user = await chat_history_service.get_user_by_external_id(request.user_id)
+        if existing_user:
+            raise UserAlreadyExistsException(f"User with external ID {request.user_id} already exists")
+        
+        # Generate internal user id
         internal_user_id = chat_history_service.generate_internal_user_id()
         
-        if await chat_history_service.get_user(internal_user_id):
-            raise UserAlreadyExistsException(f"User with ID {internal_user_id} already exists")
-        
-        # Create user
+        # Create user with internal user id and external_id
         await chat_history_service.create_user(
             user_id=internal_user_id,
             username=request.username, # email or username 
@@ -187,6 +189,7 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
             last_name=request.last_name,
             phone_number=request.phone_number,
             web_client=settings.DT_WEB_CLIENT_NAME,
+            external_id=request.user_id,  # Store DT's user_id as external_id
         )
 
         return DTUserCreateResponse(success=True, user_id=internal_user_id)

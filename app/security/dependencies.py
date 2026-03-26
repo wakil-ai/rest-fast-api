@@ -72,34 +72,6 @@ def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
     return True
 
 
-def get_client_ip(request: Request) -> str | None:
-    """Get client IP address, checking headers first for proxy/Docker environments.
-    
-    Order of precedence:
-    1. X-Forwarded-For header (first IP if comma-separated)
-    2. X-Real-IP header
-    3. request.client.host (direct connection)
-    
-    Returns: IP address string or None if unable to determine
-    """
-    # Check X-Forwarded-For header (common with proxies/load balancers)
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # Take the first IP if there are multiple (comma-separated)
-        return forwarded_for.split(",")[0].strip()
-    
-    # Check X-Real-IP header (used by some proxies)
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
-    
-    # Fall back to direct connection IP
-    if request.client:
-        return request.client.host
-    
-    return None
-
-
 # DT Team API Key
 dt_team_key_header = APIKeyHeader(
     name=settings.DT_API_KEY_NAME.lower(),
@@ -111,9 +83,9 @@ dt_team_key_header = APIKeyHeader(
 def verify_dt_api_key(
     api_key: str = Security(dt_team_key_header), request: Request = None
 ) -> bool:
-    """Verify the DT team API key AND check if request is from DT server IP.
+    """Verify the DT team API key.
     
-    Both API key and source IP must be valid.
+    Only API key validation is required. IP validation is handled by Cloudflare.
     """
     # Verify API key
     if api_key is None:
@@ -132,31 +104,17 @@ def verify_dt_api_key(
             detail="Invalid DT Team API Key",
         )
     
-    # Verify source IP if request object is available
-    if request:
-        client_ip = get_client_ip(request)
-        
-        if not client_ip:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Unable to determine client IP address",
-            )
-        
-        if client_ip != settings.DT_SERVER_IP:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied. DT Team API Key can only be used specified ip address, request from {client_ip}",
-            )
-    
     return True
 
 
 def verify_api_key_or_dt_key(request: Request) -> bool:
-    """Verify either default API key (any IP) OR DT team key (restricted to DT_SERVER_IP).
+    """Verify either default API key OR DT team key.
+    
+    IP validation is handled by Cloudflare, only API key checks are performed.
     
     Logic:
-    - If request has default API_KEY header: Allow from any IP
-    - If request has DT_TEAM_API_KEY header: Require DT_SERVER_IP
+    - If request has default API_KEY header: Allow if valid
+    - If request has DT_TEAM_API_KEY header: Allow if valid
     - If neither: Reject with 401
     """
     default_api_key = request.headers.get(settings.API_KEY_NAME.lower())
@@ -165,7 +123,7 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
     # Check if default API key is provided
     if default_api_key:
         if secrets.compare_digest(default_api_key, settings.API_KEY):
-            return True  # Allow from any IP
+            return True
         else:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -183,20 +141,6 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Invalid DT Team API Key",
-            )
-        
-        # Verify source IP for DT team key (checking public IP from headers first)
-        client_ip = get_client_ip(request)
-        if not client_ip:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Unable to determine client IP address",
-            )
-        
-        if client_ip != settings.DT_SERVER_IP:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied. DT Team API Key can only be used from {settings.DT_SERVER_IP}, request from {client_ip}",
             )
         return True
     

@@ -186,6 +186,7 @@ class ChatHistoryService:
         phone_number: str | None = None,
         picture: str | None = None,
         web_client: str | None = None,
+        external_id: str | None = None,
     ) -> dict:
         """Create or retrieve an existing user. Uses user_id as _id."""
         # Check if user exists using _id
@@ -206,6 +207,7 @@ class ChatHistoryService:
             "picture": picture,
             "phone_number": phone_number,
             "web_client": web_client,
+            "external_id": external_id,  # Store external ID for DT integration
             "is_blocked": False,
             "blocked_at": None,
             "blocked_reason": None,
@@ -237,6 +239,13 @@ class ChatHistoryService:
         """Get user by user_id."""
         users = await self.db_manager.find_documents(
             self.users_collection, {"_id": user_id}
+        )
+        return users[0] if users else None
+
+    async def get_user_by_external_id(self, external_id: str) -> dict | None:
+        """Get user by external_id (for DT integration)."""
+        users = await self.db_manager.find_documents(
+            self.users_collection, {"external_id": external_id}
         )
         return users[0] if users else None
 
