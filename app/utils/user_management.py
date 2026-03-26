@@ -1,9 +1,12 @@
 import random
 import string
-import uuid, uuid6
+import uuid as uuid_module
+import uuid6
 import hashlib
 from functools import wraps
 from typing import Any
+from datetime import datetime
+from decimal import Decimal
 
 from fastapi import HTTPException, status
 
@@ -24,13 +27,13 @@ def generate_short_id(prefix: str = "", length: int = 8, type: str = "random") -
         unique_id = "".join(random.choice(chars) for _ in range(length))
 
     elif type == "uuid":
-        unique_id = str(uuid.uuid4())[:length]
+        unique_id = str(uuid_module.uuid4())[:length]
 
     elif type == "hash":
         unique_id = hashlib.sha256(str(random.random()).encode()).hexdigest()[:length]
         
     elif type == "uuid7":
-        unique_id = uuid6.uuid7()
+        unique_id = str(uuid6.uuid7())  # Convert UUID object to string
 
     if not unique_id:
         raise RuntimeError("Failed to generate short id")
@@ -46,6 +49,27 @@ def serialize_mongo_id(data: Any) -> Any:
         data["mongo_id"] = str(data["_id"])
         # We also convert _id to string in place if it's not already
         data["_id"] = str(data["_id"])
+    return data
+
+
+def clean_for_mongodb(data: Any) -> Any:
+    """Clean and convert data types that MongoDB cannot natively encode.
+    
+    Converts:
+    - UUID objects to strings
+    - Decimal objects to float
+    - Other non-serializable types to strings
+    """
+    if isinstance(data, dict):
+        return {k: clean_for_mongodb(v) for k, v in data.items()}
+    elif isinstance(data, (list, tuple)):
+        return [clean_for_mongodb(item) for item in data]
+    elif isinstance(data, uuid_module.UUID):
+        return str(data)
+    elif isinstance(data, Decimal):
+        return float(data)
+    elif isinstance(data, datetime):
+        return data  # MongoDB handles datetime natively
     return data
 
 

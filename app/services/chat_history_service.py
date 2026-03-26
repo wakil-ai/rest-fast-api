@@ -14,7 +14,7 @@ from app.core.exceptions import (
 )
 from app.core.logger import logger
 from app.models.chat_history import ShareResponse
-from app.utils.user_management import generate_short_id
+from app.utils.user_management import generate_short_id, clean_for_mongodb
 
 
 class ChatHistoryService:
@@ -215,6 +215,8 @@ class ChatHistoryService:
         }
 
         try:
+            # Clean data for MongoDB (convert UUIDs, Decimals, etc.)
+            user = clean_for_mongodb(user)
             await self.db_manager.insert_documents(self.users_collection, [user])
             logger.info(f"Created new user with user_id: {user_id}")
             return user
