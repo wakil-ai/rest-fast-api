@@ -72,6 +72,34 @@ def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
     return True
 
 
+def get_client_ip(request: Request) -> str | None:
+    """Get client IP address, checking headers first for proxy/Docker environments.
+    
+    Order of precedence:
+    1. X-Forwarded-For header (first IP if comma-separated)
+    2. X-Real-IP header
+    3. request.client.host (direct connection)
+    
+    Returns: IP address string or None if unable to determine
+    """
+    # Check X-Forwarded-For header (common with proxies/load balancers)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # Take the first IP if there are multiple (comma-separated)
+        return forwarded_for.split(",")[0].strip()
+    
+    # Check X-Real-IP header (used by some proxies)
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+    
+    # Fall back to direct connection IP
+    if request.client:
+        return request.client.host
+    
+    return None
+
+
 # DT Team API Key
 dt_team_key_header = APIKeyHeader(
     name=settings.DT_API_KEY_NAME.lower(),
@@ -106,7 +134,7 @@ def verify_dt_api_key(
     
     # Verify source IP if request object is available
     if request:
-        client_ip = request.client.host if request.client else None
+        client_ip = get_client_ip(request)
         
         if not client_ip:
             raise HTTPException(
@@ -157,8 +185,8 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
                 detail="Invalid DT Team API Key",
             )
         
-        # Verify source IP for DT team key
-        client_ip = request.client.host if request.client else None
+        # Verify source IP for DT team key (checking public IP from headers first)
+        client_ip = get_client_ip(request)
         if not client_ip:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
