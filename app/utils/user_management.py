@@ -12,9 +12,9 @@ from app.core.logger import logger
 
 def generate_short_id(prefix: str = "", length: int = 8, type: str = "random") -> str:
     """Generate a random short ID with an optional prefix."""
-    if type not in ["random", "uuid", "hash"]:
+    if type not in ["random", "uuid", "hash", "uuid7"]:
         raise ValueError(
-            "Invalid type for ID generation. Supported types: 'random', 'uuid', 'hash'."
+            "Invalid type for ID generation. Supported types: 'random', 'uuid', 'hash', 'uuid7'."
         )
 
     unique_id = ""
