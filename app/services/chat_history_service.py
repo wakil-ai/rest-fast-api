@@ -135,7 +135,7 @@ class ChatHistoryService:
             upsert=True,
         )
         
-    async def generate_internal_user_id(self) -> str:
+    def generate_internal_user_id(self) -> str:
         """Generate a unique internal user ID."""
         return generate_short_id(prefix="", type="uuid7")
 

@@ -176,7 +176,7 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
         # Create internal user id 
         internal_user_id = chat_history_service.generate_internal_user_id()
         
-        if chat_history_service.get_user(internal_user_id):
+        if await chat_history_service.get_user(internal_user_id):
             raise UserAlreadyExistsException(f"User with ID {internal_user_id} already exists")
         
         # Create user
