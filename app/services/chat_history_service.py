@@ -135,9 +135,9 @@ class ChatHistoryService:
             upsert=True,
         )
         
-    async def create_internal_user_id():
+    async def generate_internal_user_id(self) -> str:
         """Generate a unique internal user ID."""
-        return generate_short_id(prefix="user-", type="uuid7")
+        return generate_short_id(prefix="", type="uuid7")
 
     # Validation and existence checks
     async def _ensure_user_exists(self, user_id: str) -> dict:
