@@ -1,5 +1,7 @@
 import random
 import string
+import uuid, uuid6
+import hashlib
 from functools import wraps
 from typing import Any
 
@@ -22,14 +24,13 @@ def generate_short_id(prefix: str = "", length: int = 8, type: str = "random") -
         unique_id = "".join(random.choice(chars) for _ in range(length))
 
     elif type == "uuid":
-        import uuid
-
         unique_id = str(uuid.uuid4())[:length]
 
     elif type == "hash":
-        import hashlib
-
         unique_id = hashlib.sha256(str(random.random()).encode()).hexdigest()[:length]
+        
+    elif type == "uuid7":
+        unique_id = uuid6.uuid7()
 
     if not unique_id:
         raise RuntimeError("Failed to generate short id")

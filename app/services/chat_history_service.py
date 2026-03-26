@@ -134,6 +134,10 @@ class ChatHistoryService:
             },
             upsert=True,
         )
+        
+    async def create_internal_user_id():
+        """Generate a unique internal user ID."""
+        return generate_short_id(prefix="user-", type="uuid7")
 
     # Validation and existence checks
     async def _ensure_user_exists(self, user_id: str) -> dict:
@@ -181,6 +185,7 @@ class ChatHistoryService:
         last_name: str | None = None,
         phone_number: str | None = None,
         picture: str | None = None,
+        web_client: str | None = None,
     ) -> dict:
         """Create or retrieve an existing user. Uses user_id as _id."""
         # Check if user exists using _id
@@ -200,6 +205,7 @@ class ChatHistoryService:
             "last_name": last_name,
             "picture": picture,
             "phone_number": phone_number,
+            "web_client": web_client,
             "is_blocked": False,
             "blocked_at": None,
             "blocked_reason": None,
