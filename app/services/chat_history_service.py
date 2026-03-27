@@ -134,10 +134,6 @@ class ChatHistoryService:
             },
             upsert=True,
         )
-        
-    def generate_internal_user_id(self) -> str:
-        """Generate a unique internal user ID."""
-        return generate_short_id(prefix="", type="uuid7")
 
     # Validation and existence checks
     async def _ensure_user_exists(self, user_id: str) -> dict:
@@ -362,31 +358,21 @@ class ChatHistoryService:
     async def create_session(
         self,
         user_id: str,
-        session_id: str | None = None,
         title: str | None = None,
         tags: list[str] | None = None,
     ) -> dict:
         """Create or retrieve an existing session. Uses session_id as _id."""
 
         await self._ensure_user_exists(user_id)
-        session_id = session_id or generate_short_id("ses-")
+        
+        # Generate session ID using uuid7 with 'ses-' prefix
+        session_id = generate_short_id("ses-", type="uuid7")
 
-        # Check if session exists using _id
-        existing_session = await self.db_manager.find_documents(
-            self.sessions_collection, {"_id": session_id}
-        )
-
-        if existing_session:
-            # Verify ownership
-            if existing_session[0].get("user_id") != user_id:
-                raise InvalidInputError("Session exists but belongs to another user")
-            logger.info(f"Session with session_id {session_id} already exists.")
-            return existing_session[0]
-
+        # Session model
         session = {
             "_id": session_id,
-            "session_id": session_id,  # Ensure session_id field is set to match _id
             "user_id": user_id,
+            "session_id": session_id,  # Ensure session_id field is set to match _id
             "title": title or "New Chat",
             "tags": tags or [],
             "created_at": datetime.utcnow(),
@@ -407,7 +393,6 @@ class ChatHistoryService:
         sessions = await self.db_manager.find_documents(
             self.sessions_collection, {"user_id": user_id}, limit=limit
         )
-        logger.info(f"Retrieved {len(sessions)} sessions for user {user_id}")
         return sessions
 
     async def get_session(self, session_id: str) -> dict | None:
@@ -481,7 +466,6 @@ class ChatHistoryService:
     async def add_message(
         self,
         session_id: str,
-        message_id: str | None,
         file_ids: list[str] | None,
         content: dict | BaseModel,
         metadata: dict | None = None,
@@ -489,20 +473,10 @@ class ChatHistoryService:
         """Add a message to a session. Uses message_id as _id."""
 
         session = await self._ensure_session_exists(session_id)
-        message_id = message_id or generate_short_id("msg-")
-        if not message_id.strip():
-            raise InvalidInputError("Message ID cannot be empty")
-
+        
+        # Generate new message ID using UUID-7 with 'msg_' prefix
+        message_id = generate_short_id("msg_", type="uuid7")
         user_id = session["user_id"]
-
-        # Check if message exists using _id
-        existing_message = await self.db_manager.find_documents(
-            self.messages_collection, {"_id": message_id}
-        )
-
-        if existing_message:
-            logger.info(f"Message with message_id {message_id} already exists.")
-            return existing_message[0]
 
         if isinstance(content, BaseModel):
             content = content.model_dump()
@@ -517,10 +491,10 @@ class ChatHistoryService:
 
         message = {
             "_id": message_id,
-            "message_id": message_id,  # Ensure message_id field is set to match _id
             "user_id": user_id,  # Auto-populated from session
-            "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "session_id": session_id,
+            "message_id": message_id,  # Ensure message_id field is set to match _id
+            "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "content": content,
             "metadata": metadata or {},
             "created_at": datetime.utcnow(),
@@ -536,15 +510,13 @@ class ChatHistoryService:
                 {"_id": session_id},
                 {"$set": {"updated_at": datetime.utcnow()}},
             )
-
-            logger.info(f"Added new message with message_id: {message_id}")
+            
             return message
         except Exception as e:
             raise InvalidInputError(f"Failed to add message: {str(e)}")
 
     async def get_messages(self, session_id: str, limit: int = 100) -> list[dict]:
         """Retrieve all messages for a session."""
-
         await self._ensure_session_exists(session_id)
 
         query = {
@@ -555,75 +527,7 @@ class ChatHistoryService:
         messages = await self.db_manager.find_documents(
             self.messages_collection, query, limit=limit
         )
-
-        # Optimize: Fetch all feedback for this session in one query
-        feedbacks = await self.db_manager.find_documents(
-            self.feedback_collection, {"session_id": session_id}
-        )
-
-        # Create a map of message_id -> feedback stats
-        feedback_map = {}
-        for f in feedbacks:
-            msg_id = f.get("message_id")
-            if not msg_id:
-                continue
-
-            if msg_id not in feedback_map:
-                feedback_map[msg_id] = {
-                    "total_likes": 0,
-                    "total_dislikes": 0,
-                    "user_feedback": None,
-                }
-
-            f_type = f.get("feedback_type")
-            if f_type == "like":
-                feedback_map[msg_id]["total_likes"] += 1
-            elif f_type == "dislike":
-                feedback_map[msg_id]["total_dislikes"] += 1
-
-        # Get session to know the user_id for "user_feedback" context
-        session = await self.get_session(session_id)
-        current_user_id = session.get("user_id") if session else None
-
-        # Re-populate feedback map with user context
-        feedback_map = {}
-        for f in feedbacks:
-            msg_id = f.get("message_id")
-            if not msg_id:
-                continue
-
-            if msg_id not in feedback_map:
-                feedback_map[msg_id] = {
-                    "total_likes": 0,
-                    "total_dislikes": 0,
-                    "user_feedback": None,
-                }
-
-            f_type = f.get("feedback_type")
-            if f_type == "like":
-                feedback_map[msg_id]["total_likes"] += 1
-            elif f_type == "dislike":
-                feedback_map[msg_id]["total_dislikes"] += 1
-
-            # If this feedback is from the session owner, set user_feedback
-            if current_user_id and str(f.get("user_id")) == str(current_user_id):
-                feedback_map[msg_id]["user_feedback"] = f_type
-
-        # Attach feedback to messages
-        for msg in messages:
-            msg_id = msg.get("message_id") or str(msg.get("_id"))
-            if msg_id in feedback_map:
-                msg["feedback"] = feedback_map[msg_id]
-            else:
-                msg["feedback"] = {
-                    "total_likes": 0,
-                    "total_dislikes": 0,
-                    "user_feedback": None,
-                }
-
-        logger.info(
-            f"Retrieved {len(messages)} messages from session {session_id} with feedback"
-        )
+        
         return messages
 
     async def get_message(self, message_id: str) -> dict | None:

@@ -8,6 +8,7 @@ from app.models.auth import TelegramAuth, DTUserCreateRequest, DTUserCreateRespo
 from app.core.exceptions import UserAlreadyExistsException
 from app.services import validate_telegram_data
 from app.security.dependencies import verify_dt_api_key
+from app.utils.user_management import generate_short_id
 
 router = APIRouter(prefix="/auth", tags=["Auth for Login"])
 
@@ -179,7 +180,7 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
             raise UserAlreadyExistsException(request.user_id)
         
         # Generate internal user id
-        internal_user_id = chat_history_service.generate_internal_user_id()
+        internal_user_id = generate_short_id(prefix="user-", type="uuid7")
         
         # Create user with internal user id and external_id
         await chat_history_service.create_user(
