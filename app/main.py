@@ -76,7 +76,7 @@ def create_app() -> FastAPI:
 
     # Mount routers with API key authentication
     app.include_router(
-        chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
+        chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key_or_dt_key)]
     )
     app.include_router(
         chat_history,
@@ -86,12 +86,12 @@ def create_app() -> FastAPI:
     app.include_router(
         speech_to_text.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
         memory.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
         admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]

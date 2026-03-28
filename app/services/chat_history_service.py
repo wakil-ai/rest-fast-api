@@ -140,7 +140,7 @@ class ChatHistoryService:
     @staticmethod
     def create_message_id() -> str:
         """Create a new chat message identifier."""
-        return generate_short_id("msg_", type="uuid7")
+        return generate_short_id("msg-", type="uuid7")
 
     async def ensure_session_for_user(self, user_id: str, session_id: str) -> dict:
         """Validate that the provided session exists and belongs to the user."""
