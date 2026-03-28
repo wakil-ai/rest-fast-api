@@ -36,7 +36,6 @@ class GenerationContext:
     """All context needed for response generation."""
 
     user_id: str
-    message_id: str | None
     context: str
     system_prompt: str
     chat_history: str
@@ -79,42 +78,41 @@ class ChatChain:
         self.fallback_llm = get_fallback_llm()
         self.prompts_registry = get_prompt_registry()
 
-    async def _record_token_stats(
+    async def _collect_generation_meta(
         self,
         *,
-        message_id: str | None,
-        user_id: str,
-        model: str | None,
+        llm: LLM,
         query: str,
         system_prompt: str,
         answer: str,
-    ) -> None:
-        """Best-effort token stats upsert (never raises)."""
-        if not message_id:
-            return
-        try:
-            token_llm = self._select_llm(model)
+    ) -> dict[str, Any]:
+        """Collect best-effort generation metadata for persistence."""
+        meta: dict[str, Any] = {}
 
-            input_token = await token_llm.count_tokens(query)
-            context_token = await token_llm.count_tokens(system_prompt)
-            output_token = await token_llm.count_tokens(answer)
+        model = getattr(llm, "model", None)
+        if model:
+            meta["model"] = model
+
+        try:
+            input_token = await llm.count_tokens(query)
+            context_token = await llm.count_tokens(system_prompt)
+            output_token = await llm.count_tokens(answer)
 
             embedding_text = ""
             if query:
                 embedding_text = get_instruction(query)
-            embedding_input_token = await token_llm.count_tokens(embedding_text)
+            embedding_input_token = await llm.count_tokens(embedding_text)
 
-            await self.history_service.upsert_token_stats(
-                message_id=message_id,
-                user_id=user_id,
-                model=model,
-                input_token=input_token,
-                context_token=context_token,
-                output_token=output_token,
-                embedding_input_token=embedding_input_token,
-            )
+            meta["token_usage"] = {
+                "input_token": input_token,
+                "context_token": context_token,
+                "output_token": output_token,
+                "embedding_input_token": embedding_input_token,
+            }
         except Exception as e:
-            logger.warning(f"Token stats upsert failed: {e}", exc_info=True)
+            logger.warning(f"Token stats collection failed: {e}", exc_info=True)
+
+        return meta
 
     def _get_assistant(self, name: str) -> BaseAssistant:
         """Get or create an assistant instance by name."""
@@ -129,13 +127,11 @@ class ChatChain:
     async def generate_answer(
         self,
         user_id: str,
-        message_id: str | None,
         query: str,
         chat_history: list | None = None,
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
-        model_name: str | None = None,
     ) -> str | AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
         """
         Main entry point to generate a response (streaming or not).
@@ -160,7 +156,6 @@ class ChatChain:
 
             ctx = await self._prepare_generation_context(
                 user_id=user_id,
-                message_id=message_id,
                 query=query,
                 chat_history=chat_history,
                 assistant=routing_decision.assistant_name or assistant,
@@ -168,24 +163,21 @@ class ChatChain:
                 history_formatted=history_formatted,
             )
 
-            llm = self._select_llm(model_name)
+            llm = self._select_llm()
 
             if stream:
                 return self._generate_streaming(llm, query, ctx, ctx.assistant_name)
             else:
-                return await self._generate_non_streaming(
-                    llm, query, ctx, ctx.assistant_name
-                )
+                return await self._generate_non_streaming(llm, query, ctx)
 
         except Exception as e:
             logger.error(f"Generation failed: {e}", exc_info=True)
             return self._create_error_response(stream)
 
     #  LLM Selection
-    def _select_llm(self, model_name: str | None) -> LLM:
-        """Factory method: select LLM based on model name prefix."""
-        if not model_name:
-            return self.fallback_llm
+    def _select_llm(self) -> LLM:
+        """Factory method: select the configured default LLM."""
+        model_name = settings.DEFAULT_CHAT_MODEL
 
         mapping = {
             "gemma-": Novita,
@@ -206,7 +198,6 @@ class ChatChain:
     async def _prepare_generation_context(
         self,
         user_id: str,
-        message_id: str | None,
         query: str,
         chat_history: list | None,
         assistant: str,
@@ -260,7 +251,6 @@ class ChatChain:
 
         return GenerationContext(
             user_id=user_id,
-            message_id=message_id,
             context=retrieved_context,
             system_prompt=system_prompt,
             chat_history=history_formatted,
@@ -352,6 +342,7 @@ class ChatChain:
     ) -> AsyncGenerator[Any, None]:
         async def gen() -> AsyncGenerator[Any, None]:
             buffer = []
+            active_llm = llm
             try:
                 async for chunk in self._stream_from_llm(llm, query, ctx.system_prompt):
                     buffer.append(chunk)
@@ -359,8 +350,9 @@ class ChatChain:
             except Exception:
                 logger.warning("Primary LLM streaming failed → fallback", exc_info=True)
                 try:
+                    active_llm = self.fallback_llm
                     async for chunk in self._stream_from_llm(
-                        self.fallback_llm, query, ctx.system_prompt
+                        active_llm, query, ctx.system_prompt
                     ):
                         buffer.append(chunk)
                         yield chunk
@@ -371,18 +363,20 @@ class ChatChain:
             full = "".join(buffer)
             logger.debug(f"[STREAM FINAL]\n{full}")
 
-            await self._record_token_stats(
-                message_id=ctx.message_id,
-                user_id=ctx.user_id,
-                model=getattr(llm, "model", None),
+            meta = await self._collect_generation_meta(
+                llm=active_llm,
                 query=query,
                 system_prompt=ctx.system_prompt,
                 answer=full,
             )
 
+            meta["attachments"] = ctx.attachments or []
+
             # Send attachments if the assistant provided any
             if ctx.attachments:
                 yield {"type": "attachments", "attachments": ctx.attachments}
+
+            yield {"type": "_generation_meta", "meta": meta}
 
         return gen()
 
@@ -391,15 +385,16 @@ class ChatChain:
         llm: LLM,
         query: str,
         ctx: GenerationContext,
-        assistant: str,
     ) -> tuple[str, dict[str, Any]]:
+        active_llm = llm
         try:
             raw = await self._get_response(llm, query, ctx.system_prompt)
         except Exception:
             logger.warning("Primary LLM failed → fallback", exc_info=True)
             try:
+                active_llm = self.fallback_llm
                 raw = await self._get_response(
-                    self.fallback_llm, query, ctx.system_prompt
+                    active_llm, query, ctx.system_prompt
                 )
             except Exception:
                 logger.error("Fallback LLM failed", exc_info=True)
@@ -410,22 +405,14 @@ class ChatChain:
             f"LLM response: {cleaned[:300]}{'...' if len(cleaned) > 300 else ''}"
         )
 
-        await self._record_token_stats(
-            message_id=ctx.message_id,
-            user_id=ctx.user_id,
-            model=getattr(llm, "model", None),
+        meta = await self._collect_generation_meta(
+            llm=active_llm,
             query=query,
             system_prompt=ctx.system_prompt,
             answer=cleaned,
         )
 
-        meta: dict[str, Any] = {}
-        meta["attachments"] = (
-            ctx.attachments if assistant == "contract_analyzer" else []
-        )
-
-        if settings.DEVELOPMENT_MODE:
-            meta["retrieved_contents"] = ctx.context
+        meta["attachments"] = ctx.attachments or []
 
         return cleaned, meta
 

@@ -49,5 +49,5 @@ __all__ = [
     "StreamingSTTService",
     "GoogleStreamingSTTService",
     "AzureStreamingSTTService",
-    "SubscriptionStorage"
+    "SubscriptionStorage",
 ]

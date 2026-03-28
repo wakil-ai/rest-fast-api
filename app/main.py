@@ -26,7 +26,7 @@ from app.api.v2.history.router import router as chat_history
 from app.api.v2.history.share import router as share_router
 from app.core.config import settings
 from app.core.logger import logger
-from app.security import get_current_username, verify_api_key, verify_super_admin_key
+from app.security import get_current_username, verify_api_key, verify_api_key_or_dt_key, verify_super_admin_key
 
 
 @asynccontextmanager
@@ -76,22 +76,22 @@ def create_app() -> FastAPI:
 
     # Mount routers with API key authentication
     app.include_router(
-        chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
+        chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key_or_dt_key)]
     )
     app.include_router(
         chat_history,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
         speech_to_text.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
         memory.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
         admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]

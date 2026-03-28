@@ -5,7 +5,14 @@ from typing import Any, Optional
 
 from app.core.config import settings
 
-SUPPORTED_STREAM_EVENT_TYPES = {"progress", "chunk", "attachments", "error", "end"}
+SUPPORTED_STREAM_EVENT_TYPES = {
+    "progress",
+    "chunk",
+    "attachments",
+    "metadata",
+    "error",
+    "end",
+}
 KEEPALIVE_EVENT = {"type": "progress", "message": "still working"}
 STREAM_END = object()
 

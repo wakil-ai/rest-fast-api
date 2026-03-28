@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncGenerator
+from time import perf_counter
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
@@ -28,18 +29,20 @@ chat_service = get_chat_service()
 
 
 async def _stream_chat_answer(
-    request: ChatRequest, assistant_name: str
+    request: ChatRequest,
+    assistant_name: str,
+    session_id: str,
+    message_id: str,
 ) -> AsyncGenerator[Any, None]:
-    model_name = request.model.value if request.model else None
     response = await chat_service.ask_question(
         user_id=request.user_id,
-        message_id=request.message_id,
+        session_id=session_id,
+        message_id=message_id,
         query=request.query,
         chat_history=request.chat_history,
         stream=True,
         file_ids=request.file_ids,
         assistant=assistant_name,
-        model_name=model_name,
     )
 
     if isinstance(response, tuple):
@@ -85,30 +88,37 @@ async def ask_question(request: ChatRequest):
         should_stream = settings.STREAM if request.stream is None else request.stream
 
         if should_stream:
-            return chat_service.create_streaming_response(
-                _stream_chat_answer(request, assistant_name)
+            session_id, message_id = await chat_service.prepare_chat_request(
+                user_id=request.user_id,
+                session_id=request.session_id,
             )
+            return chat_service.create_streaming_response(
+                _stream_chat_answer(request, assistant_name, session_id, message_id)
+            )
+
+        session_id, message_id = await chat_service.prepare_chat_request(
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
 
         response = await chat_service.ask_question(
             user_id=request.user_id,
-            message_id=request.message_id,
+            session_id=session_id,
+            message_id=message_id,
             query=request.query,
             chat_history=request.chat_history,
             stream=should_stream,
             file_ids=request.file_ids,
             assistant=assistant_name,
-            model_name=request.model.value if request.model else None,
         )
 
         if isinstance(response, tuple):
             answer, meta = response
             return ChatResponse(
                 answer=answer,
-                retrieved_contents=(
-                    meta.get("retrieved_contents")
-                    if settings.DEVELOPMENT_MODE
-                    else None
-                ),
+                session_id=session_id,
+                message_id=message_id,
+                latency_ms=meta.get("latency_ms"),
                 attachments=meta.get("attachments") or None,
             )
 
@@ -117,7 +127,11 @@ async def ask_question(request: ChatRequest):
                 "Unexpected streaming response for non-streaming request."
             )
 
-        return ChatResponse(answer=response)
+        return ChatResponse(
+            answer=response,
+            session_id=session_id,
+            message_id=message_id,
+        )
 
     except ChatException:
         raise
@@ -149,6 +163,11 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
             required_credits=settings.CREDIT_COST_DEEPRESEARCH,
         )
 
+        session_id, message_id = await chat_service.prepare_chat_request(
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+
         progress_queue = asyncio.Queue()
 
         async def progress_callback(event: dict):
@@ -156,9 +175,16 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
 
         flow = get_agentic_rag_flow_streaming(progress_callback)
 
-        initial_state = chat_service.build_agentic_state(request)
+        initial_state = chat_service.build_agentic_state(request, message_id=message_id)
+        started_at = perf_counter()
 
         async def response_generator():
+            yield {
+                "type": "metadata",
+                "session_id": session_id,
+                "message_id": message_id,
+            }
+
             flow_task = asyncio.create_task(flow.kickoff_async(initial_state))
 
             flow_complete = False
@@ -169,6 +195,35 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
                     # Await the result to catch any exceptions
                     try:
                         await flow_task
+                        latency_ms = int((perf_counter() - started_at) * 1000)
+                        generation_meta = dict(flow.state.generation_meta or {})
+                        generation_meta["workflow"] = "agentic_rag"
+                        if flow.state.selected_assistant:
+                            generation_meta["selected_assistant"] = (
+                                flow.state.selected_assistant
+                            )
+                        if flow.state.web_search_output:
+                            generation_meta["used_web_search"] = bool(
+                                flow.state.web_search_output.get("docs")
+                            )
+                        if flow.state.attachments:
+                            generation_meta["attachments"] = flow.state.attachments
+
+                        metadata = chat_service.build_message_metadata(
+                            assistant="deepresearch",
+                            stream=True,
+                            latency_ms=latency_ms,
+                            generation_meta=generation_meta,
+                        )
+                        chat_service.schedule_message_persistence(
+                            user_id=request.user_id,
+                            session_id=session_id,
+                            message_id=message_id,
+                            query=request.query,
+                            answer=flow.state.answer or "",
+                            file_ids=request.file_ids,
+                            metadata=metadata,
+                        )
                     except Exception as e:
                         logger.error("Flow execution error", exc_info=True)
                         yield {

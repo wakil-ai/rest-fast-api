@@ -3,8 +3,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.core.dependencies import get_transaction_service, get_click_service
+from app.core.dependencies import get_click_service, get_transaction_service
 from app.core.logger import logger
+from app.models.click import ClickInitRequest, ClickInitResponse
 from app.models.payme import (
     PaymeError,
     PaymeInitRequest,
@@ -17,12 +18,11 @@ from app.models.payme import (
     TransactionError,
     UserSubscriptionResponse,
 )
-from app.models.click import ClickInitRequest, ClickInitResponse
-from app.services import ClickService
-from app.services import TransactionService
 from app.security import verify_api_key, verify_payme_authorization
+from app.services import ClickService, TransactionService
 
 router = APIRouter(prefix="/transaction", tags=["Payme"])
+
 
 # MARK: Paycom
 def _rpc_success(request_id: int | str | None, result: dict) -> dict:
@@ -33,6 +33,7 @@ def _rpc_success(request_id: int | str | None, result: dict) -> dict:
         "error": None,
     }
 
+
 def _rpc_error(request_id: int | str | None, error: dict) -> dict:
     return {
         "jsonrpc": "2.0",
@@ -40,6 +41,7 @@ def _rpc_error(request_id: int | str | None, error: dict) -> dict:
         "result": None,
         "error": error,
     }
+
 
 @router.post("/payme/")
 async def payme(
@@ -190,6 +192,7 @@ async def init_payme_payment(
             status_code=500, detail=f"Failed to init Payme payment: {str(e)}"
         )
 
+
 # MARK: Click
 async def _parse_click_payload(request: Request) -> dict:
     # Click usually sends application/x-www-form-urlencoded
@@ -208,6 +211,7 @@ async def _parse_click_payload(request: Request) -> dict:
         pass
 
     return {}
+
 
 @router.post("/click/init", response_model=ClickInitResponse)
 async def init_click_payment(

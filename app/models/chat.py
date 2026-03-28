@@ -66,18 +66,13 @@ class ChatRequest(BaseModel):
     user_id: str = Field(
         ..., example="user_12345", description="Unique identifier for the user"
     )
-    message_id: str | None = Field(
-        default=None, description="Unique identifier for the message"
-    )
+    session_id: str = Field(..., description="Existing session identifier")
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
     chat_history: list[MessagePair] | None = Field(
         default=None, description="Previous question-answer pairs"
     )
     stream: bool | None = Field(
         default=settings.STREAM, description="Whether to stream the response"
-    )
-    model: ChatModel | None = Field(
-        default=None, description="LLM model to use for generation"
     )
     assistant: AssistantType | None = Field(
         default=AssistantType.MAIN,
@@ -94,10 +89,12 @@ class ChatResponse(BaseModel):
     """
 
     answer: str
-    retrieved_contents: str | None = Field(
-        default=None, description="Retrieved documents (dev mode only)"
+    session_id: str = Field(..., description="Session identifier for the chat")
+    message_id: str = Field(..., description="Message identifier assigned by the server")
+    latency_ms: int | None = Field(
+        default=None,
+        description="Server-side end-to-end generation latency in milliseconds",
     )
-
     attachments: list[dict[str, str]] | None = Field(
         default=None,
         description="Optional attachments (e.g., DOCX links)",
@@ -165,9 +162,8 @@ class AgenticRAGRequest(BaseModel):
     query: str = Field(
         ..., example="Explain the tax regulations for freelancers in Uzbekistan."
     )
-    user_id: str = Field(default="user_123", description="User identifier")
-    session_id: str = Field(default="default", description="Session identifier")
-    message_id: str = Field(default="", description="Current message identifier")
+    user_id: str = Field(..., description="User identifier")
+    session_id: str = Field(..., description="Existing session identifier")
     project_id: str | None = Field(default=None, description="Optional project ID")
     file_ids: list[str] | None = Field(
         default=None, description="List of file IDs attached to the current message"

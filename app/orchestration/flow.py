@@ -60,7 +60,11 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
     # Progress Management
     async def _emit_progress(
-        self, event_type: str, status: str, message: str, details: dict = None
+        self,
+        event_type: str,
+        status: str,
+        message: str,
+        details: dict[str, Any] | None = None,
     ) -> None:
         """Emit progress event if callback is registered."""
         if self.progress_callback:
@@ -171,16 +175,15 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         )
 
         try:
-            strategy = self.state.retrieval_output.get("strategy", "hybrid")
+            retrieval_output = self.state.retrieval_output or {}
+            strategy = retrieval_output.get("strategy", "hybrid")
             assistant = self.state.selected_assistant or "umumiy"
-            self.state.rewritten_query = self.state.retrieval_output.get(
+            self.state.rewritten_query = retrieval_output.get(
                 "query_rewrite", self.state.query
             )
 
             # Get multilingual translations from agent output
-            query_translations = self.state.retrieval_output.get(
-                "query_translations", {}
-            )
+            query_translations = retrieval_output.get("query_translations", {})
 
             # Fallback to rewritten query if translations are missing
             if not query_translations:
@@ -354,7 +357,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
     def _should_enrich_query(self) -> bool:
         """Check if query should be enriched with memory context."""
-        return (
+        return bool(
             self.state.resolved_query and self.state.resolved_query != self.state.query
         )
 
@@ -404,8 +407,8 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     async def _get_file_id_context(self) -> str:
         """Retrieve documents for provided file IDs."""
         file_context = ""
-        for file_id in self.state.file_ids:
-            file = self.chat_chain.history_service.get_file_by_id(file_id)
+        for file_id in self.state.file_ids or []:
+            file = await self.chat_chain.history_service.get_file_by_id(file_id)
             if file:
                 file_context += f"\n\nFile: {file['file_metadata']['file_name']}\n{file['ocr_result']}"
 
@@ -472,7 +475,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             system_prompt = self._build_system_prompt()
 
             # Get LLM
-            llm = self.chat_chain._select_llm(self.state.llm_model)
+            llm = self.chat_chain._select_llm()
 
             assistant_name = str(self.state.selected_assistant or "main")
 
@@ -490,7 +493,6 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                     llm=llm,
                     query=query,
                     ctx=self._create_chat_context(system_prompt),
-                    assistant=assistant_name,
                 )
                 return self._handle_non_streaming_response(response)
 
@@ -548,9 +550,9 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             context=self.state.retrieval_docs or "",
             system_prompt=system_prompt,
             user_id=self.state.user_id,
-            message_id=self.state.message_id,
             assistant_name=str(self.state.selected_assistant or "main"),
             chat_history=self.state.memory_docs or "",
+            attachments=self.state.attachments or [],
         )
 
     async def _handle_streaming_response(self, response) -> str:
@@ -558,6 +560,17 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         full_answer = ""
         async for chunk in response:
             if isinstance(chunk, dict):
+                if chunk.get("type") == "attachments":
+                    self.state.attachments = chunk.get("attachments") or []
+                    if self.progress_callback:
+                        await self.progress_callback(
+                            {
+                                "type": "attachments",
+                                "attachments": self.state.attachments,
+                            }
+                        )
+                elif chunk.get("type") == "_generation_meta":
+                    self.state.generation_meta = chunk.get("meta") or {}
                 continue
 
             full_answer += chunk
@@ -569,8 +582,10 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     def _handle_non_streaming_response(self, response) -> str:
         """Handle non-streaming response."""
         if isinstance(response, tuple):
-            answer, _ = response
+            answer, meta = response
             self.state.answer = answer
+            self.state.generation_meta = meta
+            self.state.attachments = meta.get("attachments") or []
             return answer
         else:
             self.state.answer = response

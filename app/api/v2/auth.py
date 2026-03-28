@@ -4,8 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.core.config import settings
 from app.core.dependencies import get_chat_history_service
 from app.core.logger import logger
-from app.models.auth import TelegramAuth
+from app.models.auth import TelegramAuth, DTUserCreateRequest, DTUserCreateResponse
+from app.core.exceptions import UserAlreadyExistsException
 from app.services import validate_telegram_data
+from app.security.dependencies import verify_dt_api_key
+from app.utils.user_management import generate_short_id
 
 router = APIRouter(prefix="/auth", tags=["Auth for Login"])
 
@@ -80,6 +83,7 @@ async def auth_callback(request: Request):
             first_name=user_info.get("given_name"),
             last_name=user_info.get("family_name"),
             picture=picture,
+            web_client=settings.WAKILAI_WEB_CLIENT_NAME,
         )
 
         return {
@@ -138,6 +142,7 @@ async def telegram_login(query_params: TelegramAuth = Depends(TelegramAuth)):
                 first_name=validated_data.get("first_name"),
                 last_name=validated_data.get("last_name"),
                 picture=validated_data.get("photo_url"),
+                web_client=settings.WAKILAI_WEB_CLIENT_NAME,
             )
 
             # Return validated user data as JSON
@@ -157,3 +162,41 @@ async def telegram_login(query_params: TelegramAuth = Depends(TelegramAuth)):
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Authentication error: {str(e)}")
+
+
+# DT Server Authentication (DT integration)
+@router.post("/dt", dependencies=[Depends(verify_dt_api_key)], response_model=DTUserCreateResponse)
+async def auth_createa_dt_user(request: DTUserCreateRequest):
+    """
+    Create a user for Birdarcha web client (DT integration).
+    
+    Only allows requests from the configured DT server IP.
+    Expects JSON body with user details
+    """
+    try:
+        # Check if user with external_id already exists
+        existing_user = await chat_history_service.get_user_by_external_id(request.user_id)
+        if existing_user:
+            raise UserAlreadyExistsException(request.user_id)
+        
+        # Generate internal user id
+        internal_user_id = generate_short_id(prefix="user-", type="uuid7")
+        
+        # Create user with internal user id and external_id
+        await chat_history_service.create_user(
+            user_id=internal_user_id,
+            username=request.username, # email or username 
+            first_name=request.first_name,
+            last_name=request.last_name,
+            phone_number=request.phone_number,
+            external_id=request.user_id,  # Store DT's user_id as external_id
+            web_client=settings.DT_WEB_CLIENT_NAME,
+        )
+
+        return DTUserCreateResponse(success=True, user_id=internal_user_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[DTAuth] Error creating user: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")

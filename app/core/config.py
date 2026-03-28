@@ -109,7 +109,8 @@ class Settings(BaseSettings):
 
     # OpenAI GPT
     OPENAI_API_KEY: str | None = None
-    GPT_COMPLETION_MODEL: str = "gpt-4.1"  # Default GPT model
+    DEFAULT_CHAT_MODEL: str = "gemini-3-pro-preview"  # Default model for chat completions
+    GPT_COMPLETION_MODEL: str = "gpt-4.1"  # Legacy OpenAI default model
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: str | None = None
@@ -164,6 +165,8 @@ class Settings(BaseSettings):
     API_KEY: str = "admin"
     SUPER_ADMIN_KEY_NAME: str = "x-super-admin-key"
     SUPER_ADMIN_API_KEY: str = "super-admin"
+    DT_API_KEY_NAME: str = "x-dt-team-api-key"
+    DT_API_KEY: str | None = None  # DT team dedicated API key for backend access
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
@@ -248,10 +251,14 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str | None = None
 
-    # Caching
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_EXPIRATION_SECONDS: int = 86400 * 3  # 3 days in seconds
+
+    # OneID / B2B Integration
+    DT_SERVER_IP: str = "87.192.230.47"  # OneID server IP for birdarcha web client
+    DT_WEB_CLIENT_NAME: str = "birdarcha"  # Web client name for OneID integration
+    WAKILAI_WEB_CLIENT_NAME: str = "wakilai"  # Web client name for regular users
 
     model_config = ConfigDict(
         env_file=".env",

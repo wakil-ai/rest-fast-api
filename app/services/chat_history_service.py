@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 from bson import ObjectId
@@ -5,44 +6,39 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.dependencies import get_db_manager
+from app.core.exceptions import (
+    InvalidInputError,
+    MessageNotFoundError,
+    SessionNotFoundError,
+    UserNotFoundError,
+)
 from app.core.logger import logger
 from app.models.chat_history import ShareResponse
-from app.utils.user_management import generate_short_id
+from app.utils.user_management import generate_short_id, clean_for_mongodb
 
 
 class ChatHistoryService:
     """Service for managing chat history, sessions, and user data."""
 
-    def __init__(self, db_manager=None):
+    def __init__(self):
         """
         Initialize ChatHistoryService with dependency injection.
-
-        Args:
-            db_manager: Injected DBManager instance. If None, uses the
-                       cached singleton from dependencies.
         """
-        self.db_manager = db_manager if db_manager is not None else get_db_manager()
+        self.db_manager = get_db_manager()
         self.users_collection = settings.USERS_COLLECTION
         self.sessions_collection = settings.SESSIONS_COLLECTION
         self.messages_collection = settings.MESSAGES_COLLECTION
         self.feedback_collection = settings.FEEDBACK_COLLECTION
         self.files_collection = settings.FILES_COLLECTION
-        self.projects_collection = settings.PROJECTS_COLLECTION
         self.token_counting_collection = settings.TOKEN_COUNTING_COLLECTION
-        self._collections_initialized = False
 
-    async def _ensure_initialized(self):
-        """Ensure collections and indexes are initialized (called lazily on first use)."""
-        if self._collections_initialized:
-            return
-        self._collections_initialized = True
-        await self._init_collections()
+        # Create collections and indexes asynchronously on first use
+        asyncio.create_task(self._init_collections())
 
     async def _init_collections(self):
         """Initialize necessary database collections (async)."""
         for collection in [
             self.users_collection,
-            self.projects_collection,
             self.sessions_collection,
             self.messages_collection,
             self.feedback_collection,
@@ -57,13 +53,10 @@ class ChatHistoryService:
     async def _create_indexes(self):
         """Create necessary indexes for collections (async)."""
         try:
-            # Sessions - query by user and project
+            # Sessions - query by user
             await self.db_manager.mongo_handler.db[
                 self.sessions_collection
             ].create_index([("user_id", 1), ("updated_at", -1)])
-            await self.db_manager.mongo_handler.db[
-                self.sessions_collection
-            ].create_index([("project_id", 1)])
 
             # Messages - query by session
             await self.db_manager.mongo_handler.db[
@@ -75,21 +68,13 @@ class ChatHistoryService:
                 self.feedback_collection
             ].create_index([("message_id", 1)])
 
-            # Files - query by project, message, user
-            await self.db_manager.mongo_handler.db[self.files_collection].create_index(
-                [("project_id", 1)]
-            )
+            # Files - query by message, user
             await self.db_manager.mongo_handler.db[self.files_collection].create_index(
                 [("message_id", 1)]
             )
             await self.db_manager.mongo_handler.db[self.files_collection].create_index(
                 [("user_id", 1)]
             )
-
-            # Projects - query by user
-            await self.db_manager.mongo_handler.db[
-                self.projects_collection
-            ].create_index([("user_id", 1)])
 
             # Token counts - query by session/user
             await self.db_manager.mongo_handler.db[
@@ -115,8 +100,15 @@ class ChatHistoryService:
         output_token: int | None = None,
         embedding_input_token: int | None = None,
     ) -> None:
-        """Upsert per-message token stats into MongoDB."""
+        """Store per-message token stats inside message metadata."""
         if not message_id or not message_id.strip():
+            return
+
+        message = await self.get_message(message_id)
+        if not message:
+            logger.warning(
+                f"Skipping token stats update because message {message_id} was not found"
+            )
             return
 
         now = datetime.utcnow()
@@ -127,45 +119,74 @@ class ChatHistoryService:
         if session_id is not None:
             update["session_id"] = session_id
         if model is not None:
-            update["model"] = model
+            update["metadata.model"] = model
         if input_token is not None:
-            update["input_token"] = int(input_token)
+            update["metadata.token_usage.input_token"] = int(input_token)
         if context_token is not None:
-            update["context_token"] = int(context_token)
+            update["metadata.token_usage.context_token"] = int(context_token)
         if output_token is not None:
-            update["output_token"] = int(output_token)
+            update["metadata.token_usage.output_token"] = int(output_token)
         if embedding_input_token is not None:
-            update["embedding_input_token"] = int(embedding_input_token)
+            update["metadata.token_usage.embedding_input_token"] = int(
+                embedding_input_token
+            )
 
         await self.db_manager.update_documents(
-            self.token_counting_collection,
+            self.messages_collection,
             {"_id": message_id},
-            {
-                "$set": update,
-                "$setOnInsert": {
-                    "created_at": now,
-                    "message_id": message_id,
-                },
-            },
-            upsert=True,
+            {"$set": update},
         )
 
-    def _validate_user_id(self, user_id: str) -> None:
-        """Validate user ID."""
+    @staticmethod
+    def create_message_id() -> str:
+        """Create a new chat message identifier."""
+        return generate_short_id("msg-", type="uuid7")
+
+    async def ensure_session_for_user(self, user_id: str, session_id: str) -> dict:
+        """Validate that the provided session exists and belongs to the user."""
+        session = await self._ensure_session_exists(session_id)
+        if session.get("user_id") != user_id:
+            raise InvalidInputError("Session does not belong to the provided user")
+        return session
+
+    # Validation and existence checks
+    async def _ensure_user_exists(self, user_id: str) -> dict:
+        """Ensure user exists in database, raise UserNotFoundError if not."""
         if not user_id or not user_id.strip():
-            raise ValueError("User ID cannot be empty")
+            raise InvalidInputError("User ID cannot be empty")
+        
+        user = await self.db_manager.find_documents(
+            self.users_collection, {"_id": user_id}
+        )
+        if not user:
+            raise UserNotFoundError(user_id)
+        return user[0]
 
-    def _validate_session_id(self, session_id: str) -> None:
-        """Validate session ID."""
+    async def _ensure_session_exists(self, session_id: str) -> dict:
+        """Ensure session exists in database, raise SessionNotFoundError if not."""
         if not session_id or not session_id.strip():
-            raise ValueError("Session ID cannot be empty")
+            raise InvalidInputError("Session ID cannot be empty")
 
-    def _validate_project_id(self, project_id: str) -> None:
-        """Validate project ID."""
-        if not project_id or not project_id.strip():
-            raise ValueError("Project ID cannot be empty")
+        session = await self.db_manager.find_documents(
+            self.sessions_collection, {"_id": session_id}
+        )
+        if not session:
+            raise SessionNotFoundError(session_id)
+        return session[0]
 
-    # USER MANAGEMENT
+    async def _ensure_message_exists(self, message_id: str) -> dict:
+        """Ensure message exists in database, raise MessageNotFoundError if not."""
+        if not message_id or not message_id.strip():
+            raise InvalidInputError("Message ID cannot be empty")
+        
+        message = await self.db_manager.find_documents(
+            self.messages_collection, {"_id": message_id}
+        )
+        if not message:
+            raise MessageNotFoundError(message_id)
+        return message[0]
+
+    # Users Management
     async def create_user(
         self,
         user_id: str,
@@ -174,11 +195,10 @@ class ChatHistoryService:
         last_name: str | None = None,
         phone_number: str | None = None,
         picture: str | None = None,
+        web_client: str | None = None,
+        external_id: str | None = None,
     ) -> dict:
         """Create or retrieve an existing user. Uses user_id as _id."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
-
         # Check if user exists using _id
         existing_user = await self.db_manager.find_documents(
             self.users_collection, {"_id": user_id}
@@ -196,6 +216,8 @@ class ChatHistoryService:
             "last_name": last_name,
             "picture": picture,
             "phone_number": phone_number,
+            "web_client": web_client,
+            "external_id": external_id,  # Store external ID for DT integration
             "is_blocked": False,
             "blocked_at": None,
             "blocked_reason": None,
@@ -205,6 +227,8 @@ class ChatHistoryService:
         }
 
         try:
+            # Clean data for MongoDB (convert UUIDs, Decimals, etc.)
+            user = clean_for_mongodb(user)
             await self.db_manager.insert_documents(self.users_collection, [user])
             logger.info(f"Created new user with user_id: {user_id}")
             return user
@@ -223,10 +247,15 @@ class ChatHistoryService:
 
     async def get_user(self, user_id: str) -> dict | None:
         """Get user by user_id."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
         users = await self.db_manager.find_documents(
             self.users_collection, {"_id": user_id}
+        )
+        return users[0] if users else None
+
+    async def get_user_by_external_id(self, external_id: str) -> dict | None:
+        """Get user by external_id (for DT integration)."""
+        users = await self.db_manager.find_documents(
+            self.users_collection, {"external_id": external_id}
         )
         return users[0] if users else None
 
@@ -234,12 +263,10 @@ class ChatHistoryService:
         self, user_id: str, field: str, value: str
     ) -> dict | None:
         """Update a user's information (username, first_name, last_name, picture)."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
+        await self._ensure_user_exists(user_id)
 
-        user = await self.get_user(user_id)
-        if not user:
-            return None
+        if not field or not field.strip():
+            raise InvalidInputError("Field cannot be empty")
 
         update_fields = {
             field: value,
@@ -259,16 +286,11 @@ class ChatHistoryService:
         self, user_id: str, phone_number: str
     ) -> dict | None:
         """Update a user's phone number and return updated user."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
+        await self._ensure_user_exists(user_id)
 
         phone_number = (phone_number or "").strip()
         if not phone_number:
-            raise ValueError("Phone number cannot be empty")
-
-        user = await self.get_user(user_id)
-        if not user:
-            return None
+            raise InvalidInputError("Phone number cannot be empty")
 
         update_fields = {
             "phone_number": phone_number,
@@ -289,8 +311,8 @@ class ChatHistoryService:
 
         If the user does not exist yet, a minimal user document is created.
         """
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
+        if not user_id or not user_id.strip():
+            raise InvalidInputError("User ID cannot be empty")
 
         now = datetime.utcnow()
         reason = (reason or "").strip() or None
@@ -323,13 +345,9 @@ class ChatHistoryService:
 
     async def unblock_user(self, user_id: str) -> dict | None:
         """Unblock a previously blocked user."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
-
+        await self._ensure_user_exists(user_id)
+        
         now = datetime.utcnow()
-        user = await self.get_user(user_id)
-        if not user:
-            return None
 
         await self.db_manager.update_documents(
             self.users_collection,
@@ -350,173 +368,25 @@ class ChatHistoryService:
         user = await self.get_user(user_id)
         return bool(user and user.get("is_blocked"))
 
-    # PROJECT MANAGEMENT
-    async def create_project(
-        self,
-        user_id: str,
-        project_id: str | None = None,
-        title: str | None = None,
-    ) -> dict:
-        """Create a new project. Uses project_id as _id."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
-        project_id = project_id or generate_short_id("proj-")
-        self._validate_project_id(project_id)
-
-        # Check if project exists using _id
-        existing_project = await self.db_manager.find_documents(
-            self.projects_collection, {"_id": project_id}
-        )
-
-        if existing_project:
-            # Verify ownership
-            if existing_project[0].get("user_id") != user_id:
-                raise ValueError("Project exists but belongs to another user")
-            logger.info(f"Project with project_id {project_id} already exists.")
-            return existing_project[0]
-
-        project = {
-            "_id": project_id,
-            "project_id": project_id,  # Ensure project_id field is set to match _id
-            "user_id": user_id,
-            "title": title or "New Project",
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
-        }
-
-        try:
-            await self.db_manager.insert_documents(self.projects_collection, [project])
-            logger.info(f"Created new project with project_id: {project_id}")
-            return project
-        except Exception as e:
-            raise ValueError(f"Failed to create project: {str(e)}")
-
-    async def get_projects(self, user_id: str, limit: int = 50) -> list[dict]:
-        """Retrieve all projects for a user."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
-        projects = await self.db_manager.find_documents(
-            self.projects_collection, {"user_id": user_id}, limit=limit
-        )
-        logger.info(f"Retrieved {len(projects)} projects for user {user_id}")
-        return projects
-
-    async def get_project(self, project_id: str) -> dict | None:
-        """Get project by project_id."""
-        await self._ensure_initialized()
-        self._validate_project_id(project_id)
-        projects = await self.db_manager.find_documents(
-            self.projects_collection, {"_id": project_id}
-        )
-        return projects[0] if projects else None
-
-    async def edit_project(self, project_id: str, title: str) -> dict:
-        """Edit a project's title."""
-        await self._ensure_initialized()
-        self._validate_project_id(project_id)
-
-        update_fields = {"title": title, "updated_at": datetime.utcnow()}
-
-        updated_count = await self.db_manager.update_documents(
-            self.projects_collection,
-            {"_id": project_id},
-            {"$set": update_fields},
-        )
-
-        if updated_count == 0:
-            raise ValueError("Project not found or no changes made")
-
-        project = await self.db_manager.find_documents(
-            self.projects_collection, {"_id": project_id}
-        )
-        logger.info(f"Updated project with project_id: {project_id}")
-        return project[0] if project else {}
-
-    async def delete_project(self, user_id: str, project_id: str) -> None:
-        """Delete a project and all its associated data."""
-        await self._ensure_initialized()
-
-        self._validate_user_id(user_id)
-        self._validate_project_id(project_id)
-
-        # Verify ownership before deletion
-        project = await self.get_project(project_id)
-        if not project:
-            raise ValueError("Project not found")
-        if project.get("user_id") != user_id:
-            raise ValueError("User does not own this project")
-
-        # Delete project
-        deleted_count = await self.db_manager.delete_documents(
-            self.projects_collection, {"_id": project_id}
-        )
-        if deleted_count == 0:
-            raise ValueError("Project not found")
-
-        # Delete associated sessions
-        await self.db_manager.delete_documents(
-            self.sessions_collection, {"project_id": project_id}
-        )
-
-        # Delete associated messages (find sessions first, then delete messages)
-        sessions = await self.db_manager.find_documents(
-            self.sessions_collection, {"project_id": project_id}
-        )
-        for session in sessions:
-            await self.db_manager.delete_documents(
-                self.messages_collection, {"session_id": session["_id"]}
-            )
-
-        # Delete associated files
-        await self.db_manager.delete_documents(
-            self.files_collection, {"project_id": project_id}
-        )
-
-        logger.info(
-            f"Deleted project {project_id} and all associated data for user {user_id}"
-        )
-
-    # SESSION MANAGEMENT
+    # Sessions Management
     async def create_session(
         self,
         user_id: str,
-        session_id: str | None = None,
-        project_id: str | None = None,
         title: str | None = None,
         tags: list[str] | None = None,
     ) -> dict:
         """Create or retrieve an existing session. Uses session_id as _id."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
-        session_id = session_id or generate_short_id("ses-")
-        self._validate_session_id(session_id)
 
-        # If project_id provided, validate it exists and user owns it
-        if project_id:
-            self._validate_project_id(project_id)
-            project = await self.get_project(project_id)
-            if not project:
-                raise ValueError(f"Project {project_id} not found")
-            if project.get("user_id") != user_id:
-                raise ValueError(f"User does not own project {project_id}")
+        await self._ensure_user_exists(user_id)
+        
+        # Generate session ID using uuid7 with 'ses-' prefix
+        session_id = generate_short_id("ses-", type="uuid7")
 
-        # Check if session exists using _id
-        existing_session = await self.db_manager.find_documents(
-            self.sessions_collection, {"_id": session_id}
-        )
-
-        if existing_session:
-            # Verify ownership
-            if existing_session[0].get("user_id") != user_id:
-                raise ValueError("Session exists but belongs to another user")
-            logger.info(f"Session with session_id {session_id} already exists.")
-            return existing_session[0]
-
+        # Session model
         session = {
             "_id": session_id,
-            "session_id": session_id,  # Ensure session_id field is set to match _id
             "user_id": user_id,
-            "project_id": project_id,  # Can be None for standalone chats
+            "session_id": session_id,  # Ensure session_id field is set to match _id
             "title": title or "New Chat",
             "tags": tags or [],
             "created_at": datetime.utcnow(),
@@ -528,29 +398,22 @@ class ChatHistoryService:
             logger.info(f"Created new session with session_id: {session_id}")
             return session
         except Exception as e:
-            raise ValueError(f"Failed to create session: {str(e)}")
+            raise InvalidInputError(f"Failed to create session: {str(e)}")
 
-    async def get_sessions(
-        self, user_id: str, project_id: str | None = None, limit: int = 50
-    ) -> list[dict]:
-        """Retrieve sessions for a user, optionally filtered by project."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
-
-        query = {"user_id": user_id}
-        if project_id:
-            query["project_id"] = project_id
+    async def get_sessions(self, user_id: str, limit: int = 50) -> list[dict]:
+        """Retrieve sessions for a user."""
+        await self._ensure_user_exists(user_id)
 
         sessions = await self.db_manager.find_documents(
-            self.sessions_collection, query, limit=limit
+            self.sessions_collection, {"user_id": user_id}, limit=limit
         )
-        logger.info(f"Retrieved {len(sessions)} sessions for user {user_id}")
         return sessions
 
     async def get_session(self, session_id: str) -> dict | None:
         """Get session by session_id."""
-        await self._ensure_initialized()
-        self._validate_session_id(session_id)
+        if not session_id or not session_id.strip():
+            raise InvalidInputError("Session ID cannot be empty")
+            
         sessions = await self.db_manager.find_documents(
             self.sessions_collection, {"_id": session_id}
         )
@@ -560,15 +423,15 @@ class ChatHistoryService:
         self, session_id: str, title: str | None = None, tags: list[str] | None = None
     ) -> dict:
         """Edit a session's title or tags."""
-        await self._ensure_initialized()
-        self._validate_session_id(session_id)
+
+        await self._ensure_session_exists(session_id)
         update_fields = {}
         if title is not None:
             update_fields["title"] = title
         if tags is not None:
             update_fields["tags"] = tags
         if not update_fields:
-            raise ValueError("No fields to update")
+            raise InvalidInputError("No fields to update")
 
         update_fields["updated_at"] = datetime.utcnow()
         updated_count = await self.db_manager.update_documents(
@@ -577,7 +440,7 @@ class ChatHistoryService:
             {"$set": update_fields},
         )
         if updated_count == 0:
-            raise ValueError("Session not found or no changes made")
+            raise InvalidInputError("Session not found or no changes made")
 
         session = await self.db_manager.find_documents(
             self.sessions_collection, {"_id": session_id}
@@ -587,13 +450,9 @@ class ChatHistoryService:
 
     async def delete_session(self, session_id: str) -> None:
         """Delete a session and its messages."""
-        await self._ensure_initialized()
-        self._validate_session_id(session_id)
 
-        # Get session first to check if it exists
-        session = await self.get_session(session_id)
-        if not session:
-            raise ValueError("Session not found")
+        # Ensure session exists
+        await self._ensure_session_exists(session_id)
 
         # Delete session
         await self.db_manager.delete_documents(
@@ -617,37 +476,21 @@ class ChatHistoryService:
 
         logger.info(f"Deleted session with session_id: {session_id} and its messages")
 
-    # MESSAGE MANAGEMENT
+    # Messages Management
     async def add_message(
         self,
         session_id: str,
-        message_id: str | None,
         file_ids: list[str] | None,
         content: dict | BaseModel,
         metadata: dict | None = None,
+        message_id: str | None = None,
     ) -> dict:
         """Add a message to a session. Uses message_id as _id."""
-        await self._ensure_initialized()
-        self._validate_session_id(session_id)
-        message_id = message_id or generate_short_id("msg-")
-        if not message_id.strip():
-            raise ValueError("Message ID cannot be empty")
 
-        # Get session to retrieve user_id
-        session = await self.get_session(session_id)
-        if not session:
-            raise ValueError(f"Session {session_id} not found")
+        session = await self._ensure_session_exists(session_id)
 
+        resolved_message_id = message_id or self.create_message_id()
         user_id = session["user_id"]
-
-        # Check if message exists using _id
-        existing_message = await self.db_manager.find_documents(
-            self.messages_collection, {"_id": message_id}
-        )
-
-        if existing_message:
-            logger.info(f"Message with message_id {message_id} already exists.")
-            return existing_message[0]
 
         if isinstance(content, BaseModel):
             content = content.model_dump()
@@ -658,14 +501,14 @@ class ChatHistoryService:
                 self.files_collection, {"_id": file_id}
             )
             if not file:
-                raise ValueError(f"File {file_id} not found")
+                raise InvalidInputError(f"File {file_id} not found")
 
         message = {
-            "_id": message_id,
-            "message_id": message_id,  # Ensure message_id field is set to match _id
+            "_id": resolved_message_id,
             "user_id": user_id,  # Auto-populated from session
-            "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "session_id": session_id,
+            "message_id": resolved_message_id,  # Ensure message_id field is set to match _id
+            "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "content": content,
             "metadata": metadata or {},
             "created_at": datetime.utcnow(),
@@ -681,16 +524,74 @@ class ChatHistoryService:
                 {"_id": session_id},
                 {"$set": {"updated_at": datetime.utcnow()}},
             )
-
-            logger.info(f"Added new message with message_id: {message_id}")
+            
             return message
         except Exception as e:
-            raise ValueError(f"Failed to add message: {str(e)}")
+            raise InvalidInputError(f"Failed to add message: {str(e)}")
+
+    async def upsert_message(
+        self,
+        *,
+        session_id: str,
+        message_id: str,
+        user_id: str,
+        file_ids: list[str] | None,
+        content: dict | BaseModel,
+        metadata: dict | None = None,
+    ) -> dict:
+        """Create or update a message using a pre-generated message ID."""
+
+        session = await self._ensure_session_exists(session_id)
+        if session.get("user_id") != user_id:
+            raise InvalidInputError("Session does not belong to the provided user")
+
+        if isinstance(content, BaseModel):
+            content = content.model_dump()
+
+        for file_id in file_ids or []:
+            file = await self.db_manager.find_documents(
+                self.files_collection, {"_id": file_id}
+            )
+            if not file:
+                raise InvalidInputError(f"File {file_id} not found")
+
+        now = datetime.utcnow()
+        message_document = clean_for_mongodb(
+            {
+                "message_id": message_id,
+                "user_id": user_id,
+                "session_id": session_id,
+                "file_ids": file_ids or [],
+                "content": content,
+                "metadata": metadata or {},
+                "updated_at": now,
+            }
+        )
+
+        await self.db_manager.mongo_handler.db[self.messages_collection].update_one(
+            {"_id": message_id},
+            {
+                "$set": message_document,
+                "$setOnInsert": {
+                    "_id": message_id,
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+        )
+
+        await self.db_manager.update_documents(
+            self.sessions_collection,
+            {"_id": session_id},
+            {"$set": {"updated_at": now}},
+        )
+
+        saved_message = await self.get_message(message_id)
+        return saved_message or {"_id": message_id, **message_document, "created_at": now}
 
     async def get_messages(self, session_id: str, limit: int = 100) -> list[dict]:
         """Retrieve all messages for a session."""
-        await self._ensure_initialized()
-        self._validate_session_id(session_id)
+        await self._ensure_session_exists(session_id)
 
         query = {
             "session_id": session_id,
@@ -700,82 +601,14 @@ class ChatHistoryService:
         messages = await self.db_manager.find_documents(
             self.messages_collection, query, limit=limit
         )
-
-        # Optimize: Fetch all feedback for this session in one query
-        feedbacks = await self.db_manager.find_documents(
-            self.feedback_collection, {"session_id": session_id}
-        )
-
-        # Create a map of message_id -> feedback stats
-        feedback_map = {}
-        for f in feedbacks:
-            msg_id = f.get("message_id")
-            if not msg_id:
-                continue
-
-            if msg_id not in feedback_map:
-                feedback_map[msg_id] = {
-                    "total_likes": 0,
-                    "total_dislikes": 0,
-                    "user_feedback": None,
-                }
-
-            f_type = f.get("feedback_type")
-            if f_type == "like":
-                feedback_map[msg_id]["total_likes"] += 1
-            elif f_type == "dislike":
-                feedback_map[msg_id]["total_dislikes"] += 1
-
-        # Get session to know the user_id for "user_feedback" context
-        session = await self.get_session(session_id)
-        current_user_id = session.get("user_id") if session else None
-
-        # Re-populate feedback map with user context
-        feedback_map = {}
-        for f in feedbacks:
-            msg_id = f.get("message_id")
-            if not msg_id:
-                continue
-
-            if msg_id not in feedback_map:
-                feedback_map[msg_id] = {
-                    "total_likes": 0,
-                    "total_dislikes": 0,
-                    "user_feedback": None,
-                }
-
-            f_type = f.get("feedback_type")
-            if f_type == "like":
-                feedback_map[msg_id]["total_likes"] += 1
-            elif f_type == "dislike":
-                feedback_map[msg_id]["total_dislikes"] += 1
-
-            # If this feedback is from the session owner, set user_feedback
-            if current_user_id and str(f.get("user_id")) == str(current_user_id):
-                feedback_map[msg_id]["user_feedback"] = f_type
-
-        # Attach feedback to messages
-        for msg in messages:
-            msg_id = msg.get("message_id") or str(msg.get("_id"))
-            if msg_id in feedback_map:
-                msg["feedback"] = feedback_map[msg_id]
-            else:
-                msg["feedback"] = {
-                    "total_likes": 0,
-                    "total_dislikes": 0,
-                    "user_feedback": None,
-                }
-
-        logger.info(
-            f"Retrieved {len(messages)} messages from session {session_id} with feedback"
-        )
+        
         return messages
 
     async def get_message(self, message_id: str) -> dict | None:
         """Get message by message_id (direct _id lookup - fastest)."""
-        await self._ensure_initialized()
+
         if not message_id or not message_id.strip():
-            raise ValueError("Message ID cannot be empty")
+            raise InvalidInputError("Message ID cannot be empty")
 
         messages = await self.db_manager.find_documents(
             self.messages_collection, {"_id": message_id}
@@ -786,12 +619,11 @@ class ChatHistoryService:
         self, user_id: str, message_id: str, id_length: int = 32
     ) -> dict:
         """Share a message with another user."""
-        await self._ensure_initialized()
 
         # Get message to share
         message = await self.get_message(message_id)
         if not message:
-            raise ValueError(f"Message {message_id} not found")
+            raise MessageNotFoundError(message_id)
 
         if message.get("shared"):
             share_record = {
@@ -831,22 +663,22 @@ class ChatHistoryService:
             },
         )
         if update_result == 0:
-            raise ValueError("Failed to update message with share information")
+            raise InvalidInputError("Failed to update message with share information")
 
         return share_record
 
     async def get_share(self, share_id: str) -> ShareResponse | None:
         """Get share by share_id."""
-        await self._ensure_initialized()
+
         if not share_id or not share_id.strip():
-            raise ValueError("Share ID cannot be empty")
+            raise InvalidInputError("Share ID cannot be empty")
 
         message = await self.db_manager.find_documents(
             self.messages_collection, {"share_id": share_id}
         )
         message = message[0] if message else None
         if not message:
-            raise ValueError(f"Share {share_id} not found")
+            raise InvalidInputError(f"Share {share_id} not found")
 
         created_at = message.get("shared_at") or datetime.utcnow()
 
@@ -860,7 +692,7 @@ class ChatHistoryService:
             }
         )
 
-    # FEEDBACK MANAGEMENT
+    # Feedback Management
     async def submit_feedback(
         self,
         message_id: str,
@@ -868,14 +700,11 @@ class ChatHistoryService:
         comments: str | None = None,
     ) -> dict:
         """Submit feedback for a message. Feedback uses auto-generated ObjectId."""
-        await self._ensure_initialized()
-        if not message_id or not message_id.strip():
-            raise ValueError("Message ID cannot be empty")
 
         # Get message to retrieve session_id and user_id
         message = await self.get_message(message_id)
         if not message:
-            raise ValueError(f"Message {message_id} not found")
+            raise MessageNotFoundError(message_id)
 
         user_id = message["user_id"]
         session_id = message["session_id"]
@@ -895,7 +724,7 @@ class ChatHistoryService:
             self.feedback_collection, [feedback]
         )
         if not result_ids:
-            raise ValueError("Failed to submit feedback")
+            raise InvalidInputError("Failed to submit feedback")
 
         feedback["_id"] = ObjectId(result_ids[0])
         logger.info(f"Submitted feedback for message_id: {message_id}")
@@ -903,20 +732,17 @@ class ChatHistoryService:
 
     async def get_feedback(self, message_id: str) -> dict | None:
         """Retrieve all feedback for a specific message."""
-        await self._ensure_initialized()
+
         if not message_id or not message_id.strip():
-            raise ValueError("Message ID cannot be empty")
+            raise InvalidInputError("Message ID cannot be empty")
 
         feedbacks = await self.db_manager.find_documents(
             self.feedback_collection,
             {"message_id": message_id},
         )
-        logger.info(
-            f"Retrieved {len(feedbacks)} feedback entries for message_id: {message_id}"
-        )
         return feedbacks[-1] if feedbacks else None
 
-    # FILE MANAGEMENT
+    # File Management
     async def add_file_upload(
         self,
         user_id: str,
@@ -926,23 +752,20 @@ class ChatHistoryService:
         file_metadata: dict,
         status: str,
         scope: str,
-        project_id: str | None = None,
         message_id: str | None = None,
     ) -> dict:
         """Add a file upload record. Uses file_id as _id."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
+
+        await self._ensure_user_exists(user_id)
 
         if not file_id or not file_id.strip():
-            raise ValueError("File ID cannot be empty")
+            raise InvalidInputError("File ID cannot be empty")
         if not file_url or not file_url.strip():
-            raise ValueError("File URL cannot be empty")
+            raise InvalidInputError("File URL cannot be empty")
         if not file_metadata or not isinstance(file_metadata, dict):
-            raise ValueError("File metadata must be a valid dictionary")
-        if scope not in ["project", "message"]:
-            raise ValueError("Scope must be either 'project' or 'message'")
-        if scope == "project" and not project_id:
-            raise ValueError("Project ID is required for project-scoped files")
+            raise InvalidInputError("File metadata must be a valid dictionary")
+        if scope not in ["message"]:
+            raise InvalidInputError("Scope must be 'message'")
         if scope == "message" and not message_id:
             message_id = None  # Allow message_id to be None initially
 
@@ -959,7 +782,6 @@ class ChatHistoryService:
             "_id": file_id,
             "file_id": file_id,
             "user_id": user_id,
-            "project_id": project_id,
             "message_id": message_id,
             "scope": scope,
             "file_url": file_url,
@@ -975,26 +797,22 @@ class ChatHistoryService:
             logger.info(f"Added file upload record with file_id: {file_id}")
             return file_record
         except Exception as e:
-            raise ValueError(f"Failed to add file upload record: {str(e)}")
+            raise InvalidInputError(f"Failed to add file upload record: {str(e)}")
 
     async def get_files_by_scope(
         self,
-        project_id: str | None = None,
         message_ids: list[str] | None = None,
         limit: int = 50,
     ) -> list[dict]:
-        """Retrieve files by project or message scope."""
-        await self._ensure_initialized()
-        if not project_id and not message_ids:
-            raise ValueError("Either project_id or message_ids must be provided")
+        """Retrieve files by message scope."""
 
-        query = {}
-        if project_id:
-            query["project_id"] = project_id
-            query["scope"] = "project"
-        elif message_ids:
-            query["message_id"] = {"$in": message_ids}
-            query["scope"] = "message"
+        if not message_ids:
+            raise InvalidInputError("message_ids must be provided")
+
+        query = {
+            "message_id": {"$in": message_ids},
+            "scope": "message",
+        }
 
         files = await self.db_manager.find_documents(
             self.files_collection, query, limit=limit
@@ -1004,8 +822,8 @@ class ChatHistoryService:
 
     async def get_files_by_user(self, user_id: str, limit: int = 50) -> list[dict]:
         """Retrieve all message-scoped files for a user."""
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
+
+        await self._ensure_user_exists(user_id)
 
         query = {"user_id": user_id, "scope": "message"}
         files = await self.db_manager.find_documents(
@@ -1018,9 +836,9 @@ class ChatHistoryService:
         self, message_id: str, limit: int = 50
     ) -> list[dict]:
         """Retrieve all files associated with a specific message."""
-        await self._ensure_initialized()
+
         if not message_id or not message_id.strip():
-            raise ValueError("Message ID cannot be empty")
+            raise InvalidInputError("Message ID cannot be empty")
 
         query = {"message_id": message_id}
         files = await self.db_manager.find_documents(
@@ -1031,9 +849,9 @@ class ChatHistoryService:
 
     async def get_file_by_id(self, file_id: str) -> dict | None:
         """Retrieve a specific file by file_id (direct _id lookup - fastest)."""
-        await self._ensure_initialized()
+
         if not file_id or not file_id.strip():
-            raise ValueError("File ID cannot be empty")
+            raise InvalidInputError("File ID cannot be empty")
 
         files = await self.db_manager.find_documents(
             self.files_collection, {"_id": file_id}
@@ -1050,9 +868,9 @@ class ChatHistoryService:
         self, file_id: str, status: str, ocr_result: str | None = None
     ) -> dict:
         """Update file processing status and OCR result."""
-        await self._ensure_initialized()
+
         if not file_id or not file_id.strip():
-            raise ValueError("File ID cannot be empty")
+            raise InvalidInputError("File ID cannot be empty")
 
         update_fields = {"status": status, "updated_at": datetime.utcnow()}
         if ocr_result is not None:
@@ -1065,21 +883,21 @@ class ChatHistoryService:
         )
 
         if updated_count == 0:
-            raise ValueError("File not found or no changes made")
+            raise InvalidInputError("File not found or no changes made")
 
         file = await self.get_file_by_id(file_id)
         logger.info(f"Updated file status for file_id: {file_id} to {status}")
         if not file:
-            raise ValueError("File not found after update")
+            raise InvalidInputError("File not found after update")
         return file
 
     async def update_file_message_id(self, file_id: str, message_id: str) -> None:
         """Associate a file with a message."""
-        await self._ensure_initialized()
+
         if not file_id or not file_id.strip():
-            raise ValueError("File ID cannot be empty")
+            raise InvalidInputError("File ID cannot be empty")
         if not message_id or not message_id.strip():
-            raise ValueError("Message ID cannot be empty")
+            raise InvalidInputError("Message ID cannot be empty")
 
         updated_count = await self.db_manager.update_documents(
             self.files_collection,
@@ -1088,30 +906,30 @@ class ChatHistoryService:
         )
 
         if updated_count == 0:
-            raise ValueError("File not found or no changes made")
+            raise InvalidInputError("File not found or no changes made")
 
         logger.info(f"Associated file {file_id} with message {message_id}")
 
     async def delete_file_upload(self, file_id: str) -> None:
         """Delete a file upload record."""
-        await self._ensure_initialized()
+
         if not file_id or not file_id.strip():
-            raise ValueError("File ID cannot be empty")
+            raise InvalidInputError("File ID cannot be empty")
 
         deleted_count = await self.db_manager.delete_documents(
             self.files_collection, {"_id": file_id}
         )
         if deleted_count == 0:
-            raise ValueError("File not found")
+            raise InvalidInputError("File not found")
 
-    # SYNC MANAGEMENT
+    # Sync Management
     async def get_sync_data(self, user_id: str, months: int = 3) -> dict:
         """
         Retrieve all sessions and messages for a user from the last N months.
         Used for bulk synchronization to client.
         """
-        await self._ensure_initialized()
-        self._validate_user_id(user_id)
+
+        await self._ensure_user_exists(user_id)
         days = months * 30
         start_date = datetime.utcnow().timestamp() - (days * 24 * 60 * 60)
         cutoff_date = datetime.fromtimestamp(start_date)

@@ -8,6 +8,7 @@ from app.core.logger import logger
 from app.services.payments.base import BasePaymentService
 from app.utils.text_cleaning import _as_decimal, _as_int, _md5_hex
 
+
 class ClickError:
     SUCCESS = 0
     SIGN_CHECK_FAILED = -1
@@ -20,12 +21,14 @@ class ClickError:
     ERROR_IN_REQUEST = -8
     TRANSACTION_CANCELLED = -9
 
+
 class ClickService(BasePaymentService):
     provider = "click"
 
     def __init__(self):
         super().__init__()
         self.transactions_collection = settings.CLICK_TRANSACTIONS_COLLECTION
+
     async def build_payment_link(
         self, *, amount_sum: int, user_id: str, callback_url: str, order_id: str
     ) -> str:
@@ -163,7 +166,7 @@ class ClickService(BasePaymentService):
                 "$or": [
                     {"order_id": str(merchant_trans_id)},
                     {"invoice_id": str(merchant_trans_id)},
-                ]
+                ],
             },
         )
         if not invoice:
@@ -280,7 +283,7 @@ class ClickService(BasePaymentService):
                 "$or": [
                     {"order_id": str(merchant_trans_id)},
                     {"invoice_id": str(merchant_trans_id)},
-                ]
+                ],
             },
             {
                 "click_trans_id": int(click_trans_id),
@@ -451,7 +454,7 @@ class ClickService(BasePaymentService):
                 "$or": [
                     {"order_id": str(merchant_trans_id)},
                     {"invoice_id": str(merchant_trans_id)},
-                ]
+                ],
             },
         )
         if not invoice or invoice.get("provider") != "click":
@@ -495,7 +498,7 @@ class ClickService(BasePaymentService):
                     "$or": [
                         {"order_id": str(merchant_trans_id)},
                         {"invoice_id": str(merchant_trans_id)},
-                    ]
+                    ],
                 },
                 {"status": "canceled", "updated_at": now_ms},
             )
@@ -528,7 +531,7 @@ class ClickService(BasePaymentService):
                 "$or": [
                     {"order_id": str(merchant_trans_id)},
                     {"invoice_id": str(merchant_trans_id)},
-                ]
+                ],
             },
             {
                 "status": "paid",

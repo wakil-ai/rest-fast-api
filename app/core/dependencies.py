@@ -10,7 +10,7 @@ if TYPE_CHECKING:
         PromptRegistry,
     )
     from app.db import DBManager, MilvusHandler, MongoHandler, PineconeHandler
-    from app.llms import ChatGPT
+    from app.llms import ChatGPT, LLM
     from app.orchestration import AgenticRAGFlow
     from app.orchestration.agents import Agents
     from app.orchestration.crews import Crews
@@ -30,8 +30,8 @@ if TYPE_CHECKING:
         RateLimitService,
         RedisService,
         StorageService,
+        SubscriptionStorage,
         TransactionService,
-        SubscriptionStorage
     )
 
 
@@ -123,10 +123,24 @@ def get_chat_chain() -> "ChatChain":
 
 
 @lru_cache
-def get_fallback_llm() -> "ChatGPT":
-    from app.llms import ChatGPT
+def get_fallback_llm() -> "LLM":
+    from app.core.config import settings
+    from app.llms import ChatGPT, Claude, Gemini, Novita
 
-    return ChatGPT()
+    model_name = settings.DEFAULT_CHAT_MODEL
+    mapping = {
+        "gemma-": Novita,
+        "gpt-oss-": Novita,
+        "gpt-": ChatGPT,
+        "claude-": Claude,
+        "gemini-": Gemini,
+    }
+
+    for prefix, cls in mapping.items():
+        if model_name.startswith(prefix):
+            return cls(model_name=model_name)
+
+    return ChatGPT(model_name=settings.GPT_COMPLETION_MODEL)
 
 
 @lru_cache
@@ -237,6 +251,7 @@ def get_click_service() -> "ClickService":
     from app.services import ClickService
 
     return ClickService()
+
 
 @lru_cache
 def get_subscription_storage() -> "SubscriptionStorage":
