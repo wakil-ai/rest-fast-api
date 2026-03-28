@@ -66,8 +66,9 @@ class ChatRequest(BaseModel):
     user_id: str = Field(
         ..., example="user_12345", description="Unique identifier for the user"
     )
-    message_id: str | None = Field(
-        default=None, description="Unique identifier for the message"
+    session_id: str | None = Field(
+        default=None,
+        description="Existing session identifier; omitted to create a new session",
     )
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
     chat_history: list[MessagePair] | None = Field(
@@ -94,6 +95,12 @@ class ChatResponse(BaseModel):
     """
 
     answer: str
+    session_id: str = Field(..., description="Session identifier for the chat")
+    message_id: str = Field(..., description="Message identifier assigned by the server")
+    latency_ms: int | None = Field(
+        default=None,
+        description="Server-side end-to-end generation latency in milliseconds",
+    )
     retrieved_contents: str | None = Field(
         default=None, description="Retrieved documents (dev mode only)"
     )

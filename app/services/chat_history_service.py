@@ -100,8 +100,15 @@ class ChatHistoryService:
         output_token: int | None = None,
         embedding_input_token: int | None = None,
     ) -> None:
-        """Upsert per-message token stats into MongoDB."""
+        """Store per-message token stats inside message metadata."""
         if not message_id or not message_id.strip():
+            return
+
+        message = await self.get_message(message_id)
+        if not message:
+            logger.warning(
+                f"Skipping token stats update because message {message_id} was not found"
+            )
             return
 
         now = datetime.utcnow()
@@ -112,28 +119,40 @@ class ChatHistoryService:
         if session_id is not None:
             update["session_id"] = session_id
         if model is not None:
-            update["model"] = model
+            update["metadata.model"] = model
         if input_token is not None:
-            update["input_token"] = int(input_token)
+            update["metadata.token_usage.input_token"] = int(input_token)
         if context_token is not None:
-            update["context_token"] = int(context_token)
+            update["metadata.token_usage.context_token"] = int(context_token)
         if output_token is not None:
-            update["output_token"] = int(output_token)
+            update["metadata.token_usage.output_token"] = int(output_token)
         if embedding_input_token is not None:
-            update["embedding_input_token"] = int(embedding_input_token)
+            update["metadata.token_usage.embedding_input_token"] = int(
+                embedding_input_token
+            )
 
         await self.db_manager.update_documents(
-            self.token_counting_collection,
+            self.messages_collection,
             {"_id": message_id},
-            {
-                "$set": update,
-                "$setOnInsert": {
-                    "created_at": now,
-                    "message_id": message_id,
-                },
-            },
-            upsert=True,
+            {"$set": update},
         )
+
+    @staticmethod
+    def create_message_id() -> str:
+        """Create a new chat message identifier."""
+        return generate_short_id("msg_", type="uuid7")
+
+    async def ensure_session_for_user(
+        self, user_id: str, session_id: str | None = None
+    ) -> dict:
+        """Resolve a session for chat requests, creating one when needed."""
+        if session_id and session_id.strip():
+            session = await self._ensure_session_exists(session_id)
+            if session.get("user_id") != user_id:
+                raise InvalidInputError("Session does not belong to the provided user")
+            return session
+
+        return await self.create_session(user_id=user_id)
 
     # Validation and existence checks
     async def _ensure_user_exists(self, user_id: str) -> dict:
@@ -469,13 +488,13 @@ class ChatHistoryService:
         file_ids: list[str] | None,
         content: dict | BaseModel,
         metadata: dict | None = None,
+        message_id: str | None = None,
     ) -> dict:
         """Add a message to a session. Uses message_id as _id."""
 
         session = await self._ensure_session_exists(session_id)
-        
-        # Generate new message ID using UUID-7 with 'msg_' prefix
-        message_id = generate_short_id("msg_", type="uuid7")
+
+        resolved_message_id = message_id or self.create_message_id()
         user_id = session["user_id"]
 
         if isinstance(content, BaseModel):
@@ -490,10 +509,10 @@ class ChatHistoryService:
                 raise InvalidInputError(f"File {file_id} not found")
 
         message = {
-            "_id": message_id,
+            "_id": resolved_message_id,
             "user_id": user_id,  # Auto-populated from session
             "session_id": session_id,
-            "message_id": message_id,  # Ensure message_id field is set to match _id
+            "message_id": resolved_message_id,  # Ensure message_id field is set to match _id
             "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "content": content,
             "metadata": metadata or {},
@@ -514,6 +533,66 @@ class ChatHistoryService:
             return message
         except Exception as e:
             raise InvalidInputError(f"Failed to add message: {str(e)}")
+
+    async def upsert_message(
+        self,
+        *,
+        session_id: str,
+        message_id: str,
+        user_id: str,
+        file_ids: list[str] | None,
+        content: dict | BaseModel,
+        metadata: dict | None = None,
+    ) -> dict:
+        """Create or update a message using a pre-generated message ID."""
+
+        session = await self._ensure_session_exists(session_id)
+        if session.get("user_id") != user_id:
+            raise InvalidInputError("Session does not belong to the provided user")
+
+        if isinstance(content, BaseModel):
+            content = content.model_dump()
+
+        for file_id in file_ids or []:
+            file = await self.db_manager.find_documents(
+                self.files_collection, {"_id": file_id}
+            )
+            if not file:
+                raise InvalidInputError(f"File {file_id} not found")
+
+        now = datetime.utcnow()
+        message_document = clean_for_mongodb(
+            {
+                "message_id": message_id,
+                "user_id": user_id,
+                "session_id": session_id,
+                "file_ids": file_ids or [],
+                "content": content,
+                "metadata": metadata or {},
+                "updated_at": now,
+            }
+        )
+
+        await self.db_manager.mongo_handler.db[self.messages_collection].update_one(
+            {"_id": message_id},
+            {
+                "$set": message_document,
+                "$setOnInsert": {
+                    "_id": message_id,
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+        )
+
+        await self.db_manager.update_documents(
+            self.sessions_collection,
+            {"_id": session_id},
+            {"$set": {"updated_at": now}},
+        )
+
+        saved_message = await self.get_message(message_id)
+        return saved_message or {"_id": message_id, **message_document, "created_at": now}
 
     async def get_messages(self, session_id: str, limit: int = 100) -> list[dict]:
         """Retrieve all messages for a session."""

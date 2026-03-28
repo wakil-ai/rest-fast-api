@@ -41,7 +41,7 @@ async def get_session(user_id: str, session_id: str):
         raise HTTPException(403, "Access denied")
     return serialize_mongo_id(session)
 
-@router.patch("/{session_id}", request_model=SessionEditRequest, response_model=SessionResponse)
+@router.patch("/{session_id}", response_model=SessionResponse)
 @handle_service_error
 async def update_session(session_id: str, request: SessionEditRequest):
     session = await chat_history_service.edit_session(session_id, title=request.title, tags=request.tags)

@@ -28,12 +28,16 @@ chat_service = get_chat_service()
 
 
 async def _stream_chat_answer(
-    request: ChatRequest, assistant_name: str
+    request: ChatRequest,
+    assistant_name: str,
+    session_id: str,
+    message_id: str,
 ) -> AsyncGenerator[Any, None]:
     model_name = request.model.value if request.model else None
     response = await chat_service.ask_question(
         user_id=request.user_id,
-        message_id=request.message_id,
+        session_id=session_id,
+        message_id=message_id,
         query=request.query,
         chat_history=request.chat_history,
         stream=True,
@@ -85,13 +89,23 @@ async def ask_question(request: ChatRequest):
         should_stream = settings.STREAM if request.stream is None else request.stream
 
         if should_stream:
-            return chat_service.create_streaming_response(
-                _stream_chat_answer(request, assistant_name)
+            session_id, message_id = await chat_service.prepare_chat_request(
+                user_id=request.user_id,
+                session_id=request.session_id,
             )
+            return chat_service.create_streaming_response(
+                _stream_chat_answer(request, assistant_name, session_id, message_id)
+            )
+
+        session_id, message_id = await chat_service.prepare_chat_request(
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
 
         response = await chat_service.ask_question(
             user_id=request.user_id,
-            message_id=request.message_id,
+            session_id=session_id,
+            message_id=message_id,
             query=request.query,
             chat_history=request.chat_history,
             stream=should_stream,
@@ -104,6 +118,9 @@ async def ask_question(request: ChatRequest):
             answer, meta = response
             return ChatResponse(
                 answer=answer,
+                session_id=session_id,
+                message_id=message_id,
+                latency_ms=meta.get("latency_ms"),
                 retrieved_contents=(
                     meta.get("retrieved_contents")
                     if settings.DEVELOPMENT_MODE
@@ -117,7 +134,11 @@ async def ask_question(request: ChatRequest):
                 "Unexpected streaming response for non-streaming request."
             )
 
-        return ChatResponse(answer=response)
+        return ChatResponse(
+            answer=response,
+            session_id=session_id,
+            message_id=message_id,
+        )
 
     except ChatException:
         raise
