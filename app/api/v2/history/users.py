@@ -20,19 +20,6 @@ redis_service = get_redis_service()
 def create_response(data: dict, message: str) -> dict:
     return {"info": serialize_mongo_id(data), "message": message}
 
-
-## > Deprecated endpoint for user creation
-# @router.post("", status_code=status.HTTP_200_OK, response_model=UserCreateResponse)
-# @handle_service_error
-# async def get_user(request: UserCreateRequest, response: Response):
-#     """Create a new user or return existing one (idempotent)"""
-#     existing = await chat_history_service.get_user(user_id=request.user_id)
-#     if existing:
-#         return create_response(existing, "User already exists")
-#     else:
-#         raise HTTPException(status_code=404, detail="User not found")
-
-
 @router.get("/{user_id}", response_model=UserCreateResponse)
 @handle_service_error
 async def get_user(user_id: str):
