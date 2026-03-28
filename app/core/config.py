@@ -66,7 +66,6 @@ class Settings(BaseSettings):
     USERS_COLLECTION: str = "users"
     SESSIONS_COLLECTION: str = "sessions"
     MESSAGES_COLLECTION: str = "messages"
-    FEEDBACK_COLLECTION: str = "feedbacks"
     FILES_COLLECTION: str = "files"
     PROJECTS_COLLECTION: str = "projects"
     PROMO_CODE_COLLECTION: str = "promos"

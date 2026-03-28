@@ -153,22 +153,6 @@ def test_crud_message(mongo_handler):
     assert messages[0]["content"] == "Hello"
 
 
-def test_crud_feedback(mongo_handler):
-    """Test Create and Retrieve for Feedback."""
-    feedback_doc = {
-        "feedback_id": "f1",
-        "message_id": "m1",
-        "rating": 5,
-        "comment": "Good job",
-    }
-
-    mongo_handler.db["feedbacks"].insert_one.return_value.inserted_id = "obj_id_f1"
-    mongo_handler.db["feedbacks"].find_one.return_value = feedback_doc
-
-    mongo_handler.insert_one("feedbacks", feedback_doc)
-    result = mongo_handler.find_one("feedbacks", {"feedback_id": "f1"})
-    assert result["rating"] == 5
-
 
 def test_crud_project_and_file(mongo_handler):
     """Test Create and Retrieve for User Project and File."""
