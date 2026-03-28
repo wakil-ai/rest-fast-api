@@ -19,7 +19,7 @@ def create_response(data: dict, message: str) -> dict:
     return {"info": serialize_mongo_id(data), "message": message}
 
 
-@router.post("", status_code=status.HTTP_200_OK, response_model=UserCreateResponse)
+@router.post("", status_code=status.HTTP_200_OK, response_model=UserCreateResponse, dependencies=[Depends(verify_super_admin_key)])
 @handle_service_error
 async def create_or_get_user(request: UserCreateRequest, response: Response):
     """Create a new user or return existing one (idempotent)"""

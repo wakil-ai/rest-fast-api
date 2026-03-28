@@ -14,6 +14,9 @@ class UserCreateRequest(BaseModel):
     phone_number: str | None = None
     last_name: str | None = None
     picture: str | None = None
+    user_create_auth: str | None = Field(
+        None, description="Optional auth method for user creation (e.g., 'google_oauth')"
+    )
 
 
 class UserUpdateRequest(BaseModel):
