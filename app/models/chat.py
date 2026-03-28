@@ -162,9 +162,8 @@ class AgenticRAGRequest(BaseModel):
     query: str = Field(
         ..., example="Explain the tax regulations for freelancers in Uzbekistan."
     )
-    user_id: str = Field(default="user_123", description="User identifier")
-    session_id: str = Field(default="default", description="Session identifier")
-    message_id: str = Field(default="", description="Current message identifier")
+    user_id: str = Field(..., description="User identifier")
+    session_id: str = Field(..., description="Existing session identifier")
     project_id: str | None = Field(default=None, description="Optional project ID")
     file_ids: list[str] | None = Field(
         default=None, description="List of file IDs attached to the current message"

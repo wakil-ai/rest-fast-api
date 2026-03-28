@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncGenerator
+from time import perf_counter
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
@@ -162,6 +163,11 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
             required_credits=settings.CREDIT_COST_DEEPRESEARCH,
         )
 
+        session_id, message_id = await chat_service.prepare_chat_request(
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+
         progress_queue = asyncio.Queue()
 
         async def progress_callback(event: dict):
@@ -169,9 +175,16 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
 
         flow = get_agentic_rag_flow_streaming(progress_callback)
 
-        initial_state = chat_service.build_agentic_state(request)
+        initial_state = chat_service.build_agentic_state(request, message_id=message_id)
+        started_at = perf_counter()
 
         async def response_generator():
+            yield {
+                "type": "metadata",
+                "session_id": session_id,
+                "message_id": message_id,
+            }
+
             flow_task = asyncio.create_task(flow.kickoff_async(initial_state))
 
             flow_complete = False
@@ -182,6 +195,35 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
                     # Await the result to catch any exceptions
                     try:
                         await flow_task
+                        latency_ms = int((perf_counter() - started_at) * 1000)
+                        generation_meta = dict(flow.state.generation_meta or {})
+                        generation_meta["workflow"] = "agentic_rag"
+                        if flow.state.selected_assistant:
+                            generation_meta["selected_assistant"] = (
+                                flow.state.selected_assistant
+                            )
+                        if flow.state.web_search_output:
+                            generation_meta["used_web_search"] = bool(
+                                flow.state.web_search_output.get("docs")
+                            )
+                        if flow.state.attachments:
+                            generation_meta["attachments"] = flow.state.attachments
+
+                        metadata = chat_service.build_message_metadata(
+                            assistant="deepresearch",
+                            stream=True,
+                            latency_ms=latency_ms,
+                            generation_meta=generation_meta,
+                        )
+                        chat_service.schedule_message_persistence(
+                            user_id=request.user_id,
+                            session_id=session_id,
+                            message_id=message_id,
+                            query=request.query,
+                            answer=flow.state.answer or "",
+                            file_ids=request.file_ids,
+                            metadata=metadata,
+                        )
                     except Exception as e:
                         logger.error("Flow execution error", exc_info=True)
                         yield {

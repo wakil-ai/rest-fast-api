@@ -79,12 +79,16 @@ class ChatService:
             raise ChatGenerationException("Failed to load assistant configuration.")
 
     @staticmethod
-    def build_agentic_state(request: AgenticRAGRequest) -> dict[str, Any]:
+    def build_agentic_state(
+        request: AgenticRAGRequest, message_id: str
+    ) -> dict[str, Any]:
         """Build initial state for agentic RAG flow."""
         return {
             "query": request.query,
             "user_id": request.user_id,
             "session_id": request.session_id,
+            "message_id": message_id,
+            "project_id": request.project_id,
             "file_ids": request.file_ids,
         }
 
@@ -126,7 +130,7 @@ class ChatService:
 
         return resolved_session_id, self.chat_history_service.create_message_id()
 
-    def _build_message_metadata(
+    def build_message_metadata(
         self,
         *,
         assistant: str,
@@ -151,9 +155,18 @@ class ChatService:
         if token_usage := generation_meta.get("token_usage"):
             metadata["token_usage"] = token_usage
 
+        if selected_assistant := generation_meta.get("selected_assistant"):
+            metadata["selected_assistant"] = selected_assistant
+
+        if workflow := generation_meta.get("workflow"):
+            metadata["workflow"] = workflow
+
+        if used_web_search := generation_meta.get("used_web_search"):
+            metadata["used_web_search"] = used_web_search
+
         return metadata
 
-    def _schedule_message_persistence(
+    def schedule_message_persistence(
         self,
         *,
         user_id: str,
@@ -215,13 +228,13 @@ class ChatService:
                 yield item
 
             latency_ms = int((perf_counter() - started_at) * 1000)
-            metadata = self._build_message_metadata(
+            metadata = self.build_message_metadata(
                 assistant=assistant,
                 stream=True,
                 latency_ms=latency_ms,
                 generation_meta=generation_meta,
             )
-            self._schedule_message_persistence(
+            self.schedule_message_persistence(
                 user_id=user_id,
                 session_id=session_id,
                 message_id=message_id,
@@ -332,13 +345,13 @@ class ChatService:
                     "Unexpected streaming response for non-streaming request."
                 )
 
-            metadata = self._build_message_metadata(
+            metadata = self.build_message_metadata(
                 assistant=assistant,
                 stream=False,
                 latency_ms=latency_ms,
                 generation_meta=generation_meta,
             )
-            self._schedule_message_persistence(
+            self.schedule_message_persistence(
                 user_id=user_id,
                 session_id=session_id,
                 message_id=message_id,
