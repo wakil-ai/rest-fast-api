@@ -137,10 +137,8 @@ class ChatService:
             headers=get_streaming_headers(),
         )
 
-    async def prepare_chat_request(
-        self, user_id: str, session_id: str | None = None
-    ) -> tuple[str, str]:
-        """Resolve chat session and allocate a message ID before generation."""
+    async def prepare_chat_request(self, user_id: str, session_id: str) -> tuple[str, str]:
+        """Validate chat session and allocate a message ID before generation."""
         session = await self.chat_history_service.ensure_session_for_user(
             user_id=user_id,
             session_id=session_id,

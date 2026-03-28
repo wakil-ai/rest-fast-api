@@ -66,10 +66,7 @@ class ChatRequest(BaseModel):
     user_id: str = Field(
         ..., example="user_12345", description="Unique identifier for the user"
     )
-    session_id: str | None = Field(
-        default=None,
-        description="Existing session identifier; omitted to create a new session",
-    )
+    session_id: str = Field(..., description="Existing session identifier")
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
     chat_history: list[MessagePair] | None = Field(
         default=None, description="Previous question-answer pairs"

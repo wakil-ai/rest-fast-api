@@ -142,17 +142,12 @@ class ChatHistoryService:
         """Create a new chat message identifier."""
         return generate_short_id("msg_", type="uuid7")
 
-    async def ensure_session_for_user(
-        self, user_id: str, session_id: str | None = None
-    ) -> dict:
-        """Resolve a session for chat requests, creating one when needed."""
-        if session_id and session_id.strip():
-            session = await self._ensure_session_exists(session_id)
-            if session.get("user_id") != user_id:
-                raise InvalidInputError("Session does not belong to the provided user")
-            return session
-
-        return await self.create_session(user_id=user_id)
+    async def ensure_session_for_user(self, user_id: str, session_id: str) -> dict:
+        """Validate that the provided session exists and belongs to the user."""
+        session = await self._ensure_session_exists(session_id)
+        if session.get("user_id") != user_id:
+            raise InvalidInputError("Session does not belong to the provided user")
+        return session
 
     # Validation and existence checks
     async def _ensure_user_exists(self, user_id: str) -> dict:

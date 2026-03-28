@@ -10,6 +10,9 @@ from app.services.chat_service import ChatService
 
 
 class _FakeChatService:
+    async def prepare_chat_request(self, user_id: str, session_id: str):  # noqa: ARG002
+        return session_id, "msg_test"
+
     def validate_query_length(self, query: str) -> None:  # noqa: ARG002
         return None
 
@@ -49,6 +52,7 @@ def test_stream_false_returns_json(monkeypatch):
         headers=headers,
         json={
             "user_id": "u1",
+            "session_id": "ses_test",
             "query": "hello",
             "stream": False,
             "assistant": "main",
@@ -58,6 +62,8 @@ def test_stream_false_returns_json(monkeypatch):
     assert resp.status_code == 200
     assert resp.headers.get("content-type", "").startswith("application/json")
     assert resp.json()["answer"] == "OK"
+    assert resp.json()["session_id"] == "ses_test"
+    assert resp.json()["message_id"] == "msg_test"
 
 
 def test_stream_true_emits_keepalive_before_answer(monkeypatch):
@@ -70,6 +76,7 @@ def test_stream_true_emits_keepalive_before_answer(monkeypatch):
         await asyncio.sleep(0.03)
 
         async def response_gen():
+            yield {"type": "metadata", "session_id": "ses_test", "message_id": "msg_test"}
             yield "OK"
 
         return response_gen()
@@ -92,6 +99,7 @@ def test_stream_true_emits_keepalive_before_answer(monkeypatch):
         headers=headers,
         json={
             "user_id": "u1",
+            "session_id": "ses_test",
             "query": "hello",
             "stream": True,
             "assistant": "main",
@@ -101,6 +109,7 @@ def test_stream_true_emits_keepalive_before_answer(monkeypatch):
         assert resp.headers.get("content-type", "").startswith("text/event-stream")
 
         saw_keepalive = False
+        saw_metadata = False
         saw_chunk = False
 
         for line in resp.iter_lines():
@@ -110,9 +119,40 @@ def test_stream_true_emits_keepalive_before_answer(monkeypatch):
             payload = json.loads(line.removeprefix("data: "))
             if payload == {"type": "progress", "message": "still working"}:
                 saw_keepalive = True
+            if payload == {
+                "type": "metadata",
+                "session_id": "ses_test",
+                "message_id": "msg_test",
+            }:
+                saw_metadata = True
             if payload == {"type": "chunk", "chunk": "OK"}:
                 saw_chunk = True
                 break
 
         assert saw_keepalive is True
+        assert saw_metadata is True
         assert saw_chunk is True
+
+
+def test_chat_requires_session_id(monkeypatch):
+    app = create_app()
+
+    import app.api.v2.chat as chat_module
+
+    monkeypatch.setattr(chat_module, "chat_service", _FakeChatService())
+
+    client = TestClient(app)
+    headers = {settings.API_KEY_NAME.lower(): settings.API_KEY}
+
+    resp = client.post(
+        f"{settings.API_PREFIX}/chat/ask",
+        headers=headers,
+        json={
+            "user_id": "u1",
+            "query": "hello",
+            "stream": False,
+            "assistant": "main",
+        },
+    )
+
+    assert resp.status_code == 422
