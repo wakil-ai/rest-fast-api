@@ -4,6 +4,7 @@ import pytest
 
 from app.assistants.base import RetrievalResult
 from app.chains.chat_chain import ChatChain
+from app.core.config import settings
 
 
 @pytest.fixture
@@ -35,12 +36,15 @@ def mock_dependencies():
         # LLM Mocks
         gpt_instance = mock_gpt.return_value
         gpt_instance.generate_response = AsyncMock(return_value="GPT Response")
+        gpt_instance.count_tokens = AsyncMock(return_value=10)
 
         claude_instance = mock_claude.return_value
         claude_instance.generate_response = AsyncMock(return_value="Claude Response")
+        claude_instance.count_tokens = AsyncMock(return_value=10)
 
         novita_instance = mock_novita.return_value
         novita_instance.generate_response = AsyncMock(return_value="Novita Response")
+        novita_instance.count_tokens = AsyncMock(return_value=10)
 
         yield {
             "retrieval": mock_ret_instance,
@@ -62,23 +66,23 @@ def chat_chain(mock_dependencies):
 
 
 def test_llm_factory_selection(chat_chain, mock_dependencies):
-    """Test correct LLM instantiation based on model name."""
+    """Test configured default model selection."""
 
-    # Test OpenAI
-    llm = chat_chain._select_llm("gpt-4")
-    mock_dependencies["GPTClass"].assert_called_with(model_name="gpt-4")
+    original_model = settings.DEFAULT_CHAT_MODEL
+    try:
+        settings.DEFAULT_CHAT_MODEL = "gpt-4"
+        chat_chain._select_llm()
+        mock_dependencies["GPTClass"].assert_called_with(model_name="gpt-4")
 
-    # Test Claude
-    llm = chat_chain._select_llm("claude-3-opus")
-    mock_dependencies["ClaudeClass"].assert_called_with(model_name="claude-3-opus")
+        settings.DEFAULT_CHAT_MODEL = "claude-3-opus"
+        chat_chain._select_llm()
+        mock_dependencies["ClaudeClass"].assert_called_with(model_name="claude-3-opus")
 
-    # Test Novita (gemma/gpt-oss)
-    llm = chat_chain._select_llm("gemma-2b")
-    mock_dependencies["NovitaClass"].assert_called_with(model_name="gemma-2b")
-
-    # Test Fallback
-    llm = chat_chain._select_llm("unknown-model")
-    assert llm == chat_chain.fallback_llm
+        settings.DEFAULT_CHAT_MODEL = "gemma-2b"
+        chat_chain._select_llm()
+        mock_dependencies["NovitaClass"].assert_called_with(model_name="gemma-2b")
+    finally:
+        settings.DEFAULT_CHAT_MODEL = original_model
 
 
 @pytest.mark.asyncio
@@ -88,7 +92,7 @@ async def test_generate_answer_flow(chat_chain, mock_dependencies):
     query = "test query"
 
     answer = await chat_chain.generate_answer(
-        user_id=user_id, query=query, model_name="gpt-4.1", stream=False
+        user_id=user_id, query=query, stream=False
     )
 
     assert answer
@@ -113,7 +117,7 @@ async def test_streaming_response(chat_chain, mock_dependencies):
     mock_dependencies["gpt"].generate_response.return_value = async_gen()
 
     response_gen = await chat_chain.generate_answer(
-        user_id="u1", query="q", model_name="gpt-4", stream=True
+        user_id="u1", query="q", stream=True
     )
 
     parts = []

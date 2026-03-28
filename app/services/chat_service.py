@@ -20,7 +20,6 @@ from app.core.exceptions import (
 )
 from app.core.logger import logger
 from app.models.chat import AgenticRAGRequest, AssistantType, ChatResponse, MessagePair
-from app.orchestration.flow import AgenticRAGFlow
 from app.utils.streaming import format_streaming_response, get_streaming_headers
 
 
@@ -90,35 +89,13 @@ class ChatService:
         }
 
     @staticmethod
-    def extract_debug_context(flow_service: AgenticRAGFlow) -> str:
-        """Extract debug context from flow state in development mode."""
-        if not settings.DEVELOPMENT_MODE:
-            return ""
-
-        try:
-            retrieved_docs = flow_service.state.retrieval_docs or ""
-            return f"{retrieved_docs}Relevance Score: {flow_service.state.web_search_output}"
-        except Exception as e:
-            logger.warning(f"Could not extract debug context: {e}")
-            return "No retrieved contents available."
-
-    @staticmethod
     def create_response(
         answer: str,
         session_id: str,
         message_id: str,
-        debug_context: str = "",
         latency_ms: int | None = None,
     ) -> ChatResponse:
-        """Create ChatResponse with optional debug information."""
-        if settings.DEVELOPMENT_MODE and debug_context:
-            return ChatResponse(
-                answer=answer,
-                session_id=session_id,
-                message_id=message_id,
-                latency_ms=latency_ms,
-                retrieved_contents=debug_context,
-            )
+        """Create ChatResponse."""
         return ChatResponse(
             answer=answer,
             session_id=session_id,
@@ -154,7 +131,6 @@ class ChatService:
         *,
         assistant: str,
         stream: bool,
-        requested_model: str | None,
         latency_ms: int,
         generation_meta: dict[str, Any] | None,
     ) -> dict[str, Any]:
@@ -163,9 +139,6 @@ class ChatService:
             "stream": stream,
             "latency_ms": latency_ms,
         }
-
-        if requested_model:
-            metadata["requested_model"] = requested_model
 
         generation_meta = generation_meta or {}
 
@@ -177,9 +150,6 @@ class ChatService:
 
         if token_usage := generation_meta.get("token_usage"):
             metadata["token_usage"] = token_usage
-
-        if settings.DEVELOPMENT_MODE and generation_meta.get("retrieved_contents"):
-            metadata["retrieved_contents"] = generation_meta["retrieved_contents"]
 
         return metadata
 
@@ -222,7 +192,6 @@ class ChatService:
         query: str,
         file_ids: list[str] | None,
         assistant: str,
-        model_name: str | None,
         started_at: float,
     ) -> AsyncGenerator[Any, None]:
         async def wrapped() -> AsyncGenerator[Any, None]:
@@ -249,7 +218,6 @@ class ChatService:
             metadata = self._build_message_metadata(
                 assistant=assistant,
                 stream=True,
-                requested_model=model_name,
                 latency_ms=latency_ms,
                 generation_meta=generation_meta,
             )
@@ -275,7 +243,6 @@ class ChatService:
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
-        model_name: str | None = None,
     ) -> str | AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
         """
         Handle the question by retrieving context and generating an answer.
@@ -287,7 +254,6 @@ class ChatService:
             stream: Enable streaming response
             file_ids: List of file IDs to use as context
             assistant: Assistant name
-            model_name: Optional model name for generation
 
         Returns:
             - str: Complete answer if streaming disabled and dev mode disabled
@@ -306,7 +272,6 @@ class ChatService:
                 stream=stream,
                 file_ids=file_ids,
                 assistant=assistant,
-                model_name=model_name,
             )
 
             if stream:
@@ -325,7 +290,6 @@ class ChatService:
                         query=query,
                         file_ids=file_ids,
                         assistant=assistant,
-                        model_name=model_name,
                         started_at=started_at,
                     )
 
@@ -343,7 +307,6 @@ class ChatService:
                         query=query,
                         file_ids=file_ids,
                         assistant=assistant,
-                        model_name=model_name,
                         started_at=started_at,
                     )
 
@@ -355,7 +318,6 @@ class ChatService:
                     query=query,
                     file_ids=file_ids,
                     assistant=assistant,
-                    model_name=model_name,
                     started_at=started_at,
                 )
 
@@ -373,7 +335,6 @@ class ChatService:
             metadata = self._build_message_metadata(
                 assistant=assistant,
                 stream=False,
-                requested_model=model_name,
                 latency_ms=latency_ms,
                 generation_meta=generation_meta,
             )

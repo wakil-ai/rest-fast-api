@@ -122,13 +122,11 @@ async def test_chat_chain_returns_out_of_scope_message_for_court_assistant():
     result = await ChatChain.generate_answer(
         chat_chain,
         user_id="u1",
-        message_id="",
         query="Please write a contract for me",
         chat_history=None,
         stream=False,
         file_ids=None,
         assistant="court",
-        model_name=None,
     )
 
     assert result == "I'm optimized only for court-related questions."

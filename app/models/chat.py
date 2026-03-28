@@ -74,9 +74,6 @@ class ChatRequest(BaseModel):
     stream: bool | None = Field(
         default=settings.STREAM, description="Whether to stream the response"
     )
-    model: ChatModel | None = Field(
-        default=None, description="LLM model to use for generation"
-    )
     assistant: AssistantType | None = Field(
         default=AssistantType.MAIN,
         description="Assistant type (use `court` for court matters; legacy aliases like soliq/shartnoma/mamuriy_sud are still supported)",
@@ -98,10 +95,6 @@ class ChatResponse(BaseModel):
         default=None,
         description="Server-side end-to-end generation latency in milliseconds",
     )
-    retrieved_contents: str | None = Field(
-        default=None, description="Retrieved documents (dev mode only)"
-    )
-
     attachments: list[dict[str, str]] | None = Field(
         default=None,
         description="Optional attachments (e.g., DOCX links)",

@@ -132,7 +132,6 @@ class ChatChain:
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
-        model_name: str | None = None,
     ) -> str | AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
         """
         Main entry point to generate a response (streaming or not).
@@ -164,7 +163,7 @@ class ChatChain:
                 history_formatted=history_formatted,
             )
 
-            llm = self._select_llm(model_name)
+            llm = self._select_llm()
 
             if stream:
                 return self._generate_streaming(llm, query, ctx, ctx.assistant_name)
@@ -176,10 +175,9 @@ class ChatChain:
             return self._create_error_response(stream)
 
     #  LLM Selection
-    def _select_llm(self, model_name: str | None) -> LLM:
-        """Factory method: select LLM based on model name prefix."""
-        if not model_name:
-            return self.fallback_llm
+    def _select_llm(self) -> LLM:
+        """Factory method: select the configured default LLM."""
+        model_name = settings.DEFAULT_CHAT_MODEL
 
         mapping = {
             "gemma-": Novita,
@@ -373,8 +371,6 @@ class ChatChain:
             )
 
             meta["attachments"] = ctx.attachments or []
-            if settings.DEVELOPMENT_MODE:
-                meta["retrieved_contents"] = ctx.context
 
             # Send attachments if the assistant provided any
             if ctx.attachments:
@@ -417,9 +413,6 @@ class ChatChain:
         )
 
         meta["attachments"] = ctx.attachments or []
-
-        if settings.DEVELOPMENT_MODE:
-            meta["retrieved_contents"] = ctx.context
 
         return cleaned, meta
 

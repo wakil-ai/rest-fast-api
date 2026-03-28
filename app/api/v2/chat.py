@@ -33,7 +33,6 @@ async def _stream_chat_answer(
     session_id: str,
     message_id: str,
 ) -> AsyncGenerator[Any, None]:
-    model_name = request.model.value if request.model else None
     response = await chat_service.ask_question(
         user_id=request.user_id,
         session_id=session_id,
@@ -43,7 +42,6 @@ async def _stream_chat_answer(
         stream=True,
         file_ids=request.file_ids,
         assistant=assistant_name,
-        model_name=model_name,
     )
 
     if isinstance(response, tuple):
@@ -111,7 +109,6 @@ async def ask_question(request: ChatRequest):
             stream=should_stream,
             file_ids=request.file_ids,
             assistant=assistant_name,
-            model_name=request.model.value if request.model else None,
         )
 
         if isinstance(response, tuple):
@@ -121,11 +118,6 @@ async def ask_question(request: ChatRequest):
                 session_id=session_id,
                 message_id=message_id,
                 latency_ms=meta.get("latency_ms"),
-                retrieved_contents=(
-                    meta.get("retrieved_contents")
-                    if settings.DEVELOPMENT_MODE
-                    else None
-                ),
                 attachments=meta.get("attachments") or None,
             )
 
