@@ -7,7 +7,11 @@ from app.api.v2.history.messages import router as messages_router
 from app.api.v2.history.sessions import router as sessions_router
 from app.api.v2.history.users import router as users_router
 from app.core.dependencies import get_chat_history_service
-from app.utils.user_management import handle_service_error, serialize_mongo_id
+from app.utils.user_management import (
+    handle_service_error,
+    sanitize_message_for_response,
+    serialize_mongo_id,
+)
 
 router = APIRouter(prefix="/history", tags=["Chat History"])
 chat_history_service = get_chat_history_service()
@@ -27,7 +31,7 @@ async def sync_user_data(user_id: str, months: int = 3):
     data["sessions"] = [serialize_mongo_id(s) for s in data["sessions"]]
 
     serialized_messages = {
-        sid: [serialize_mongo_id(m) for m in msgs]
+        sid: [sanitize_message_for_response(serialize_mongo_id(m)) for m in msgs]
         for sid, msgs in data["messages"].items()
     }
     data["messages"] = serialized_messages

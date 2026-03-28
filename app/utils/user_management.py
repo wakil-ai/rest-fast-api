@@ -3,6 +3,7 @@ import string
 import uuid as uuid_module
 import uuid6
 import hashlib
+from copy import deepcopy
 from functools import wraps
 from typing import Any
 from datetime import datetime
@@ -50,6 +51,22 @@ def serialize_mongo_id(data: Any) -> Any:
         # We also convert _id to string in place if it's not already
         data["_id"] = str(data["_id"])
     return data
+
+
+def sanitize_message_for_response(data: Any) -> Any:
+    """Remove private message metadata fields from API responses."""
+    if isinstance(data, list):
+        return [sanitize_message_for_response(item) for item in data]
+
+    if not isinstance(data, dict):
+        return data
+
+    sanitized = deepcopy(data)
+    metadata = sanitized.get("metadata")
+    if isinstance(metadata, dict):
+        metadata.pop("model", None)
+
+    return sanitized
 
 
 def clean_for_mongodb(data: Any) -> Any:

@@ -8,7 +8,11 @@ from app.models.chat_history import (
     MessageSharedRequest,
     MessageSharedResponse,
 )
-from app.utils.user_management import handle_service_error, serialize_mongo_id
+from app.utils.user_management import (
+    handle_service_error,
+    sanitize_message_for_response,
+    serialize_mongo_id,
+)
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
 
@@ -25,14 +29,14 @@ async def create_message(request: MessageCreateRequest):
         content=request.content,
         metadata=request.metadata,
     )
-    return MessageResponse(**serialize_mongo_id(msg))
+    return MessageResponse(**sanitize_message_for_response(serialize_mongo_id(msg)))
 
 
 @router.get("/{session_id}", response_model=list[MessageResponse])
 @handle_service_error
 async def list_messages(session_id: str, limit: int = 50):
     msgs = await chat_history_service.get_messages(session_id, limit)
-    return [serialize_mongo_id(m) for m in msgs]
+    return [sanitize_message_for_response(serialize_mongo_id(m)) for m in msgs]
 
 
 @router.get("/{session_id}/{message_id}", response_model=MessageResponse)
@@ -43,7 +47,7 @@ async def get_message(session_id: str, message_id: str):
         raise HTTPException(404, "Message not found")
     if msg["session_id"] != session_id:
         raise HTTPException(403, "Message does not belong to this session")
-    return serialize_mongo_id(msg)
+    return sanitize_message_for_response(serialize_mongo_id(msg))
 
 
 @router.post("/{message_id}/share", response_model=MessageSharedResponse)
