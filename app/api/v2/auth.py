@@ -117,8 +117,6 @@ async def login(request: Request):
         request.session.pop("google_frontend_redirect_uri", None)
 
     redirect_uri = settings.GOOGLE_REDIRECT_URI or str(request.url_for("auth_callback"))
-    logger.info(f"[GoogleAuth] Initiating login.")
-    logger.info(f"[GoogleAuth] Redirect URI: {redirect_uri}")
     logger.info(f"[GoogleAuth] Frontend redirect URI: {frontend_redirect_uri}")
     logger.info(f"[GoogleAuth] Session before redirect: {dict(request.session)}")
     
@@ -155,12 +153,7 @@ async def auth_callback(request: Request):
 
         # Manually exchange auth code for tokens (bypass session-based state validation)
         redirect_uri = settings.GOOGLE_REDIRECT_URI or str(request.url_for("auth_callback"))
-        
-        logger.info(f"[GoogleAuth] Attempting token exchange:")
-        logger.info(f"[GoogleAuth] - Redirect URI: {redirect_uri}")
-        logger.info(f"[GoogleAuth] - Client ID: {settings.GOOGLE_CLIENT_ID[:20]}...")
-        logger.info(f"[GoogleAuth] - Auth Code: {auth_code[:20]}...")
-        
+                
         async with httpx.AsyncClient() as client:
             token_response = await client.post(
                 "https://oauth2.googleapis.com/token",
@@ -171,7 +164,7 @@ async def auth_callback(request: Request):
                     "grant_type": "authorization_code",
                     "redirect_uri": redirect_uri,
                 },
-                timeout=10.0,
+                timeout=20.0,
             )
             
             logger.info(f"[GoogleAuth] Token response status: {token_response.status_code}")
@@ -346,6 +339,13 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
         existing_user = await chat_history_service.get_user_by_external_id(request.user_id)
         if existing_user:
             raise UserAlreadyExistsException(request.user_id)
+        
+        if request.phone_number:
+            # Basic validation for phone number format (can be enhanced with regex)
+            if not request.phone_number.startswith("+998") or not request.phone_number[1:].isdigit():
+                raise HTTPException(status_code=400, detail="Invalid phone number format. Must start with '+' followed by digits.")
+        else:
+            raise HTTPException(status_code=400, detail="Phone number is required for DT integration.")
         
         # Generate internal user id
         internal_user_id = generate_short_id(prefix="user-", type="uuid7")
