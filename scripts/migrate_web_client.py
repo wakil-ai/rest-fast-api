@@ -24,8 +24,8 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from app.core.config import settings
-from app.db import DBManager
 from app.core.logger import logger
+from app.db import DBManager
 
 
 async def migrate_web_client():
@@ -34,43 +34,45 @@ async def migrate_web_client():
         # Initialize database manager
         db_manager = DBManager()
         users_collection = db_manager.db[settings.USERS_COLLECTION]
-        
+
         logger.info("=" * 80)
         logger.info("Starting web_client migration...")
         logger.info("=" * 80)
-        
+
         # Count users without web_client field
         users_without_web_client = await users_collection.count_documents(
             {"web_client": {"$exists": False}}
         )
-        
+
         logger.info(f"Found {users_without_web_client} users without web_client field")
-        
+
         if users_without_web_client == 0:
-            logger.info("✓ All users already have web_client field. Migration not needed.")
+            logger.info(
+                "✓ All users already have web_client field. Migration not needed."
+            )
             return
-        
+
         # Update all users without web_client to 'wakilai'
         result = await users_collection.update_many(
             {"web_client": {"$exists": False}},
-            {"$set": {"web_client": settings.WAKILAI_WEB_CLIENT_NAME}}
+            {"$set": {"web_client": settings.WAKILAI_WEB_CLIENT_NAME}},
         )
-        
-        logger.info(f"✓ Migration completed successfully!")
+
+        logger.info("✓ Migration completed successfully!")
         logger.info(f"  - Matched: {result.matched_count}")
         logger.info(f"  - Modified: {result.modified_count}")
-        
+
         # Verify migration
         total_users = await users_collection.count_documents({})
         users_with_web_client = await users_collection.count_documents(
             {"web_client": {"$exists": True}}
         )
-        
-        logger.info(f"\nVerification:")
+
+        logger.info("\nVerification:")
         logger.info(f"  - Total users: {total_users}")
         logger.info(f"  - Users with web_client: {users_with_web_client}")
         logger.info(f"  - Missing web_client: {total_users - users_with_web_client}")
-        
+
         # Count by web_client type
         wakilai_count = await users_collection.count_documents(
             {"web_client": settings.WAKILAI_WEB_CLIENT_NAME}
@@ -78,20 +80,20 @@ async def migrate_web_client():
         birdarcha_count = await users_collection.count_documents(
             {"web_client": settings.DT_WEB_CLIENT_NAME}
         )
-        
-        logger.info(f"\nWeb client distribution:")
+
+        logger.info("\nWeb client distribution:")
         logger.info(f"  - wakilai: {wakilai_count}")
         logger.info(f"  - birdarcha: {birdarcha_count}")
-        
+
         if total_users == users_with_web_client:
             logger.info("\n✓ Migration verified successfully!")
         else:
             logger.warning(
                 f"\n✗ Warning: {total_users - users_with_web_client} users still missing web_client"
             )
-        
+
         logger.info("=" * 80)
-        
+
     except Exception as e:
         logger.error(f"✗ Migration failed: {str(e)}", exc_info=True)
         raise

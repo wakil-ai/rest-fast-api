@@ -4,8 +4,8 @@ from fastapi import APIRouter, HTTPException, status
 from app.core.dependencies import get_chat_history_service
 from app.models.chat_history import (
     SessionCreateRequest,
+    SessionEditRequest,
     SessionResponse,
-    SessionEditRequest
 )
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
@@ -25,11 +25,13 @@ async def create_session(request: SessionCreateRequest):
     )
     return SessionResponse(**serialize_mongo_id(session))
 
+
 @router.get("/{user_id}", response_model=list[SessionResponse])
 @handle_service_error
 async def list_sessions(user_id: str, limit: int = 50):
     sessions = await chat_history_service.get_sessions(user_id=user_id, limit=limit)
     return [serialize_mongo_id(s) for s in sessions]
+
 
 @router.get("/{user_id}/{session_id}", response_model=SessionResponse)
 @handle_service_error
@@ -41,11 +43,15 @@ async def get_session(user_id: str, session_id: str):
         raise HTTPException(403, "Access denied")
     return serialize_mongo_id(session)
 
+
 @router.patch("/{session_id}", response_model=SessionResponse)
 @handle_service_error
 async def update_session(session_id: str, request: SessionEditRequest):
-    session = await chat_history_service.edit_session(session_id, title=request.title, tags=request.tags)
+    session = await chat_history_service.edit_session(
+        session_id, title=request.title, tags=request.tags
+    )
     return serialize_mongo_id(session)
+
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_service_error

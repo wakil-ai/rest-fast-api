@@ -109,7 +109,9 @@ class Settings(BaseSettings):
 
     # OpenAI GPT
     OPENAI_API_KEY: str | None = None
-    DEFAULT_CHAT_MODEL: str = "gemini-3-pro-preview"  # Default model for chat completions
+    DEFAULT_CHAT_MODEL: str = (
+        "gemini-3-pro-preview"  # Default model for chat completions
+    )
     GPT_COMPLETION_MODEL: str = "gpt-4.1"  # Legacy OpenAI default model
 
     # Anthropic Claude

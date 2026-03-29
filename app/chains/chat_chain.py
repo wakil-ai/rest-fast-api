@@ -393,9 +393,7 @@ class ChatChain:
             logger.warning("Primary LLM failed → fallback", exc_info=True)
             try:
                 active_llm = self.fallback_llm
-                raw = await self._get_response(
-                    active_llm, query, ctx.system_prompt
-                )
+                raw = await self._get_response(active_llm, query, ctx.system_prompt)
             except Exception:
                 logger.error("Fallback LLM failed", exc_info=True)
                 raise

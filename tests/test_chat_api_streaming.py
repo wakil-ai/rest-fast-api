@@ -92,7 +92,11 @@ def test_stream_true_emits_keepalive_before_answer(monkeypatch):
         await asyncio.sleep(0.03)
 
         async def response_gen():
-            yield {"type": "metadata", "session_id": "ses_test", "message_id": "msg_test"}
+            yield {
+                "type": "metadata",
+                "session_id": "ses_test",
+                "message_id": "msg_test",
+            }
             yield "OK"
 
         return response_gen()
@@ -199,7 +203,9 @@ def test_agent_stream_emits_metadata(monkeypatch):
 
     fake = _FakeChatService()
     monkeypatch.setattr(chat_module, "chat_service", fake)
-    monkeypatch.setattr(chat_module, "get_agentic_rag_flow_streaming", lambda callback: _FakeFlow())
+    monkeypatch.setattr(
+        chat_module, "get_agentic_rag_flow_streaming", lambda callback: _FakeFlow()
+    )
 
     client = TestClient(app)
     headers = {settings.API_KEY_NAME.lower(): settings.API_KEY}

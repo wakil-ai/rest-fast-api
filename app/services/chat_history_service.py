@@ -14,7 +14,7 @@ from app.core.exceptions import (
 )
 from app.core.logger import logger
 from app.models.chat_history import ShareResponse
-from app.utils.user_management import generate_short_id, clean_for_mongodb
+from app.utils.user_management import clean_for_mongodb, generate_short_id
 
 
 class ChatHistoryService:
@@ -154,7 +154,7 @@ class ChatHistoryService:
         """Ensure user exists in database, raise UserNotFoundError if not."""
         if not user_id or not user_id.strip():
             raise InvalidInputError("User ID cannot be empty")
-        
+
         user = await self.db_manager.find_documents(
             self.users_collection, {"_id": user_id}
         )
@@ -178,7 +178,7 @@ class ChatHistoryService:
         """Ensure message exists in database, raise MessageNotFoundError if not."""
         if not message_id or not message_id.strip():
             raise InvalidInputError("Message ID cannot be empty")
-        
+
         message = await self.db_manager.find_documents(
             self.messages_collection, {"_id": message_id}
         )
@@ -346,7 +346,7 @@ class ChatHistoryService:
     async def unblock_user(self, user_id: str) -> dict | None:
         """Unblock a previously blocked user."""
         await self._ensure_user_exists(user_id)
-        
+
         now = datetime.utcnow()
 
         await self.db_manager.update_documents(
@@ -378,7 +378,7 @@ class ChatHistoryService:
         """Create or retrieve an existing session. Uses session_id as _id."""
 
         await self._ensure_user_exists(user_id)
-        
+
         # Generate session ID using uuid7 with 'ses-' prefix
         session_id = generate_short_id("ses-", type="uuid7")
 
@@ -413,7 +413,7 @@ class ChatHistoryService:
         """Get session by session_id."""
         if not session_id or not session_id.strip():
             raise InvalidInputError("Session ID cannot be empty")
-            
+
         sessions = await self.db_manager.find_documents(
             self.sessions_collection, {"_id": session_id}
         )
@@ -524,7 +524,7 @@ class ChatHistoryService:
                 {"_id": session_id},
                 {"$set": {"updated_at": datetime.utcnow()}},
             )
-            
+
             return message
         except Exception as e:
             raise InvalidInputError(f"Failed to add message: {str(e)}")
@@ -587,7 +587,11 @@ class ChatHistoryService:
         )
 
         saved_message = await self.get_message(message_id)
-        return saved_message or {"_id": message_id, **message_document, "created_at": now}
+        return saved_message or {
+            "_id": message_id,
+            **message_document,
+            "created_at": now,
+        }
 
     async def get_messages(self, session_id: str, limit: int = 100) -> list[dict]:
         """Retrieve all messages for a session."""
@@ -601,7 +605,7 @@ class ChatHistoryService:
         messages = await self.db_manager.find_documents(
             self.messages_collection, query, limit=limit
         )
-        
+
         return messages
 
     async def get_message(self, message_id: str) -> dict | None:

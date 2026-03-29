@@ -5,12 +5,13 @@ from decimal import Decimal
 
 import redis
 
-from app.core.logger import logger
 from app.core.config import settings
+from app.core.logger import logger
 
 
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder for datetime and Decimal objects."""
+
     def default(self, obj):
         if isinstance(obj, datetime):
             return obj.isoformat()
@@ -30,8 +31,11 @@ class RedisService:
 
         self._log_queue: asyncio.Queue[tuple[str, str]] | None = None
         self._worker_task: asyncio.Task | None = None
-        
-        logger.info("Initialized RedisService with connection to "f"{settings.REDIS_HOST}:{settings.REDIS_PORT}")
+
+        logger.info(
+            "Initialized RedisService with connection to "
+            f"{settings.REDIS_HOST}:{settings.REDIS_PORT}"
+        )
 
     def _ensure_worker_started(self) -> bool:
         if self._worker_task and not self._worker_task.done():
@@ -61,8 +65,12 @@ class RedisService:
             if isinstance(value, dict):
                 json_value = json.dumps(value, cls=DateTimeEncoder)
             else:
-                json_value = value if isinstance(value, str) else json.dumps(value, cls=DateTimeEncoder)
-            
+                json_value = (
+                    value
+                    if isinstance(value, str)
+                    else json.dumps(value, cls=DateTimeEncoder)
+                )
+
             self.redis.set(key, json_value, ex=ttl_seconds)
             return True
         except Exception as e:
@@ -86,7 +94,7 @@ class RedisService:
         """Store a value in Redis with an optional expiration time."""
         try:
             await asyncio.to_thread(self.redis.set, key, value, ex=expire_seconds)
-        except Exception as e:
+        except Exception:
             pass
 
     def loguru_sink(self, message):
@@ -149,7 +157,7 @@ class RedisService:
             redis_key = f"logs:{level}"
             raw = await asyncio.to_thread(self.redis.lrange, redis_key, -limit, -1)
             return [json.loads(entry) for entry in raw]
-        except Exception as e:
+        except Exception:
             return []
 
     async def clear_logs(self, level: str) -> int:
@@ -159,5 +167,5 @@ class RedisService:
             count = await asyncio.to_thread(self.redis.llen, redis_key)
             await asyncio.to_thread(self.redis.delete, redis_key)
             return count
-        except Exception as e:
+        except Exception:
             return 0

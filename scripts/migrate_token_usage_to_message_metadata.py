@@ -109,7 +109,9 @@ async def migrate(
             return
 
         if delete_legacy and migrated_ids:
-            delete_result = await token_collection.delete_many({"_id": {"$in": migrated_ids}})
+            delete_result = await token_collection.delete_many(
+                {"_id": {"$in": migrated_ids}}
+            )
             print(f"Deleted legacy token usage docs: {delete_result.deleted_count}")
         elif delete_legacy:
             print("No migrated legacy documents to delete.")

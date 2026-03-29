@@ -1,14 +1,14 @@
+import hashlib
 import random
 import string
 import uuid as uuid_module
-import uuid6
-import hashlib
 from copy import deepcopy
-from functools import wraps
-from typing import Any
 from datetime import datetime
 from decimal import Decimal
+from functools import wraps
+from typing import Any
 
+import uuid6
 from fastapi import HTTPException, status
 
 from app.core.logger import logger
@@ -32,7 +32,7 @@ def generate_short_id(prefix: str = "", length: int = 8, type: str = "random") -
 
     elif type == "hash":
         unique_id = hashlib.sha256(str(random.random()).encode()).hexdigest()[:length]
-        
+
     elif type == "uuid7":
         unique_id = str(uuid6.uuid7())  # Convert UUID object to string
 
@@ -71,7 +71,7 @@ def sanitize_message_for_response(data: Any) -> Any:
 
 def clean_for_mongodb(data: Any) -> Any:
     """Clean and convert data types that MongoDB cannot natively encode.
-    
+
     Converts:
     - UUID objects to strings
     - Decimal objects to float

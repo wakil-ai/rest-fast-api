@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+
 # User Models
 class UserCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID (e.g., Telegram ID)")
@@ -13,15 +14,18 @@ class UserCreateRequest(BaseModel):
     last_name: str | None = None
     picture: str | None = None
 
+
 class UserUpdateRequest(BaseModel):
     field: str = Field(
         ..., description="Field to update (username, first_name, last_name, picture)"
     )
     value: str = Field(..., description="New value for the specified field")
 
+
 class UserPhoneUpdateRequest(BaseModel):
     user_id: str = Field(..., description="User ID (stored as _id)")
     phone_number: str = Field(..., description="User phone number")
+
 
 class UserResponse(BaseModel):
     """Response model for user data"""
@@ -40,21 +44,26 @@ class UserResponse(BaseModel):
     updated_at: datetime
     model_config = {"populate_by_name": True}
 
+
 class UserCreateResponse(BaseModel):
     """Standardized response for user operations"""
 
     info: UserResponse
     message: str = Field(default="User operation successful")
 
+
 # Session Models
 class SessionCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID who owns the session")
     title: str | None = Field("New Chat", description="Session title")
-    tags: list[str] = Field(default_factory=list, description="Optional tags for categorization")
+    tags: list[str] = Field(
+        default_factory=list, description="Optional tags for categorization"
+    )
+
 
 class SessionResponse(BaseModel):
     """Response model for session data"""
-    
+
     user_id: str = Field(..., description="User ID")
     session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
     title: str = Field(default="New Chat")
@@ -63,9 +72,11 @@ class SessionResponse(BaseModel):
     updated_at: datetime
     model_config = {"populate_by_name": True}
 
+
 class SessionEditRequest(BaseModel):
     title: str | None = Field(None, description="New session title")
     tags: list[str] | None = Field(None, description="New tags for the session")
+
 
 # Message Models
 class MessageContent(BaseModel):
@@ -74,20 +85,26 @@ class MessageContent(BaseModel):
     query: str = Field(..., description="User query")
     response: str = Field(..., description="Assistant response")
 
+
 class MessageCreateRequest(BaseModel):
     """Request model for creating a new message"""
-    
+
     session_id: str = Field(..., description="Session ID (only field required)")
     content: MessageContent = Field(..., description="Message content")
-    file_ids: list[str] | None = Field(None, description="Optional file ID if this message is a file attachment")
+    file_ids: list[str] | None = Field(
+        None, description="Optional file ID if this message is a file attachment"
+    )
     metadata: dict[str, Any] | None = Field(None, description="Optional metadata")
+
 
 class MessageResponse(BaseModel):
     """Response model for message data"""
 
     session_id: str = Field(..., description="Session ID")
     message_id: str = Field(..., description="Message ID (stored as _id)", alias="_id")
-    user_id: str | None = Field(..., description="User ID (auto-populated from session)") # optional for backward compatibility
+    user_id: str | None = Field(
+        ..., description="User ID (auto-populated from session)"
+    )  # optional for backward compatibility
     content: MessageContent
     metadata: dict[str, Any] | None = None
     created_at: datetime

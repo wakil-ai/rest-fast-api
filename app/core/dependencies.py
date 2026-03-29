@@ -10,7 +10,7 @@ if TYPE_CHECKING:
         PromptRegistry,
     )
     from app.db import DBManager, MilvusHandler, MongoHandler, PineconeHandler
-    from app.llms import ChatGPT, LLM
+    from app.llms import LLM
     from app.orchestration import AgenticRAGFlow
     from app.orchestration.agents import Agents
     from app.orchestration.crews import Crews

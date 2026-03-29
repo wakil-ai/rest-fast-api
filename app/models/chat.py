@@ -90,7 +90,9 @@ class ChatResponse(BaseModel):
 
     answer: str
     session_id: str = Field(..., description="Session identifier for the chat")
-    message_id: str = Field(..., description="Message identifier assigned by the server")
+    message_id: str = Field(
+        ..., description="Message identifier assigned by the server"
+    )
     latency_ms: int | None = Field(
         default=None,
         description="Server-side end-to-end generation latency in milliseconds",

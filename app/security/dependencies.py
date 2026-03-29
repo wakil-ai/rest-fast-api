@@ -84,7 +84,7 @@ def verify_dt_api_key(
     api_key: str = Security(dt_team_key_header), request: Request = None
 ) -> bool:
     """Verify the DT team API key.
-    
+
     Only API key validation is required. IP validation is handled by Cloudflare.
     """
     # Verify API key
@@ -103,15 +103,15 @@ def verify_dt_api_key(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid DT Team API Key",
         )
-    
+
     return True
 
 
 def verify_api_key_or_dt_key(request: Request) -> bool:
     """Verify either default API key OR DT team key.
-    
+
     IP validation is handled by Cloudflare, only API key checks are performed.
-    
+
     Logic:
     - If request has default API_KEY header: Allow if valid
     - If request has DT_TEAM_API_KEY header: Allow if valid
@@ -119,7 +119,7 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
     """
     default_api_key = request.headers.get(settings.API_KEY_NAME.lower())
     dt_team_api_key = request.headers.get(settings.DT_API_KEY_NAME.lower())
-    
+
     # Check if default API key is provided
     if default_api_key:
         if secrets.compare_digest(default_api_key, settings.API_KEY):
@@ -129,7 +129,7 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API Key",
             )
-    
+
     # Check if DT team API key is provided
     if dt_team_api_key:
         if settings.DT_API_KEY is None:
@@ -143,7 +143,7 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
                 detail="Invalid DT Team API Key",
             )
         return True
-    
+
     # Neither key provided
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
