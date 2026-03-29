@@ -1,5 +1,10 @@
+import base64
+import json
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.dependencies import get_chat_history_service
@@ -27,6 +32,71 @@ oauth.register(
 )
 
 
+def _is_allowed_frontend_redirect_uri(frontend_redirect_uri: str | None) -> bool:
+    if not frontend_redirect_uri:
+        return False
+
+    try:
+        parsed = urlparse(frontend_redirect_uri)
+    except ValueError:
+        return False
+
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+
+    allowed_origins = set(settings.ALLOWED_ORIGINS)
+    hostname = parsed.hostname or ""
+
+    if hostname == "wakil.ai" or hostname.endswith(".wakil.ai"):
+        return True
+
+    if settings.DEVELOPMENT_MODE:
+        allowed_origins.update(
+            {
+                "http://localhost:3000",
+                "http://localhost:8081",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:8081",
+            }
+        )
+
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    return origin in allowed_origins
+
+
+def _build_google_user_payload(user_info: dict, internal_user_id: str) -> dict:
+    return {
+        "id": internal_user_id,
+        "email": user_info.get("email"),
+        "first_name": user_info.get("given_name")
+        or user_info.get("name")
+        or "Google User",
+        "last_name": user_info.get("family_name"),
+        "photo_url": user_info.get("picture"),
+        "auth_method": "google",
+    }
+
+
+def _encode_frontend_user_payload(user_payload: dict) -> str:
+    raw_payload = json.dumps(user_payload, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw_payload).decode("utf-8").rstrip("=")
+
+
+def _build_frontend_redirect_response(
+    frontend_redirect_uri: str, *, user_payload: dict | None = None, error: str | None = None
+) -> RedirectResponse:
+    parsed = urlparse(frontend_redirect_uri)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+
+    if user_payload is not None:
+        query["user"] = _encode_frontend_user_payload(user_payload)
+    if error:
+        query["error"] = error
+
+    redirect_target = urlunparse(parsed._replace(query=urlencode(query)))
+    return RedirectResponse(url=redirect_target, status_code=302)
+
+
 @router.get("/google/login")
 async def login(request: Request):
     """
@@ -36,6 +106,12 @@ async def login(request: Request):
         raise HTTPException(
             status_code=500, detail="Google OAuth credentials not configured."
         )
+
+    frontend_redirect_uri = request.query_params.get("frontend_redirect_uri")
+    if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
+        request.session["google_frontend_redirect_uri"] = frontend_redirect_uri
+    else:
+        request.session.pop("google_frontend_redirect_uri", None)
 
     redirect_uri = settings.GOOGLE_REDIRECT_URI or str(request.url_for("auth_callback"))
     logger.info(f"[GoogleAuth] Initiating login. Redirect URI: {redirect_uri}")
@@ -53,6 +129,8 @@ async def auth_callback(request: Request):
         f"[GoogleAuth] Session keys at callback: {list(request.session.keys())}"
     )
 
+    frontend_redirect_uri = request.session.pop("google_frontend_redirect_uri", None)
+
     try:
         token = await oauth.google.authorize_access_token(request)
         user_info = token.get("userinfo")
@@ -68,7 +146,8 @@ async def auth_callback(request: Request):
         picture = user_info.get("picture")
 
         # Use email or sub as internal user_id
-        internal_user_id = email or user_id
+        internal_user_id = user_id # put user_id as internal_user_id to avoid issues with email changes. 
+        frontend_user = _build_google_user_payload(user_info, internal_user_id)
 
         existing = await chat_history_service.get_user(internal_user_id)
         if existing and existing.get("is_blocked"):
@@ -86,21 +165,34 @@ async def auth_callback(request: Request):
             web_client=settings.WAKILAI_WEB_CLIENT_NAME,
         )
 
+        if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
+            return _build_frontend_redirect_response(
+                frontend_redirect_uri, user_payload=frontend_user
+            )
+
         return {
             "success": True,
             "user": {
+                **frontend_user,
                 "user_id": user.get("user_id"),
-                "email": email,
                 "name": name,
                 "picture": picture,
             },
             "message": "Authentication successful",
         }
 
-    except HTTPException:
+    except HTTPException as exc:
+        if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
+            return _build_frontend_redirect_response(
+                frontend_redirect_uri, error=str(exc.detail)
+            )
         raise
     except Exception as e:
         logger.error(f"[GoogleAuth] Error during callback: {e}")
+        if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
+            return _build_frontend_redirect_response(
+                frontend_redirect_uri, error="Authentication failed"
+            )
         raise HTTPException(status_code=400, detail=f"Authentication failed: {str(e)}")
 
 
