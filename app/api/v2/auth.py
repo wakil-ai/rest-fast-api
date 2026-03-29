@@ -1,6 +1,8 @@
 import base64
 import json
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+import secrets
+import httpx
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse, quote
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -21,7 +23,7 @@ router = APIRouter(prefix="/auth", tags=["Auth for Login"])
 chat_history_service = get_chat_history_service()
 
 
-# Google OAuth2 setup
+# Google OAuth2 setup with PKCE flow (no session state dependency)
 oauth = OAuth()
 oauth.register(
     name="google",
@@ -29,6 +31,7 @@ oauth.register(
     client_secret=settings.GOOGLE_CLIENT_SECRET,
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
+    code_challenge_method="S256",  # Use PKCE (Proof Key for Code Exchange)
 )
 
 
@@ -114,30 +117,103 @@ async def login(request: Request):
         request.session.pop("google_frontend_redirect_uri", None)
 
     redirect_uri = settings.GOOGLE_REDIRECT_URI or str(request.url_for("auth_callback"))
-    logger.info(f"[GoogleAuth] Initiating login. Redirect URI: {redirect_uri}")
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    logger.info(f"[GoogleAuth] Initiating login.")
+    logger.info(f"[GoogleAuth] Redirect URI: {redirect_uri}")
+    logger.info(f"[GoogleAuth] Frontend redirect URI: {frontend_redirect_uri}")
+    logger.info(f"[GoogleAuth] Session before redirect: {dict(request.session)}")
+    
+    # Build Google OAuth URL manually to ensure redirect_uri matches exactly
+    params = {
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+    }
+    google_oauth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+    
+    logger.info(f"[GoogleAuth] Redirecting to Google OAuth")
+    return RedirectResponse(url=google_oauth_url)
 
 
 @router.get("/google/callback", name="auth_callback")
 async def auth_callback(request: Request):
     """
     Callback endpoint where Google redirects after authentication.
+    Manually handles token exchange to bypass session-based state validation.
     """
-    # Debug logging
-    logger.info(f"[GoogleAuth] Callback reached. Session cookies: {request.cookies}")
-    logger.info(
-        f"[GoogleAuth] Session keys at callback: {list(request.session.keys())}"
-    )
+    logger.info(f"[GoogleAuth] Callback reached.")
+    logger.info(f"[GoogleAuth] Query params: {dict(request.query_params)}")
 
     frontend_redirect_uri = request.session.pop("google_frontend_redirect_uri", None)
 
     try:
-        token = await oauth.google.authorize_access_token(request)
-        user_info = token.get("userinfo")
+        # Get authorization code from query params
+        auth_code = request.query_params.get("code")
+        if not auth_code:
+            raise HTTPException(status_code=400, detail="Missing authorization code from Google.")
+
+        # Manually exchange auth code for tokens (bypass session-based state validation)
+        redirect_uri = settings.GOOGLE_REDIRECT_URI or str(request.url_for("auth_callback"))
+        
+        logger.info(f"[GoogleAuth] Attempting token exchange:")
+        logger.info(f"[GoogleAuth] - Redirect URI: {redirect_uri}")
+        logger.info(f"[GoogleAuth] - Client ID: {settings.GOOGLE_CLIENT_ID[:20]}...")
+        logger.info(f"[GoogleAuth] - Auth Code: {auth_code[:20]}...")
+        
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                    "code": auth_code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": redirect_uri,
+                },
+                timeout=10.0,
+            )
+            
+            logger.info(f"[GoogleAuth] Token response status: {token_response.status_code}")
+            response_text = token_response.text
+            logger.info(f"[GoogleAuth] Token response body: {response_text}")
+            
+            if token_response.status_code != 200:
+                try:
+                    error_json = token_response.json()
+                    logger.error(f"[GoogleAuth] Token exchange error: {error_json}")
+                    error_msg = error_json.get("error_description") or error_json.get("error") or response_text
+                    raise Exception(f"Token exchange failed: {error_msg}")
+                except Exception as parse_error:
+                    logger.error(f"[GoogleAuth] Token exchange error: {response_text}")
+                    raise Exception(f"Token exchange failed: {response_text}")
+            
+            token_data = token_response.json()
+            logger.info(f"[GoogleAuth] Token data keys: {list(token_data.keys())}")
+
+        access_token = token_data.get("access_token")
+        if not access_token:
+            logger.error(f"[GoogleAuth] No access token in response: {token_data}")
+            raise HTTPException(status_code=400, detail="Failed to obtain access token from Google.")
+
+        logger.info(f"[GoogleAuth] Successfully obtained access token")
+
+        # Fetch user info using the access token
+        async with httpx.AsyncClient() as client:
+            userinfo_response = await client.get(
+                "https://openidconnect.googleapis.com/v1/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10.0,
+            )
+            userinfo_response.raise_for_status()
+            user_info = userinfo_response.json()
+
         if not user_info:
             raise HTTPException(
                 status_code=400, detail="Failed to retrieve user info from Google."
             )
+
+        logger.info(f"[GoogleAuth] Successfully retrieved user info: {user_info.get('email')}")
 
         # Sync user with our database
         user_id = user_info.get("sub")  # Google's unique subject ID
@@ -146,7 +222,7 @@ async def auth_callback(request: Request):
         picture = user_info.get("picture")
 
         # Use email or sub as internal user_id
-        internal_user_id = user_id # put user_id as internal_user_id to avoid issues with email changes. 
+        internal_user_id = user_id  # put user_id as internal_user_id to avoid issues with email changes.
         frontend_user = _build_google_user_payload(user_info, internal_user_id)
 
         existing = await chat_history_service.get_user(internal_user_id)
@@ -188,7 +264,7 @@ async def auth_callback(request: Request):
             )
         raise
     except Exception as e:
-        logger.error(f"[GoogleAuth] Error during callback: {e}")
+        logger.error(f"[GoogleAuth] Error during callback: {e}", exc_info=True)
         if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
             return _build_frontend_redirect_response(
                 frontend_redirect_uri, error="Authentication failed"

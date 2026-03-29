@@ -65,13 +65,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Session middleware - using more permissive settings for debugging protocol issues
+    # Session middleware - MUST be added before OAuth middleware
+    # Using permissive settings for OAuth state management across redirects
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.AUTH_SECRET_KEY,
         session_cookie="wakil_session",
-        https_only=False,  # Allow HTTP/HTTPS for session to avoid protocol mismatches behind proxy
-        same_site="lax",
+        https_only=False,  # Allow HTTP in dev/behind proxy
+        same_site="lax",  # Required for third-party redirects (Google)
+        max_age=3600,  # 1 hour session timeout
     )
 
     # Mount routers with API key authentication
