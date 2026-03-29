@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -44,6 +45,12 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    parsed_host = urlparse(settings.HOST_URL)
+    session_domain = None
+    hostname = parsed_host.hostname or ""
+    if hostname == "wakil.ai" or hostname.endswith(".wakil.ai"):
+        session_domain = ".wakil.ai"
+
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.VERSION,
@@ -72,6 +79,7 @@ def create_app() -> FastAPI:
         session_cookie="wakil_session",
         https_only=False,  # Allow HTTP/HTTPS for session to avoid protocol mismatches behind proxy
         same_site="lax",
+        domain=session_domain,
     )
 
     # Mount routers with API key authentication

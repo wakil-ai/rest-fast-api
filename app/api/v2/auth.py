@@ -143,7 +143,7 @@ async def auth_callback(request: Request):
         picture = user_info.get("picture")
 
         # Use email or sub as internal user_id
-        internal_user_id = email or user_id
+        internal_user_id = user_id
         frontend_user = _build_google_user_payload(user_info, internal_user_id)
 
         existing = await chat_history_service.get_user(internal_user_id)
