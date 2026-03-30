@@ -746,6 +746,19 @@ class ChatHistoryService:
         )
         return feedbacks[-1] if feedbacks else None
 
+    async def delete_feedback(self, message_id: str) -> dict:
+        """Delete all feedback for a specific message."""
+
+        if not message_id or not message_id.strip():
+            raise InvalidInputError("Message ID cannot be empty")
+
+        result = await self.db_manager.delete_documents(
+            self.feedback_collection,
+            {"message_id": message_id},
+        )
+        logger.info(f"Deleted feedback for message_id: {message_id}")
+        return result
+
     # File Management
     async def add_file_upload(
         self,

@@ -29,3 +29,10 @@ async def create_feedback(request: FeedbackCreateRequest):
 async def get_feedback(message_id: str):
     fb = await chat_history_service.get_feedback(message_id)
     return {"info": serialize_mongo_id(fb), "message": "Feedback retrieved"}
+
+
+@router.delete("/{message_id}", status_code=status.HTTP_200_OK)
+@handle_service_error
+async def delete_feedback(message_id: str):
+    result = await chat_history_service.delete_feedback(message_id)
+    return {"info": result, "message": "Feedback deleted"}
