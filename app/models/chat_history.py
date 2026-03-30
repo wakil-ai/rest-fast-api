@@ -1,5 +1,4 @@
 from datetime import datetime
-from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -107,6 +106,8 @@ class MessageResponse(BaseModel):
     )  # optional for backward compatibility
     content: MessageContent
     metadata: dict[str, Any] | None = None
+    feedback_type: str | None = Field(None, description="Feedback type (positive/negative)")
+    feedback_content: str | None = Field(None, description="Optional feedback comment")
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
@@ -147,45 +148,14 @@ class MessageCreateResponse(BaseModel):
 # FEEDBACK MODELS
 
 
-class FeedbackType(str, Enum):
-    """Feedback type enumeration"""
-
-    POSITIVE = "positive"
-    NEGATIVE = "negative"
-    LIKE = "like"
-    DISLIKE = "dislike"
-
-
 class FeedbackCreateRequest(BaseModel):
-    """Request model for submitting message feedback (only message_id required)"""
+    """Request model for submitting message feedback"""
 
-    message_id: str = Field(..., description="Message ID (only field required)")
-    feedback_type: FeedbackType = Field(..., description="Type of feedback")
-    comments: str | None = Field(
+    message_id: str = Field(..., description="Message ID")
+    feedback_type: str = Field(..., description="Type of feedback: positive or negative")
+    feedback_content: str | None = Field(
         None, max_length=500, description="Optional feedback comment"
     )
-
-
-class FeedbackResponse(BaseModel):
-    """Response model for feedback data"""
-
-    feedback_id: str = Field(..., description="Feedback ID (ObjectId)", alias="_id")
-    user_id: str = Field(..., description="User ID (auto-populated from message)")
-    session_id: str = Field(..., description="Session ID (auto-populated from message)")
-    message_id: str = Field(..., description="Message ID")
-    feedback_type: FeedbackType = Field(..., description="Type of feedback")
-    comments: str | None = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"populate_by_name": True}
-
-
-class FeedbackCreateResponse(BaseModel):
-    """Standardized response for feedback operations"""
-
-    info: FeedbackResponse
-    message: str = Field(default="Feedback operation successful")
 
 
 # FILE MODELS
