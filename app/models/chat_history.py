@@ -145,9 +145,7 @@ class MessageCreateResponse(BaseModel):
     message: str = Field(default="Message operation successful")
 
 
-# FEEDBACK MODELS
-
-
+# Feedback Models
 class FeedbackCreateRequest(BaseModel):
     """Request model for submitting message feedback"""
 
@@ -158,25 +156,15 @@ class FeedbackCreateRequest(BaseModel):
     )
 
 
-# FILE MODELS
-
-
+# File Models
 class FileUploadResponse(BaseModel):
     """Response model for file upload data"""
 
     file_id: str = Field(..., description="File ID (stored as _id)", alias="_id")
-    project_id: str | None = Field(
-        default=None,
-        description="Project ID the file belongs to (null for message attachments)",
-    )
     file_url: str = Field(..., description="API endpoint to access the file")
-    file_metadata: dict[str, Any] = Field(
-        ..., description="File metadata (name, type, size, gcs_path)"
-    )
+    file_metadata: dict[str, Any] = Field(..., description="File metadata (name, type, size, gcs_path)")
     ocr_result: str = Field(..., description="OCR extracted text")
-    status: str = Field(
-        ..., description="Processing status: processing/completed/failed"
-    )
+    status: str = Field(..., description="Processing status: processing/completed/failed")
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
@@ -189,15 +177,12 @@ class FileStatusUpdateRequest(BaseModel):
     ocr_result: str | None = Field(None, description="Optional OCR result")
 
 
-# BACKWARD COMPATIBILITY (DEPRECATED)
-
-
+# Backward compatibility models (to be removed in future versions)
 class MessagesFetchRequest(BaseModel):
     """DEPRECATED: Use GET /messages/{session_id} instead"""
 
     session_id: str = Field(..., description="Session ID")
     limit: int = Field(100, ge=1, le=500)
-
 
 class FeedbackFetchRequest(BaseModel):
     """DEPRECATED: Use GET /feedback/{message_id} instead"""
