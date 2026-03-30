@@ -87,7 +87,9 @@ class BasePaymentService:
         self._invoice_indexes_ready = True
 
     async def get_user_by_id(self, user_id: str) -> dict | None:
-        user = await self.db_handler.find_one(self.users_collection, {"user_id": user_id})
+        user = await self.db_handler.find_one(
+            self.users_collection, {"user_id": user_id}
+        )
         if user:
             return user
         return await self.db_handler.find_one(self.users_collection, {"_id": user_id})
@@ -271,12 +273,14 @@ class BasePaymentService:
                 },
             )
             if existing_invoice:
-                existing_order_id = existing_invoice.get("order_id") or existing_invoice.get(
-                    "invoice_id"
-                )
+                existing_order_id = existing_invoice.get(
+                    "order_id"
+                ) or existing_invoice.get("invoice_id")
                 if existing_order_id:
                     link = await self.build_payment_link(
-                        amount_sum=int(existing_invoice.get("amount_sum") or amount_sum),
+                        amount_sum=int(
+                            existing_invoice.get("amount_sum") or amount_sum
+                        ),
                         user_id=user_id,
                         callback_url=str(
                             existing_invoice.get("callback_url") or callback_url
@@ -305,7 +309,9 @@ class BasePaymentService:
                 link = await self.build_payment_link(
                     amount_sum=int(existing_invoice.get("amount_sum") or amount_sum),
                     user_id=user_id,
-                    callback_url=str(existing_invoice.get("callback_url") or callback_url),
+                    callback_url=str(
+                        existing_invoice.get("callback_url") or callback_url
+                    ),
                     order_id=order_id_value,
                 )
                 return {"order_id": order_id_value, "link": link}

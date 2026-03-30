@@ -4,9 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-# USER MODELS
 
-
+# User Models
 class UserCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID (e.g., Telegram ID)")
     username: str | None = None
@@ -14,9 +13,6 @@ class UserCreateRequest(BaseModel):
     phone_number: str | None = None
     last_name: str | None = None
     picture: str | None = None
-    user_create_auth: str | None = Field(
-        None, description="Optional auth method for user creation (e.g., 'google_oauth')"
-    )
 
 
 class UserUpdateRequest(BaseModel):
@@ -56,49 +52,9 @@ class UserCreateResponse(BaseModel):
     message: str = Field(default="User operation successful")
 
 
-# PROJECT MODELS
-
-
-class ProjectCreateRequest(BaseModel):
-    user_id: str = Field(..., description="User ID who owns the project")
-    project_id: str | None = Field(
-        None,
-        description="Optional custom project ID (UUID auto-generated if not provided)",
-    )
-    title: str | None = Field("New Project", description="Project title")
-
-
-class ProjectResponse(BaseModel):
-    """Response model for project data"""
-
-    project_id: str = Field(..., description="Project ID (stored as _id)", alias="_id")
-    user_id: str = Field(..., description="User ID who owns the project")
-    title: str = Field(default="New Project")
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"populate_by_name": True}
-
-
-class ProjectCreateResponse(BaseModel):
-    """Standardized response for project operations"""
-
-    info: ProjectResponse
-    message: str = Field(default="Project operation successful")
-
-
-# SESSION MODELS
-
-
+# Session Models
 class SessionCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID who owns the session")
-    session_id: str | None = Field(
-        None,
-        description="Optional custom session ID (UUID auto-generated if not provided)",
-    )
-    project_id: str | None = Field(
-        None, description="Optional project ID for project-based chats"
-    )
     title: str | None = Field("New Chat", description="Session title")
     tags: list[str] = Field(
         default_factory=list, description="Optional tags for categorization"
@@ -108,11 +64,8 @@ class SessionCreateRequest(BaseModel):
 class SessionResponse(BaseModel):
     """Response model for session data"""
 
-    session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
     user_id: str = Field(..., description="User ID")
-    project_id: str | None = Field(
-        None, description="Project ID (null for standalone chats)"
-    )
+    session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
     created_at: datetime
@@ -120,48 +73,40 @@ class SessionResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class SessionCreateResponse(BaseModel):
-    """Standardized response for session operations"""
-
-    info: SessionResponse
-    message: str = Field(default="Session operation successful")
+class SessionEditRequest(BaseModel):
+    title: str | None = Field(None, description="New session title")
+    tags: list[str] | None = Field(None, description="New tags for the session")
 
 
-# MESSAGE MODELS
-
-
+# Message Models
 class MessageContent(BaseModel):
-    """Message content structure"""
+    """Message content structure (required for both user queries and assistant responses)"""
 
-    query: str | None = None
-    response: str | None = None
+    query: str = Field(..., description="User query")
+    response: str = Field(..., description="Assistant response")
 
 
 class MessageCreateRequest(BaseModel):
-    user_id: str | None = Field(
-        None,
-        description="Optional user_id to auto-create the session if it doesn't exist",
-    )
+    """Request model for creating a new message"""
+
     session_id: str = Field(..., description="Session ID (only field required)")
-    message_id: str | None = Field(
-        None, description="Optional Message ID (auto-generated if missing)"
-    )
+    content: MessageContent = Field(..., description="Message content")
     file_ids: list[str] | None = Field(
         None, description="Optional file ID if this message is a file attachment"
     )
-    content: MessageContent = Field(..., description="Message content")
     metadata: dict[str, Any] | None = Field(None, description="Optional metadata")
 
 
 class MessageResponse(BaseModel):
     """Response model for message data"""
 
-    message_id: str = Field(..., description="Message ID (stored as _id)", alias="_id")
-    user_id: str = Field(..., description="User ID (auto-populated from session)")
     session_id: str = Field(..., description="Session ID")
+    message_id: str = Field(..., description="Message ID (stored as _id)", alias="_id")
+    user_id: str | None = Field(
+        ..., description="User ID (auto-populated from session)"
+    )  # optional for backward compatibility
     content: MessageContent
     metadata: dict[str, Any] | None = None
-    feedback: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}

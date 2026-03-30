@@ -1,9 +1,23 @@
 import asyncio
 import json
+from datetime import datetime
+from decimal import Decimal
 
 import redis
 
 from app.core.config import settings
+from app.core.logger import logger
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder for datetime and Decimal objects."""
+
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 
 class RedisService:
@@ -17,6 +31,11 @@ class RedisService:
 
         self._log_queue: asyncio.Queue[tuple[str, str]] | None = None
         self._worker_task: asyncio.Task | None = None
+
+        logger.info(
+            "Initialized RedisService with connection to "
+            f"{settings.REDIS_HOST}:{settings.REDIS_PORT}"
+        )
 
     def _ensure_worker_started(self) -> bool:
         if self._worker_task and not self._worker_task.done():
@@ -32,6 +51,40 @@ class RedisService:
         self._worker_task = loop.create_task(self._flush_logs_forever())
         return True
 
+    def cache_get(self, key: str) -> str | None:
+        """Get a value from cache. Returns None if key doesn't exist or on error."""
+        try:
+            return self.redis.get(key)
+        except Exception:
+            return None
+
+    def cache_set(self, key: str, value, ttl_seconds: int = 86400) -> bool:
+        """Set a value in cache with TTL. Handles datetime serialization. Returns True on success, False on error."""
+        try:
+            # If value is a dict, serialize with custom encoder for datetime support
+            if isinstance(value, dict):
+                json_value = json.dumps(value, cls=DateTimeEncoder)
+            else:
+                json_value = (
+                    value
+                    if isinstance(value, str)
+                    else json.dumps(value, cls=DateTimeEncoder)
+                )
+
+            self.redis.set(key, json_value, ex=ttl_seconds)
+            return True
+        except Exception as e:
+            logger.error(f"Error setting Redis cache key {key}: {e}")
+            return False
+
+    def invalidate_cache(self, key: str) -> bool:
+        """Delete a cache key. Returns True on success, False on error."""
+        try:
+            self.redis.delete(key)
+            return True
+        except Exception:
+            return False
+
     async def redis_sink(
         self,
         key: str,
@@ -41,8 +94,8 @@ class RedisService:
         """Store a value in Redis with an optional expiration time."""
         try:
             await asyncio.to_thread(self.redis.set, key, value, ex=expire_seconds)
-        except Exception as e:
-            print(f"Error setting Redis key {key}: {e}")
+        except Exception:
+            pass
 
     def loguru_sink(self, message):
         """Loguru sink — enqueues log entries for async flushing to Redis.
@@ -104,8 +157,7 @@ class RedisService:
             redis_key = f"logs:{level}"
             raw = await asyncio.to_thread(self.redis.lrange, redis_key, -limit, -1)
             return [json.loads(entry) for entry in raw]
-        except Exception as e:
-            print(f"Error reading logs from Redis: {e}")
+        except Exception:
             return []
 
     async def clear_logs(self, level: str) -> int:
@@ -115,6 +167,5 @@ class RedisService:
             count = await asyncio.to_thread(self.redis.llen, redis_key)
             await asyncio.to_thread(self.redis.delete, redis_key)
             return count
-        except Exception as e:
-            print(f"Error clearing logs from Redis: {e}")
+        except Exception:
             return 0

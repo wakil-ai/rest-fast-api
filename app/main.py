@@ -1,5 +1,4 @@
 import os
-from urllib.parse import urlparse
 
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -27,7 +26,12 @@ from app.api.v2.history.router import router as chat_history
 from app.api.v2.history.share import router as share_router
 from app.core.config import settings
 from app.core.logger import logger
-from app.security import get_current_username, verify_api_key, verify_super_admin_key
+from app.security import (
+    get_current_username,
+    verify_api_key,
+    verify_api_key_or_dt_key,
+    verify_super_admin_key,
+)
 
 
 @asynccontextmanager
@@ -45,12 +49,6 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    parsed_host = urlparse(settings.HOST_URL)
-    session_domain = None
-    hostname = parsed_host.hostname or ""
-    if hostname == "wakil.ai" or hostname.endswith(".wakil.ai"):
-        session_domain = ".wakil.ai"
-
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.VERSION,
@@ -72,34 +70,37 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Session middleware - using more permissive settings for debugging protocol issues
+    # Session middleware - MUST be added before OAuth middleware
+    # Using permissive settings for OAuth state management across redirects
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.AUTH_SECRET_KEY,
         session_cookie="wakil_session",
-        https_only=False,  # Allow HTTP/HTTPS for session to avoid protocol mismatches behind proxy
-        same_site="lax",
-        domain=session_domain,
+        https_only=False,  # Allow HTTP in dev/behind proxy
+        same_site="lax",  # Required for third-party redirects (Google)
+        max_age=3600,  # 1 hour session timeout
     )
 
     # Mount routers with API key authentication
     app.include_router(
-        chat.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
+        chat.router,
+        prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
         chat_history,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
         speech_to_text.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
         memory.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
         admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]

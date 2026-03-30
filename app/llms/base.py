@@ -13,7 +13,7 @@ class LLM(ABC):
     _tokenizer_model: str | None = None
 
     def _get_tokenizer(self):
-        model = getattr(self, "model", None) or settings.GPT_COMPLETION_MODEL
+        model = getattr(self, "model", None) or settings.DEFAULT_CHAT_MODEL
 
         if self._tokenizer is not None and self._tokenizer_model == model:
             return self._tokenizer

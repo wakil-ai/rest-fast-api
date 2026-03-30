@@ -1,19 +1,25 @@
+import asyncio
 from collections.abc import AsyncGenerator
+from time import perf_counter
 from typing import Any, cast
 
 from fastapi.responses import StreamingResponse
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
-from app.core.dependencies import get_chat_chain, get_rate_limit_service
+from app.core.dependencies import (
+    get_chat_chain,
+    get_chat_history_service,
+    get_rate_limit_service,
+)
 from app.core.exceptions import (
     ChatGenerationException,
     InsufficientCreditsException,
+    InvalidInputError,
     QueryTooLongException,
 )
 from app.core.logger import logger
 from app.models.chat import AgenticRAGRequest, AssistantType, ChatResponse, MessagePair
-from app.orchestration.flow import AgenticRAGFlow
 from app.utils.streaming import format_streaming_response, get_streaming_headers
 
 
@@ -22,6 +28,7 @@ class ChatService:
 
     def __init__(self):
         self.chat_chain = get_chat_chain()
+        self.chat_history_service = get_chat_history_service()
         self.rate_limit_service = get_rate_limit_service()
 
     @staticmethod
@@ -72,34 +79,33 @@ class ChatService:
             raise ChatGenerationException("Failed to load assistant configuration.")
 
     @staticmethod
-    def build_agentic_state(request: AgenticRAGRequest) -> dict[str, Any]:
+    def build_agentic_state(
+        request: AgenticRAGRequest, message_id: str
+    ) -> dict[str, Any]:
         """Build initial state for agentic RAG flow."""
         return {
             "query": request.query,
             "user_id": request.user_id,
             "session_id": request.session_id,
+            "message_id": message_id,
+            "project_id": request.project_id,
             "file_ids": request.file_ids,
         }
 
     @staticmethod
-    def extract_debug_context(flow_service: AgenticRAGFlow) -> str:
-        """Extract debug context from flow state in development mode."""
-        if not settings.DEVELOPMENT_MODE:
-            return ""
-
-        try:
-            retrieved_docs = flow_service.state.retrieval_docs or ""
-            return f"{retrieved_docs}Relevance Score: {flow_service.state.web_search_output}"
-        except Exception as e:
-            logger.warning(f"Could not extract debug context: {e}")
-            return "No retrieved contents available."
-
-    @staticmethod
-    def create_response(answer: str, debug_context: str = "") -> ChatResponse:
-        """Create ChatResponse with optional debug information."""
-        if settings.DEVELOPMENT_MODE and debug_context:
-            return ChatResponse(answer=answer, retrieved_contents=debug_context)
-        return ChatResponse(answer=answer)
+    def create_response(
+        answer: str,
+        session_id: str,
+        message_id: str,
+        latency_ms: int | None = None,
+    ) -> ChatResponse:
+        """Create ChatResponse."""
+        return ChatResponse(
+            answer=answer,
+            session_id=session_id,
+            message_id=message_id,
+            latency_ms=latency_ms,
+        )
 
     @staticmethod
     def create_streaming_response(
@@ -112,16 +118,146 @@ class ChatService:
             headers=get_streaming_headers(),
         )
 
+    async def prepare_chat_request(
+        self, user_id: str, session_id: str
+    ) -> tuple[str, str]:
+        """Validate chat session and allocate a message ID before generation."""
+        session = await self.chat_history_service.ensure_session_for_user(
+            user_id=user_id,
+            session_id=session_id,
+        )
+        resolved_session_id = session.get("session_id") or session.get("_id")
+        if not resolved_session_id:
+            raise ChatGenerationException("Failed to resolve chat session.")
+
+        return resolved_session_id, self.chat_history_service.create_message_id()
+
+    def build_message_metadata(
+        self,
+        *,
+        assistant: str,
+        stream: bool,
+        latency_ms: int,
+        generation_meta: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "assistant": assistant,
+            "stream": stream,
+            "latency_ms": latency_ms,
+        }
+
+        generation_meta = generation_meta or {}
+
+        if model := generation_meta.get("model"):
+            metadata["model"] = model
+
+        if attachments := generation_meta.get("attachments"):
+            metadata["attachments"] = attachments
+
+        if token_usage := generation_meta.get("token_usage"):
+            metadata["token_usage"] = token_usage
+
+        if selected_assistant := generation_meta.get("selected_assistant"):
+            metadata["selected_assistant"] = selected_assistant
+
+        if workflow := generation_meta.get("workflow"):
+            metadata["workflow"] = workflow
+
+        if used_web_search := generation_meta.get("used_web_search"):
+            metadata["used_web_search"] = used_web_search
+
+        return metadata
+
+    def schedule_message_persistence(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        message_id: str,
+        query: str,
+        answer: str,
+        file_ids: list[str] | None,
+        metadata: dict[str, Any],
+    ) -> None:
+        async def persist() -> None:
+            try:
+                await self.chat_history_service.upsert_message(
+                    session_id=session_id,
+                    message_id=message_id,
+                    user_id=user_id,
+                    file_ids=file_ids,
+                    content={"query": query, "response": answer},
+                    metadata=metadata,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to persist message {message_id} for session {session_id}: {e}",
+                    exc_info=True,
+                )
+
+        asyncio.create_task(persist())
+
+    async def _wrap_streaming_answer(
+        self,
+        *,
+        response: AsyncGenerator[Any, None],
+        user_id: str,
+        session_id: str,
+        message_id: str,
+        query: str,
+        file_ids: list[str] | None,
+        assistant: str,
+        started_at: float,
+    ) -> AsyncGenerator[Any, None]:
+        async def wrapped() -> AsyncGenerator[Any, None]:
+            answer_chunks: list[str] = []
+            generation_meta: dict[str, Any] = {}
+
+            yield {
+                "type": "metadata",
+                "session_id": session_id,
+                "message_id": message_id,
+            }
+
+            async for item in response:
+                if isinstance(item, dict) and item.get("type") == "_generation_meta":
+                    generation_meta = item.get("meta") or {}
+                    continue
+
+                if isinstance(item, str):
+                    answer_chunks.append(item)
+
+                yield item
+
+            latency_ms = int((perf_counter() - started_at) * 1000)
+            metadata = self.build_message_metadata(
+                assistant=assistant,
+                stream=True,
+                latency_ms=latency_ms,
+                generation_meta=generation_meta,
+            )
+            self.schedule_message_persistence(
+                user_id=user_id,
+                session_id=session_id,
+                message_id=message_id,
+                query=query,
+                answer="".join(answer_chunks),
+                file_ids=file_ids,
+                metadata=metadata,
+            )
+
+        return wrapped()
+
     async def ask_question(
         self,
         user_id: str,
-        message_id: str | None,
+        session_id: str,
+        message_id: str,
         query: str,
         chat_history: list[MessagePair] | None = None,
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
-        model_name: str | None = None,
     ) -> str | AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
         """
         Handle the question by retrieving context and generating an answer.
@@ -133,7 +269,6 @@ class ChatService:
             stream: Enable streaming response
             file_ids: List of file IDs to use as context
             assistant: Assistant name
-            model_name: Optional model name for generation
 
         Returns:
             - str: Complete answer if streaming disabled and dev mode disabled
@@ -144,17 +279,95 @@ class ChatService:
             ChatGenerationException: If answer generation fails
         """
         try:
+            started_at = perf_counter()
             answer = await self.chat_chain.generate_answer(
                 user_id=user_id,
-                message_id=message_id,
                 query=query,
                 chat_history=chat_history,
                 stream=stream,
                 file_ids=file_ids,
                 assistant=assistant,
-                model_name=model_name,
             )
-            return answer
+
+            if stream:
+                if isinstance(answer, tuple):
+                    answer_text, generation_meta = answer
+
+                    async def tuple_stream() -> AsyncGenerator[Any, None]:
+                        yield answer_text
+                        yield {"type": "_generation_meta", "meta": generation_meta}
+
+                    return await self._wrap_streaming_answer(
+                        response=tuple_stream(),
+                        user_id=user_id,
+                        session_id=session_id,
+                        message_id=message_id,
+                        query=query,
+                        file_ids=file_ids,
+                        assistant=assistant,
+                        started_at=started_at,
+                    )
+
+                if isinstance(answer, str):
+
+                    async def string_stream() -> AsyncGenerator[Any, None]:
+                        yield answer
+                        yield {"type": "_generation_meta", "meta": {}}
+
+                    return await self._wrap_streaming_answer(
+                        response=string_stream(),
+                        user_id=user_id,
+                        session_id=session_id,
+                        message_id=message_id,
+                        query=query,
+                        file_ids=file_ids,
+                        assistant=assistant,
+                        started_at=started_at,
+                    )
+
+                return await self._wrap_streaming_answer(
+                    response=cast(AsyncGenerator[Any, None], answer),
+                    user_id=user_id,
+                    session_id=session_id,
+                    message_id=message_id,
+                    query=query,
+                    file_ids=file_ids,
+                    assistant=assistant,
+                    started_at=started_at,
+                )
+
+            latency_ms = int((perf_counter() - started_at) * 1000)
+
+            if isinstance(answer, tuple):
+                answer_text, generation_meta = answer
+            elif isinstance(answer, str):
+                answer_text, generation_meta = answer, {}
+            else:
+                raise ChatGenerationException(
+                    "Unexpected streaming response for non-streaming request."
+                )
+
+            metadata = self.build_message_metadata(
+                assistant=assistant,
+                stream=False,
+                latency_ms=latency_ms,
+                generation_meta=generation_meta,
+            )
+            self.schedule_message_persistence(
+                user_id=user_id,
+                session_id=session_id,
+                message_id=message_id,
+                query=query,
+                answer=answer_text,
+                file_ids=file_ids,
+                metadata=metadata,
+            )
+
+            response_meta = dict(generation_meta)
+            response_meta["latency_ms"] = latency_ms
+            return answer_text, response_meta
+        except InvalidInputError:
+            raise
         except Exception as e:
             logger.error(f"Error generating answer: {e}", exc_info=True)
             raise ChatGenerationException(f"Failed to generate answer: {str(e)}")

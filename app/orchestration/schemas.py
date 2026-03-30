@@ -9,9 +9,8 @@ class AgenticRAGState(BaseModel):
     # Input parameters
     query: str = Field(default="", description="User's legal question")
     user_id: str = Field(default="", description="User identifier")
-    session_id: str = Field(default="default", description="Session identifier")
+    session_id: str = Field(default="", description="Session identifier")
     message_id: str = Field(default="", description="Current message identifier")
-    llm_model: str = Field(default="gpt-4.1", description="LLM model to use")
     project_id: str | None = Field(default=None, description="Optional project ID")
     file_ids: list[str] | None = Field(
         default=None, description="List of file IDs attached to the current message"
@@ -54,6 +53,14 @@ class AgenticRAGState(BaseModel):
 
     # Final output
     answer: str | None = Field(default=None, description="Generated answer")
+    generation_meta: dict[str, Any] | None = Field(
+        default=None,
+        description="Non-sensitive generation metadata such as model and token usage",
+    )
+    attachments: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Attachments returned with the final answer",
+    )
 
     # Error tracking
     errors: list[str] = Field(default_factory=list, description="Accumulated errors")

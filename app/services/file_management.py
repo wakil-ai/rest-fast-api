@@ -31,74 +31,20 @@ class FileManager:
         self, file: UploadFile, project_id: str, user_id: str
     ) -> tuple[int, FileUploadResponse | str]:
         """
-        Process file upload for a project: validate → OCR → store → save metadata
+        DEPRECATED: Projects are no longer used. Use upload_file_to_message instead.
+        This method is kept for backward compatibility but will not function properly.
+
+        Process file upload for a message instead.
         Returns: (status_code, response_or_error_message)
         """
-        project = await self.history.get_project(project_id)
-        if not project:
-            return 404, "Project not found"
-
-        content = await file.read()
-        file_id = str(uuid.uuid4())
-
-        temp_path = self._create_temp_file(content, file.filename)
-
-        try:
-            ocr_result = await self.ocr.process_file(temp_path)
-
-            gcs_path = self.storage.generate_project_file_path(
-                project_id, file_id, file.filename
-            )
-            file_url = self.storage.upload_file(
-                file_content=content,
-                destination_path=gcs_path,
-                content_type=file.content_type or "application/octet-stream",
-            )
-
-            metadata = self._create_file_metadata(file, content, gcs_path)
-
-            record = await self.history.add_file_upload(
-                user_id=user_id,
-                file_id=file_id,
-                file_url=file_url,
-                ocr_result=ocr_result,
-                file_metadata=metadata,
-                status="completed",
-                scope="project",
-                project_id=project_id,
-            )
-
-            self._upsert_to_vector_db(
-                content=ocr_result,
-                project_id=project_id,
-                user_id=user_id,
-                file_id=file_id,
-                file_name=file.filename,
-            )
-
-            response = self._build_success_response(
-                project_id=project_id,
-                file_id=file_id,
-                metadata=metadata,
-                ocr_result=ocr_result,
-                record=record,
-            )
-
-            logger.info(
-                "File uploaded and ingested successfully: %s → %s",
-                file.filename,
-                project_id,
-            )
-            return 200, response
-
-        except Exception as e:
-            logger.error(
-                "File upload failed: %s - %s", file.filename, str(e), exc_info=True
-            )
-            return 500, str(e)
-
-        finally:
-            self._safe_remove_temp_file(temp_path)
+        logger.warning(
+            "upload_file_to_project is deprecated. Projects are no longer supported. "
+            "Use upload_file_to_message instead."
+        )
+        return (
+            400,
+            "Projects are no longer supported. Please use upload_file_to_message instead.",
+        )
 
     async def upload_message_file(
         self, file: UploadFile, user_id: str
@@ -169,11 +115,11 @@ class FileManager:
         user_id: str,
         file_id: str,
         file_name: str,
-        project_id: str | None = None,
         session_id: str | None = None,
+        message_id: str | None = None,
     ) -> None:
         """Chunk content and upsert to vector database with metadata."""
-        if not content or not project_id:  # Require project_id for vector ingestion
+        if not content:
             logger.warning(
                 "Empty OCR result for file_id: %s, skipping ingestion", file_id
             )
@@ -204,10 +150,10 @@ class FileManager:
                 "file_name": file_name,
                 "chunk_index": idx,
             }
-            if project_id:
-                metadata["project_id"] = project_id
             if session_id:
                 metadata["session_id"] = session_id
+            if message_id:
+                metadata["message_id"] = message_id
 
             documents.append(
                 {

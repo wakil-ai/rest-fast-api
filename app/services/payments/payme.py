@@ -8,13 +8,14 @@ from app.models.payme import PaymeData, PaymeError, TransactionError, Transactio
 from app.services.payments.base import BasePaymentService
 
 
-class TransactionService(BasePaymentService): # Paycom 
+class TransactionService(BasePaymentService):  # Paycom
     provider = "payme"
 
     def __init__(self):
         super().__init__()
         self.transaction_collection = settings.TRANSACTION_COLLECTION
         self.fiscal_collection = settings.PAYME_FISCAL_COLLECTION
+
     def _build_invoice_document(
         self,
         *,

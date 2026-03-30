@@ -2,10 +2,13 @@ from datetime import datetime, timezone
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
-from app.core.dependencies import get_mongo_handler, get_promo_code_service, get_subscription_storage
+from app.core.dependencies import (
+    get_mongo_handler,
+    get_promo_code_service,
+    get_subscription_storage,
+)
 from app.core.logger import logger
 from app.models.chat import AssistantType
-from app.services.subscription_storage import SubscriptionStorage
 
 
 class RateLimitService:
