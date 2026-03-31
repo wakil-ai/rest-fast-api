@@ -6,14 +6,6 @@ from loguru import logger as loguru_logger
 from app.core.config import settings
 
 
-# Lazy logger initialization with Redis sink
-def _redis_sink(message):
-    """Lazy Redis sink — resolves RedisService on first log write, not at import time."""
-    from app.core.dependencies import get_redis_service
-
-    get_redis_service().loguru_sink(message)
-
-
 @lru_cache
 def get_logger():
     loguru_logger.remove()  # Remove default logger
@@ -32,16 +24,6 @@ def get_logger():
         level="DEBUG" if settings.DEBUG else "INFO",
         colorize=True,
     )
-
-    # Add Redis sink — every log is persisted under logs:<level>
-    try:
-        loguru_logger.add(
-            _redis_sink,
-            level="DEBUG" if settings.DEBUG else "INFO",
-            serialize=False,
-        )
-    except Exception as e:
-        loguru_logger.warning(f"Redis sink not available, logs won't be persisted: {e}")
 
     return loguru_logger
 
