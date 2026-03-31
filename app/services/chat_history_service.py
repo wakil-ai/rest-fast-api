@@ -582,8 +582,6 @@ class ChatHistoryService:
 
     async def get_messages(self, session_id: str, limit: int = 100) -> list[dict]:
         """Retrieve all messages for a session."""
-        await self._ensure_session_exists(session_id)
-
         query = {
             "session_id": session_id,
             "content": {"$exists": True},  # Ensure it's a message
