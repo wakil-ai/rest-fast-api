@@ -49,13 +49,13 @@ class MongoHandler:
         return [str(doc_id) for doc_id in result.inserted_ids]
 
     async def find_documents(
-        self, collection_name: str, query: dict[str, Any], limit: int = 50
+        self, collection_name: str, query: dict[str, Any], limit: int = 50, skip: int = 0
     ) -> list[dict[str, Any]]:
         """
         Find documents matching a query.
         """
         collection = self.db[collection_name]
-        cursor = collection.find(query).sort("created_at", -1).limit(limit)
+        cursor = collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
         return await cursor.to_list(length=limit)
 
     async def close_connection(self):

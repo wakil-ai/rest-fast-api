@@ -28,8 +28,8 @@ async def create_session(request: SessionCreateRequest):
 
 @router.get("/{user_id}", response_model=list[SessionResponse])
 @handle_service_error
-async def list_sessions(user_id: str, limit: int = 50):
-    sessions = await chat_history_service.get_sessions(user_id=user_id, limit=limit)
+async def list_sessions(user_id: str, limit: int = 10, skip: int = 0):
+    sessions = await chat_history_service.get_sessions(user_id=user_id, limit=limit, skip=skip)
     return [serialize_mongo_id(s) for s in sessions]
 
 
