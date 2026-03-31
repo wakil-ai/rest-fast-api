@@ -2,6 +2,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from app.core.config import settings
 from app.core.dependencies import get_chat_history_service, get_redis_service
 from app.models.chat_history import (
     UserCreateRequest,
@@ -42,6 +43,7 @@ async def create_or_get_user(request: UserCreateRequest, response: Response):
         phone_number=request.phone_number,
         last_name=request.last_name,
         picture=request.picture,
+        web_client=settings.WAKILAI_WEB_CLIENT_NAME,
     )
     response.status_code = status.HTTP_201_CREATED
     return create_response(user, "User created successfully")

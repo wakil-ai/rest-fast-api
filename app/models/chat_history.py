@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -52,6 +53,11 @@ class UserCreateResponse(BaseModel):
 
 
 # Session Models
+class SessionStatus(str, Enum):
+    draft = "draft"
+    active = "active"
+
+
 class SessionCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID who owns the session")
     title: str | None = Field("New Chat", description="Session title")
@@ -67,6 +73,8 @@ class SessionResponse(BaseModel):
     session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
+    status: SessionStatus = Field(default=SessionStatus.draft)
+    activated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
