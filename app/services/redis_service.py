@@ -29,7 +29,7 @@ class RedisService:
         )
 
         logger.info(
-            "Initialized RedisService with connection to "
+            "[RedisService] Initialized RedisService with connection to "
             f"{settings.REDIS_HOST}:{settings.REDIS_PORT}"
         )
 
@@ -56,7 +56,7 @@ class RedisService:
             self.redis.set(key, json_value, ex=ttl_seconds)
             return True
         except Exception as e:
-            logger.error(f"Error setting Redis cache key {key}: {e}")
+            logger.error(f"[RedisService] Error setting Redis cache key {key}: {e}")
             return False
 
     def invalidate_cache(self, key: str) -> bool:
