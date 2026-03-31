@@ -2,7 +2,8 @@
 """
 Migration script to add web_client field to all users in MongoDB.
 
-This script adds web_client='wakilai' to all existing users that don't have this field.
+This script backfills web_client='wakilai' for legacy users that do not have a
+web_client set yet.
 This maintains backward compatibility by tagging legacy users as 'wakilai' (the main web client).
 
 Usage:
@@ -30,10 +31,19 @@ from app.db import DBManager
 
 async def migrate_web_client():
     """Migrate all users to add web_client field."""
+    db_manager = None
+
     try:
         # Initialize database manager
         db_manager = DBManager()
-        users_collection = db_manager.db[settings.USERS_COLLECTION]
+        users_collection = db_manager.mongo_handler.db[settings.USERS_COLLECTION]
+        migration_filter = {
+            "$or": [
+                {"web_client": {"$exists": False}},
+                {"web_client": None},
+                {"web_client": ""},
+            ]
+        }
 
         logger.info("=" * 80)
         logger.info("Starting web_client migration...")
@@ -41,7 +51,7 @@ async def migrate_web_client():
 
         # Count users without web_client field
         users_without_web_client = await users_collection.count_documents(
-            {"web_client": {"$exists": False}}
+            migration_filter
         )
 
         logger.info(f"Found {users_without_web_client} users without web_client field")
@@ -52,9 +62,9 @@ async def migrate_web_client():
             )
             return
 
-        # Update all users without web_client to 'wakilai'
+        # Backfill only legacy users that are still missing web_client.
         result = await users_collection.update_many(
-            {"web_client": {"$exists": False}},
+            migration_filter,
             {"$set": {"web_client": settings.WAKILAI_WEB_CLIENT_NAME}},
         )
 
@@ -99,8 +109,8 @@ async def migrate_web_client():
         raise
     finally:
         # Close database connection
-        if db_manager:
-            db_manager.close()
+        if db_manager is not None:
+            await db_manager.close_all_connections()
 
 
 async def main():

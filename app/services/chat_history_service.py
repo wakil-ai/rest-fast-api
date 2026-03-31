@@ -12,7 +12,7 @@ from app.core.exceptions import (
     UserNotFoundError,
 )
 from app.core.logger import logger
-from app.models.chat_history import ShareResponse
+from app.models.chat_history import SessionStatus, ShareResponse
 from app.utils.user_management import clean_for_mongodb, generate_short_id
 
 
@@ -53,7 +53,7 @@ class ChatHistoryService:
             # Sessions - query by user
             await self.db_manager.mongo_handler.db[
                 self.sessions_collection
-            ].create_index([("user_id", 1), ("updated_at", -1)])
+            ].create_index([("user_id", 1), ("status", 1), ("updated_at", -1)])
 
             # Messages - query by session
             await self.db_manager.mongo_handler.db[
@@ -75,8 +75,6 @@ class ChatHistoryService:
             await self.db_manager.mongo_handler.db[
                 self.token_counting_collection
             ].create_index([("user_id", 1), ("created_at", -1)])
-
-            logger.info("[ChatHistoryService] Successfully created database indexes")
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
 
@@ -133,6 +131,18 @@ class ChatHistoryService:
     def create_message_id() -> str:
         """Create a new chat message identifier."""
         return generate_short_id("msg-", type="uuid7")
+
+    @staticmethod
+    def _build_session_activation_update(session: dict, now: datetime) -> dict:
+        update_fields: dict = {
+            "updated_at": now,
+            "status": SessionStatus.active.value,
+        }
+        if session.get("status") != SessionStatus.active.value and not session.get(
+            "activated_at"
+        ):
+            update_fields["activated_at"] = now
+        return update_fields
 
     async def ensure_session_for_user(self, user_id: str, session_id: str) -> dict:
         """Validate that the provided session exists and belongs to the user."""
@@ -381,6 +391,8 @@ class ChatHistoryService:
             "session_id": session_id,  # Ensure session_id field is set to match _id
             "title": title or "New Chat",
             "tags": tags or [],
+            "status": SessionStatus.draft.value,
+            "activated_at": None,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -395,10 +407,11 @@ class ChatHistoryService:
     async def get_sessions(self, user_id: str, limit: int = 50, skip: int = 0) -> list[dict]:
         """Retrieve sessions for a user."""
         await self._ensure_user_exists(user_id)
-
+        
         sessions = await self.db_manager.find_documents(
-            self.sessions_collection, {"user_id": user_id}, limit=limit, skip=skip
+            self.sessions_collection, {"user_id": user_id, "status": SessionStatus.active.value}, limit=limit, skip=skip
         )
+    
         return sessions
 
     async def get_session(self, session_id: str) -> dict | None:
@@ -505,11 +518,14 @@ class ChatHistoryService:
         try:
             await self.db_manager.insert_documents(self.messages_collection, [message])
 
+            now = datetime.utcnow()
+            session_update = self._build_session_activation_update(session, now)
+
             # Update session timestamp
             await self.db_manager.update_documents(
                 self.sessions_collection,
                 {"_id": session_id},
-                {"$set": {"updated_at": datetime.utcnow()}},
+                {"$set": session_update},
             )
 
             return message
@@ -567,10 +583,11 @@ class ChatHistoryService:
             upsert=True,
         )
 
+        session_update = self._build_session_activation_update(session, now)
         await self.db_manager.update_documents(
             self.sessions_collection,
             {"_id": session_id},
-            {"$set": {"updated_at": now}},
+            {"$set": session_update},
         )
 
         saved_message = await self.get_message(message_id)
@@ -915,65 +932,3 @@ class ChatHistoryService:
         )
         if deleted_count == 0:
             raise InvalidInputError("File not found")
-
-    # Sync Management
-    async def get_sync_data(self, user_id: str, months: int = 3) -> dict:
-        """
-        Retrieve all sessions and messages for a user from the last N months.
-        Used for bulk synchronization to client.
-        """
-
-        await self._ensure_user_exists(user_id)
-        days = months * 30
-        start_date = datetime.utcnow().timestamp() - (days * 24 * 60 * 60)
-        cutoff_date = datetime.fromtimestamp(start_date)
-
-        logger.info(f"Syncing data for user {user_id} since {cutoff_date}")
-
-        # 1. Get recent sessions
-        query = {"user_id": user_id, "updated_at": {"$gte": cutoff_date}}
-        sessions = await self.db_manager.find_documents(
-            self.sessions_collection,
-            query,
-            limit=1000,  # Reasonable limit
-        )
-
-        if not sessions:
-            return {"sessions": [], "messages": {}}
-
-        # 2. Get messages for these sessions
-        session_ids = [s["_id"] for s in sessions]
-
-        messages_query = {
-            "session_id": {"$in": session_ids},
-            "content": {"$exists": True},
-        }
-
-        all_messages = await self.db_manager.find_documents(
-            self.messages_collection, messages_query, limit=10000
-        )
-
-        # 3. Organise messages by session (feedback is embedded on each message doc)
-        messages_by_session = {}
-
-        for msg in all_messages:
-            s_id = msg.get("session_id")
-            if s_id not in messages_by_session:
-                messages_by_session[s_id] = []
-            messages_by_session[s_id].append(msg)
-
-        # 4. Filter empty sessions
-        # Only return sessions that have at least one message
-        non_empty_sessions = []
-        for session in sessions:
-            if (
-                session["_id"] in messages_by_session
-                and len(messages_by_session[session["_id"]]) > 0
-            ):
-                non_empty_sessions.append(session)
-
-        logger.info(
-            f"Sync complete: {len(non_empty_sessions)} sessions, {len(all_messages)} messages"
-        )
-
-        return {"sessions": non_empty_sessions, "messages": messages_by_session}
