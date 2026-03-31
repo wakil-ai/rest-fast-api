@@ -75,8 +75,6 @@ class ChatHistoryService:
             await self.db_manager.mongo_handler.db[
                 self.token_counting_collection
             ].create_index([("user_id", 1), ("created_at", -1)])
-
-            logger.info("[ChatHistoryService] Successfully created database indexes")
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
 

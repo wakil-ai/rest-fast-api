@@ -17,7 +17,6 @@ from app.api.v2 import (
     admin,
     auth,
     chat,
-    logs,
     memory,
     payment,
     speech_to_text,
@@ -30,7 +29,6 @@ from app.security import (
     get_current_username,
     verify_api_key,
     verify_api_key_or_dt_key,
-    verify_super_admin_key,
 )
 
 
@@ -104,11 +102,6 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
-    app.include_router(
-        logs.router,
-        prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_super_admin_key)],
     )
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
