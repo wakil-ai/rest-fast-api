@@ -4,7 +4,7 @@ from math import floor
 
 from app.core.config import settings
 from app.core.logger import logger
-from app.models.payme import PaymeData, PaymeError, TransactionError, TransactionState
+from app.models.payment import PaymeData, PaymeError, TransactionError, TransactionState
 from app.services.payments.base import BasePaymentService
 
 

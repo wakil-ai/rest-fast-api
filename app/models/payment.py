@@ -303,6 +303,17 @@ class ClickPrepareResponse(BaseModel):
     error: int
     error_note: str
 
+class ClickError:
+    SUCCESS = 0
+    SIGN_CHECK_FAILED = -1
+    INCORRECT_AMOUNT = -2
+    ACTION_NOT_FOUND = -3
+    ALREADY_PAID = -4
+    USER_DOES_NOT_EXIST = -5
+    TRANSACTION_DOES_NOT_EXIST = -6
+    FAILED_TO_UPDATE_USER = -7
+    ERROR_IN_REQUEST = -8
+    TRANSACTION_CANCELLED = -9
 
 class ClickCompleteResponse(BaseModel):
     click_trans_id: int
@@ -323,4 +334,9 @@ class DTSubscriptionApplyResponse(BaseModel):
     end_ms: int
     total_credits: int
     
-DTInitRequest = ClickInitRequest  # Alias for DT team subscription init (same fields)
+class DTInitRequest(BaseModel):
+    amount: int | None = None
+    user_id: str
+    order_id: str | None = None
+    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = None
+    subscription_period: Literal["daily", "monthly", "yearly"] | None = None
