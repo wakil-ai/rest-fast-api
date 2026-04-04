@@ -29,7 +29,7 @@ from app.models.payment import (
     DTSubscriptionApplyResponse,
 )
 
-from app.security import verify_api_key, verify_payme_authorization, verify_dt_api_key, verify_dt_user_web_client
+from app.security import verify_api_key, verify_payme_authorization, verify_dt_api_key, verify_dt_user_web_client, verify_api_key_or_dt_key
 from app.services import ClickService, TransactionService
 from app.services.subscription_storage import SubscriptionStorage
 
@@ -269,9 +269,8 @@ async def click_complete(
 
 
 # MARK: Subscriptions
-@router.get("/payme/subscriptions/catalog", response_model=SubscriptionCatalogResponse)
+@router.get("/payme/subscriptions/catalog", response_model=SubscriptionCatalogResponse, dependencies=[Depends(verify_api_key_or_dt_key)])
 async def get_subscription_catalog(
-    _auth: bool = Depends(verify_api_key),
     transaction_service: TransactionService = Depends(get_transaction_service),
 ):
     plans = transaction_service.get_subscription_catalog()
@@ -281,10 +280,10 @@ async def get_subscription_catalog(
 @router.get(
     "/payme/subscriptions/{user_id}",
     response_model=UserSubscriptionResponse,
+    dependencies=[Depends(verify_api_key_or_dt_key)],
 )
 async def get_user_subscription(
     user_id: str,
-    _auth: bool = Depends(verify_api_key),
     transaction_service: TransactionService = Depends(get_transaction_service),
 ):
     data = await transaction_service.get_user_subscription(user_id)
@@ -292,10 +291,9 @@ async def get_user_subscription(
 
 
 # MARK: DT Team Subscriptions
-@router.post("/dt/init", response_model=DTSubscriptionApplyResponse)
+@router.post("/dt/init", response_model=DTSubscriptionApplyResponse, dependencies=[Depends(verify_dt_api_key)])
 async def init_dt_subscription(
     request: DTInitRequest,
-    _auth: bool = Depends(verify_dt_api_key),
     transaction_service: TransactionService = Depends(get_transaction_service),
     subscription_storage: SubscriptionStorage = Depends(get_subscription_storage),
 ):
