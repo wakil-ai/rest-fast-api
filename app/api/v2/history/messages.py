@@ -1,5 +1,6 @@
 # app/routers/history/messages.py
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 
 from app.core.dependencies import get_chat_history_service
 from app.models.chat_history import (
@@ -13,6 +14,10 @@ from app.utils.user_management import (
     sanitize_message_for_response,
     serialize_mongo_id,
 )
+
+
+class DeleteMessagesFromResponse(BaseModel):
+    deleted_count: int
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
 
@@ -48,6 +53,17 @@ async def get_message(session_id: str, message_id: str):
     if msg["session_id"] != session_id:
         raise HTTPException(403, "Message does not belong to this session")
     return sanitize_message_for_response(serialize_mongo_id(msg))
+
+
+@router.delete(
+    "/{session_id}/from/{message_id}",
+    response_model=DeleteMessagesFromResponse,
+)
+@handle_service_error
+async def delete_messages_from(session_id: str, message_id: str):
+    """Delete all messages in a session starting from message_id (inclusive)."""
+    deleted_count = await chat_history_service.delete_messages_from(session_id, message_id)
+    return DeleteMessagesFromResponse(deleted_count=deleted_count)
 
 
 @router.post("/{message_id}/share", response_model=MessageSharedResponse)

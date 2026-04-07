@@ -921,6 +921,27 @@ class ChatHistoryService:
 
         logger.info(f"Associated file {file_id} with message {message_id}")
 
+    async def delete_messages_from(self, session_id: str, message_id: str) -> int:
+        """Delete all messages in a session from message_id onward (inclusive)."""
+
+        await self._ensure_session_exists(session_id)
+
+        message = await self.get_message(message_id)
+        if not message or message.get("session_id") != session_id:
+            raise MessageNotFoundError(message_id)
+
+        target_created_at = message["created_at"]
+
+        result = await self.db_manager.delete_documents(
+            self.messages_collection,
+            {"session_id": session_id, "created_at": {"$gte": target_created_at}},
+        )
+        deleted_count = result.get("deleted_count", 0)
+        logger.info(
+            f"Deleted {deleted_count} messages from session {session_id} starting at message {message_id}"
+        )
+        return deleted_count
+
     async def delete_file_upload(self, file_id: str) -> None:
         """Delete a file upload record."""
 
