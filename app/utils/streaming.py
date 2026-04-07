@@ -8,6 +8,7 @@ from app.core.config import settings
 SUPPORTED_STREAM_EVENT_TYPES = {
     "progress",
     "chunk",
+    "think",
     "attachments",
     "metadata",
     "error",

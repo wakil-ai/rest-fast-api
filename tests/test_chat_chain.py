@@ -126,3 +126,31 @@ async def test_streaming_response(chat_chain, mock_dependencies):
             parts.append(chunk)
 
     assert "".join(parts) == "Part 1Part 2"
+
+
+@pytest.mark.asyncio
+async def test_streaming_response_preserves_think_events(chat_chain, mock_dependencies):
+    """Thinking events should stream separately and not be added to the answer."""
+
+    async def async_gen():
+        yield {"type": "think", "chunk": "Planning"}
+        yield "Part 1"
+        yield "Part 2"
+
+    mock_dependencies["gpt"].generate_response.return_value = async_gen()
+
+    response_gen = await chat_chain.generate_answer(
+        user_id="u1", query="q", stream=True
+    )
+
+    think_chunks = []
+    answer_parts = []
+
+    async for chunk in response_gen:
+        if isinstance(chunk, dict) and chunk.get("type") == "think":
+            think_chunks.append(chunk["chunk"])
+        if isinstance(chunk, str):
+            answer_parts.append(chunk)
+
+    assert think_chunks == ["Planning"]
+    assert "".join(answer_parts) == "Part 1Part 2"

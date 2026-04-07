@@ -19,7 +19,7 @@ from app.core.exceptions import (
     QueryTooLongException,
 )
 from app.core.logger import logger
-from app.models.chat import AgenticRAGRequest, AssistantType, ChatResponse, MessagePair
+from app.models.chat import AgenticRAGRequest, AssistantType, ChatResponse
 from app.utils.streaming import format_streaming_response, get_streaming_headers
 
 
@@ -248,13 +248,31 @@ class ChatService:
 
         return wrapped()
 
+    async def _get_session_chat_history(self, session_id: str) -> list[dict[str, str]]:
+        """Load recent persisted message history for prompt context."""
+        messages = await self.chat_history_service.get_recent_messages(
+            session_id=session_id,
+            limit=settings.CHAT_HISTORY_LIMIT,
+        )
+
+        history: list[dict[str, str]] = []
+        for message in messages:
+            content = message.get("content") or {}
+            query = content.get("query")
+            response = content.get("response")
+            if not query or not response:
+                continue
+
+            history.append({"question": query, "answer": response})
+
+        return history
+
     async def ask_question(
         self,
         user_id: str,
         session_id: str,
         message_id: str,
         query: str,
-        chat_history: list[MessagePair] | None = None,
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
@@ -280,6 +298,7 @@ class ChatService:
         """
         try:
             started_at = perf_counter()
+            chat_history = await self._get_session_chat_history(session_id)
             answer = await self.chat_chain.generate_answer(
                 user_id=user_id,
                 query=query,

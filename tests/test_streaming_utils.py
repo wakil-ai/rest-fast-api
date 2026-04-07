@@ -28,3 +28,18 @@ async def test_format_streaming_response_emits_keepalive(monkeypatch):
     assert {"type": "progress", "message": "still working"} in events
     assert {"type": "chunk", "chunk": "done"} in events
     assert events[-1] == {"type": "end"}
+
+
+@pytest.mark.asyncio
+async def test_format_streaming_response_preserves_think_events():
+    async def generator():
+        yield {"type": "think", "chunk": "planning"}
+        yield "done"
+
+    events = []
+    async for frame in format_streaming_response(generator()):
+        if frame.startswith("data: "):
+            events.append(json.loads(frame.removeprefix("data: ").strip()))
+
+    assert {"type": "think", "chunk": "planning"} in events
+    assert {"type": "chunk", "chunk": "done"} in events

@@ -341,11 +341,12 @@ class ChatChain:
         assistant: str,
     ) -> AsyncGenerator[Any, None]:
         async def gen() -> AsyncGenerator[Any, None]:
-            buffer = []
+            answer_chunks: list[str] = []
             active_llm = llm
             try:
                 async for chunk in self._stream_from_llm(llm, query, ctx.system_prompt):
-                    buffer.append(chunk)
+                    if isinstance(chunk, str):
+                        answer_chunks.append(chunk)
                     yield chunk
             except Exception:
                 logger.warning("Primary LLM streaming failed → fallback", exc_info=True)
@@ -354,13 +355,14 @@ class ChatChain:
                     async for chunk in self._stream_from_llm(
                         active_llm, query, ctx.system_prompt
                     ):
-                        buffer.append(chunk)
+                        if isinstance(chunk, str):
+                            answer_chunks.append(chunk)
                         yield chunk
                 except Exception:
                     logger.error("Fallback LLM also failed", exc_info=True)
                     yield "Sorry, I couldn't generate an answer right now."
 
-            full = "".join(buffer)
+            full = "".join(answer_chunks)
             logger.debug(f"[STREAM FINAL]\n{full}")
 
             meta = await self._collect_generation_meta(
@@ -416,7 +418,7 @@ class ChatChain:
 
     async def _stream_from_llm(
         self, llm: LLM, user_prompt: str, system_prompt: str
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[Any, None]:
         gen = await llm.generate_response(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
@@ -426,6 +428,13 @@ class ChatChain:
             raise TypeError("Expected streaming generator from LLM.")
 
         async for chunk in gen:
+            if isinstance(chunk, dict):
+                if chunk.get("type") == "think" and chunk.get("chunk"):
+                    yield {**chunk, "chunk": self._clean_text(chunk["chunk"])}
+                elif chunk:
+                    yield chunk
+                continue
+
             if chunk:
                 yield self._clean_text(chunk)
 
