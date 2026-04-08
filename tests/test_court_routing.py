@@ -118,12 +118,17 @@ async def test_chat_chain_returns_out_of_scope_message_for_court_assistant():
         )
     )
     setattr(chat_chain, "court_classifier", SimpleNamespace(route_query=route_query))
+    setattr(
+        chat_chain,
+        "history_service",
+        SimpleNamespace(get_recent_messages=AsyncMock(return_value=[])),
+    )
 
     result = await ChatChain.generate_answer(
         chat_chain,
         user_id="u1",
+        session_id="session_1",
         query="Please write a contract for me",
-        chat_history=None,
         stream=False,
         file_ids=None,
         assistant="court",

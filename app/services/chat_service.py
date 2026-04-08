@@ -248,25 +248,6 @@ class ChatService:
 
         return wrapped()
 
-    async def _get_session_chat_history(self, session_id: str) -> list[dict[str, str]]:
-        """Load recent persisted message history for prompt context."""
-        messages = await self.chat_history_service.get_recent_messages(
-            session_id=session_id,
-            limit=settings.CHAT_HISTORY_LIMIT,
-        )
-
-        history: list[dict[str, str]] = []
-        for message in messages:
-            content = message.get("content") or {}
-            query = content.get("query")
-            response = content.get("response")
-            if not query or not response:
-                continue
-
-            history.append({"question": query, "answer": response})
-
-        return history
-
     async def ask_question(
         self,
         user_id: str,
@@ -282,8 +263,8 @@ class ChatService:
 
         Args:
             user_id: User identifier
+            session_id: Session identifier used to load previous persisted messages
             query: User's question
-            chat_history: Previous conversation history
             stream: Enable streaming response
             file_ids: List of file IDs to use as context
             assistant: Assistant name
@@ -298,11 +279,10 @@ class ChatService:
         """
         try:
             started_at = perf_counter()
-            chat_history = await self._get_session_chat_history(session_id)
             answer = await self.chat_chain.generate_answer(
                 user_id=user_id,
+                session_id=session_id,
                 query=query,
-                chat_history=chat_history,
                 stream=stream,
                 file_ids=file_ids,
                 assistant=assistant,

@@ -127,8 +127,8 @@ class ChatChain:
     async def generate_answer(
         self,
         user_id: str,
+        session_id: str,
         query: str,
-        chat_history: list | None = None,
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
@@ -140,7 +140,7 @@ class ChatChain:
             assistant = AssistantConfig.validate_assistant_or_default(assistant)
 
             file_context = await self._collect_file_context(file_ids)
-            history_formatted = self._format_chat_history(chat_history)
+            history_formatted = await self._get_session_history_text(session_id)
             routing_decision = await self._resolve_court_routing(
                 assistant=assistant,
                 query=query,
@@ -157,7 +157,6 @@ class ChatChain:
             ctx = await self._prepare_generation_context(
                 user_id=user_id,
                 query=query,
-                chat_history=chat_history,
                 assistant=routing_decision.assistant_name or assistant,
                 file_context=file_context,
                 history_formatted=history_formatted,
@@ -199,7 +198,6 @@ class ChatChain:
         self,
         user_id: str,
         query: str,
-        chat_history: list | None,
         assistant: str,
         file_context: str,
         history_formatted: str,
@@ -310,18 +308,34 @@ class ChatChain:
         return result.context, result.attachments, result.prompt_template
 
     #  Prompt & History Formatting
-    def _format_chat_history(self, chat_history: list | None) -> str:
-        if not chat_history:
+    async def _get_session_history_text(self, session_id: str) -> str:
+        if not session_id:
             return ""
 
-        recent = chat_history[-settings.CHAT_HISTORY_LIMIT :]
-        if not recent:
+        messages = await self.history_service.get_recent_messages(
+            session_id=session_id,
+            limit=settings.CHAT_HISTORY_LIMIT,
+        )
+        if not messages:
+            return ""
+
+        entries: list[tuple[str, str]] = []
+        for i, entry in enumerate(messages, 1):
+            content = entry.get("content") or {}
+            question = content.get("query")
+            answer = content.get("response")
+            if not question or not answer:
+                continue
+
+            entries.append((str(question), str(answer)))
+
+        if not entries:
             return ""
 
         lines = ["Previous Conversation History:"]
-        for i, entry in enumerate(recent, 1):
-            lines.append(f"{i}. User: {entry.question}")
-            lines.append(f"   Assistant: {entry.answer}")
+        for i, (question, answer) in enumerate(entries, 1):
+            lines.append(f"{i}. User: {question}")
+            lines.append(f"   Assistant: {answer}")
         lines.append("Use the above conversation to maintain context and consistency.")
 
         return "\n".join(lines)
