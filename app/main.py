@@ -100,9 +100,7 @@ def create_app() -> FastAPI:
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key_or_dt_key)],
     )
-    app.include_router(
-        admin.router, prefix=settings.API_PREFIX, dependencies=[Depends(verify_api_key)]
-    )
+    app.include_router(admin.router, prefix=settings.API_PREFIX)
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
     app.include_router(payment.router, prefix=settings.API_PREFIX)
