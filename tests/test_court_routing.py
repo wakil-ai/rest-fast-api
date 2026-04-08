@@ -58,7 +58,6 @@ async def test_chat_chain_resolves_court_to_specific_assistant():
     )
 
     assert routing_decision.assistant_name == "civil_court"
-    assert routing_decision.out_of_scope_message is None
     route_query.assert_awaited_once()
 
 
@@ -77,22 +76,18 @@ async def test_chat_chain_keeps_non_court_assistant_unchanged():
     )
 
     assert routing_decision.assistant_name == "tax"
-    assert routing_decision.out_of_scope_message is None
     route_query.assert_not_called()
 
 
-def test_court_classifier_treats_non_label_as_direct_response():
+def test_court_classifier_defaults_non_label_response_to_administrative():
     classifier = CourtClassifier.__new__(CourtClassifier)
+    classifier.DEFAULT_ASSISTANT = "administrative_court"
 
     decision = classifier._build_routing_decision(
         "I'm optimized only for court-related questions."
     )
 
-    assert decision.assistant_name is None
-    assert (
-        decision.out_of_scope_message
-        == "I'm optimized only for court-related questions."
-    )
+    assert decision.assistant_name == "administrative_court"
 
 
 def test_court_classifier_places_file_context_before_chat_history():
@@ -110,18 +105,35 @@ def test_court_classifier_places_file_context_before_chat_history():
 
 
 @pytest.mark.asyncio
-async def test_chat_chain_returns_out_of_scope_message_for_court_assistant():
+async def test_chat_chain_defaults_court_assistant_when_classifier_is_non_label():
     chat_chain = ChatChain.__new__(ChatChain)
     route_query = AsyncMock(
-        return_value=CourtRoutingDecision(
-            out_of_scope_message="I'm optimized only for court-related questions."
-        )
+        return_value=CourtRoutingDecision(assistant_name="administrative_court")
     )
     setattr(chat_chain, "court_classifier", SimpleNamespace(route_query=route_query))
     setattr(
         chat_chain,
         "history_service",
         SimpleNamespace(get_recent_messages=AsyncMock(return_value=[])),
+    )
+    setattr(chat_chain, "memory", SimpleNamespace(search_memory=AsyncMock(return_value="")))
+    setattr(chat_chain, "_collect_file_context", AsyncMock(return_value=""))
+    setattr(
+        chat_chain,
+        "_prepare_generation_context",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                assistant_name="administrative_court",
+                system_prompt="prompt",
+                attachments=[],
+            )
+        ),
+    )
+    setattr(chat_chain, "_select_llm", lambda: SimpleNamespace())
+    setattr(
+        chat_chain,
+        "_generate_non_streaming",
+        AsyncMock(return_value=("court answer", {})),
     )
 
     result = await ChatChain.generate_answer(
@@ -134,4 +146,4 @@ async def test_chat_chain_returns_out_of_scope_message_for_court_assistant():
         assistant="court",
     )
 
-    assert result == "I'm optimized only for court-related questions."
+    assert result == ("court answer", {})

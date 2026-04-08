@@ -148,12 +148,6 @@ class ChatChain:
                 file_context=file_context,
             )
 
-            if routing_decision.out_of_scope_message:
-                return self._create_static_response(
-                    routing_decision.out_of_scope_message,
-                    stream,
-                )
-
             ctx = await self._prepare_generation_context(
                 user_id=user_id,
                 query=query,
