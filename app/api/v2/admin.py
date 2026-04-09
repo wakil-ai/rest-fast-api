@@ -40,7 +40,7 @@ def _require_admin_key(key: str) -> None:
     "/rate-limit/{user_id}",
     response_model=RateLimitResponse,
     summary="Get user's remaining credits",
-    dependencies=admin_only,
+    dependencies=shared_api_access,
 )
 async def get_user_rate_limit(user_id: str):
     """
