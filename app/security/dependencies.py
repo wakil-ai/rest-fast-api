@@ -2,14 +2,42 @@ import base64
 import secrets
 
 from fastapi import Depends, HTTPException, Request, Security, status
+from app.core.dependencies import get_chat_history_service
 from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
 
 from app.core.config import settings
 
 # HTTP Basic (docs)
 security = HTTPBasic()
+chat_history_service = get_chat_history_service()
+
+# Key Headers
+
+# Regular API Keys
+api_key_header = APIKeyHeader(
+    name=settings.API_KEY_NAME.lower(),
+    auto_error=False,
+    description="HBAI API Key",
+)
+
+# Super Admin API Key for sensitive endpoints (logs, admin actions)
+super_admin_key_header = APIKeyHeader(
+    name=settings.SUPER_ADMIN_KEY_NAME.lower(),
+    auto_error=False,
+    description="Super Admin API Key — required for logs and sensitive admin endpoints",
+)
+
+# DT Team API Key
+dt_team_key_header = APIKeyHeader(
+    name=settings.DT_API_KEY_NAME.lower(),
+    auto_error=False,
+    description="DT Team API Key — required for DT team backend access",
+)
 
 
+# Verification functions
+
+# Docs Basic Auth
 def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
     correct_username = secrets.compare_digest(credentials.username, settings.DOCS_USER)
     correct_password = secrets.compare_digest(
@@ -22,15 +50,6 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
-
-
-# Regular API Keys
-api_key_header = APIKeyHeader(
-    name=settings.API_KEY_NAME.lower(),
-    auto_error=False,
-    description="HBAI API Key",
-)
-
 
 def verify_api_key(api_key: str = Security(api_key_header)):
     """Verify API key authentication."""
@@ -48,15 +67,6 @@ def verify_api_key(api_key: str = Security(api_key_header)):
         )
     return True
 
-
-# Super Admin API Key
-super_admin_key_header = APIKeyHeader(
-    name=settings.SUPER_ADMIN_KEY_NAME.lower(),
-    auto_error=False,
-    description="Super Admin API Key — required for logs and sensitive admin endpoints",
-)
-
-
 def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
     """Verify the super-admin API key (separate from the regular API key)."""
     if api_key is None:
@@ -70,15 +80,6 @@ def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
             detail="Invalid Super Admin API Key",
         )
     return True
-
-
-# DT Team API Key
-dt_team_key_header = APIKeyHeader(
-    name=settings.DT_API_KEY_NAME.lower(),
-    auto_error=False,
-    description="DT Team API Key — required for DT team backend access",
-)
-
 
 def verify_dt_api_key(
     api_key: str = Security(dt_team_key_header), request: Request = None
@@ -105,7 +106,6 @@ def verify_dt_api_key(
         )
 
     return True
-
 
 def verify_api_key_or_dt_key(request: Request) -> bool:
     """Verify either default API key OR DT team key.
@@ -150,7 +150,36 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
         detail="API Key required (use either admin or x-dt-team-api-key header)",
     )
 
+async def verify_dt_user_web_client(user_id: str) -> bool:
+    """Verify that a user belongs to DT client (birdarcha).
+    
+    Args:
+        user_id: The user ID to check
+        
+    Returns:
+        True if user is a DT user
+        
+    Raises:
+        HTTPException: If user not found or doesn't belong to DT client
+    """
+    # Check if user exists and belongs to DT client
+    user = await chat_history_service.get_user(user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    
+    user_web_client = user.get("web_client", settings.WAKILAI_WEB_CLIENT_NAME)
+    if user_web_client != settings.DT_WEB_CLIENT_NAME:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: User does not belong to DT client (birdarcha)",
+        )
+    
+    return True
 
+# Dependency Injection for Orchestration and Services
 def verify_payme_authorization(authorization: str | None) -> bool:
     """Verify Payme authorization header"""
     if not authorization:

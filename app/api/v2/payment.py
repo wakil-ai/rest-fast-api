@@ -1,25 +1,37 @@
 """Payme payment API endpoints"""
 
+import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.core.dependencies import get_click_service, get_transaction_service
+from app.core.config import settings
+from app.core.dependencies import (
+    get_click_service,
+    get_transaction_service,
+    get_subscription_storage,
+)
 from app.core.logger import logger
-from app.models.click import ClickInitRequest, ClickInitResponse
-from app.models.payme import (
-    PaymeError,
+
+from app.models.payment import (
+    SubscriptionCatalogResponse,
+    SubscriptionPlan,
+    UserSubscriptionResponse, 
     PaymeInitRequest,
     PaymeInitResponse,
+    PaymeError,
     PaymeMethod,
     PaymentLinkRequest,
     PaymentLinkResponse,
-    SubscriptionCatalogResponse,
-    SubscriptionPlan,
     TransactionError,
-    UserSubscriptionResponse,
+    ClickInitRequest,
+    ClickInitResponse,
+    DTInitRequest,
+    DTSubscriptionApplyResponse,
 )
-from app.security import verify_api_key, verify_payme_authorization
+
+from app.security import verify_api_key, verify_payme_authorization, verify_dt_api_key, verify_dt_user_web_client, verify_api_key_or_dt_key
 from app.services import ClickService, TransactionService
+from app.services.subscription_storage import SubscriptionStorage
 
 router = APIRouter(prefix="/transaction", tags=["Payme"])
 
@@ -257,9 +269,8 @@ async def click_complete(
 
 
 # MARK: Subscriptions
-@router.get("/payme/subscriptions/catalog", response_model=SubscriptionCatalogResponse)
+@router.get("/payme/subscriptions/catalog", response_model=SubscriptionCatalogResponse, dependencies=[Depends(verify_api_key_or_dt_key)])
 async def get_subscription_catalog(
-    _auth: bool = Depends(verify_api_key),
     transaction_service: TransactionService = Depends(get_transaction_service),
 ):
     plans = transaction_service.get_subscription_catalog()
@@ -269,11 +280,88 @@ async def get_subscription_catalog(
 @router.get(
     "/payme/subscriptions/{user_id}",
     response_model=UserSubscriptionResponse,
+    dependencies=[Depends(verify_api_key_or_dt_key)],
 )
 async def get_user_subscription(
     user_id: str,
-    _auth: bool = Depends(verify_api_key),
     transaction_service: TransactionService = Depends(get_transaction_service),
 ):
     data = await transaction_service.get_user_subscription(user_id)
     return UserSubscriptionResponse(**data)
+
+
+# MARK: DT Team Subscriptions
+@router.post("/dt/init", response_model=DTSubscriptionApplyResponse, dependencies=[Depends(verify_dt_api_key)])
+async def init_dt_subscription(
+    request: DTInitRequest,
+    transaction_service: TransactionService = Depends(get_transaction_service),
+    subscription_storage: SubscriptionStorage = Depends(get_subscription_storage),
+):
+    """
+    Apply a subscription directly for a DT team user.
+    
+    This endpoint allows DT team to directly apply a subscription tier
+    to one of their users (birdarcha client). Payment is handled on DT side,
+    so this just writes the subscription to the database.
+    
+    Requires:
+    - DT API key (x-dt-team-api-key header)
+    - user_id must belong to DT client (web_client='birdarcha')
+    
+    Args:
+        request: Subscription request with subscription_tier and subscription_period
+    
+    Returns:
+        DTSubscriptionApplyResponse with success status and subscription info
+    """
+    try:
+        # Verify user belongs to DT client
+        await verify_dt_user_web_client(request.user_id)
+        
+        # Validate subscription tier and period
+        if not request.subscription_tier or not request.subscription_period:
+            raise ValueError("subscription_tier and subscription_period are required")
+        
+        # Get subscription quote (validates tier and period)
+        quote = transaction_service._get_subscription_quote(
+            request.subscription_tier,
+            request.subscription_period,
+        )
+        
+        # Apply subscription directly to database
+        now_ms = int(time.time() * 1000)
+        subscription_doc = await subscription_storage.upsert_subscription(
+            user_id=request.user_id,
+            quote=quote,
+            order_id=request.order_id or f"dt-{request.user_id}-{now_ms}",
+            transaction_id=None,  # DT handles payment on their side
+            now_ms=now_ms,
+            provider=settings.DT_WEB_CLIENT_NAME,
+        )
+        
+        logger.info(
+            f"[DTSubscription] Applied subscription for DT user {request.user_id}, "
+            f"tier={request.subscription_tier}, period={request.subscription_period}, "
+            f"start={subscription_doc.get('start_ms')}, end={subscription_doc.get('end_ms')}"
+        )
+        
+        return DTSubscriptionApplyResponse(
+            success=True,
+            user_id=request.user_id,
+            tier=quote["tier"],
+            period=quote["period"],
+            daily_credits=quote["daily_credits"],
+            start_ms=subscription_doc["start_ms"],
+            end_ms=subscription_doc["end_ms"],
+            total_credits=quote["total_credits"],
+        )
+    except ValueError as e:
+        logger.warning(f"[DTSubscription] Invalid request: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[DTSubscription] Error applying subscription: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to apply subscription: {str(e)}"
+        )

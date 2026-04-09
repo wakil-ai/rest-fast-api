@@ -1,3 +1,7 @@
+from typing import Literal
+from pydantic import BaseModel
+
+# Payme Models
 from datetime import datetime
 from enum import IntEnum
 from typing import Literal
@@ -245,7 +249,6 @@ class SubscriptionPlan(BaseModel):
 class SubscriptionCatalogResponse(BaseModel):
     plans: list[SubscriptionPlan]
 
-
 class UserSubscriptionResponse(BaseModel):
     user_id: str
     active: bool
@@ -277,3 +280,63 @@ class SetFiscalDataRequest(BaseModel):
     id: str  # Transaction ID
     type: str  # "PERFORM" or "CANCEL"
     fiscal_data: FiscalData
+
+
+# Click Models
+class ClickInitRequest(BaseModel):
+    amount: int | None = None
+    user_id: str
+    callback_url: str
+    order_id: str | None = None
+    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = None
+    subscription_period: Literal["daily", "monthly", "yearly"] | None = None
+
+class ClickInitResponse(BaseModel):
+    order_id: str
+    link: str
+
+
+class ClickPrepareResponse(BaseModel):
+    click_trans_id: int
+    merchant_trans_id: str
+    merchant_prepare_id: int | None = None
+    error: int
+    error_note: str
+
+class ClickError:
+    SUCCESS = 0
+    SIGN_CHECK_FAILED = -1
+    INCORRECT_AMOUNT = -2
+    ACTION_NOT_FOUND = -3
+    ALREADY_PAID = -4
+    USER_DOES_NOT_EXIST = -5
+    TRANSACTION_DOES_NOT_EXIST = -6
+    FAILED_TO_UPDATE_USER = -7
+    ERROR_IN_REQUEST = -8
+    TRANSACTION_CANCELLED = -9
+
+class ClickCompleteResponse(BaseModel):
+    click_trans_id: int
+    merchant_trans_id: str
+    merchant_confirm_id: int | None = None
+    error: int
+    error_note: str
+
+# DT Team Subscription Models
+class DTSubscriptionApplyResponse(BaseModel):
+    """Response for DT team subscription application"""
+    success: bool = True
+    user_id: str
+    tier: str
+    period: str
+    daily_credits: int
+    start_ms: int
+    end_ms: int
+    total_credits: int
+    
+class DTInitRequest(BaseModel):
+    amount: int | None = None
+    user_id: str
+    order_id: str | None = None
+    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = None
+    subscription_period: Literal["daily", "monthly", "yearly"] | None = None

@@ -5,21 +5,9 @@ from urllib.parse import urlencode
 
 from app.core.config import settings
 from app.core.logger import logger
+from app.models.payment import ClickError
 from app.services.payments.base import BasePaymentService
 from app.utils.text_cleaning import _as_decimal, _as_int, _md5_hex
-
-
-class ClickError:
-    SUCCESS = 0
-    SIGN_CHECK_FAILED = -1
-    INCORRECT_AMOUNT = -2
-    ACTION_NOT_FOUND = -3
-    ALREADY_PAID = -4
-    USER_DOES_NOT_EXIST = -5
-    TRANSACTION_DOES_NOT_EXIST = -6
-    FAILED_TO_UPDATE_USER = -7
-    ERROR_IN_REQUEST = -8
-    TRANSACTION_CANCELLED = -9
 
 
 class ClickService(BasePaymentService):
