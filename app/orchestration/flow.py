@@ -569,6 +569,9 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                                 "attachments": self.state.attachments,
                             }
                         )
+                elif chunk.get("type") == "think":
+                    if self.progress_callback:
+                        await self.progress_callback(chunk)
                 elif chunk.get("type") == "_generation_meta":
                     self.state.generation_meta = chunk.get("meta") or {}
                 continue

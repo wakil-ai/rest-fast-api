@@ -127,8 +127,8 @@ class ChatChain:
     async def generate_answer(
         self,
         user_id: str,
+        session_id: str,
         query: str,
-        chat_history: list | None = None,
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
@@ -140,7 +140,7 @@ class ChatChain:
             assistant = AssistantConfig.validate_assistant_or_default(assistant)
 
             file_context = await self._collect_file_context(file_ids)
-            history_formatted = self._format_chat_history(chat_history)
+            history_formatted = await self._get_session_history_text(session_id)
             routing_decision = await self._resolve_court_routing(
                 assistant=assistant,
                 query=query,
@@ -148,16 +148,9 @@ class ChatChain:
                 file_context=file_context,
             )
 
-            if routing_decision.out_of_scope_message:
-                return self._create_static_response(
-                    routing_decision.out_of_scope_message,
-                    stream,
-                )
-
             ctx = await self._prepare_generation_context(
                 user_id=user_id,
                 query=query,
-                chat_history=chat_history,
                 assistant=routing_decision.assistant_name or assistant,
                 file_context=file_context,
                 history_formatted=history_formatted,
@@ -199,7 +192,6 @@ class ChatChain:
         self,
         user_id: str,
         query: str,
-        chat_history: list | None,
         assistant: str,
         file_context: str,
         history_formatted: str,
@@ -310,18 +302,34 @@ class ChatChain:
         return result.context, result.attachments, result.prompt_template
 
     #  Prompt & History Formatting
-    def _format_chat_history(self, chat_history: list | None) -> str:
-        if not chat_history:
+    async def _get_session_history_text(self, session_id: str) -> str:
+        if not session_id:
             return ""
 
-        recent = chat_history[-settings.CHAT_HISTORY_LIMIT :]
-        if not recent:
+        messages = await self.history_service.get_recent_messages(
+            session_id=session_id,
+            limit=settings.CHAT_HISTORY_LIMIT,
+        )
+        if not messages:
+            return ""
+
+        entries: list[tuple[str, str]] = []
+        for i, entry in enumerate(messages, 1):
+            content = entry.get("content") or {}
+            question = content.get("query")
+            answer = content.get("response")
+            if not question or not answer:
+                continue
+
+            entries.append((str(question), str(answer)))
+
+        if not entries:
             return ""
 
         lines = ["Previous Conversation History:"]
-        for i, entry in enumerate(recent, 1):
-            lines.append(f"{i}. User: {entry.question}")
-            lines.append(f"   Assistant: {entry.answer}")
+        for i, (question, answer) in enumerate(entries, 1):
+            lines.append(f"{i}. User: {question}")
+            lines.append(f"   Assistant: {answer}")
         lines.append("Use the above conversation to maintain context and consistency.")
 
         return "\n".join(lines)
@@ -341,11 +349,12 @@ class ChatChain:
         assistant: str,
     ) -> AsyncGenerator[Any, None]:
         async def gen() -> AsyncGenerator[Any, None]:
-            buffer = []
+            answer_chunks: list[str] = []
             active_llm = llm
             try:
                 async for chunk in self._stream_from_llm(llm, query, ctx.system_prompt):
-                    buffer.append(chunk)
+                    if isinstance(chunk, str):
+                        answer_chunks.append(chunk)
                     yield chunk
             except Exception:
                 logger.warning("Primary LLM streaming failed → fallback", exc_info=True)
@@ -354,13 +363,14 @@ class ChatChain:
                     async for chunk in self._stream_from_llm(
                         active_llm, query, ctx.system_prompt
                     ):
-                        buffer.append(chunk)
+                        if isinstance(chunk, str):
+                            answer_chunks.append(chunk)
                         yield chunk
                 except Exception:
                     logger.error("Fallback LLM also failed", exc_info=True)
                     yield "Sorry, I couldn't generate an answer right now."
 
-            full = "".join(buffer)
+            full = "".join(answer_chunks)
             logger.debug(f"[STREAM FINAL]\n{full}")
 
             meta = await self._collect_generation_meta(
@@ -416,7 +426,7 @@ class ChatChain:
 
     async def _stream_from_llm(
         self, llm: LLM, user_prompt: str, system_prompt: str
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[Any, None]:
         gen = await llm.generate_response(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
@@ -426,6 +436,13 @@ class ChatChain:
             raise TypeError("Expected streaming generator from LLM.")
 
         async for chunk in gen:
+            if isinstance(chunk, dict):
+                if chunk.get("type") == "think" and chunk.get("chunk"):
+                    yield {**chunk, "chunk": self._clean_text(chunk["chunk"])}
+                elif chunk:
+                    yield chunk
+                continue
+
             if chunk:
                 yield self._clean_text(chunk)
 

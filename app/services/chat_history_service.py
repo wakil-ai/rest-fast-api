@@ -610,6 +610,14 @@ class ChatHistoryService:
 
         return messages
 
+    async def get_recent_messages(self, session_id: str, limit: int = 5) -> list[dict]:
+        """Retrieve the latest messages for a session in chronological order."""
+        messages = await self.get_messages(session_id=session_id, limit=max(limit, 1))
+        messages.sort(key=lambda msg: msg.get("created_at") or datetime.min)
+        if limit <= 0:
+            return []
+        return messages[-limit:]
+
     async def get_message(self, message_id: str) -> dict | None:
         """Get message by message_id (direct _id lookup - fastest)."""
 

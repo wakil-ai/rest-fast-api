@@ -62,7 +62,9 @@ def mock_dependencies():
 
 @pytest.fixture
 def chat_chain(mock_dependencies):
-    return ChatChain()
+    chain = ChatChain()
+    chain.history_service.get_recent_messages = AsyncMock(return_value=[])
+    return chain
 
 
 def test_llm_factory_selection(chat_chain, mock_dependencies):
@@ -92,7 +94,7 @@ async def test_generate_answer_flow(chat_chain, mock_dependencies):
     query = "test query"
 
     answer = await chat_chain.generate_answer(
-        user_id=user_id, query=query, stream=False
+        user_id=user_id, session_id="session_1", query=query, stream=False
     )
 
     assert answer
@@ -117,7 +119,7 @@ async def test_streaming_response(chat_chain, mock_dependencies):
     mock_dependencies["gpt"].generate_response.return_value = async_gen()
 
     response_gen = await chat_chain.generate_answer(
-        user_id="u1", query="q", stream=True
+        user_id="u1", session_id="session_1", query="q", stream=True
     )
 
     parts = []
@@ -126,3 +128,77 @@ async def test_streaming_response(chat_chain, mock_dependencies):
             parts.append(chunk)
 
     assert "".join(parts) == "Part 1Part 2"
+
+
+@pytest.mark.asyncio
+async def test_streaming_response_preserves_think_events(chat_chain, mock_dependencies):
+    """Thinking events should stream separately and not be added to the answer."""
+
+    async def async_gen():
+        yield {"type": "think", "chunk": "Planning"}
+        yield "Part 1"
+        yield "Part 2"
+
+    mock_dependencies["gpt"].generate_response.return_value = async_gen()
+
+    response_gen = await chat_chain.generate_answer(
+        user_id="u1", session_id="session_1", query="q", stream=True
+    )
+
+    think_chunks = []
+    answer_parts = []
+
+    async for chunk in response_gen:
+        if isinstance(chunk, dict) and chunk.get("type") == "think":
+            think_chunks.append(chunk["chunk"])
+        if isinstance(chunk, str):
+            answer_parts.append(chunk)
+
+    assert think_chunks == ["Planning"]
+    assert "".join(answer_parts) == "Part 1Part 2"
+
+
+@pytest.mark.asyncio
+async def test_get_session_history_text_formats_recent_messages(chat_chain):
+    chat_chain.history_service.get_recent_messages = AsyncMock(
+        return_value=[
+            {
+                "content": {
+                    "query": "What is VAT?",
+                    "response": "VAT is a value-added tax.",
+                }
+            },
+            {
+                "content": {
+                    "query": "How is it calculated?",
+                    "response": "It depends on the rate.",
+                }
+            },
+        ]
+    )
+
+    formatted = await chat_chain._get_session_history_text("session_1")
+
+    assert "1. User: What is VAT?" in formatted
+    assert "Assistant: VAT is a value-added tax." in formatted
+    assert "2. User: How is it calculated?" in formatted
+
+
+@pytest.mark.asyncio
+async def test_get_session_history_text_skips_incomplete_messages(chat_chain):
+    chat_chain.history_service.get_recent_messages = AsyncMock(
+        return_value=[
+            {"content": {"query": "Can I appeal?", "response": ""}},
+            {
+                "content": {
+                    "query": "What deadline applies?",
+                    "response": "The filing window depends on the procedure.",
+                }
+            },
+        ]
+    )
+
+    formatted = await chat_chain._get_session_history_text("session_1")
+
+    assert "Can I appeal?" not in formatted
+    assert "1. User: What deadline applies?" in formatted
