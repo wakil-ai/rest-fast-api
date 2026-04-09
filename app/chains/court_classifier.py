@@ -8,7 +8,6 @@ from app.core.logger import logger
 @dataclass
 class CourtRoutingDecision:
     assistant_name: str | None = None
-    out_of_scope_message: str | None = None
 
 
 class CourtClassifier:
@@ -47,12 +46,9 @@ class CourtClassifier:
                 return CourtRoutingDecision(assistant_name=self.DEFAULT_ASSISTANT)
 
             decision = self._build_routing_decision(response)
-            if decision.assistant_name:
-                logger.info(
-                    f"[CourtClassifier] Routed `court` assistant to {decision.assistant_name}",
-                )
-            else:
-                logger.info("[CourtClassifier] Returned direct out-of-scope reply")
+            logger.info(
+                f"[CourtClassifier] Routed `court` assistant to {decision.assistant_name}",
+            )
             return decision
         except Exception as e:
             logger.error(f"[CourtClassifier] Classification failed: {e}")
@@ -79,7 +75,12 @@ class CourtClassifier:
         if assistant_name:
             return CourtRoutingDecision(assistant_name=assistant_name)
 
-        return CourtRoutingDecision(out_of_scope_message=response.strip())
+        logger.warning(
+            "[CourtClassifier] Unexpected classifier output '%s'; using default assistant '%s'",
+            response.strip(),
+            self.DEFAULT_ASSISTANT,
+        )
+        return CourtRoutingDecision(assistant_name=self.DEFAULT_ASSISTANT)
 
     def _map_response_to_assistant(self, response: str) -> str | None:
         normalized = response.strip().lower()

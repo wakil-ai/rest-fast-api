@@ -154,3 +154,16 @@ def test_cleanup_pipeline_targets_stale_draft_sessions_only():
         }
     }
     assert pipeline[-1] == {"$limit": 25}
+
+
+@pytest.mark.asyncio
+async def test_get_recent_messages_returns_last_n_in_chronological_order(monkeypatch):
+    service, _, _ = _build_service(monkeypatch)
+    older = {"_id": "m1", "created_at": __import__("datetime").datetime(2026, 1, 1)}
+    middle = {"_id": "m2", "created_at": __import__("datetime").datetime(2026, 1, 2)}
+    latest = {"_id": "m3", "created_at": __import__("datetime").datetime(2026, 1, 3)}
+    service.get_messages = AsyncMock(return_value=[latest, older, middle])
+
+    messages = await service.get_recent_messages("ses-1", limit=2)
+
+    assert [message["_id"] for message in messages] == ["m2", "m3"]
