@@ -15,7 +15,7 @@ from app.core.logger import logger
 from app.models.payment import (
     SubscriptionCatalogResponse,
     SubscriptionPlan,
-    UserSubscriptionResponse, 
+    UserSubscriptionResponse,
     PaymeInitRequest,
     PaymeInitResponse,
     PaymeError,
@@ -27,6 +27,7 @@ from app.models.payment import (
     ClickInitResponse,
     DTInitRequest,
     DTSubscriptionApplyResponse,
+    SubscriptionEligibilityError,
 )
 
 from app.security import verify_api_key, verify_payme_authorization, verify_dt_api_key, verify_dt_user_web_client, verify_api_key_or_dt_key
@@ -195,6 +196,8 @@ async def init_payme_payment(
         )
 
         return PaymeInitResponse(order_id=result["order_id"], link=result["link"])
+    except SubscriptionEligibilityError as e:
+        raise HTTPException(status_code=409, detail=e.to_detail())
     except ValueError as e:
         # Client-side error (invalid amount, invalid subscription, etc.)
         raise HTTPException(status_code=400, detail=str(e))
@@ -241,6 +244,8 @@ async def init_click_payment(
             subscription_period=request.subscription_period,
         )
         return ClickInitResponse(order_id=result["order_id"], link=result["link"])
+    except SubscriptionEligibilityError as e:
+        raise HTTPException(status_code=409, detail=e.to_detail())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -327,9 +332,14 @@ async def init_dt_subscription(
             request.subscription_tier,
             request.subscription_period,
         )
-        
-        # Apply subscription directly to database
         now_ms = int(time.time() * 1000)
+        await transaction_service.validate_subscription_eligibility(
+            user_id=request.user_id,
+            quote=quote,
+            now_ms=now_ms,
+        )
+
+        # Apply subscription directly to database
         subscription_doc = await subscription_storage.upsert_subscription(
             user_id=request.user_id,
             quote=quote,
@@ -355,6 +365,9 @@ async def init_dt_subscription(
             end_ms=subscription_doc["end_ms"],
             total_credits=quote["total_credits"],
         )
+    except SubscriptionEligibilityError as e:
+        logger.warning("[DTSubscription] Eligibility check failed: %s", e.code)
+        raise HTTPException(status_code=409, detail=e.to_detail())
     except ValueError as e:
         logger.warning(f"[DTSubscription] Invalid request: {e}")
         raise HTTPException(status_code=400, detail=str(e))

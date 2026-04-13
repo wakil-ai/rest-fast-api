@@ -55,12 +55,14 @@ async def get_user_rate_limit(user_id: str):
     - credit_costs: Credit cost for each assistant type
     """
     try:
-        remaining = await rate_limit_service.get_remaining_credits(user_id)
-        daily_limit = await rate_limit_service.get_daily_credit_limit(user_id)
+        status = await rate_limit_service.get_credit_status(user_id)
         return RateLimitResponse(
             user_id=user_id,
-            remaining_credits=remaining,
-            daily_credit_limit=daily_limit,
+            remaining_credits=int(status["remaining_credits"]),
+            daily_credit_limit=int(status["effective_daily_credit_limit"]),
+            effective_daily_credit_limit=int(status["effective_daily_credit_limit"]),
+            today_credits_used=int(status["today_credits_used"]),
+            uses_combined_credit_pool=bool(status["uses_combined_credit_pool"]),
         )
     except Exception as e:
         logger.error(
