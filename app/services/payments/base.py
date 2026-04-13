@@ -275,13 +275,12 @@ class BasePaymentService:
             return
 
         active_tier = active_subscription.get("tier")
-        incoming_tier = quote.get("tier")
-        if not active_tier or active_tier != incoming_tier:
+        if active_tier not in {"standard", "pro"}:
             return
 
         raise SubscriptionEligibilityError(
-            code="ACTIVE_SUBSCRIPTION_TIER_EXISTS",
-            message="An active subscription with the same tier already exists for this user.",
+            code="ACTIVE_SUBSCRIPTION_EXISTS",
+            message="An active subscription already exists for this user. Transfers are not allowed while it is active.",
             active_subscription_end_ms=int(active_subscription.get("end_ms") or 0),
             active_subscription_tier=str(active_tier),
             active_subscription_period=active_subscription.get("period"),
