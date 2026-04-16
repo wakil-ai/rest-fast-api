@@ -3,7 +3,7 @@ from collections.abc import AsyncGenerator
 from time import perf_counter
 from typing import Any, cast
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.core.assistants import AssistantConfig
@@ -27,9 +27,27 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 
 chat_service = get_chat_service()
 
+DT_TEAM_DISCLAIMER = (
+    "\n\n> *DIQQAT! Ushbu protsessual hujjat loyihasi “WakilAI” sun’iy "
+    "intellekt tizimi yordamida shakllantirildi. Hujjatni sudga taqdim "
+    "etishdan avval malakali va professional advokat bilan maslahatlashish "
+    "tavsiya etiladi.*"
+)
+
+
+def _is_dt_team_request(request: Request) -> bool:
+    return bool(request.headers.get(settings.DT_API_KEY_NAME.lower()))
+
+
+def _append_dt_team_disclaimer(answer: str, *, is_dt_team_request: bool) -> str:
+    if not is_dt_team_request:
+        return answer
+    return f"{answer}{DT_TEAM_DISCLAIMER}"
+
 
 async def _stream_chat_answer(
     request: ChatRequest,
+    is_dt_team_request: bool,
     assistant_name: str,
     session_id: str,
     message_id: str,
@@ -47,6 +65,8 @@ async def _stream_chat_answer(
     if isinstance(response, tuple):
         answer, meta = response
         yield answer
+        if is_dt_team_request:
+            yield DT_TEAM_DISCLAIMER
 
         attachments = meta.get("attachments") if isinstance(meta, dict) else None
         if attachments:
@@ -55,14 +75,19 @@ async def _stream_chat_answer(
 
     if isinstance(response, str):
         yield response
+        if is_dt_team_request:
+            yield DT_TEAM_DISCLAIMER
         return
 
     async for item in cast(AsyncGenerator[Any, None], response):
         yield item
 
+    if is_dt_team_request:
+        yield DT_TEAM_DISCLAIMER
+
 
 @router.post("/ask", summary="Ask a legal question")
-async def ask_question(request: ChatRequest):
+async def ask_question(request: ChatRequest, raw_request: Request):
     """
     Ask a question related to Uzbek legal documents.
     Retrieves context from vector DB and generates an answer.
@@ -85,6 +110,7 @@ async def ask_question(request: ChatRequest):
         )
 
         should_stream = settings.STREAM if request.stream is None else request.stream
+        is_dt_team_request = _is_dt_team_request(raw_request)
 
         if should_stream:
             session_id, message_id = await chat_service.prepare_chat_request(
@@ -92,7 +118,13 @@ async def ask_question(request: ChatRequest):
                 session_id=request.session_id,
             )
             return chat_service.create_streaming_response(
-                _stream_chat_answer(request, assistant_name, session_id, message_id)
+                _stream_chat_answer(
+                    request,
+                    is_dt_team_request,
+                    assistant_name,
+                    session_id,
+                    message_id,
+                )
             )
 
         session_id, message_id = await chat_service.prepare_chat_request(
@@ -113,7 +145,9 @@ async def ask_question(request: ChatRequest):
         if isinstance(response, tuple):
             answer, meta = response
             return ChatResponse(
-                answer=answer,
+                answer=_append_dt_team_disclaimer(
+                    answer, is_dt_team_request=is_dt_team_request
+                ),
                 session_id=session_id,
                 message_id=message_id,
                 latency_ms=meta.get("latency_ms"),
@@ -126,7 +160,9 @@ async def ask_question(request: ChatRequest):
             )
 
         return ChatResponse(
-            answer=response,
+            answer=_append_dt_team_disclaimer(
+                response, is_dt_team_request=is_dt_team_request
+            ),
             session_id=session_id,
             message_id=message_id,
         )
