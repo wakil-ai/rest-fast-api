@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime
 
-from bson import ObjectId
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -13,7 +12,7 @@ from app.core.exceptions import (
     UserNotFoundError,
 )
 from app.core.logger import logger
-from app.models.chat_history import ShareResponse
+from app.models.chat_history import SessionStatus, ShareResponse
 from app.utils.user_management import clean_for_mongodb, generate_short_id
 
 
@@ -28,7 +27,6 @@ class ChatHistoryService:
         self.users_collection = settings.USERS_COLLECTION
         self.sessions_collection = settings.SESSIONS_COLLECTION
         self.messages_collection = settings.MESSAGES_COLLECTION
-        self.feedback_collection = settings.FEEDBACK_COLLECTION
         self.files_collection = settings.FILES_COLLECTION
         self.token_counting_collection = settings.TOKEN_COUNTING_COLLECTION
 
@@ -41,7 +39,6 @@ class ChatHistoryService:
             self.users_collection,
             self.sessions_collection,
             self.messages_collection,
-            self.feedback_collection,
             self.files_collection,
             self.token_counting_collection,
         ]:
@@ -56,17 +53,12 @@ class ChatHistoryService:
             # Sessions - query by user
             await self.db_manager.mongo_handler.db[
                 self.sessions_collection
-            ].create_index([("user_id", 1), ("updated_at", -1)])
+            ].create_index([("user_id", 1), ("status", 1), ("updated_at", -1)])
 
             # Messages - query by session
             await self.db_manager.mongo_handler.db[
                 self.messages_collection
             ].create_index([("session_id", 1), ("created_at", 1)])
-
-            # Feedback - query by message
-            await self.db_manager.mongo_handler.db[
-                self.feedback_collection
-            ].create_index([("message_id", 1)])
 
             # Files - query by message, user
             await self.db_manager.mongo_handler.db[self.files_collection].create_index(
@@ -83,8 +75,6 @@ class ChatHistoryService:
             await self.db_manager.mongo_handler.db[
                 self.token_counting_collection
             ].create_index([("user_id", 1), ("created_at", -1)])
-
-            logger.info("[ChatHistoryService] Successfully created database indexes")
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
 
@@ -141,6 +131,18 @@ class ChatHistoryService:
     def create_message_id() -> str:
         """Create a new chat message identifier."""
         return generate_short_id("msg-", type="uuid7")
+
+    @staticmethod
+    def _build_session_activation_update(session: dict, now: datetime) -> dict:
+        update_fields: dict = {
+            "updated_at": now,
+            "status": SessionStatus.active.value,
+        }
+        if session.get("status") != SessionStatus.active.value and not session.get(
+            "activated_at"
+        ):
+            update_fields["activated_at"] = now
+        return update_fields
 
     async def ensure_session_for_user(self, user_id: str, session_id: str) -> dict:
         """Validate that the provided session exists and belongs to the user."""
@@ -389,6 +391,8 @@ class ChatHistoryService:
             "session_id": session_id,  # Ensure session_id field is set to match _id
             "title": title or "New Chat",
             "tags": tags or [],
+            "status": SessionStatus.draft.value,
+            "activated_at": None,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -400,13 +404,14 @@ class ChatHistoryService:
         except Exception as e:
             raise InvalidInputError(f"Failed to create session: {str(e)}")
 
-    async def get_sessions(self, user_id: str, limit: int = 50) -> list[dict]:
+    async def get_sessions(self, user_id: str, limit: int = 50, skip: int = 0) -> list[dict]:
         """Retrieve sessions for a user."""
         await self._ensure_user_exists(user_id)
-
+        
         sessions = await self.db_manager.find_documents(
-            self.sessions_collection, {"user_id": user_id}, limit=limit
+            self.sessions_collection, {"user_id": user_id, "status": SessionStatus.active.value}, limit=limit, skip=skip
         )
+    
         return sessions
 
     async def get_session(self, session_id: str) -> dict | None:
@@ -464,11 +469,6 @@ class ChatHistoryService:
             self.messages_collection, {"session_id": session_id}
         )
 
-        # Delete associated feedback
-        await self.db_manager.delete_documents(
-            self.feedback_collection, {"session_id": session_id}
-        )
-
         # Delete associated message files
         await self.db_manager.delete_documents(
             self.files_collection, {"session_id": session_id, "scope": "message"}
@@ -518,11 +518,14 @@ class ChatHistoryService:
         try:
             await self.db_manager.insert_documents(self.messages_collection, [message])
 
+            now = datetime.utcnow()
+            session_update = self._build_session_activation_update(session, now)
+
             # Update session timestamp
             await self.db_manager.update_documents(
                 self.sessions_collection,
                 {"_id": session_id},
-                {"$set": {"updated_at": datetime.utcnow()}},
+                {"$set": session_update},
             )
 
             return message
@@ -580,10 +583,11 @@ class ChatHistoryService:
             upsert=True,
         )
 
+        session_update = self._build_session_activation_update(session, now)
         await self.db_manager.update_documents(
             self.sessions_collection,
             {"_id": session_id},
-            {"$set": {"updated_at": now}},
+            {"$set": session_update},
         )
 
         saved_message = await self.get_message(message_id)
@@ -595,8 +599,6 @@ class ChatHistoryService:
 
     async def get_messages(self, session_id: str, limit: int = 100) -> list[dict]:
         """Retrieve all messages for a session."""
-        await self._ensure_session_exists(session_id)
-
         query = {
             "session_id": session_id,
             "content": {"$exists": True},  # Ensure it's a message
@@ -607,6 +609,14 @@ class ChatHistoryService:
         )
 
         return messages
+
+    async def get_recent_messages(self, session_id: str, limit: int = 5) -> list[dict]:
+        """Retrieve the latest messages for a session in chronological order."""
+        messages = await self.get_messages(session_id=session_id, limit=max(limit, 1))
+        messages.sort(key=lambda msg: msg.get("created_at") or datetime.min)
+        if limit <= 0:
+            return []
+        return messages[-limit:]
 
     async def get_message(self, message_id: str) -> dict | None:
         """Get message by message_id (direct _id lookup - fastest)."""
@@ -701,50 +711,55 @@ class ChatHistoryService:
         self,
         message_id: str,
         feedback_type: str,
-        comments: str | None = None,
+        feedback_content: str | None = None,
     ) -> dict:
-        """Submit feedback for a message. Feedback uses auto-generated ObjectId."""
-
-        # Get message to retrieve session_id and user_id
-        message = await self.get_message(message_id)
-        if not message:
-            raise MessageNotFoundError(message_id)
-
-        user_id = message["user_id"]
-        session_id = message["session_id"]
-
-        feedback = {
-            # ObjectId auto-generated by MongoDB (allows multiple feedbacks per message)
-            "user_id": user_id,  # Auto-populated from message
-            "session_id": session_id,  # Auto-populated from message
-            "message_id": message_id,
-            "feedback_type": feedback_type,
-            "comments": comments or "",
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
-        }
-
-        result_ids = await self.db_manager.insert_documents(
-            self.feedback_collection, [feedback]
-        )
-        if not result_ids:
-            raise InvalidInputError("Failed to submit feedback")
-
-        feedback["_id"] = ObjectId(result_ids[0])
-        logger.info(f"Submitted feedback for message_id: {message_id}")
-        return feedback
-
-    async def get_feedback(self, message_id: str) -> dict | None:
-        """Retrieve all feedback for a specific message."""
+        """Embed feedback directly on the message document."""
 
         if not message_id or not message_id.strip():
             raise InvalidInputError("Message ID cannot be empty")
 
-        feedbacks = await self.db_manager.find_documents(
-            self.feedback_collection,
-            {"message_id": message_id},
+        await self.db_manager.update_documents(
+            self.messages_collection,
+            {"_id": message_id},
+            {
+                "$set": {
+                    "feedback_type": feedback_type,
+                    "feedback_content": feedback_content,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
         )
-        return feedbacks[-1] if feedbacks else None
+        logger.info(f"Submitted feedback for message_id: {message_id}")
+        return {"message_id": message_id, "feedback_type": feedback_type, "feedback_content": feedback_content}
+
+    async def get_feedback(self, message_id: str) -> dict | None:
+        """Retrieve feedback from the message document."""
+
+        if not message_id or not message_id.strip():
+            raise InvalidInputError("Message ID cannot be empty")
+
+        message = await self.get_message(message_id)
+        if not message:
+            return None
+        return {
+            "message_id": message_id,
+            "feedback_type": message.get("feedback_type"),
+            "feedback_content": message.get("feedback_content"),
+        }
+
+    async def delete_feedback(self, message_id: str) -> dict:
+        """Remove feedback fields from the message document."""
+
+        if not message_id or not message_id.strip():
+            raise InvalidInputError("Message ID cannot be empty")
+
+        await self.db_manager.update_documents(
+            self.messages_collection,
+            {"_id": message_id},
+            {"$unset": {"feedback_type": "", "feedback_content": ""}},
+        )
+        logger.info(f"Deleted feedback for message_id: {message_id}")
+        return {"message_id": message_id, "deleted": True}
 
     # File Management
     async def add_file_upload(
@@ -925,107 +940,3 @@ class ChatHistoryService:
         )
         if deleted_count == 0:
             raise InvalidInputError("File not found")
-
-    # Sync Management
-    async def get_sync_data(self, user_id: str, months: int = 3) -> dict:
-        """
-        Retrieve all sessions and messages for a user from the last N months.
-        Used for bulk synchronization to client.
-        """
-
-        await self._ensure_user_exists(user_id)
-        days = months * 30
-        start_date = datetime.utcnow().timestamp() - (days * 24 * 60 * 60)
-        cutoff_date = datetime.fromtimestamp(start_date)
-
-        logger.info(f"Syncing data for user {user_id} since {cutoff_date}")
-
-        # 1. Get recent sessions
-        query = {"user_id": user_id, "updated_at": {"$gte": cutoff_date}}
-        sessions = await self.db_manager.find_documents(
-            self.sessions_collection,
-            query,
-            limit=1000,  # Reasonable limit
-        )
-
-        if not sessions:
-            return {"sessions": [], "messages": {}}
-
-        # 2. Get messages for these sessions
-        session_ids = [s["_id"] for s in sessions]
-
-        messages_query = {
-            "session_id": {"$in": session_ids},
-            "content": {"$exists": True},
-        }
-
-        all_messages = await self.db_manager.find_documents(
-            self.messages_collection, messages_query, limit=10000
-        )
-
-        # 3. Get all feedback for these sessions
-        feedback_query = {"session_id": {"$in": session_ids}}
-        all_feedbacks = await self.db_manager.find_documents(
-            self.feedback_collection, feedback_query, limit=5000
-        )
-
-        # 4. Map feedback to messages
-        feedback_map = {}
-        for f in all_feedbacks:
-            msg_id = f.get("message_id")
-            if not msg_id:
-                continue
-
-            if msg_id not in feedback_map:
-                feedback_map[msg_id] = {
-                    "total_likes": 0,
-                    "total_dislikes": 0,
-                    "user_feedback": None,
-                }
-
-            f_type = f.get("feedback_type")
-            if f_type == "like":
-                feedback_map[msg_id]["total_likes"] += 1
-            elif f_type == "dislike":
-                feedback_map[msg_id]["total_dislikes"] += 1
-
-            if str(f.get("user_id")) == str(user_id):
-                feedback_map[msg_id]["user_feedback"] = f_type
-
-        # 5. Org messages by session and attach feedback
-        messages_by_session = {}
-
-        for msg in all_messages:
-            s_id = msg.get("session_id")
-            if s_id not in messages_by_session:
-                messages_by_session[s_id] = []
-
-            msg_id = msg.get("message_id") or str(msg.get("_id"))
-
-            # Attach feedback
-            if msg_id in feedback_map:
-                msg["feedback"] = feedback_map[msg_id]
-            else:
-                msg["feedback"] = {
-                    "total_likes": 0,
-                    "total_dislikes": 0,
-                    "user_feedback": None,
-                }
-
-            messages_by_session[s_id].append(msg)
-
-        # 6. Filter empty sessions
-        # Only return sessions that have at least one message
-        non_empty_sessions = []
-        for session in sessions:
-            if (
-                session["_id"] in messages_by_session
-                and len(messages_by_session[session["_id"]]) > 0
-            ):
-                non_empty_sessions.append(session)
-
-        logger.info(
-            f"Sync complete: {len(non_empty_sessions)} sessions, {len(all_messages)} messages"
-        )
-
-        return {"sessions": non_empty_sessions, "messages": messages_by_session}

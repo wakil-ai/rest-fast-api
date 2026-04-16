@@ -362,7 +362,9 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
             request.user_id
         )
         if existing_user:
-            raise UserAlreadyExistsException(request.user_id)
+            return DTUserCreateResponse(
+                success=True, user_id=existing_user.get("user_id")
+            )
 
         if request.phone_number:
             # Basic validation for phone number format (can be enhanced with regex)

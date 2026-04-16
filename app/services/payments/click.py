@@ -5,21 +5,9 @@ from urllib.parse import urlencode
 
 from app.core.config import settings
 from app.core.logger import logger
+from app.models.payment import ClickError
 from app.services.payments.base import BasePaymentService
 from app.utils.text_cleaning import _as_decimal, _as_int, _md5_hex
-
-
-class ClickError:
-    SUCCESS = 0
-    SIGN_CHECK_FAILED = -1
-    INCORRECT_AMOUNT = -2
-    ACTION_NOT_FOUND = -3
-    ALREADY_PAID = -4
-    USER_DOES_NOT_EXIST = -5
-    TRANSACTION_DOES_NOT_EXIST = -6
-    FAILED_TO_UPDATE_USER = -7
-    ERROR_IN_REQUEST = -8
-    TRANSACTION_CANCELLED = -9
 
 
 class ClickService(BasePaymentService):
@@ -303,53 +291,10 @@ class ClickService(BasePaymentService):
     async def _apply_subscription_from_order(
         self, *, order_id: str | None, transaction_id: str | None, now_ms: int
     ) -> None:
-        if not order_id:
-            return
-
-        invoice = await self.db_handler.find_one(
-            self.invoices_collection,
-            {
-                "provider": self.provider,
-                "$or": [{"order_id": order_id}, {"invoice_id": order_id}],
-            },
-        )
-        if not invoice:
-            return
-
-        quote = invoice.get("subscription")
-        if not isinstance(quote, dict):
-            return
-
-        if invoice.get("subscription_applied") is True:
-            return
-
-        user_id = invoice.get("user_id")
-        if not user_id:
-            return
-
-        user = await self.db_handler.find_one(self.users_collection, {"_id": user_id})
-        if not user:
-            user = await self.db_handler.find_one(
-                self.users_collection, {"user_id": user_id}
-            )
-        if not user:
-            return
-
-        await self.subscription_storage.upsert_subscription(
-            user_id=user_id,
-            quote=quote,
+        await self._finalize_subscription_invoice(
             order_id=order_id,
             transaction_id=transaction_id,
             now_ms=now_ms,
-            provider=invoice.get("provider"),
-        )
-        await self.db_handler.update_one(
-            self.invoices_collection,
-            {
-                "provider": self.provider,
-                "$or": [{"order_id": order_id}, {"invoice_id": order_id}],
-            },
-            {"subscription_applied": True, "updated_at": now_ms},
         )
 
     async def complete(self, payload: dict) -> dict:

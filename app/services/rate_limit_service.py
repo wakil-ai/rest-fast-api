@@ -33,6 +33,12 @@ class RateLimitService:
         """Get credit cost for a specific assistant type."""
         return AssistantConfig.get_credit_cost(assistant_type)
 
+    async def _get_today_credits_used(self, user_id: str) -> int:
+        today = self._get_today_date()
+        collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
+        user_limit = await collection.find_one({"user_id": user_id, "date": today})
+        return int(user_limit.get("credits_used", 0)) if user_limit else 0
+
     async def _get_active_subscription_daily_limit(self, user_id: str) -> int | None:
         """Return subscription daily credits if active, else None."""
 
@@ -231,6 +237,24 @@ class RateLimitService:
                 f"[RateLimitService] Error getting remaining credits for user {user_id}: {str(e)}"
             )
             return settings.DAILY_CREDITS_LIMIT
+
+    async def get_credit_status(self, user_id: str) -> dict[str, int | bool]:
+        daily_limit = await self.get_daily_credit_limit(user_id)
+        if daily_limit == -1:
+            return {
+                "remaining_credits": -1,
+                "effective_daily_credit_limit": -1,
+                "today_credits_used": await self._get_today_credits_used(user_id),
+                "uses_combined_credit_pool": True,
+            }
+
+        credits_used = await self._get_today_credits_used(user_id)
+        return {
+            "remaining_credits": max(0, daily_limit - credits_used),
+            "effective_daily_credit_limit": daily_limit,
+            "today_credits_used": credits_used,
+            "uses_combined_credit_pool": True,
+        }
 
     async def get_daily_credit_limit(self, user_id: str) -> int:
         """Return effective daily credit limit for a user (-1 for unlimited)."""

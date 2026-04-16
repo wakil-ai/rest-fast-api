@@ -39,6 +39,41 @@ class TransactionError(Exception):
         return payload
 
 
+class SubscriptionEligibilityError(ValueError):
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        active_daily_pass_end_ms: int | None = None,
+        active_subscription_end_ms: int | None = None,
+        active_subscription_tier: str | None = None,
+        active_subscription_period: str | None = None,
+    ):
+        self.code = code
+        self.message = message
+        self.active_daily_pass_end_ms = active_daily_pass_end_ms
+        self.active_subscription_end_ms = active_subscription_end_ms
+        self.active_subscription_tier = active_subscription_tier
+        self.active_subscription_period = active_subscription_period
+        super().__init__(message)
+
+    def to_detail(self) -> dict:
+        detail = {
+            "code": self.code,
+            "message": self.message,
+        }
+        if self.active_daily_pass_end_ms is not None:
+            detail["active_daily_pass_end_ms"] = self.active_daily_pass_end_ms
+        if self.active_subscription_end_ms is not None:
+            detail["active_subscription_end_ms"] = self.active_subscription_end_ms
+        if self.active_subscription_tier is not None:
+            detail["active_subscription_tier"] = self.active_subscription_tier
+        if self.active_subscription_period is not None:
+            detail["active_subscription_period"] = self.active_subscription_period
+        return detail
+
+
 class TransactionModel:
     """
     This is a schema reference for documentation & consistency.
@@ -217,14 +252,8 @@ class PaymeInitRequest(BaseModel):
     user_id: str
     callback_url: str
     order_id: str | None = None  # If not provided, server generates a new one
-    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = Field(
-        default=None,
-        validation_alias=AliasChoices("subscription_tier", "subscription_type"),
-    )
-    subscription_period: Literal["daily", "monthly", "yearly"] | None = Field(
-        default=None,
-        validation_alias=AliasChoices("subscription_period", "duration", "Duration"),
-    )
+    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = Field(default=None)
+    subscription_period: Literal["daily", "monthly", "yearly"] | None = Field(default=None)
     order_id: str | None = None  # Optional order/invoice id to include in `ac.order_id`
 
 
@@ -245,7 +274,6 @@ class SubscriptionPlan(BaseModel):
 class SubscriptionCatalogResponse(BaseModel):
     plans: list[SubscriptionPlan]
 
-
 class UserSubscriptionResponse(BaseModel):
     user_id: str
     active: bool
@@ -261,6 +289,10 @@ class UserSubscriptionResponse(BaseModel):
     daily_pass_start_ms: int | None = None
     daily_pass_end_ms: int | None = None
     combined_daily_credits: int | None = None
+    effective_daily_credit_limit: int | None = None
+    today_credits_used: int | None = None
+    today_remaining_credits: int | None = None
+    uses_combined_credit_pool: bool = True
 
 
 class FiscalData(BaseModel):
@@ -277,3 +309,63 @@ class SetFiscalDataRequest(BaseModel):
     id: str  # Transaction ID
     type: str  # "PERFORM" or "CANCEL"
     fiscal_data: FiscalData
+
+
+# Click Models
+class ClickInitRequest(BaseModel):
+    amount: int | None = None
+    user_id: str
+    callback_url: str
+    order_id: str | None = None
+    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = None
+    subscription_period: Literal["daily", "monthly", "yearly"] | None = None
+
+class ClickInitResponse(BaseModel):
+    order_id: str
+    link: str
+
+
+class ClickPrepareResponse(BaseModel):
+    click_trans_id: int
+    merchant_trans_id: str
+    merchant_prepare_id: int | None = None
+    error: int
+    error_note: str
+
+class ClickError:
+    SUCCESS = 0
+    SIGN_CHECK_FAILED = -1
+    INCORRECT_AMOUNT = -2
+    ACTION_NOT_FOUND = -3
+    ALREADY_PAID = -4
+    USER_DOES_NOT_EXIST = -5
+    TRANSACTION_DOES_NOT_EXIST = -6
+    FAILED_TO_UPDATE_USER = -7
+    ERROR_IN_REQUEST = -8
+    TRANSACTION_CANCELLED = -9
+
+class ClickCompleteResponse(BaseModel):
+    click_trans_id: int
+    merchant_trans_id: str
+    merchant_confirm_id: int | None = None
+    error: int
+    error_note: str
+
+# DT Team Subscription Models
+class DTSubscriptionApplyResponse(BaseModel):
+    """Response for DT team subscription application"""
+    success: bool = True
+    user_id: str
+    tier: str
+    period: str
+    daily_credits: int
+    start_ms: int
+    end_ms: int
+    total_credits: int
+    
+class DTInitRequest(BaseModel):
+    amount: int | None = None
+    user_id: str
+    order_id: str | None = None
+    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = None
+    subscription_period: Literal["daily", "monthly", "yearly"] | None = None

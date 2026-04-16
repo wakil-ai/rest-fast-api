@@ -4,7 +4,7 @@ from math import floor
 
 from app.core.config import settings
 from app.core.logger import logger
-from app.models.payme import PaymeData, PaymeError, TransactionError, TransactionState
+from app.models.payment import PaymeData, PaymeError, TransactionError, TransactionState
 from app.services.payments.base import BasePaymentService
 
 
@@ -57,54 +57,10 @@ class TransactionService(BasePaymentService):  # Paycom
     async def _apply_subscription_from_order(
         self, *, order_id: str | None, transaction_id: str | None, now_ms: int
     ) -> None:
-        if not order_id:
-            return
-
-        invoice = await self.db_handler.find_one(
-            self.invoices_collection,
-            {
-                "provider": self.provider,
-                "$or": [{"order_id": order_id}, {"invoice_id": order_id}],
-            },
-        )
-        if not invoice:
-            return
-
-        quote = invoice.get("subscription")
-        if not quote:
-            return
-
-        if invoice.get("subscription_applied") is True:
-            return
-
-        user_id = invoice.get("user_id")
-        if not user_id:
-            return
-
-        user = await self.db_handler.find_one(self.users_collection, {"_id": user_id})
-        if not user:
-            user = await self.db_handler.find_one(
-                self.users_collection, {"user_id": user_id}
-            )
-        if not user:
-            return
-
-        await self.subscription_storage.upsert_subscription(
-            user_id=user_id,
-            quote=quote,
+        await self._finalize_subscription_invoice(
             order_id=order_id,
             transaction_id=transaction_id,
             now_ms=now_ms,
-            provider=invoice.get("provider"),
-        )
-
-        await self.db_handler.update_one(
-            self.invoices_collection,
-            {
-                "provider": self.provider,
-                "$or": [{"order_id": order_id}, {"invoice_id": order_id}],
-            },
-            {"subscription_applied": True, "updated_at": now_ms},
         )
 
     async def check_perform_transaction(self, params, request_id):

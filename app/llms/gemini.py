@@ -1,5 +1,5 @@
 import asyncio
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from google import genai
 from google.genai import types
@@ -47,7 +47,7 @@ class Gemini(LLM):
 
     async def _generate_streaming(
         self, system_prompt: str, user_prompt: str
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str | dict[str, str], None]:
         """Generate streaming response (offloaded to thread via queue)."""
         contents = [
             types.Content(
@@ -67,12 +67,50 @@ class Gemini(LLM):
         generate_content_config = types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(
                 thinking_level="HIGH",
+                include_thoughts=True,
             ),
             temperature=settings.TEMPERATURE,
         )
 
-        queue: asyncio.Queue[str | None] = asyncio.Queue()
+        queue: asyncio.Queue[str | dict[str, str] | Exception | None] = asyncio.Queue()
         loop = asyncio.get_event_loop()
+
+        def _extract_parts(chunk: Any) -> list[Any]:
+            candidates = getattr(chunk, "candidates", None) or []
+            if not candidates:
+                content = getattr(chunk, "content", None)
+                parts = getattr(content, "parts", None) if content else None
+                return list(parts or [])
+
+            extracted_parts: list[Any] = []
+            for candidate in candidates:
+                content = getattr(candidate, "content", None)
+                parts = getattr(content, "parts", None) if content else None
+                if parts:
+                    extracted_parts.extend(parts)
+
+            return extracted_parts
+
+        def _extract_stream_items(chunk: Any) -> list[str | dict[str, str]]:
+            items: list[str | dict[str, str]] = []
+            part_text_seen = False
+
+            for part in _extract_parts(chunk):
+                text = getattr(part, "text", None)
+                if not text:
+                    continue
+
+                part_text_seen = True
+                if getattr(part, "thought", False):
+                    items.append({"type": "think", "chunk": text})
+                else:
+                    items.append(text)
+
+            chunk_text = getattr(chunk, "text", None)
+            if chunk_text and not part_text_seen:
+                items.append(chunk_text)
+
+            return items
 
         def _sync_stream():
             """Run the synchronous Gemini streaming in a thread, pushing chunks to the queue."""
@@ -82,8 +120,8 @@ class Gemini(LLM):
                     contents=contents,
                     config=generate_content_config,
                 ):
-                    if chunk.text:
-                        loop.call_soon_threadsafe(queue.put_nowait, chunk.text)
+                    for item in _extract_stream_items(chunk):
+                        loop.call_soon_threadsafe(queue.put_nowait, item)
             except Exception as e:
                 loop.call_soon_threadsafe(queue.put_nowait, e)
             finally:

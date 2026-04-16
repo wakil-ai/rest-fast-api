@@ -1,7 +1,7 @@
 import time
 from typing import Any, cast
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pymongo import UpdateOne
 
 from app.core.config import settings
@@ -18,8 +18,12 @@ from app.models.telegram import (
     TelegramChatsListResponse,
     TelegramChatsSaveRequest,
 )
+from app.security import verify_api_key, verify_api_key_or_dt_key
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+admin_only = [Depends(verify_api_key)]
+shared_api_access = [Depends(verify_api_key_or_dt_key)]
 
 # Initialize services
 rate_limit_service = get_rate_limit_service()
@@ -36,6 +40,7 @@ def _require_admin_key(key: str) -> None:
     "/rate-limit/{user_id}",
     response_model=RateLimitResponse,
     summary="Get user's remaining credits",
+    dependencies=shared_api_access,
 )
 async def get_user_rate_limit(user_id: str):
     """
@@ -50,12 +55,14 @@ async def get_user_rate_limit(user_id: str):
     - credit_costs: Credit cost for each assistant type
     """
     try:
-        remaining = await rate_limit_service.get_remaining_credits(user_id)
-        daily_limit = await rate_limit_service.get_daily_credit_limit(user_id)
+        status = await rate_limit_service.get_credit_status(user_id)
         return RateLimitResponse(
             user_id=user_id,
-            remaining_credits=remaining,
-            daily_credit_limit=daily_limit,
+            remaining_credits=int(status["remaining_credits"]),
+            daily_credit_limit=int(status["effective_daily_credit_limit"]),
+            effective_daily_credit_limit=int(status["effective_daily_credit_limit"]),
+            today_credits_used=int(status["today_credits_used"]),
+            uses_combined_credit_pool=bool(status["uses_combined_credit_pool"]),
         )
     except Exception as e:
         logger.error(
@@ -67,7 +74,9 @@ async def get_user_rate_limit(user_id: str):
 
 
 #  Promo Code Management Endpoints
-@router.post("/promo-codes", summary="Create a new promo code")
+@router.post(
+    "/promo-codes", summary="Create a new promo code", dependencies=admin_only
+)
 async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin"):
     """
     Create a new promo code for unlimited access.
@@ -124,7 +133,11 @@ async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin")
         raise HTTPException(status_code=500, detail="Failed to create promo code")
 
 
-@router.get("/promo-codes/{code}", summary="Get specific promo code details")
+@router.get(
+    "/promo-codes/{code}",
+    summary="Get specific promo code details",
+    dependencies=admin_only,
+)
 async def get_promo_code(code: str):
     """
     Get details of a specific promo code.
@@ -160,7 +173,11 @@ async def get_promo_code(code: str):
         raise HTTPException(status_code=500, detail="Failed to retrieve promo code")
 
 
-@router.patch("/promo-codes/{code}/activate", summary="Activate a promo code")
+@router.patch(
+    "/promo-codes/{code}/activate",
+    summary="Activate a promo code",
+    dependencies=admin_only,
+)
 async def activate_promo_code(code: str):
     """
     Activate a promo code.
@@ -191,7 +208,11 @@ async def activate_promo_code(code: str):
         raise HTTPException(status_code=500, detail="Failed to activate promo code")
 
 
-@router.patch("/promo-codes/{code}/deactivate", summary="Deactivate a promo code")
+@router.patch(
+    "/promo-codes/{code}/deactivate",
+    summary="Deactivate a promo code",
+    dependencies=admin_only,
+)
 async def deactivate_promo_code(code: str):
     """
     Deactivate a promo code.
@@ -223,7 +244,11 @@ async def deactivate_promo_code(code: str):
 
 
 # User Promo Code Assignment Endpoints
-@router.post("/promo-codes/assign", summary="Assign promo code to a user")
+@router.post(
+    "/promo-codes/assign",
+    summary="Assign promo code to a user",
+    dependencies=shared_api_access,
+)
 async def assign_promo_code_to_user(request: UserPromoCode):
     """
     Assign a promo code to a user for unlimited access.
@@ -261,7 +286,11 @@ async def assign_promo_code_to_user(request: UserPromoCode):
         raise HTTPException(status_code=500, detail="Failed to assign promo code")
 
 
-@router.delete("/promo-codes/assign/{user_id}", summary="Remove promo code from user")
+@router.delete(
+    "/promo-codes/assign/{user_id}",
+    summary="Remove promo code from user",
+    dependencies=shared_api_access,
+)
 async def remove_user_promo_code(user_id: str):
     """
     Remove promo code from a user.
@@ -274,7 +303,7 @@ async def remove_user_promo_code(user_id: str):
     - message: Status message
     """
     try:
-        success = promo_code_service.remove_user_promo_code(user_id)
+        success = await promo_code_service.remove_user_promo_code(user_id)
 
         if success:
             return {
@@ -293,7 +322,11 @@ async def remove_user_promo_code(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to remove promo code")
 
 
-@router.get("/promo-codes/users/{user_id}", summary="Get user's promo code")
+@router.get(
+    "/promo-codes/users/{user_id}",
+    summary="Get user's promo code",
+    dependencies=shared_api_access,
+)
 async def get_user_promo_code(user_id: str):
     """
     Get the promo code assigned to a specific user.
@@ -331,6 +364,7 @@ async def get_user_promo_code(user_id: str):
 @router.post(
     "/telegram/save/chats",
     summary="Save Telegram chat ids (upsert)",
+    dependencies=admin_only,
 )
 async def save_telegram_chats(request: TelegramChatsSaveRequest):
     try:
@@ -413,6 +447,7 @@ async def save_telegram_chats(request: TelegramChatsSaveRequest):
     "/telegram/chats",
     response_model=TelegramChatsListResponse,
     summary="List Telegram chat ids",
+    dependencies=admin_only,
 )
 async def list_telegram_chats(
     super_secret_admin_key: str,

@@ -19,7 +19,7 @@ from app.core.exceptions import (
     QueryTooLongException,
 )
 from app.core.logger import logger
-from app.models.chat import AgenticRAGRequest, AssistantType, ChatResponse, MessagePair
+from app.models.chat import AgenticRAGRequest, AssistantType, ChatResponse
 from app.utils.streaming import format_streaming_response, get_streaming_headers
 
 
@@ -254,7 +254,6 @@ class ChatService:
         session_id: str,
         message_id: str,
         query: str,
-        chat_history: list[MessagePair] | None = None,
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
@@ -264,8 +263,8 @@ class ChatService:
 
         Args:
             user_id: User identifier
+            session_id: Session identifier used to load previous persisted messages
             query: User's question
-            chat_history: Previous conversation history
             stream: Enable streaming response
             file_ids: List of file IDs to use as context
             assistant: Assistant name
@@ -282,8 +281,8 @@ class ChatService:
             started_at = perf_counter()
             answer = await self.chat_chain.generate_answer(
                 user_id=user_id,
+                session_id=session_id,
                 query=query,
-                chat_history=chat_history,
                 stream=stream,
                 file_ids=file_ids,
                 assistant=assistant,

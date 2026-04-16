@@ -1,7 +1,8 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
 
+from app.core.config import settings
 from app.core.dependencies import get_chat_history_service, get_redis_service
 from app.models.chat_history import (
     UserCreateRequest,
@@ -9,7 +10,7 @@ from app.models.chat_history import (
     UserPhoneUpdateRequest,
     UserUpdateRequest,
 )
-from app.security import verify_super_admin_key
+from app.security import verify_super_admin_key, verify_dt_user_web_client
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -42,6 +43,7 @@ async def create_or_get_user(request: UserCreateRequest, response: Response):
         phone_number=request.phone_number,
         last_name=request.last_name,
         picture=request.picture,
+        web_client=settings.WAKILAI_WEB_CLIENT_NAME,
     )
     response.status_code = status.HTTP_201_CREATED
     return create_response(user, "User created successfully")
@@ -49,19 +51,40 @@ async def create_or_get_user(request: UserCreateRequest, response: Response):
 
 @router.get("/{user_id}", response_model=UserCreateResponse)
 @handle_service_error
-async def get_user(user_id: str):
+async def get_user(user_id: str, request: Request):
+    default_api_key = request.headers.get(settings.API_KEY_NAME.lower())
+    dt_api_key = request.headers.get(settings.DT_API_KEY_NAME.lower())
+
+    if default_api_key:
+        requested_web_client = settings.WAKILAI_WEB_CLIENT_NAME
+    elif dt_api_key:
+        requested_web_client = settings.DT_WEB_CLIENT_NAME
+    
     cache_key = f"user:{user_id}"
 
     # Try to get from Redis cache first
     cached_user = redis_service.cache_get(cache_key)
     if cached_user:
         user = json.loads(cached_user)
+        
+        if user.get("web_client") != requested_web_client:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: User does not belong to the requested client",
+            )  
+        
         return create_response(user, "User retrieved (from cache)")
 
     # Cache miss - fetch from database
     user = await chat_history_service.get_user(user_id=user_id)
     if not user:
         raise HTTPException(404, f"User {user_id} not found")
+    
+    if user.get("web_client") != requested_web_client:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: User does not belong to the requested client",
+        )
 
     # Cache the user with 1 day TTL (cache_set handles datetime serialization)
     redis_service.cache_set(cache_key, user, ttl_seconds=86400)

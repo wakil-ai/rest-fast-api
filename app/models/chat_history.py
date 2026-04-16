@@ -53,6 +53,11 @@ class UserCreateResponse(BaseModel):
 
 
 # Session Models
+class SessionStatus(str, Enum):
+    draft = "draft"
+    active = "active"
+
+
 class SessionCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID who owns the session")
     title: str | None = Field("New Chat", description="Session title")
@@ -68,6 +73,8 @@ class SessionResponse(BaseModel):
     session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
+    status: SessionStatus = Field(default=SessionStatus.draft)
+    activated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
@@ -107,6 +114,8 @@ class MessageResponse(BaseModel):
     )  # optional for backward compatibility
     content: MessageContent
     metadata: dict[str, Any] | None = None
+    feedback_type: str | None = Field(None, description="Feedback type (positive/negative)")
+    feedback_content: str | None = Field(None, description="Optional feedback comment")
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
@@ -144,69 +153,26 @@ class MessageCreateResponse(BaseModel):
     message: str = Field(default="Message operation successful")
 
 
-# FEEDBACK MODELS
-
-
-class FeedbackType(str, Enum):
-    """Feedback type enumeration"""
-
-    POSITIVE = "positive"
-    NEGATIVE = "negative"
-    LIKE = "like"
-    DISLIKE = "dislike"
-
-
+# Feedback Models
 class FeedbackCreateRequest(BaseModel):
-    """Request model for submitting message feedback (only message_id required)"""
+    """Request model for submitting message feedback"""
 
-    message_id: str = Field(..., description="Message ID (only field required)")
-    feedback_type: FeedbackType = Field(..., description="Type of feedback")
-    comments: str | None = Field(
+    message_id: str = Field(..., description="Message ID")
+    feedback_type: str = Field(..., description="Type of feedback: positive or negative")
+    feedback_content: str | None = Field(
         None, max_length=500, description="Optional feedback comment"
     )
 
 
-class FeedbackResponse(BaseModel):
-    """Response model for feedback data"""
-
-    feedback_id: str = Field(..., description="Feedback ID (ObjectId)", alias="_id")
-    user_id: str = Field(..., description="User ID (auto-populated from message)")
-    session_id: str = Field(..., description="Session ID (auto-populated from message)")
-    message_id: str = Field(..., description="Message ID")
-    feedback_type: FeedbackType = Field(..., description="Type of feedback")
-    comments: str | None = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"populate_by_name": True}
-
-
-class FeedbackCreateResponse(BaseModel):
-    """Standardized response for feedback operations"""
-
-    info: FeedbackResponse
-    message: str = Field(default="Feedback operation successful")
-
-
-# FILE MODELS
-
-
+# File Models
 class FileUploadResponse(BaseModel):
     """Response model for file upload data"""
 
     file_id: str = Field(..., description="File ID (stored as _id)", alias="_id")
-    project_id: str | None = Field(
-        default=None,
-        description="Project ID the file belongs to (null for message attachments)",
-    )
     file_url: str = Field(..., description="API endpoint to access the file")
-    file_metadata: dict[str, Any] = Field(
-        ..., description="File metadata (name, type, size, gcs_path)"
-    )
+    file_metadata: dict[str, Any] = Field(..., description="File metadata (name, type, size, gcs_path)")
     ocr_result: str = Field(..., description="OCR extracted text")
-    status: str = Field(
-        ..., description="Processing status: processing/completed/failed"
-    )
+    status: str = Field(..., description="Processing status: processing/completed/failed")
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
@@ -219,15 +185,12 @@ class FileStatusUpdateRequest(BaseModel):
     ocr_result: str | None = Field(None, description="Optional OCR result")
 
 
-# BACKWARD COMPATIBILITY (DEPRECATED)
-
-
+# Backward compatibility models (to be removed in future versions)
 class MessagesFetchRequest(BaseModel):
     """DEPRECATED: Use GET /messages/{session_id} instead"""
 
     session_id: str = Field(..., description="Session ID")
     limit: int = Field(100, ge=1, le=500)
-
 
 class FeedbackFetchRequest(BaseModel):
     """DEPRECATED: Use GET /feedback/{message_id} instead"""

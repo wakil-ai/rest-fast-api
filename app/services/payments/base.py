@@ -1,8 +1,15 @@
 import secrets
 import time
+from datetime import datetime, timezone
 
 from app.core.config import settings
-from app.core.dependencies import get_mongo_handler, get_subscription_storage
+from app.core.dependencies import (
+    get_mongo_handler,
+    get_rate_limit_service,
+    get_subscription_storage,
+)
+from app.core.logger import logger
+from app.models.payment import SubscriptionEligibilityError
 
 
 class BasePaymentService:
@@ -13,6 +20,7 @@ class BasePaymentService:
         self.users_collection = settings.USERS_COLLECTION
         self.invoices_collection = settings.PAYMENT_INVOICES_COLLECTION
         self.subscription_storage = get_subscription_storage()
+        self.rate_limit_service = get_rate_limit_service()
         self._invoice_indexes_ready = False
 
         self._subscription_catalog = {
@@ -94,6 +102,9 @@ class BasePaymentService:
             return user
         return await self.db_handler.find_one(self.users_collection, {"_id": user_id})
 
+    def _get_today_date(self) -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     def _get_subscription_quote(self, tier: str, period: str) -> dict:
         tier_cfg = self._subscription_catalog.get(tier)
         if not tier_cfg:
@@ -140,6 +151,7 @@ class BasePaymentService:
     async def get_user_subscription(self, user_id: str) -> dict:
         sub = await self.subscription_storage.get_subscription(user_id)
         daily_pass = await self.subscription_storage.get_daily_subscription(user_id)
+        credit_status = await self.rate_limit_service.get_credit_status(user_id)
 
         now_ms = int(time.time() * 1000)
 
@@ -165,6 +177,14 @@ class BasePaymentService:
                 "daily_pass_start_ms": daily_pass_start_ms,
                 "daily_pass_end_ms": daily_pass_end_ms,
                 "combined_daily_credits": combined,
+                "effective_daily_credit_limit": credit_status[
+                    "effective_daily_credit_limit"
+                ],
+                "today_credits_used": credit_status["today_credits_used"],
+                "today_remaining_credits": credit_status["remaining_credits"],
+                "uses_combined_credit_pool": credit_status[
+                    "uses_combined_credit_pool"
+                ],
             }
 
         end_ms = int(sub.get("end_ms") or 0)
@@ -187,6 +207,12 @@ class BasePaymentService:
             "daily_pass_start_ms": daily_pass_start_ms,
             "daily_pass_end_ms": daily_pass_end_ms,
             "combined_daily_credits": combined_daily,
+            "effective_daily_credit_limit": credit_status[
+                "effective_daily_credit_limit"
+            ],
+            "today_credits_used": credit_status["today_credits_used"],
+            "today_remaining_credits": credit_status["remaining_credits"],
+            "uses_combined_credit_pool": credit_status["uses_combined_credit_pool"],
         }
 
     def _resolve_purpose(self, quote: dict | None) -> str:
@@ -195,6 +221,146 @@ class BasePaymentService:
         if quote.get("tier") == "daily" and quote.get("period") == "daily":
             return "daily_pass"
         return "subscription"
+
+    def _is_daily_pass_quote(self, quote: dict | None) -> bool:
+        return bool(
+            isinstance(quote, dict)
+            and quote.get("tier") == "daily"
+            and quote.get("period") == "daily"
+        )
+
+    async def _get_active_daily_pass(self, user_id: str, now_ms: int) -> dict | None:
+        daily_pass = await self.subscription_storage.get_daily_subscription(user_id)
+        if not isinstance(daily_pass, dict):
+            return None
+
+        end_ms = int(daily_pass.get("end_ms") or 0)
+        if end_ms <= now_ms:
+            return None
+        return daily_pass
+
+    async def _get_active_subscription(self, user_id: str, now_ms: int) -> dict | None:
+        subscription = await self.subscription_storage.get_subscription(user_id)
+        if not isinstance(subscription, dict):
+            return None
+
+        end_ms = int(subscription.get("end_ms") or 0)
+        if end_ms <= now_ms:
+            return None
+        return subscription
+
+    async def validate_subscription_eligibility(
+        self, *, user_id: str, quote: dict | None, now_ms: int | None = None
+    ) -> None:
+        if not isinstance(quote, dict):
+            return
+
+        current_time_ms = now_ms or int(time.time() * 1000)
+
+        if self._is_daily_pass_quote(quote):
+            active_daily_pass = await self._get_active_daily_pass(
+                user_id, current_time_ms
+            )
+            if active_daily_pass is None:
+                return
+
+            raise SubscriptionEligibilityError(
+                code="ACTIVE_DAILY_PASS_EXISTS",
+                message="An active daily pass already exists for this user.",
+                active_daily_pass_end_ms=int(active_daily_pass.get("end_ms") or 0),
+            )
+
+        active_subscription = await self._get_active_subscription(user_id, current_time_ms)
+        if active_subscription is None:
+            return
+
+        active_tier = active_subscription.get("tier")
+        if active_tier not in {"standard", "pro"}:
+            return
+
+        raise SubscriptionEligibilityError(
+            code="ACTIVE_SUBSCRIPTION_EXISTS",
+            message="An active subscription already exists for this user. Transfers are not allowed while it is active.",
+            active_subscription_end_ms=int(active_subscription.get("end_ms") or 0),
+            active_subscription_tier=str(active_tier),
+            active_subscription_period=active_subscription.get("period"),
+        )
+
+    async def _finalize_subscription_invoice(
+        self, *, order_id: str | None, transaction_id: str | None, now_ms: int
+    ) -> None:
+        if not order_id:
+            return
+
+        invoice = await self.db_handler.find_one(
+            self.invoices_collection,
+            {
+                "provider": self.provider,
+                "$or": [{"order_id": order_id}, {"invoice_id": order_id}],
+            },
+        )
+        if not invoice:
+            return
+
+        quote = invoice.get("subscription")
+        if not isinstance(quote, dict):
+            return
+
+        if invoice.get("subscription_applied") is True:
+            return
+
+        user_id = invoice.get("user_id")
+        if not user_id:
+            return
+
+        user = await self.get_user_by_id(user_id)
+        if not user:
+            return
+
+        resolution = "granted"
+        resolution_update: dict[str, int | str] = {}
+
+        if self._is_daily_pass_quote(quote):
+            active_daily_pass = await self._get_active_daily_pass(user_id, now_ms)
+            active_end_ms = (
+                int(active_daily_pass.get("end_ms") or 0) if active_daily_pass else 0
+            )
+            if active_end_ms > now_ms:
+                resolution = "granted_after_payment_conflict"
+                resolution_update = {
+                    "active_daily_pass_end_ms": active_end_ms,
+                    "apply_strategy": "extend_existing_daily_pass",
+                }
+                logger.warning(
+                    "[%s] Paid daily pass reapplied for user %s after eligibility conflict; extending active pass until %s",
+                    self.provider,
+                    user_id,
+                    active_end_ms,
+                )
+
+        await self.subscription_storage.upsert_subscription(
+            user_id=user_id,
+            quote=quote,
+            order_id=order_id,
+            transaction_id=transaction_id,
+            now_ms=now_ms,
+            provider=invoice.get("provider"),
+        )
+
+        await self.db_handler.update_one(
+            self.invoices_collection,
+            {
+                "provider": self.provider,
+                "$or": [{"order_id": order_id}, {"invoice_id": order_id}],
+            },
+            {
+                "subscription_applied": True,
+                "updated_at": now_ms,
+                "subscription_apply_resolution": resolution,
+                "subscription_apply_resolution_at_ms": now_ms,
+                **resolution_update,
+            },
+        )
 
     def _build_invoice_document(
         self,
@@ -259,6 +425,11 @@ class BasePaymentService:
 
         purpose = self._resolve_purpose(quote)
         now_ms = int(time.time() * 1000)
+        await self.validate_subscription_eligibility(
+            user_id=user_id,
+            quote=quote,
+            now_ms=now_ms,
+        )
 
         if quote and not order_id:
             existing_invoice = await self.db_handler.find_one(

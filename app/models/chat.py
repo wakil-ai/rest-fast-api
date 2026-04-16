@@ -28,15 +28,6 @@ class ChatModel(str, Enum):
     GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
 
 
-class MessagePair(BaseModel):
-    """
-    A question-answer pair in the chat history.
-    """
-
-    question: str
-    answer: str
-
-
 class AssistantType(str, Enum):
     """Supported assistant types."""
 
@@ -68,9 +59,6 @@ class ChatRequest(BaseModel):
     )
     session_id: str = Field(..., description="Existing session identifier")
     query: str = Field(..., example="What are the marriage laws in Uzbekistan?")
-    chat_history: list[MessagePair] | None = Field(
-        default=None, description="Previous question-answer pairs"
-    )
     stream: bool | None = Field(
         default=settings.STREAM, description="Whether to stream the response"
     )
