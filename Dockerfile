@@ -23,6 +23,7 @@ WORKDIR /app
 # Install only runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    libreoffice-writer \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \

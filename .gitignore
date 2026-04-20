@@ -12,6 +12,7 @@ venv/
 data/
 file_stream_ws.py
 .vscode/
+docker/
 *.json
 
 .vscode/

@@ -146,7 +146,7 @@ class Settings(BaseSettings):
 
     # OCR Service
     DATALAB_API_KEY: str | None = None
-    FILE_CONTENT_TOKEN_LIMIT: int = 10_000  # Max tokens for file content extraction
+    FILE_CONTENT_TOKEN_LIMIT: int = 30_000  # Max tokens for file content extraction
     MAX_RETRIEVAL_DOCS_TOKEN_LIMIT: int = 200_000  # Max tokens for retrieved documents
 
     # OpenAI Embedding Model
