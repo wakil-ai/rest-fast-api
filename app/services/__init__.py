@@ -7,6 +7,7 @@ from app.services.ocr_service import OCRService
 from app.services.payments import BasePaymentService, ClickService, TransactionService
 from app.services.promo_code_service import PromoCodeService
 from app.services.rate_limit_service import RateLimitService
+from app.services.referral_service import ReferralService
 from app.services.redis_service import RedisService
 from app.services.speech_to_text_service import (
     AzureRESTSpeechToTextService,
@@ -37,6 +38,7 @@ __all__ = [
     "TransactionService",
     "PromoCodeService",
     "RateLimitService",
+    "ReferralService",
     "RedisService",
     "StorageService",
     # Speech-to-text

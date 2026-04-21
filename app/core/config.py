@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_COLLECTION: str = "creditusage"
     TOKEN_COUNTING_COLLECTION: str = "token_counts"
     TELEGRAM_CHATS_COLLECTION: str = "telegram_chats"
+    REFERRAL_SOURCES_COLLECTION: str = "referral_sources"
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
