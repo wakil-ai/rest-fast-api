@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         ChatHistoryService,
         ChatMemoryService,
         ChatService,
+        Bitrix24Service,
         ClickService,
         FileManager,
         OCRService,
@@ -189,6 +190,13 @@ def get_chat_history_service() -> "ChatHistoryService":
     from app.services import ChatHistoryService
 
     return ChatHistoryService()
+
+
+@lru_cache
+def get_bitrix24_service() -> "Bitrix24Service":
+    from app.services import Bitrix24Service
+
+    return Bitrix24Service()
 
 
 @lru_cache

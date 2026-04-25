@@ -4,7 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.core.dependencies import get_db_manager
+from app.core.dependencies import get_bitrix24_service, get_db_manager
 from app.core.exceptions import (
     InvalidInputError,
     MessageNotFoundError,
@@ -29,6 +29,7 @@ class ChatHistoryService:
         self.messages_collection = settings.MESSAGES_COLLECTION
         self.files_collection = settings.FILES_COLLECTION
         self.token_counting_collection = settings.TOKEN_COUNTING_COLLECTION
+        self.bitrix24_service = get_bitrix24_service()
 
         # Create collections and indexes asynchronously on first use
         asyncio.create_task(self._init_collections())
@@ -189,6 +190,34 @@ class ChatHistoryService:
         return message[0]
 
     # Users Management
+    async def _create_bitrix_lead_if_needed(self, user: dict) -> dict:
+        """Create one Bitrix24 lead for a user with a phone number."""
+        if not user or user.get("bitrix24_lead_id"):
+            return user
+
+        lead_id = await self.bitrix24_service.create_lead_for_user(user)
+        if lead_id is None:
+            return user
+
+        lead_update = {
+            "bitrix24_lead_id": str(lead_id),
+            "bitrix24_lead_created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        }
+        try:
+            await self.db_manager.update_documents(
+                self.users_collection,
+                {"_id": user["_id"]},
+                {"$set": lead_update},
+            )
+            user.update(lead_update)
+        except Exception as exc:
+            logger.error(
+                f"Failed to store Bitrix24 lead ID for user {user.get('_id')}: {exc}",
+                exc_info=True,
+            )
+        return user
+
     async def create_user(
         self,
         user_id: str,
@@ -233,6 +262,7 @@ class ChatHistoryService:
             user = clean_for_mongodb(user)
             await self.db_manager.insert_documents(self.users_collection, [user])
             logger.info(f"Created new user with user_id: {user_id}")
+            await self._create_bitrix_lead_if_needed(user)
             return user
         except Exception as e:
             # Handle race condition: another request may have inserted the user
@@ -306,7 +336,10 @@ class ChatHistoryService:
             {"$set": update_fields},
         )
 
-        return await self.get_user(user_id)
+        user = await self.get_user(user_id)
+        if user:
+            await self._create_bitrix_lead_if_needed(user)
+        return user
 
     async def block_user(self, user_id: str, reason: str | None = None) -> dict | None:
         """Block a user so they cannot log in until unblocked.

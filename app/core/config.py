@@ -262,6 +262,14 @@ class Settings(BaseSettings):
     DT_WEB_CLIENT_NAME: str = "birdarcha"  # Web client name for OneID integration
     WAKILAI_WEB_CLIENT_NAME: str = "wakilai"  # Web client name for regular users
 
+    # Bitrix24 CRM
+    BITRIX24_WEBHOOK_URL: str | None = None
+    BITRIX24_LEAD_TITLE: str = "Wakil platform"
+    BITRIX24_LEAD_SOURCE_ID: str | None = None
+    BITRIX24_LEAD_SOURCE_DESCRIPTION: str = "Wakil platforma"
+    BITRIX24_LEAD_ASSIGNED_BY_ID: int | None = None
+    BITRIX24_TIMEOUT_SECONDS: float = 10.0
+
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

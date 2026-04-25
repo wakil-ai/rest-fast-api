@@ -1,4 +1,5 @@
 from app.services.auth_service import validate_telegram_data
+from app.services.bitrix24_service import Bitrix24Service
 from app.services.chat_history_service import ChatHistoryService
 from app.services.chat_service import ChatService
 from app.services.file_management import FileManager
@@ -28,6 +29,7 @@ __all__ = [
     # Auth
     "validate_telegram_data",
     # Services
+    "Bitrix24Service",
     "ChatHistoryService",
     "ChatService",
     "FileManager",
