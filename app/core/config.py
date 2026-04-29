@@ -147,8 +147,9 @@ class Settings(BaseSettings):
 
     # OCR Service
     DATALAB_API_KEY: str | None = None
-    FILE_CONTENT_TOKEN_LIMIT: int = 30_000  # Max uploaded file context tokens for LLM prompts
+    FILE_CONTENT_TOKEN_LIMIT: int = 100_000  # Max uploaded file context tokens for LLM prompts
     MAX_RETRIEVAL_DOCS_TOKEN_LIMIT: int = 500_000  # Max tokens for retrieved documents
+    EMBEDDING_QUERY_TOKEN_LIMIT: int = 6_000  # Max query tokens sent to embedding APIs
 
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
