@@ -20,7 +20,6 @@ from langchain_docling.loader import DoclingLoader, ExportType
 
 from app.core.config import settings
 from app.core.logger import logger
-from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 
 class OCRService:
@@ -31,7 +30,6 @@ class OCRService:
             paginate=True,  # Add page delimiters
             page_range="0-200",  # Process specific pages (0-indexed)
         )
-        self.token_limit = settings.FILE_CONTENT_TOKEN_LIMIT
         self.client = AsyncDatalabClient(api_key=settings.DATALAB_API_KEY)
         self.docling_converter = self._build_docling_converter()
 
@@ -92,15 +90,6 @@ class OCRService:
             temp_dir.cleanup()
             raise
 
-    def _truncate_if_needed(self, context: str) -> str:
-        if count_tokens(context) > self.token_limit:
-            logger.warning(
-                f"[OCR Service] File content exceeds token limit of "
-                f"{self.token_limit} tokens. Truncating content."
-            )
-            return truncate_to_token_limit(context, self.token_limit)
-        return context
-
     def _load_with_docling_sync(self, file: Path | str) -> str:
         loader = DoclingLoader(
             file_path=str(file),
@@ -108,8 +97,7 @@ class OCRService:
             export_type=ExportType.MARKDOWN,
         )
         docs = loader.load()
-        context = "\n\n".join(doc.page_content for doc in docs)
-        return self._truncate_if_needed(context)
+        return "\n\n".join(doc.page_content for doc in docs)
 
     async def _process_with_docling(self, file: Path | str) -> str:
         temp_dir: tempfile.TemporaryDirectory[str] | None = None
@@ -135,13 +123,13 @@ class OCRService:
         result = await self.client.convert(file_path=str(file), options=self.options)
         if not result.success:
             raise ValueError(f"[OCR Service] OCR conversion failed: {result.error}")
-        return self._truncate_if_needed(result.markdown)
+        return result.markdown
 
     async def _process_url_with_datalab(self, url: str) -> str:
         result = await self.client.convert(file_url=url, options=self.options)
         if not result.success:
             raise ValueError(f"[OCR Service] OCR conversion failed: {result.error}")
-        return self._truncate_if_needed(result.markdown)
+        return result.markdown
 
     async def process_file(self, file: Path | str) -> str:
         """
