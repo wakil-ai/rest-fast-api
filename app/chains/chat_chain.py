@@ -140,19 +140,20 @@ class ChatChain:
             assistant = AssistantConfig.validate_assistant_or_default(assistant)
 
             file_context = await self._collect_file_context(file_ids)
+            llm_file_context = self._limit_file_context_for_llm(file_context)
             history_formatted = await self._get_session_history_text(session_id)
             routing_decision = await self._resolve_court_routing(
                 assistant=assistant,
                 query=query,
                 chat_history=history_formatted,
-                file_context=file_context,
+                file_context=llm_file_context,
             )
 
             ctx = await self._prepare_generation_context(
                 user_id=user_id,
                 query=query,
                 assistant=routing_decision.assistant_name or assistant,
-                file_context=file_context,
+                file_context=llm_file_context,
                 history_formatted=history_formatted,
             )
 
@@ -277,6 +278,23 @@ class ChatChain:
                 parts.append(f"\n\n## USER FILE CONTEXT\n{file['ocr_result']}")
 
         return "".join(parts)
+
+    def _limit_file_context_for_llm(self, file_context: str) -> str:
+        if not file_context:
+            return file_context
+
+        token_count = count_tokens(file_context)
+        if token_count <= settings.FILE_CONTENT_TOKEN_LIMIT:
+            return file_context
+
+        logger.warning(
+            "Uploaded file context exceeds LLM token limit "
+            f"({token_count} > {settings.FILE_CONTENT_TOKEN_LIMIT}). "
+            "Truncating before routing, intent classification, and retrieval."
+        )
+        return truncate_to_token_limit(
+            file_context, settings.FILE_CONTENT_TOKEN_LIMIT
+        )
 
     async def _retrieve_relevant_context(
         self,
