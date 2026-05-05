@@ -28,7 +28,7 @@ class OCRService:
             output_format="markdown",  # "markdown", "html", "json", "chunks"
             mode="fast",  # "fast", "balanced", "accurate"
             paginate=True,  # Add page delimiters
-            page_range="0-200",  # Process specific pages (0-indexed)
+            page_range="0-99",  # Process the first 100 pages (0-indexed)
         )
         self.client = AsyncDatalabClient(api_key=settings.DATALAB_API_KEY)
         self.docling_converter = self._build_docling_converter()
@@ -99,31 +99,39 @@ class OCRService:
         docs = loader.load()
         return "\n\n".join(doc.page_content for doc in docs)
 
-    async def _process_with_docling(self, file: Path | str) -> str:
-        temp_dir: tempfile.TemporaryDirectory[str] | None = None
+    async def _prepare_file_for_processing(
+        self, file: Path | str
+    ) -> tuple[str, tempfile.TemporaryDirectory[str] | None]:
         file_path = (
             Path(file) if not str(file).startswith(("http://", "https://")) else None
         )
-        load_source = str(file)
+        process_source = str(file)
+        temp_dir: tempfile.TemporaryDirectory[str] | None = None
 
+        if file_path is not None and file_path.suffix.lower() == ".doc":
+            converted_path, temp_dir = await self._convert_doc_to_docx(file_path)
+            process_source = str(converted_path)
+
+        return process_source, temp_dir
+
+    async def _process_with_docling(self, file: Path | str) -> str:
+        load_source, temp_dir = await self._prepare_file_for_processing(file)
         try:
-            if file_path is not None and file_path.suffix.lower() == ".doc":
-                converted_path, temp_dir = await self._convert_doc_to_docx(file_path)
-                load_source = str(converted_path)
-
-            return await asyncio.to_thread(
-                self._load_with_docling_sync,
-                load_source,
-            )
+            return await asyncio.to_thread(self._load_with_docling_sync, load_source)
         finally:
             if temp_dir is not None:
                 temp_dir.cleanup()
 
     async def _process_file_with_datalab(self, file: Path | str) -> str:
-        result = await self.client.convert(file_path=str(file), options=self.options)
-        if not result.success:
-            raise ValueError(f"[OCR Service] OCR conversion failed: {result.error}")
-        return result.markdown
+        file_path, temp_dir = await self._prepare_file_for_processing(file)
+        try:
+            result = await self.client.convert(file_path=file_path, options=self.options)
+            if not result.success:
+                raise ValueError(f"[OCR Service] OCR conversion failed: {result.error}")
+            return result.markdown
+        finally:
+            if temp_dir is not None:
+                temp_dir.cleanup()
 
     async def _process_url_with_datalab(self, url: str) -> str:
         result = await self.client.convert(file_url=url, options=self.options)
@@ -133,48 +141,48 @@ class OCRService:
 
     async def process_file(self, file: Path | str) -> str:
         """
-        Extracts file text with Docling first, then falls back to Datalab OCR.
+        Extracts file text with Datalab first, then falls back to Docling.
         """
         logger.debug(f"[OCR Service] Processing file: {file}")
 
         try:
-            context = await self._process_with_docling(file)
-            logger.success("[OCR Service] Docling conversion successful")
+            context = await self._process_file_with_datalab(file)
+            logger.success("[OCR Service] Datalab conversion successful")
             return context
-        except Exception as docling_error:
+        except Exception as datalab_error:
             logger.warning(
-                f"[OCR Service] Docling conversion failed, falling back to Datalab: "
-                f"{str(docling_error)}"
+                f"[OCR Service] Datalab conversion failed, falling back to Docling: "
+                f"{str(datalab_error)}"
             )
 
         try:
-            context = await self._process_file_with_datalab(file)
-            logger.success("[OCR Service] Datalab fallback conversion successful")
+            context = await self._process_with_docling(file)
+            logger.success("[OCR Service] Docling fallback conversion successful")
             return context
-        except Exception as datalab_error:
-            logger.error(f"[OCR Service] Conversion failed: {str(datalab_error)}")
+        except Exception as docling_error:
+            logger.error(f"[OCR Service] Conversion failed: {str(docling_error)}")
             raise
 
     async def process_url(self, url: str) -> str:
         """
-        Extracts URL text with Docling first, then falls back to Datalab OCR.
+        Extracts URL text with Datalab first, then falls back to Docling.
         """
         logger.debug(f"[OCR Service] Processing URL: {url}")
 
         try:
-            context = await self._process_with_docling(url)
-            logger.success("[OCR Service] Docling URL conversion successful")
+            context = await self._process_url_with_datalab(url)
+            logger.success("[OCR Service] Datalab URL conversion successful")
             return context
-        except Exception as docling_error:
+        except Exception as datalab_error:
             logger.warning(
-                f"[OCR Service] Docling URL conversion failed, falling back to Datalab: "
-                f"{str(docling_error)}"
+                f"[OCR Service] Datalab URL conversion failed, falling back to Docling: "
+                f"{str(datalab_error)}"
             )
 
         try:
-            context = await self._process_url_with_datalab(url)
-            logger.success("[OCR Service] Datalab URL fallback conversion successful")
+            context = await self._process_with_docling(url)
+            logger.success("[OCR Service] Docling URL fallback conversion successful")
             return context
-        except Exception as datalab_error:
-            logger.error(f"[OCR Service] URL conversion failed: {str(datalab_error)}")
+        except Exception as docling_error:
+            logger.error(f"[OCR Service] URL conversion failed: {str(docling_error)}")
             raise

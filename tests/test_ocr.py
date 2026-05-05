@@ -47,40 +47,40 @@ def test_init(mock_datalab_client):
         mock_datalab_client.assert_called_with(api_key="test-ocr-key")
         assert service.options.output_format == "markdown"
         assert service.options.mode == "fast"
+        assert service.options.page_range == "0-99"
         assert service.docling_converter is not None
 
 
 @pytest.mark.asyncio
 async def test_process_file_success(ocr_service):
-    """Test processing a file path successfully with Docling."""
+    """Test processing a file path successfully with Datalab."""
     file_path = "/path/to/test.pdf"
     with patch.object(
+        ocr_service,
+        "_process_file_with_datalab",
+        AsyncMock(return_value="Datalab content"),
+    ) as mock_datalab:
+        result = await ocr_service.process_file(file_path)
+
+    assert result == "Datalab content"
+    mock_datalab.assert_awaited_once_with(file_path)
+
+
+@pytest.mark.asyncio
+async def test_process_file_falls_back_to_docling(ocr_service):
+    """Test Docling fallback when Datalab fails."""
+    file_path = "/path/to/test.pdf"
+    with patch.object(
+        ocr_service,
+        "_process_file_with_datalab",
+        AsyncMock(side_effect=Exception("Datalab failed")),
+    ), patch.object(
         ocr_service, "_process_with_docling", AsyncMock(return_value="Docling content")
     ) as mock_docling:
         result = await ocr_service.process_file(file_path)
 
     assert result == "Docling content"
     mock_docling.assert_awaited_once_with(file_path)
-    ocr_service.client.convert.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_process_file_falls_back_to_datalab(ocr_service):
-    """Test Datalab fallback when Docling fails."""
-    file_path = "/path/to/test.pdf"
-    with patch.object(
-        ocr_service,
-        "_process_with_docling",
-        AsyncMock(side_effect=Exception("Docling failed")),
-    ):
-        result = await ocr_service.process_file(file_path)
-
-    assert result == "Parsed content"
-
-    ocr_service.client.convert.assert_called_once()
-    kwargs = ocr_service.client.convert.call_args[1]
-    assert kwargs["file_path"] == file_path
-    assert kwargs["options"] == ocr_service.options
 
 
 @pytest.mark.asyncio
@@ -112,43 +112,66 @@ async def test_doc_file_converts_before_docling_load(ocr_service):
 
 
 @pytest.mark.asyncio
+async def test_doc_file_converts_before_datalab_processing(ocr_service):
+    """Test legacy DOC files are converted before Datalab reads them."""
+    doc_path = "/path/to/legacy.doc"
+    docx_path = "/tmp/legacy.docx"
+    temp_dir = MagicMock()
+
+    with patch.object(
+        ocr_service,
+        "_convert_doc_to_docx",
+        AsyncMock(return_value=(docx_path, temp_dir)),
+    ) as mock_convert:
+        result = await ocr_service._process_file_with_datalab(doc_path)
+
+    assert result == "Parsed content"
+    mock_convert.assert_awaited_once()
+    assert str(mock_convert.await_args.args[0]) == doc_path
+    ocr_service.client.convert.assert_called_once_with(
+        file_path=docx_path, options=ocr_service.options
+    )
+    temp_dir.cleanup.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_process_url_success(ocr_service):
-    """Test processing a URL successfully with Docling."""
+    """Test processing a URL successfully with Datalab."""
     url = "http://example.com/doc.pdf"
     with patch.object(
+        ocr_service, "_process_url_with_datalab", AsyncMock(return_value="Datalab URL")
+    ) as mock_datalab:
+        result = await ocr_service.process_url(url)
+
+    assert result == "Datalab URL"
+    mock_datalab.assert_awaited_once_with(url)
+
+
+@pytest.mark.asyncio
+async def test_process_url_falls_back_to_docling(ocr_service):
+    """Test Docling URL fallback when Datalab fails."""
+    url = "http://example.com/doc.pdf"
+    with patch.object(
+        ocr_service,
+        "_process_url_with_datalab",
+        AsyncMock(side_effect=Exception("Datalab failed")),
+    ), patch.object(
         ocr_service, "_process_with_docling", AsyncMock(return_value="Docling URL")
     ) as mock_docling:
         result = await ocr_service.process_url(url)
 
     assert result == "Docling URL"
     mock_docling.assert_awaited_once_with(url)
-    ocr_service.client.convert.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_process_url_falls_back_to_datalab(ocr_service):
-    """Test Datalab URL fallback when Docling fails."""
-    url = "http://example.com/doc.pdf"
-    with patch.object(
-        ocr_service,
-        "_process_with_docling",
-        AsyncMock(side_effect=Exception("Docling failed")),
-    ):
-        result = await ocr_service.process_url(url)
-
-    assert result == "Parsed content"
-
-    ocr_service.client.convert.assert_called_once()
-    kwargs = ocr_service.client.convert.call_args[1]
-    assert kwargs["file_url"] == url
-    assert kwargs["options"] == ocr_service.options
 
 
 @pytest.mark.asyncio
 async def test_process_failure(ocr_service):
     """Test error handling when conversion fails."""
-    ocr_service.client.convert.side_effect = Exception("API Error")
     with patch.object(
+        ocr_service,
+        "_process_file_with_datalab",
+        AsyncMock(side_effect=Exception("API Error")),
+    ), patch.object(
         ocr_service,
         "_process_with_docling",
         AsyncMock(side_effect=Exception("Docling failed")),
@@ -162,8 +185,11 @@ async def test_process_failure(ocr_service):
 @pytest.mark.asyncio
 async def test_process_url_failure(ocr_service):
     """Test error handling when URL conversion fails."""
-    ocr_service.client.convert.side_effect = Exception("Network Error")
     with patch.object(
+        ocr_service,
+        "_process_url_with_datalab",
+        AsyncMock(side_effect=Exception("Network Error")),
+    ), patch.object(
         ocr_service,
         "_process_with_docling",
         AsyncMock(side_effect=Exception("Docling failed")),
