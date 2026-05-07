@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 
-from app.core.dependencies import get_fallback_llm, get_prompt_registry
+from app.core.dependencies import get_classifier_llm, get_prompt_registry
 from app.core.logger import logger
 
 
@@ -23,7 +23,7 @@ class CourtClassifier:
 
     def __init__(self):
         self.prompt_registry = get_prompt_registry()
-        self.llm = get_fallback_llm()
+        self.llm = get_classifier_llm()
         self.court_prompt_template = self.prompt_registry.get_prompt(
             "court_classify_prompt"
         ).template

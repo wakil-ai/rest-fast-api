@@ -30,11 +30,7 @@ class MilvusHandler(VectorDBHandler):
             settings.MILVUS_ECONOMIC_COURT,
             settings.MILVUS_CIVIL_COURT,
         ]
-        self.client = MilvusClient(
-            uri=settings.MILVUS_URI,
-            user=settings.MILVUS_USER,
-            password=settings.MILVUS_PASSWORD,
-        )
+        self.client = MilvusClient(**self._build_connection_kwargs())
 
         # Create and load all collections at startup
         for col in self.milvus_collections:
@@ -42,6 +38,19 @@ class MilvusHandler(VectorDBHandler):
 
         # Ensure all collections are loaded into memory at startup
         self._load_all_collections()
+
+    @staticmethod
+    def _build_connection_kwargs() -> dict[str, str]:
+        kwargs = {"uri": settings.MILVUS_URI}
+        if settings.MILVUS_TOKEN:
+            kwargs["token"] = settings.MILVUS_TOKEN
+            return kwargs
+
+        if settings.MILVUS_USER:
+            kwargs["user"] = settings.MILVUS_USER
+        if settings.MILVUS_PASSWORD:
+            kwargs["password"] = settings.MILVUS_PASSWORD
+        return kwargs
 
     def _load_all_collections(self) -> None:
         """
@@ -61,7 +70,7 @@ class MilvusHandler(VectorDBHandler):
 
         # Create collection with schema
         self.client.create_collection(
-            collection_name=collection_name, schema=self._create_schema()
+            collection_name=collection_name, schema=self._create_schema(collection_name)
         )
 
         # Create index
@@ -280,7 +289,7 @@ class MilvusHandler(VectorDBHandler):
 
         return search_results
 
-    def _create_schema(self):
+    def _create_schema(self, collection_name: str = settings.MILVUS_MAIN_NAME):
         schema = MilvusClient.create_schema(auto_id=False)
         schema.add_field(
             field_name="id", datatype=DataType.VARCHAR, is_primary=True, max_length=100
@@ -301,7 +310,7 @@ class MilvusHandler(VectorDBHandler):
         schema.add_field(
             field_name="text_dense",
             datatype=DataType.FLOAT_VECTOR,
-            dim=settings.EMBEDDING_DIM,
+            dim=self._embedding_dim_for_collection(collection_name),
         )
         schema.add_field(
             field_name="text_sparse", datatype=DataType.SPARSE_FLOAT_VECTOR
@@ -330,6 +339,10 @@ class MilvusHandler(VectorDBHandler):
         schema.add_function(bm25_hierarchy)  # For hierarchy match
 
         return schema
+
+    @staticmethod
+    def _embedding_dim_for_collection(collection_name: str) -> int:
+        return settings.EMBEDDING_DIM
 
     def _create_index(self):
         index_params = self.client.prepare_index_params()

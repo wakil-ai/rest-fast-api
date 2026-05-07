@@ -145,6 +145,28 @@ def get_fallback_llm() -> "LLM":
 
 
 @lru_cache
+def get_classifier_llm() -> "LLM":
+    """Return a model optimized for lightweight classification tasks."""
+    from app.core.config import settings
+    from app.llms import ChatGPT, Claude, Gemini, Novita
+
+    model_name = settings.CLASSIFIER_MODEL or settings.DEFAULT_CHAT_MODEL
+    mapping = {
+        "gemma-": Novita,
+        "gpt-oss-": Novita,
+        "gpt-": ChatGPT,
+        "claude-": Claude,
+        "gemini-": Gemini,
+    }
+
+    for prefix, cls in mapping.items():
+        if model_name.startswith(prefix):
+            return cls(model_name=model_name)
+
+    return ChatGPT(model_name=settings.GPT_COMPLETION_MODEL)
+
+
+@lru_cache
 def get_agents() -> "Agents":
     from app.orchestration.agents import Agents
 

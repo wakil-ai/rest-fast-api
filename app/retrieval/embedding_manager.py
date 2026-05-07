@@ -2,6 +2,7 @@ from urllib.parse import urljoin
 
 import requests
 from langchain_openai import OpenAIEmbeddings
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import EmbeddingModel, settings
 from app.core.logger import logger
@@ -176,10 +177,10 @@ class DeepInfraEmbedding(BaseEmbedding):
 
 
 class OpenAIEmbedding(BaseEmbedding):
-    def __init__(self):
+    def __init__(self, model_name: str | None = None):
         self.embeddings = OpenAIEmbeddings(
             openai_api_key=settings.OPENAI_API_KEY,
-            model=settings.OPENAI_EMBEDDING_MODEL,
+            model=model_name or settings.OPENAI_EMBEDDING_MODEL,
         )
 
     def embed_query(self, query: str) -> list[float]:
@@ -223,29 +224,32 @@ class SiliconFlowEmbedding(BaseEmbedding):
     def embed_query(self, query: str) -> list[float]:
         return self.embed_doc(get_instruction(query))
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True)
     def embed_doc(self, text: str) -> list[float]:
         payload = {"model": self.model_name, "input": text, "encoding_format": "float"}
-
         try:
-            response = requests.post(self.api_url, headers=self.headers, json=payload)
+            response = requests.post(
+                self.api_url, headers=self.headers, json=payload, timeout=30
+            )
             response.raise_for_status()
             return response.json()["data"][0]["embedding"]
         except requests.RequestException as e:
-            logger.error(f"SiliconFlow embedding failed: {e}")
+            logger.warning(f"SiliconFlow embedding attempt failed: {e}")
             raise
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True)
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-
         payload = {"model": self.model_name, "input": texts, "encoding_format": "float"}
-
         try:
-            response = requests.post(self.api_url, headers=self.headers, json=payload)
+            response = requests.post(
+                self.api_url, headers=self.headers, json=payload, timeout=30
+            )
             response.raise_for_status()
             return [item["embedding"] for item in response.json().get("data", [])]
         except requests.RequestException as e:
-            logger.error(f"SiliconFlow batch embedding failed: {e}")
+            logger.warning(f"SiliconFlow batch embedding attempt failed: {e}")
             raise
 
 
