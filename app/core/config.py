@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     MILVUS_URI: str = "http://localhost:19530"
     MILVUS_USER: str | None = None
     MILVUS_PASSWORD: str | None = None
+    MILVUS_TOKEN: str | None = None
 
     # Pinecone
     PINECONE_API_KEY: str | None = None
@@ -147,9 +148,10 @@ class Settings(BaseSettings):
 
     # OCR Service
     DATALAB_API_KEY: str | None = None
-    FILE_CONTENT_TOKEN_LIMIT: int = 100_000  # Max uploaded file context tokens for LLM prompts
+    FILE_CONTENT_TOKEN_LIMIT: int = 50_000  # Max uploaded file context tokens for LLM prompts
     MAX_RETRIEVAL_DOCS_TOKEN_LIMIT: int = 500_000  # Max tokens for retrieved documents
-    EMBEDDING_QUERY_TOKEN_LIMIT: int = 6_000  # Max query tokens sent to embedding APIs
+    EMBEDDING_QUERY_TOKEN_LIMIT: int = 10_000  # Max query tokens sent to embedding APIs
+    FILE_SEARCH_TOP_K: int = 3
 
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
@@ -173,7 +175,7 @@ class Settings(BaseSettings):
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
-    STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 25.0
+    STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0
     TOP_K: int = 10
     ADDITIONAL_TOP_K: int = (
         3  # For multi-collection retrievals (e.g. contract analyzer + main)

@@ -17,6 +17,7 @@ from docling.document_converter import (
     PdfFormatOption,
 )
 from langchain_docling.loader import DoclingLoader, ExportType
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
 from app.core.logger import logger
@@ -28,7 +29,7 @@ class OCRService:
             output_format="markdown",  # "markdown", "html", "json", "chunks"
             mode="fast",  # "fast", "balanced", "accurate"
             paginate=True,  # Add page delimiters
-            page_range="0-99",  # Process the first 100 pages (0-indexed)
+            page_range="0-200",  # Process the first 200 pages (0-indexed)
         )
         self.client = AsyncDatalabClient(api_key=settings.DATALAB_API_KEY)
         self.docling_converter = self._build_docling_converter()
@@ -99,6 +100,25 @@ class OCRService:
         docs = loader.load()
         return "\n\n".join(doc.page_content for doc in docs)
 
+    def _load_docx_light_sync(self, file: Path | str) -> str:
+        from docx import Document
+
+        document = Document(str(file))
+        blocks: list[str] = []
+
+        for paragraph in document.paragraphs:
+            text = paragraph.text.strip()
+            if text:
+                blocks.append(text)
+
+        for table in document.tables:
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if cells:
+                    blocks.append(" | ".join(cells))
+
+        return "\n\n".join(blocks)
+
     async def _prepare_file_for_processing(
         self, file: Path | str
     ) -> tuple[str, tempfile.TemporaryDirectory[str] | None]:
@@ -122,37 +142,86 @@ class OCRService:
             if temp_dir is not None:
                 temp_dir.cleanup()
 
+    async def _process_office_document_light(self, file: Path | str) -> str:
+        load_source, temp_dir = await self._prepare_file_for_processing(file)
+        try:
+            context = await asyncio.to_thread(self._load_docx_light_sync, load_source)
+            if not context.strip():
+                raise ValueError("DOCX extraction returned empty content")
+            return context
+        finally:
+            if temp_dir is not None:
+                temp_dir.cleanup()
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10), reraise=True)
     async def _process_file_with_datalab(self, file: Path | str) -> str:
         file_path, temp_dir = await self._prepare_file_for_processing(file)
         try:
             result = await self.client.convert(file_path=file_path, options=self.options)
             if not result.success:
-                raise ValueError(f"[OCR Service] OCR conversion failed: {result.error}")
+                raise ValueError(f"[OCR Service] Datalab conversion failed: {result.error}")
+            if not result.markdown or len(result.markdown.strip()) < 50:
+                raise ValueError("[OCR Service] Datalab returned insufficient content")
             return result.markdown
         finally:
             if temp_dir is not None:
                 temp_dir.cleanup()
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10), reraise=True)
     async def _process_url_with_datalab(self, url: str) -> str:
         result = await self.client.convert(file_url=url, options=self.options)
         if not result.success:
-            raise ValueError(f"[OCR Service] OCR conversion failed: {result.error}")
+            raise ValueError(f"[OCR Service] Datalab URL conversion failed: {result.error}")
+        if not result.markdown or len(result.markdown.strip()) < 50:
+            raise ValueError("[OCR Service] Datalab returned insufficient content for URL")
         return result.markdown
 
     async def process_file(self, file: Path | str) -> str:
         """
-        Extracts file text with Datalab first, then falls back to Docling.
+        Extracts file text with a light local path for Office docs.
+        PDF files use Datalab first, then Docling fallback.
         """
         logger.debug(f"[OCR Service] Processing file: {file}")
+
+        if self._is_local_office_document(file):
+            try:
+                context = await self._process_office_document_light(file)
+                logger.success("[OCR Service] Lightweight DOCX extraction successful")
+                return context
+            except Exception as office_error:
+                logger.warning(
+                    "[OCR Service] Lightweight Office extraction failed, "
+                    f"falling back to Docling: {office_error}"
+                )
+                try:
+                    context = await self._process_with_docling(file)
+                    logger.success("[OCR Service] Docling Office fallback successful")
+                    return context
+                except Exception as docling_error:
+                    raise RuntimeError(
+                        "Office document extraction failed with lightweight parser "
+                        f"and Docling fallback. Lightweight error: {office_error}; "
+                        f"Docling error: {docling_error}"
+                    ) from docling_error
+
+        if not self._is_pdf_file(file):
+            try:
+                context = await self._process_with_docling(file)
+                logger.success("[OCR Service] Docling conversion successful")
+                return context
+            except Exception as docling_error:
+                logger.error(f"[OCR Service] Conversion failed: {str(docling_error)}")
+                raise
 
         try:
             context = await self._process_file_with_datalab(file)
             logger.success("[OCR Service] Datalab conversion successful")
             return context
         except Exception as datalab_error:
+            datalab_error_message = str(datalab_error)
             logger.warning(
                 f"[OCR Service] Datalab conversion failed, falling back to Docling: "
-                f"{str(datalab_error)}"
+                f"{datalab_error_message}"
             )
 
         try:
@@ -161,7 +230,22 @@ class OCRService:
             return context
         except Exception as docling_error:
             logger.error(f"[OCR Service] Conversion failed: {str(docling_error)}")
-            raise
+            raise RuntimeError(
+                "OCR conversion failed with Datalab and Docling fallback. "
+                f"Datalab error: {datalab_error_message}; Docling error: {docling_error}"
+            ) from docling_error
+
+    @staticmethod
+    def _is_local_office_document(file: Path | str) -> bool:
+        if str(file).startswith(("http://", "https://")):
+            return False
+        return Path(file).suffix.lower() in {".doc", ".docx"}
+
+    @staticmethod
+    def _is_pdf_file(file: Path | str) -> bool:
+        if str(file).startswith(("http://", "https://")):
+            return True
+        return Path(file).suffix.lower() == ".pdf"
 
     async def process_url(self, url: str) -> str:
         """
@@ -174,9 +258,10 @@ class OCRService:
             logger.success("[OCR Service] Datalab URL conversion successful")
             return context
         except Exception as datalab_error:
+            datalab_error_message = str(datalab_error)
             logger.warning(
                 f"[OCR Service] Datalab URL conversion failed, falling back to Docling: "
-                f"{str(datalab_error)}"
+                f"{datalab_error_message}"
             )
 
         try:
@@ -185,4 +270,7 @@ class OCRService:
             return context
         except Exception as docling_error:
             logger.error(f"[OCR Service] URL conversion failed: {str(docling_error)}")
-            raise
+            raise RuntimeError(
+                "URL OCR conversion failed with Datalab and Docling fallback. "
+                f"Datalab error: {datalab_error_message}; Docling error: {docling_error}"
+            ) from docling_error

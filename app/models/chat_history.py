@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # User Models
@@ -112,8 +112,17 @@ class MessageResponse(BaseModel):
     user_id: str | None = Field(
         ..., description="User ID (auto-populated from session)"
     )  # optional for backward compatibility
+    file_ids: list[str] = Field(
+        default_factory=list,
+        description="File IDs attached to this message (saved with the message)",
+    )
     content: MessageContent
     metadata: dict[str, Any] | None = None
+
+    @field_validator("file_ids", mode="before")
+    @classmethod
+    def coerce_missing_file_ids(cls, v: Any) -> Any:
+        return [] if v is None else v
     feedback_type: str | None = Field(None, description="Feedback type (positive/negative)")
     feedback_content: str | None = Field(None, description="Optional feedback comment")
     created_at: datetime
@@ -165,6 +174,17 @@ class FeedbackCreateRequest(BaseModel):
 
 
 # File Models
+class FilePublicMetadataResponse(BaseModel):
+    """Safe subset of file metadata for clients (no storage paths, hashes, or OCR)."""
+
+    file_name: str | None = Field(None, description="Original upload filename")
+    file_type: str = Field(
+        default="application/octet-stream",
+        description="MIME type of the file",
+    )
+    file_size: int = Field(default=0, ge=0, description="Size in bytes")
+
+
 class FileUploadResponse(BaseModel):
     """Response model for file upload data"""
 

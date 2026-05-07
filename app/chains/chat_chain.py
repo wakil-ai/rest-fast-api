@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
@@ -24,6 +25,7 @@ from app.core.dependencies import (
     get_memory_service,
     get_prompt_registry,
     get_retrieval_service,
+    get_embedding_manager,
 )
 from app.core.logger import logger
 from app.llms import LLM, ChatGPT, Claude, Gemini, Novita
@@ -77,6 +79,12 @@ class ChatChain:
         self.court_classifier = get_court_classifier()
         self.fallback_llm = get_fallback_llm()
         self.prompts_registry = get_prompt_registry()
+        self.embedding_manager = get_embedding_manager()
+
+        self._user_file_context_prefix = (
+            "# USER FILE CONTEXT:\n"
+            "Note: This is the context of the user uploaded files."
+        )
 
     async def _collect_generation_meta(
         self,
@@ -139,21 +147,20 @@ class ChatChain:
         try:
             assistant = AssistantConfig.validate_assistant_or_default(assistant)
 
-            file_context = await self._collect_file_context(file_ids)
-            llm_file_context = self._limit_file_context_for_llm(file_context)
+            file_context = await self._collect_file_context(file_ids, user_id, query)
             history_formatted = await self._get_session_history_text(session_id)
             routing_decision = await self._resolve_court_routing(
                 assistant=assistant,
                 query=query,
                 chat_history=history_formatted,
-                file_context=llm_file_context,
+                file_context=file_context,
             )
 
             ctx = await self._prepare_generation_context(
                 user_id=user_id,
                 query=query,
                 assistant=routing_decision.assistant_name or assistant,
-                file_context=llm_file_context,
+                file_context=file_context,
                 history_formatted=history_formatted,
             )
 
@@ -267,17 +274,89 @@ class ChatChain:
             uploaded_file_context=file_context,
         )
 
-    async def _collect_file_context(self, file_ids: list[str] | None) -> str:
+    async def _collect_file_context(
+        self, file_ids: list[str] | None, user_id: str, query: str
+    ) -> str:
         if not file_ids:
             return ""
 
         parts = []
         for fid in file_ids:
             file = await self.history_service.get_file_by_id(fid)
-            if file and file.get("ocr_result"):
-                parts.append(f"\n\n## USER FILE CONTEXT\n{file['ocr_result']}")
+            if not file:
+                continue
 
-        return "".join(parts)
+            metadata = file.get("file_metadata") or {}
+            file_name = metadata.get("file_name", fid)
+            milvus_file_index = metadata.get("milvus_file_index") or {}
+            if milvus_file_index.get("enabled"):
+                context = await self._retrieve_file_context(
+                    file_id=fid,
+                    user_id=user_id,
+                    query=query,
+                    file_name=file_name,
+                )
+                if context:
+                    context = self._limit_file_context_for_llm(context)
+                    parts.append(context)
+                    continue
+
+            ocr_result = file.get("ocr_result") or ""
+            if ocr_result:
+                parts.append(self._limit_file_context_for_llm(f"{file_name}\n{ocr_result}"))
+
+        if not parts:
+            return ""
+
+        combined = self._user_file_context_prefix + "\n\n" + "\n\n".join(parts)
+        return self._limit_file_context_for_llm(combined)
+
+    async def _retrieve_file_context(
+        self,
+        *,
+        file_id: str,
+        user_id: str,
+        query: str,
+        file_name: str,
+    ) -> str:
+        expr = (
+            f'metadata["file_id"] == "{file_id}" '
+            f'and metadata["user_id"] == "{user_id}"'
+        )
+        try:
+            embedding = await self.embedding_manager.aembed_query(query)
+            docs = await asyncio.to_thread(
+                self.retrieval._db.search_hybrid,
+                dense_vector=embedding,
+                text_query=query,
+                top_k=settings.FILE_SEARCH_TOP_K,
+                collection_name=settings.MILVUS_PROJECT_FILES,
+                expr=expr,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Milvus file context retrieval failed for file_id={file_id}, "
+                f"falling back to OCR context: {exc}",
+                exc_info=True,
+            )
+            return ""
+        if not docs:
+            return ""
+
+        chunks = []
+        for index, doc in enumerate(docs, 1):
+            text = doc.get("metadata", {}).get("text") or ""
+            if text:
+                chunks.append(f"[File chunk {index}]\n{text}")
+
+        if not chunks:
+            return ""
+
+        return (
+            f"\n\n## USER FILE CONTEXT: {file_name} "
+            f"(top {settings.FILE_SEARCH_TOP_K} Milvus chunks)\n"
+            + "\n\n".join(chunks)
+        )
 
     def _limit_file_context_for_llm(self, file_context: str) -> str:
         if not file_context:

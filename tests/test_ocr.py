@@ -112,26 +112,69 @@ async def test_doc_file_converts_before_docling_load(ocr_service):
 
 
 @pytest.mark.asyncio
-async def test_doc_file_converts_before_datalab_processing(ocr_service):
-    """Test legacy DOC files are converted before Datalab reads them."""
+async def test_doc_file_converts_before_light_extraction(ocr_service):
+    """Test legacy DOC files are converted before lightweight DOCX extraction."""
     doc_path = "/path/to/legacy.doc"
     docx_path = "/tmp/legacy.docx"
     temp_dir = MagicMock()
 
-    with patch.object(
-        ocr_service,
-        "_convert_doc_to_docx",
-        AsyncMock(return_value=(docx_path, temp_dir)),
-    ) as mock_convert:
-        result = await ocr_service._process_file_with_datalab(doc_path)
+    with (
+        patch.object(
+            ocr_service,
+            "_convert_doc_to_docx",
+            AsyncMock(return_value=(docx_path, temp_dir)),
+        ) as mock_convert,
+        patch.object(
+            ocr_service,
+            "_load_docx_light_sync",
+            return_value="Light DOC content",
+        ) as mock_load,
+    ):
+        result = await ocr_service._process_office_document_light(doc_path)
 
-    assert result == "Parsed content"
+    assert result == "Light DOC content"
     mock_convert.assert_awaited_once()
     assert str(mock_convert.await_args.args[0]) == doc_path
-    ocr_service.client.convert.assert_called_once_with(
-        file_path=docx_path, options=ocr_service.options
-    )
+    mock_load.assert_called_once_with(docx_path)
     temp_dir.cleanup.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_docx_uses_light_extraction_not_datalab(ocr_service):
+    """Test DOCX files avoid Datalab for faster local extraction."""
+    docx_path = "/path/to/file.docx"
+    with (
+        patch.object(
+            ocr_service,
+            "_process_office_document_light",
+            AsyncMock(return_value="DOCX content"),
+        ) as mock_light,
+        patch.object(
+            ocr_service,
+            "_process_file_with_datalab",
+            AsyncMock(return_value="Datalab content"),
+        ) as mock_datalab,
+    ):
+        result = await ocr_service.process_file(docx_path)
+
+    assert result == "DOCX content"
+    mock_light.assert_awaited_once_with(docx_path)
+    mock_datalab.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pdf_uses_datalab(ocr_service):
+    """Test PDFs still use Datalab first."""
+    pdf_path = "/path/to/file.pdf"
+    with patch.object(
+        ocr_service,
+        "_process_file_with_datalab",
+        AsyncMock(return_value="PDF Datalab content"),
+    ) as mock_datalab:
+        result = await ocr_service.process_file(pdf_path)
+
+    assert result == "PDF Datalab content"
+    mock_datalab.assert_awaited_once_with(pdf_path)
 
 
 @pytest.mark.asyncio

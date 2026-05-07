@@ -1,8 +1,11 @@
+import asyncio
+import hashlib
 import os
 import tempfile
-import uuid
 
 from fastapi import UploadFile
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from uuid6 import uuid7
 
 from app.core.config import settings
 from app.core.dependencies import (
@@ -14,6 +17,7 @@ from app.core.dependencies import (
 )
 from app.core.logger import logger
 from app.models.chat_history import FileUploadResponse
+from app.utils.tokens import count_tokens
 
 
 class FileManager:
@@ -27,25 +31,6 @@ class FileManager:
         self.embedding_manager = get_embedding_manager()
         self.vector_db_collection = settings.MILVUS_PROJECT_FILES
 
-    async def upload_file_to_project(
-        self, file: UploadFile, project_id: str, user_id: str
-    ) -> tuple[int, FileUploadResponse | str]:
-        """
-        DEPRECATED: Projects are no longer used. Use upload_file_to_message instead.
-        This method is kept for backward compatibility but will not function properly.
-
-        Process file upload for a message instead.
-        Returns: (status_code, response_or_error_message)
-        """
-        logger.warning(
-            "upload_file_to_project is deprecated. Projects are no longer supported. "
-            "Use upload_file_to_message instead."
-        )
-        return (
-            400,
-            "Projects are no longer supported. Please use upload_file_to_message instead.",
-        )
-
     async def upload_message_file(
         self, file: UploadFile, user_id: str
     ) -> tuple[int, FileUploadResponse | str]:
@@ -54,12 +39,42 @@ class FileManager:
         Returns: (status_code, response_or_error_message)
         """
         content = await file.read()
-        file_id = str(uuid.uuid4())
+        content_hash = self._build_file_content_hash(content)
+        
+        existing_by_content = await self.history.get_file_by_content_hash(content_hash)
+        if existing_by_content:
+            existing_file_id = existing_by_content["_id"]
+            logger.info(
+                f"Reusing existing file by content hash for file_id: {existing_file_id}"
+            )
+            response = self._build_success_response(
+                file_id=existing_file_id,
+                metadata=existing_by_content.get("file_metadata", {}),
+                ocr_result=existing_by_content.get("ocr_result", ""),
+                record=existing_by_content,
+                project_id=None,
+            )
+            return 200, response
 
         temp_path = self._create_temp_file(content, file.filename)
 
         try:
             ocr_result = await self.ocr.process_file(temp_path)
+            file_id = self._build_deterministic_file_id(ocr_result)
+
+            existing_record = await self.history.get_file_by_id(file_id)
+            if existing_record:
+                logger.info(
+                    f"Reusing existing file record for deterministic file_id: {file_id}"
+                )
+                response = self._build_success_response(
+                    file_id=file_id,
+                    metadata=existing_record.get("file_metadata", {}),
+                    ocr_result=existing_record.get("ocr_result", ocr_result),
+                    record=existing_record,
+                    project_id=None,
+                )
+                return 200, response
 
             gcs_path = self.storage.generate_message_file_path(
                 user_id, file_id, file.filename
@@ -70,7 +85,7 @@ class FileManager:
                 content_type=file.content_type or "application/octet-stream",
             )
 
-            metadata = self._create_file_metadata(file, content, gcs_path)
+            metadata = self._create_file_metadata(file, content, gcs_path, content_hash)
 
             record = await self.history.add_file_upload(
                 user_id=user_id,
@@ -82,20 +97,20 @@ class FileManager:
                 scope="message",
             )
 
-            # Note: Vector ingestion can be triggered here or after association
-            # For now, we'll skip it until the file is associated with a message
+            asyncio.create_task(
+                self.index_file(file_id=file_id, ocr_result=ocr_result, record=record)
+            )
 
             response = self._build_success_response(
                 file_id=file_id,
-                metadata=metadata,
+                metadata=record.get("file_metadata", metadata),
                 ocr_result=ocr_result,
                 record=record,
                 project_id=None,
             )
 
             logger.info(
-                "File uploaded successfully, pending message association: %s",
-                file.filename,
+                f"File uploaded successfully: {file.filename}",
             )
             return 200, response
 
@@ -109,7 +124,7 @@ class FileManager:
         finally:
             self._safe_remove_temp_file(temp_path)
 
-    def _upsert_to_vector_db(
+    async def _upsert_to_vector_db(
         self,
         content: str,
         user_id: str,
@@ -117,29 +132,20 @@ class FileManager:
         file_name: str,
         session_id: str | None = None,
         message_id: str | None = None,
-    ) -> None:
-        """Chunk content and upsert to vector database with metadata."""
+    ) -> int:
+        """Chunk content and upsert oversized file context to Milvus."""
         if not content:
             logger.warning(
-                "Empty OCR result for file_id: %s, skipping ingestion", file_id
+                f"Empty OCR result for file_id: {file_id}, skipping ingestion"
             )
-            return
+            return 0
 
-        # Simple chunking logic (could be improved with a dedicated splitter)
-        chunk_size = 1000
-        overlap = 100
-        chunks = []
-
-        for i in range(0, len(content), chunk_size - overlap):
-            chunk_text = content[i : i + chunk_size]
-            if chunk_text:
-                chunks.append(chunk_text)
+        chunks = self._chunk_file_content(content)
 
         if not chunks:
-            return
+            return 0
 
-        # Generate embeddings and prepare documents for Milvus
-        embeddings = self.embedding_manager.embed_batch(chunks)
+        embeddings = await self.embedding_manager.aembed_batch(chunks)
 
         documents = []
         for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
@@ -165,16 +171,18 @@ class FileManager:
             )
 
         try:
-            self.db._upsert_vectors(
-                documents, collection_name=self.vector_db_collection
+            await asyncio.to_thread(
+                self.db._upsert_vectors,
+                documents,
+                self.vector_db_collection,
             )
             logger.info(
-                "Successfully ingested %d chunks for file_id: %s",
-                len(documents),
-                file_id,
+                f"Successfully ingested {len(documents)} chunks for file_id: {file_id}"
             )
+            return len(documents)
         except Exception as e:
-            logger.error("Failed to ingest file into Vector DB: %s", str(e))
+            logger.error(f"Failed to ingest file into Vector DB: {str(e)}")
+            raise
 
     def _create_temp_file(self, content: bytes, original_filename: str) -> str:
         """Create temporary file and return its path"""
@@ -198,19 +206,30 @@ class FileManager:
             file_url=f"/api/history/files/{file_id}/view",
             file_metadata=metadata,
             ocr_result=ocr_result,
-            status="completed",
+            status=record.get("status", "completed"),
             created_at=record["created_at"],
             updated_at=record["updated_at"],
         )
 
     @staticmethod
-    def _create_file_metadata(file: UploadFile, content: bytes, gcs_path: str) -> dict:
+    def _build_deterministic_file_id(_extracted_text: str) -> str:
+        return f"file-{uuid7()}"
+
+    @staticmethod
+    def _build_file_content_hash(content: bytes) -> str:
+        return hashlib.sha256(content).hexdigest()
+
+    @staticmethod
+    def _create_file_metadata(
+        file: UploadFile, content: bytes, gcs_path: str, content_hash: str
+    ) -> dict:
         """Build clean metadata dictionary"""
         return {
             "file_name": file.filename,
             "file_type": file.content_type or "application/octet-stream",
             "file_size": len(content),
             "gcs_path": gcs_path,
+            "file_content_hash": content_hash,
         }
 
     @staticmethod
@@ -221,3 +240,68 @@ class FileManager:
                 os.remove(path)
         except OSError:
             pass  # silent cleanup failure
+
+    async def index_file(
+        self,
+        *,
+        file_id: str,
+        ocr_result: str,
+        record: dict,
+    ) -> dict:
+        token_count = count_tokens(ocr_result)
+        if token_count <= settings.FILE_CONTENT_TOKEN_LIMIT:
+            return record
+
+        logger.info(
+            f"File {file_id} exceeds FILE_CONTENT_TOKEN_LIMIT ({token_count} > "
+            f"{settings.FILE_CONTENT_TOKEN_LIMIT}); indexing with Milvus file search"
+        )
+
+        try:
+            chunk_count = await self._upsert_to_vector_db(
+                content=ocr_result,
+                user_id=record["user_id"],
+                file_id=file_id,
+                file_name=record.get("file_metadata", {}).get("file_name", file_id),
+                message_id=record.get("message_id"),
+            )
+            return await self.history.update_file_metadata_fields(
+                file_id,
+                {
+                    "file_metadata.ocr_token_count": token_count,
+                    "file_metadata.milvus_file_index.enabled": True,
+                    "file_metadata.milvus_file_index.collection": self.vector_db_collection,
+                    "file_metadata.milvus_file_index.embedding_model": settings.SILICONFLOW_EMBEDDING_MODEL,
+                    "file_metadata.milvus_file_index.chunk_count": chunk_count,
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Milvus file indexing failed for file {file_id}; "
+                f"falling back to direct OCR context: {exc}",
+                exc_info=True,
+            )
+            return await self.history.update_file_metadata_fields(
+                file_id,
+                {
+                    "file_metadata.ocr_token_count": token_count,
+                    "file_metadata.milvus_file_index.enabled": False,
+                    "file_metadata.milvus_file_index.error": str(exc),
+                },
+            )
+
+    @staticmethod
+    def _chunk_file_content(content: str) -> list[str]:
+        if not content:
+            return []
+
+        splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+            model_name="gpt-4.1",
+            chunk_size=3000,
+            chunk_overlap=1000,
+        )
+        return [
+            chunk.strip()
+            for chunk in splitter.split_text(content)
+            if chunk.strip()
+        ]

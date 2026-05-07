@@ -394,10 +394,7 @@ class PromoCodeService:
                             f"[PromoCodeService] Promo code '{promo_code}' expired for user {user_id} (now: {now}, exp: {expiration_date})"
                         )
                         return False, None
-                    else:
-                        logger.info(
-                            f"[PromoCodeService] Promo code '{promo_code}' valid until {expiration_date}"
-                        )
+                    
                 except Exception as e:
                     logger.error(
                         f"[PromoCodeService] Failed to compare expiration date for '{promo_code}': {str(e)}"

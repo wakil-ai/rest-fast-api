@@ -1,5 +1,6 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -101,7 +102,7 @@ class ChatHistoryService:
             )
             return
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         update: dict = {"updated_at": now}
         if user_id is not None:
@@ -188,6 +189,22 @@ class ChatHistoryService:
             raise MessageNotFoundError(message_id)
         return message[0]
 
+    async def _ensure_file_attachments_for_user(
+        self, file_ids: list[str] | None, user_id: str
+    ) -> None:
+        """Require each attachment to exist and belong to the given user."""
+
+        for file_id in file_ids or []:
+            files = await self.db_manager.find_documents(
+                self.files_collection, {"_id": file_id}
+            )
+            if not files:
+                raise InvalidInputError(f"File {file_id} not found")
+            if files[0].get("user_id") != user_id:
+                raise InvalidInputError(
+                    f"File {file_id} does not belong to this user"
+                )
+
     # Users Management
     async def create_user(
         self,
@@ -224,8 +241,8 @@ class ChatHistoryService:
             "blocked_at": None,
             "blocked_reason": None,
             "unblocked_at": None,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         try:
@@ -272,7 +289,7 @@ class ChatHistoryService:
 
         update_fields = {
             field: value,
-            "updated_at": datetime.utcnow(),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         # Even if modified_count is 0 (e.g. same value), we still return the current document.
@@ -296,7 +313,7 @@ class ChatHistoryService:
 
         update_fields = {
             "phone_number": phone_number,
-            "updated_at": datetime.utcnow(),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         # Even if modified_count is 0 (e.g. same value), we still return the current document.
@@ -316,7 +333,7 @@ class ChatHistoryService:
         if not user_id or not user_id.strip():
             raise InvalidInputError("User ID cannot be empty")
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         reason = (reason or "").strip() or None
 
         await self.db_manager.update_documents(
@@ -349,7 +366,7 @@ class ChatHistoryService:
         """Unblock a previously blocked user."""
         await self._ensure_user_exists(user_id)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         await self.db_manager.update_documents(
             self.users_collection,
@@ -393,8 +410,8 @@ class ChatHistoryService:
             "tags": tags or [],
             "status": SessionStatus.draft.value,
             "activated_at": None,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         try:
@@ -438,7 +455,7 @@ class ChatHistoryService:
         if not update_fields:
             raise InvalidInputError("No fields to update")
 
-        update_fields["updated_at"] = datetime.utcnow()
+        update_fields["updated_at"] = datetime.now(timezone.utc)
         updated_count = await self.db_manager.update_documents(
             self.sessions_collection,
             {"_id": session_id},
@@ -495,13 +512,7 @@ class ChatHistoryService:
         if isinstance(content, BaseModel):
             content = content.model_dump()
 
-        # Check whether file_id is existed
-        for file_id in file_ids or []:
-            file = await self.db_manager.find_documents(
-                self.files_collection, {"_id": file_id}
-            )
-            if not file:
-                raise InvalidInputError(f"File {file_id} not found")
+        await self._ensure_file_attachments_for_user(file_ids, user_id)
 
         message = {
             "_id": resolved_message_id,
@@ -511,14 +522,14 @@ class ChatHistoryService:
             "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "content": content,
             "metadata": metadata or {},
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         try:
             await self.db_manager.insert_documents(self.messages_collection, [message])
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             session_update = self._build_session_activation_update(session, now)
 
             # Update session timestamp
@@ -551,14 +562,9 @@ class ChatHistoryService:
         if isinstance(content, BaseModel):
             content = content.model_dump()
 
-        for file_id in file_ids or []:
-            file = await self.db_manager.find_documents(
-                self.files_collection, {"_id": file_id}
-            )
-            if not file:
-                raise InvalidInputError(f"File {file_id} not found")
+        await self._ensure_file_attachments_for_user(file_ids, user_id)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         message_document = clean_for_mongodb(
             {
                 "message_id": message_id,
@@ -660,7 +666,7 @@ class ChatHistoryService:
             "share_id": share_id,
             "message_id": message_id,
             "url": f"share/{share_id}",
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
         }
 
         # Insert share record to message with shared flag
@@ -672,7 +678,7 @@ class ChatHistoryService:
                     "shared": True,
                     "share_id": share_id,
                     "shared_by": user_id,
-                    "shared_at": datetime.utcnow(),
+                    "shared_at": datetime.now(timezone.utc),
                 }
             },
         )
@@ -694,7 +700,7 @@ class ChatHistoryService:
         if not message:
             raise InvalidInputError(f"Share {share_id} not found")
 
-        created_at = message.get("shared_at") or datetime.utcnow()
+        created_at = message.get("shared_at") or datetime.now(timezone.utc)
 
         return ShareResponse.model_validate(
             {
@@ -725,7 +731,7 @@ class ChatHistoryService:
                 "$set": {
                     "feedback_type": feedback_type,
                     "feedback_content": feedback_content,
-                    "updated_at": datetime.utcnow(),
+                    "updated_at": datetime.now(timezone.utc),
                 }
             },
         )
@@ -807,8 +813,8 @@ class ChatHistoryService:
             "ocr_result": ocr_result,
             "file_metadata": file_metadata,
             "status": status,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
         try:
@@ -883,6 +889,18 @@ class ChatHistoryService:
         logger.warning(f"File with file_id {file_id} not found")
         return None
 
+    async def get_file_by_content_hash(self, content_hash: str) -> dict | None:
+        """Retrieve a file by raw file-content hash if it exists."""
+        if not content_hash or not content_hash.strip():
+            raise InvalidInputError("Content hash cannot be empty")
+
+        files = await self.db_manager.find_documents(
+            self.files_collection,
+            {"file_metadata.file_content_hash": content_hash},
+            limit=1,
+        )
+        return files[0] if files else None
+
     async def update_file_status(
         self, file_id: str, status: str, ocr_result: str | None = None
     ) -> dict:
@@ -891,7 +909,7 @@ class ChatHistoryService:
         if not file_id or not file_id.strip():
             raise InvalidInputError("File ID cannot be empty")
 
-        update_fields = {"status": status, "updated_at": datetime.utcnow()}
+        update_fields = {"status": status, "updated_at": datetime.now(timezone.utc)}
         if ocr_result is not None:
             update_fields["ocr_result"] = ocr_result
 
@@ -910,6 +928,28 @@ class ChatHistoryService:
             raise InvalidInputError("File not found after update")
         return file
 
+    async def update_file_metadata_fields(
+        self, file_id: str, fields: dict[str, Any]
+    ) -> dict:
+        """Update selected top-level or dotted fields on a file record."""
+
+        if not file_id or not file_id.strip():
+            raise InvalidInputError("File ID cannot be empty")
+        if not fields:
+            raise InvalidInputError("No file metadata fields provided")
+
+        update_fields = {**fields, "updated_at": datetime.now(timezone.utc)}
+        await self.db_manager.update_documents(
+            self.files_collection,
+            {"_id": file_id},
+            {"$set": update_fields},
+        )
+
+        file = await self.get_file_by_id(file_id)
+        if not file:
+            raise InvalidInputError("File not found after update")
+        return file
+
     async def update_file_message_id(self, file_id: str, message_id: str) -> None:
         """Associate a file with a message."""
 
@@ -921,7 +961,7 @@ class ChatHistoryService:
         updated_count = await self.db_manager.update_documents(
             self.files_collection,
             {"_id": file_id},
-            {"$set": {"message_id": message_id, "updated_at": datetime.utcnow()}},
+            {"$set": {"message_id": message_id, "updated_at": datetime.now(timezone.utc)}},
         )
 
         if updated_count == 0:
