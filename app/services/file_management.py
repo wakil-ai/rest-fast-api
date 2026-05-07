@@ -1,10 +1,11 @@
 import asyncio
+import hashlib
 import os
 import tempfile
-import uuid
 
 from fastapi import UploadFile
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from uuid6 import uuid7
 
 from app.core.config import settings
 from app.core.dependencies import (
@@ -38,12 +39,42 @@ class FileManager:
         Returns: (status_code, response_or_error_message)
         """
         content = await file.read()
-        file_id = str(uuid.uuid4())
+        content_hash = self._build_file_content_hash(content)
+        
+        existing_by_content = await self.history.get_file_by_content_hash(content_hash)
+        if existing_by_content:
+            existing_file_id = existing_by_content["_id"]
+            logger.info(
+                f"Reusing existing file by content hash for file_id: {existing_file_id}"
+            )
+            response = self._build_success_response(
+                file_id=existing_file_id,
+                metadata=existing_by_content.get("file_metadata", {}),
+                ocr_result=existing_by_content.get("ocr_result", ""),
+                record=existing_by_content,
+                project_id=None,
+            )
+            return 200, response
 
         temp_path = self._create_temp_file(content, file.filename)
 
         try:
             ocr_result = await self.ocr.process_file(temp_path)
+            file_id = self._build_deterministic_file_id(ocr_result)
+
+            existing_record = await self.history.get_file_by_id(file_id)
+            if existing_record:
+                logger.info(
+                    f"Reusing existing file record for deterministic file_id: {file_id}"
+                )
+                response = self._build_success_response(
+                    file_id=file_id,
+                    metadata=existing_record.get("file_metadata", {}),
+                    ocr_result=existing_record.get("ocr_result", ocr_result),
+                    record=existing_record,
+                    project_id=None,
+                )
+                return 200, response
 
             gcs_path = self.storage.generate_message_file_path(
                 user_id, file_id, file.filename
@@ -54,7 +85,7 @@ class FileManager:
                 content_type=file.content_type or "application/octet-stream",
             )
 
-            metadata = self._create_file_metadata(file, content, gcs_path)
+            metadata = self._create_file_metadata(file, content, gcs_path, content_hash)
 
             record = await self.history.add_file_upload(
                 user_id=user_id,
@@ -175,19 +206,30 @@ class FileManager:
             file_url=f"/api/history/files/{file_id}/view",
             file_metadata=metadata,
             ocr_result=ocr_result,
-            status="completed",
+            status=record.get("status", "completed"),
             created_at=record["created_at"],
             updated_at=record["updated_at"],
         )
 
     @staticmethod
-    def _create_file_metadata(file: UploadFile, content: bytes, gcs_path: str) -> dict:
+    def _build_deterministic_file_id(_extracted_text: str) -> str:
+        return f"file-{uuid7()}"
+
+    @staticmethod
+    def _build_file_content_hash(content: bytes) -> str:
+        return hashlib.sha256(content).hexdigest()
+
+    @staticmethod
+    def _create_file_metadata(
+        file: UploadFile, content: bytes, gcs_path: str, content_hash: str
+    ) -> dict:
         """Build clean metadata dictionary"""
         return {
             "file_name": file.filename,
             "file_type": file.content_type or "application/octet-stream",
             "file_size": len(content),
             "gcs_path": gcs_path,
+            "file_content_hash": content_hash,
         }
 
     @staticmethod
@@ -255,8 +297,8 @@ class FileManager:
 
         splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
             model_name="gpt-4.1",
-            chunk_size=800,
-            chunk_overlap=120,
+            chunk_size=3000,
+            chunk_overlap=1000,
         )
         return [
             chunk.strip()
