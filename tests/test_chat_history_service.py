@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.config import settings
+from app.core.exceptions import InvalidInputError
 from app.models.chat_history import SessionStatus
 from app.services.chat_history_service import ChatHistoryService
 from scripts.cleanup_empty_sessions import _build_empty_sessions_pipeline
@@ -113,6 +114,33 @@ async def test_add_message_activates_draft_session(monkeypatch):
     update_payload = db_manager.update_calls[0][2]["$set"]
     assert update_payload["status"] == SessionStatus.active.value
     assert update_payload["activated_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_add_message_rejects_file_not_owned_by_session_user(monkeypatch):
+    service, db_manager, _ = _build_service(monkeypatch)
+    service._ensure_session_exists = AsyncMock(
+        return_value={
+            "_id": "ses-1",
+            "user_id": "u1",
+            "status": SessionStatus.draft.value,
+            "activated_at": None,
+        }
+    )
+
+    async def find_documents(collection_name, query, limit=50):  # noqa: ARG001
+        if collection_name == settings.FILES_COLLECTION:
+            return [{"_id": query.get("_id"), "user_id": "other-user"}]
+        return []
+
+    monkeypatch.setattr(db_manager, "find_documents", find_documents)
+
+    with pytest.raises(InvalidInputError, match="does not belong to this user"):
+        await service.add_message(
+            session_id="ses-1",
+            file_ids=["f1"],
+            content={"query": "Hi", "response": "Hello"},
+        )
 
 
 @pytest.mark.asyncio
