@@ -8,7 +8,6 @@ services:
     env_file:
       - .env
     environment:
-      - MILVUS_URI=http://milvus-standalone:19530/
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - PYTHONUNBUFFERED=1
@@ -17,7 +16,6 @@ services:
       - wakilai-bridge
     restart: unless-stopped
     depends_on:
-      - milvus-standalone
       - redis
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -25,32 +23,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-
-  milvus-standalone:
-    image: milvusdb/milvus:v2.5.14
-    ports:
-      - "19530:19530"
-      - "9091:9091"
-      - "2379:2379"
-    environment:
-      - ETCD_USE_EMBED=true
-      - ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml
-      - ETCD_DATA_DIR=/var/lib/milvus/etcd
-      - COMMON_STORAGETYPE=local
-    volumes:
-      - ${MILVUS_CACHE_DIR}/volumes/milvus:/var/lib/milvus:rw
-      - ${MILVUS_CACHE_DIR}/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml:rw
-      - ${MILVUS_CACHE_DIR}/user.yaml:/milvus/configs/user.yaml:rw
-    command: ["milvus", "run", "standalone"]
-    networks:
-      - wakilai-bridge
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9091/healthz || exit 1"]
-      interval: 30s
-      timeout: 20s
-      retries: 5
-      start_period: 90s
 
   redis:
     image: redis:7-alpine
