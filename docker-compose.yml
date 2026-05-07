@@ -16,7 +16,17 @@ services:
       - wakilai-bridge
     restart: unless-stopped
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '1'
+          memory: 2G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -33,6 +43,15 @@ services:
     networks:
       - wakilai-bridge
     restart: unless-stopped
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -45,5 +64,4 @@ networks:
     driver: bridge
 
 volumes:
-  milvus_data:
   redis_data:
