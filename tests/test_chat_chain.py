@@ -217,29 +217,28 @@ async def test_collect_file_context_falls_back_to_ocr_on_milvus_failure(chat_cha
             },
         }
     )
-    chat_chain._retrieve_milvus_file_context = AsyncMock(
-        side_effect=RuntimeError("milvus unavailable")
-    )
+    # Milvus path produced no chunks (or errors are swallowed inside — empty means OCR fallback).
+    chat_chain._retrieve_file_context = AsyncMock(return_value="")
 
     context = await chat_chain._collect_file_context(
         [file_id], user_id="user-1", query="What is penalty?"
     )
 
     assert "OCR fallback content" in context
-    assert "USER FILE CONTEXT: contract.docx" in context
+    assert "# USER FILE CONTEXT:" in context
+    assert "contract.docx" in context
 
 
 @pytest.mark.asyncio
-async def test_retrieve_milvus_file_context_returns_empty_on_error(chat_chain):
-    with patch(
-        "app.chains.chat_chain.SiliconFlowEmbedding.embed_query",
-        side_effect=RuntimeError("embed failed"),
-    ):
-        context = await chat_chain._retrieve_milvus_file_context(
-            file_id="file-1",
-            user_id="user-1",
-            query="query",
-            file_name="file.pdf",
-        )
+async def test_retrieve_file_context_returns_empty_on_error(chat_chain):
+    chat_chain.embedding_manager.aembed_query = AsyncMock(
+        side_effect=RuntimeError("embed failed")
+    )
+    context = await chat_chain._retrieve_file_context(
+        file_id="file-1",
+        user_id="user-1",
+        query="query",
+        file_name="file.pdf",
+    )
 
     assert context == ""

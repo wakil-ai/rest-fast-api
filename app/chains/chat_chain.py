@@ -80,6 +80,12 @@ class ChatChain:
         self.fallback_llm = get_fallback_llm()
         self.prompts_registry = get_prompt_registry()
         self.embedding_manager = get_embedding_manager()
+
+        self._user_file_context_prefix = (
+            "# USER FILE CONTEXT:\n"
+            "Note: This is the context of the user uploaded files."
+        )
+
     async def _collect_generation_meta(
         self,
         *,
@@ -291,15 +297,19 @@ class ChatChain:
                     file_name=file_name,
                 )
                 if context:
+                    context = self._limit_file_context_for_llm(context)
                     parts.append(context)
                     continue
 
-            if file.get("ocr_result"):
-                parts.append(
-                    f"\n\n## USER FILE CONTEXT: {file_name}\n{file['ocr_result']}"
-                )
+            ocr_result = file.get("ocr_result") or ""
+            if ocr_result:
+                parts.append(self._limit_file_context_for_llm(f"{file_name}\n{ocr_result}"))
 
-        return self._limit_file_context_for_llm("".join(parts))
+        if not parts:
+            return ""
+
+        combined = self._user_file_context_prefix + "\n\n" + "\n\n".join(parts)
+        return self._limit_file_context_for_llm(combined)
 
     async def _retrieve_file_context(
         self,
