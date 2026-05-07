@@ -40,10 +40,9 @@ COPY app/ ./app/
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
-    PORT=8080 \
-    WORKERS=4
+    PORT=8080
 
 EXPOSE ${PORT}
 
 # Run with optimized uvicorn settings
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers ${WORKERS} --loop asyncio
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --loop asyncio
