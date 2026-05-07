@@ -24,7 +24,7 @@ class ChatModel(str, Enum):
     GPT_OSS_120B = "gpt-oss-120b"
     GEMMA_3_27B = "gemma-3-27b"
     # Gemini models
-    GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
+    GEMINI_3_PRO_PREVIEW = "gemini-3.1-pro-preview"
     GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
 
 

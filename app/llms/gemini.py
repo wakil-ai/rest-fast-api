@@ -9,7 +9,7 @@ from app.llms.base import LLM
 
 
 class Gemini(LLM):
-    def __init__(self, model_name: str = "gemini-3-pro-preview"):
+    def __init__(self, model_name: str = "gemini-3.1-pro-preview"):
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.model = model_name
 
