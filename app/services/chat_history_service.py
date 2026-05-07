@@ -889,14 +889,21 @@ class ChatHistoryService:
         logger.warning(f"File with file_id {file_id} not found")
         return None
 
-    async def get_file_by_content_hash(self, content_hash: str) -> dict | None:
-        """Retrieve a file by raw file-content hash if it exists."""
+    async def get_file_by_content_hash(
+        self, content_hash: str, user_id: str
+    ) -> dict | None:
+        """Retrieve a file by raw content hash scoped to a specific user."""
         if not content_hash or not content_hash.strip():
             raise InvalidInputError("Content hash cannot be empty")
+        if not user_id or not user_id.strip():
+            raise InvalidInputError("User ID cannot be empty")
 
         files = await self.db_manager.find_documents(
             self.files_collection,
-            {"file_metadata.file_content_hash": content_hash},
+            {
+                "file_metadata.file_content_hash": content_hash,
+                "user_id": user_id,
+            },
             limit=1,
         )
         return files[0] if files else None

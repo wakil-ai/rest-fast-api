@@ -41,7 +41,10 @@ class FileManager:
         content = await file.read()
         content_hash = self._build_file_content_hash(content)
         
-        existing_by_content = await self.history.get_file_by_content_hash(content_hash)
+        existing_by_content = await self.history.get_file_by_content_hash(
+            content_hash=content_hash,
+            user_id=user_id,
+        )
         if existing_by_content:
             existing_file_id = existing_by_content["_id"]
             logger.info(

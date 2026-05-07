@@ -171,7 +171,7 @@ WakilAI API provides intelligent legal document search, question-answering, and 
    
    # OpenAI Configuration
    OPENAI_API_KEY=your-openai-key
-   GPT_COMPLETION_MODEL=gpt-4o
+   GPT_COMPLETION_MODEL=gpt-5.2
    OPENAI_EMBEDDING_MODEL=text-embedding-ada-002
    
    # Local VLLM Configuration
