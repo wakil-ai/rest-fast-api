@@ -202,3 +202,44 @@ async def test_get_session_history_text_skips_incomplete_messages(chat_chain):
 
     assert "Can I appeal?" not in formatted
     assert "1. User: What deadline applies?" in formatted
+
+
+@pytest.mark.asyncio
+async def test_collect_file_context_falls_back_to_ocr_on_milvus_failure(chat_chain):
+    file_id = "file-1"
+    chat_chain.history_service.get_file_by_id = AsyncMock(
+        return_value={
+            "_id": file_id,
+            "ocr_result": "OCR fallback content",
+            "file_metadata": {
+                "file_name": "contract.docx",
+                "milvus_file_index": {"enabled": True},
+            },
+        }
+    )
+    chat_chain._retrieve_milvus_file_context = AsyncMock(
+        side_effect=RuntimeError("milvus unavailable")
+    )
+
+    context = await chat_chain._collect_file_context(
+        [file_id], user_id="user-1", query="What is penalty?"
+    )
+
+    assert "OCR fallback content" in context
+    assert "USER FILE CONTEXT: contract.docx" in context
+
+
+@pytest.mark.asyncio
+async def test_retrieve_milvus_file_context_returns_empty_on_error(chat_chain):
+    with patch(
+        "app.chains.chat_chain.SiliconFlowEmbedding.embed_query",
+        side_effect=RuntimeError("embed failed"),
+    ):
+        context = await chat_chain._retrieve_milvus_file_context(
+            file_id="file-1",
+            user_id="user-1",
+            query="query",
+            file_name="file.pdf",
+        )
+
+    assert context == ""

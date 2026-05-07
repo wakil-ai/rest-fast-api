@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -906,6 +907,28 @@ class ChatHistoryService:
 
         file = await self.get_file_by_id(file_id)
         logger.info(f"Updated file status for file_id: {file_id} to {status}")
+        if not file:
+            raise InvalidInputError("File not found after update")
+        return file
+
+    async def update_file_metadata_fields(
+        self, file_id: str, fields: dict[str, Any]
+    ) -> dict:
+        """Update selected top-level or dotted fields on a file record."""
+
+        if not file_id or not file_id.strip():
+            raise InvalidInputError("File ID cannot be empty")
+        if not fields:
+            raise InvalidInputError("No file metadata fields provided")
+
+        update_fields = {**fields, "updated_at": datetime.utcnow()}
+        await self.db_manager.update_documents(
+            self.files_collection,
+            {"_id": file_id},
+            {"$set": update_fields},
+        )
+
+        file = await self.get_file_by_id(file_id)
         if not file:
             raise InvalidInputError("File not found after update")
         return file
