@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         OCRService,
         PromoCodeService,
         RateLimitService,
+        ReferralService,
         RedisService,
         StorageService,
         SubscriptionStorage,
@@ -230,6 +231,13 @@ def get_rate_limit_service() -> "RateLimitService":
     from app.services import RateLimitService
 
     return RateLimitService()
+
+
+@lru_cache
+def get_referral_service() -> "ReferralService":
+    from app.services import ReferralService
+
+    return ReferralService()
 
 
 @lru_cache

@@ -2,7 +2,12 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from app.retrieval.embedding_manager import SiliconFlowEmbedding, get_instruction
+from app.retrieval import embedding_manager as embedding_manager_module
+from app.retrieval.embedding_manager import (
+    EmbeddingManager,
+    SiliconFlowEmbedding,
+    get_instruction,
+)
 
 
 # Unit tests for functions
@@ -92,3 +97,19 @@ class TestSiliconFlowEmbedding:
                 embedding_service.embed_doc("test")
             # The exception message is just the one from the HTTPError
             assert "401 Client Error" in str(excinfo.value)
+
+
+def test_embedding_manager_truncates_large_queries(monkeypatch):
+    manager = EmbeddingManager.__new__(EmbeddingManager)
+    manager.embedding = Mock()
+    manager.embedding.embed_query.return_value = [0.1]
+    monkeypatch.setattr(
+        embedding_manager_module.settings,
+        "EMBEDDING_QUERY_TOKEN_LIMIT",
+        10,
+    )
+
+    manager.embed_query(" ".join(["token"] * 100))
+
+    embedded_query = manager.embedding.embed_query.call_args.args[0]
+    assert len(embedded_query) < len(" ".join(["token"] * 100))

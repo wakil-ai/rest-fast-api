@@ -8,6 +8,13 @@ from app.core.config import settings
 from app.main import create_app
 from app.services.chat_service import ChatService
 
+DT_TEAM_DISCLAIMER = (
+    "\n\n> *DIQQAT! Ushbu protsessual hujjat loyihasi “WakilAI” sun’iy "
+    "intellekt tizimi yordamida shakllantirildi. Hujjatni sudga taqdim "
+    "etishdan avval malakali va professional advokat bilan maslahatlashish "
+    "tavsiya etiladi.*"
+)
+
 
 class _FakeChatService:
     async def prepare_chat_request(self, user_id: str, session_id: str):  # noqa: ARG002
@@ -82,6 +89,35 @@ def test_stream_false_returns_json(monkeypatch):
     assert resp.json()["message_id"] == "msg_test"
 
 
+def test_stream_false_appends_disclaimer_for_dt_team(monkeypatch):
+    app = create_app()
+
+    import app.api.v2.chat as chat_module
+
+    fake = _FakeChatService()
+    fake.ask_question = AsyncMock(return_value="OK")
+    monkeypatch.setattr(chat_module, "chat_service", fake)
+    monkeypatch.setattr(settings, "DT_API_KEY", "dt-secret")
+
+    client = TestClient(app)
+    headers = {settings.DT_API_KEY_NAME.lower(): settings.DT_API_KEY}
+
+    resp = client.post(
+        f"{settings.API_PREFIX}/chat/ask",
+        headers=headers,
+        json={
+            "user_id": "u1",
+            "session_id": "ses_test",
+            "query": "hello",
+            "stream": False,
+            "assistant": "main",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["answer"] == f"OK{DT_TEAM_DISCLAIMER}"
+
+
 def test_stream_true_emits_keepalive_before_answer(monkeypatch):
     app = create_app()
 
@@ -152,6 +188,58 @@ def test_stream_true_emits_keepalive_before_answer(monkeypatch):
         assert saw_keepalive is True
         assert saw_metadata is True
         assert saw_chunk is True
+
+
+def test_stream_true_emits_disclaimer_as_single_dt_chunk(monkeypatch):
+    app = create_app()
+
+    import app.api.v2.chat as chat_module
+
+    async def streamed_answer(**kwargs):  # noqa: ANN003
+        async def response_gen():
+            yield {
+                "type": "metadata",
+                "session_id": "ses_test",
+                "message_id": "msg_test",
+            }
+            yield "OK"
+
+        return response_gen()
+
+    fake = _StreamingFakeChatService()
+    fake.ask_question = AsyncMock(side_effect=streamed_answer)
+    monkeypatch.setattr(chat_module, "chat_service", fake)
+    monkeypatch.setattr(settings, "DT_API_KEY", "dt-secret")
+
+    client = TestClient(app)
+    headers = {settings.DT_API_KEY_NAME.lower(): settings.DT_API_KEY}
+
+    with client.stream(
+        "POST",
+        f"{settings.API_PREFIX}/chat/ask",
+        headers=headers,
+        json={
+            "user_id": "u1",
+            "session_id": "ses_test",
+            "query": "hello",
+            "stream": True,
+            "assistant": "main",
+        },
+    ) as resp:
+        assert resp.status_code == 200
+
+        chunks: list[str] = []
+        for line in resp.iter_lines():
+            if not line or not line.startswith("data: "):
+                continue
+
+            payload = json.loads(line.removeprefix("data: "))
+            if payload.get("type") == "chunk":
+                chunks.append(payload["chunk"])
+            if payload == {"type": "end"}:
+                break
+
+        assert chunks == ["OK", DT_TEAM_DISCLAIMER]
 
 
 def test_chat_requires_session_id(monkeypatch):

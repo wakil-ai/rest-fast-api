@@ -5,6 +5,7 @@ from langchain_openai import OpenAIEmbeddings
 
 from app.core.config import EmbeddingModel, settings
 from app.core.logger import logger
+from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 
 def get_instruction(query: str) -> str:
@@ -263,9 +264,20 @@ class EmbeddingManager:
             f"[EmbeddingManager] EmbeddingModel initialized with {settings.EMBEDDING_MODEL} model"
         )
 
+    def _limit_query(self, query: str) -> str:
+        token_count = count_tokens(query)
+        if token_count <= settings.EMBEDDING_QUERY_TOKEN_LIMIT:
+            return query
+
+        logger.warning(
+            "Embedding query exceeds token limit "
+            f"({token_count} > {settings.EMBEDDING_QUERY_TOKEN_LIMIT}). Truncating."
+        )
+        return truncate_to_token_limit(query, settings.EMBEDDING_QUERY_TOKEN_LIMIT)
+
     # Sync versions (kept for backward compat)
     def embed_query(self, query: str) -> list[float]:
-        return self.embedding.embed_query(query)
+        return self.embedding.embed_query(self._limit_query(query))
 
     def embed_doc(self, text: str) -> list[float]:
         return self.embedding.embed_doc(text)
@@ -277,7 +289,7 @@ class EmbeddingManager:
     async def aembed_query(self, query: str) -> list[float]:
         import asyncio
 
-        return await asyncio.to_thread(self.embedding.embed_query, query)
+        return await asyncio.to_thread(self.embed_query, query)
 
     async def aembed_doc(self, text: str) -> list[float]:
         import asyncio
