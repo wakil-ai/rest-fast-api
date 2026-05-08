@@ -12,6 +12,10 @@ class Gemini(LLM):
     def __init__(self, model_name: str = "gemini-3.1-pro-preview"):
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.model = model_name
+    
+    @staticmethod
+    def _google_search_tools() -> list[types.Tool]:
+        return [types.Tool(googleSearch=types.GoogleSearch())]
 
     async def count_tokens(self, text: str) -> int:
         """Count tokens for the given text using the Gemini API."""
@@ -70,6 +74,8 @@ class Gemini(LLM):
                 include_thoughts=True,
             ),
             temperature=settings.TEMPERATURE,
+            max_output_tokens=settings.OUTPUT_MAX_TOKENS,
+            tools=self._google_search_tools(),
         )
 
         queue: asyncio.Queue[str | dict[str, str] | Exception | None] = asyncio.Queue()
@@ -158,14 +164,12 @@ class Gemini(LLM):
                 ],
             ),
         ]
-        tools = [
-            types.Tool(googleSearch=types.GoogleSearch()),
-        ]
         generate_content_config = types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(
                 thinking_level="HIGH",
             ),
-            tools=tools,
+            tools=self._google_search_tools(),
+            max_output_tokens=settings.OUTPUT_MAX_TOKENS,
         )
 
         response = await asyncio.to_thread(
