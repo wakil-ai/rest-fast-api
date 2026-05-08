@@ -476,7 +476,8 @@ class ChatChain:
             ctx.classified_legal_intent
             != LegalIntent.CONTRACT_TEMPLATE_GENERATION.value
         ):
-            return merged
+            # Risk analysis (and any non-template contract flow): no KB or generated DOCX
+            return []
 
         body = self._strip_markdown_code_fence(full_answer)
         if len(body) < 80:

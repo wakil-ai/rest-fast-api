@@ -8,6 +8,7 @@ from app.assistants.base import BaseAssistant, RetrievalResult
 from app.core.config import settings
 from app.core.dependencies import get_intent_classifier, get_storage_service
 from app.core.logger import logger
+from app.models.intent_types import LegalIntent
 from app.utils.text_cleaning import TextCleaner
 
 
@@ -78,9 +79,16 @@ class ContractAnalyzerAssistant(BaseAssistant):
             if file_context and combined_ctx:
                 combined_ctx += f"\n\n\n{file_context}"
 
+            # Risk analysis: no template/DOCX downloads; only template generation may attach files
+            retrieval_attachments = (
+                contract_result.attachments
+                if legal_intent != LegalIntent.CONTRACT_RISK_ANALYSIS
+                else []
+            )
+
             result = RetrievalResult(
                 context=combined_ctx,
-                attachments=contract_result.attachments,
+                attachments=retrieval_attachments,
                 prompt_template=template,
                 classified_legal_intent=legal_intent.value,
             )
