@@ -41,8 +41,10 @@ class ContractAnalyzerAssistant(BaseAssistant):
         """
         try:
             # Intent classification (template generation vs risk analysis)
-            domain_type, template = await self.intent_classifier.classify_intent(
-                query, chat_history, file_context
+            domain_type, template, legal_intent = (
+                await self.intent_classifier.classify_intent(
+                    query, chat_history, file_context
+                )
             )
             logger.info(
                 f"[ContractAnalyzerAssistant] Contract intent classified as domain: {domain_type}"
@@ -80,6 +82,7 @@ class ContractAnalyzerAssistant(BaseAssistant):
                 context=combined_ctx,
                 attachments=contract_result.attachments,
                 prompt_template=template,
+                classified_legal_intent=legal_intent.value,
             )
             return result
 
@@ -113,6 +116,14 @@ class ContractAnalyzerAssistant(BaseAssistant):
                 if entry not in seen_entries:
                     seen_entries.add(entry)
                     entries.append(entry)
+
+            score_raw = doc.get("score")
+            try:
+                score = float(score_raw) if score_raw is not None else None
+            except (TypeError, ValueError):
+                score = None
+            if score is not None and score < settings.CONTRACT_ATTACHMENT_MIN_SIMILARITY:
+                continue
 
             if (
                 len(attachments) < max_attachments

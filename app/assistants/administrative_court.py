@@ -62,8 +62,10 @@ class AdministrativeCourtAssistant(BaseAssistant):
         """
         try:
             # Intent classification (returns domain str + PromptTemplate)
-            domain_type, template = await self.intent_classifier.classify_intent(
-                query, chat_history, file_context
+            domain_type, template, _legal_intent = (
+                await self.intent_classifier.classify_intent(
+                    query, chat_history, file_context
+                )
             )
             logger.info(
                 f"[AdministrativeCourtAssistant] Intent classified as domain: {domain_type}"

@@ -25,6 +25,8 @@ class RetrievalResult:
     context: str = ""
     attachments: list[dict[str, Any]] = field(default_factory=list)
     prompt_template: Any = None  # Optional PromptTemplate override from assistant
+    # LegalIntent.value when the assistant ran intent classification (e.g. contract analyzer)
+    classified_legal_intent: str | None = None
 
 
 class MongoFullTextRequest(BaseModel):

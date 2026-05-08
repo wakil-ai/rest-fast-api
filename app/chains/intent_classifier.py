@@ -1,3 +1,5 @@
+from typing import Any
+
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import ValidationError
 
@@ -24,7 +26,7 @@ class IntentClassifier:
         query: str,
         chat_history: str = "",
         uploaded_file_context: str = "",
-    ) -> tuple[str, str]:
+    ) -> tuple[str, Any, LegalIntent]:
 
         try:
             structured_prompt = self._build_prompt(
@@ -51,7 +53,7 @@ class IntentClassifier:
             intent = LegalIntent.GENERAL_LEGAL
 
         prompt = self.prompt_registry.get_prompt_for_intent(domain, intent)
-        return (domain.value, prompt)
+        return (domain.value, prompt, intent)
 
     def _build_prompt(self, query, chat_history, file_context):
         full_context = f"""

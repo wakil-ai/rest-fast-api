@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
@@ -22,14 +23,17 @@ from app.core.dependencies import (
     get_chat_history_service,
     get_court_classifier,
     get_fallback_llm,
+    get_embedding_manager,
     get_memory_service,
     get_prompt_registry,
     get_retrieval_service,
-    get_embedding_manager,
+    get_storage_service,
 )
 from app.core.logger import logger
 from app.llms import LLM, ChatGPT, Claude, Gemini, Novita
+from app.models.intent_types import LegalIntent
 from app.retrieval.embedding_manager import get_instruction
+from app.utils.contract_docx import contract_text_to_docx_bytes
 from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 
@@ -43,6 +47,7 @@ class GenerationContext:
     chat_history: str
     assistant_name: str
     attachments: list[dict[str, Any]] | None = None
+    classified_legal_intent: str | None = None
 
 
 class ChatChain:
@@ -216,6 +221,7 @@ class ChatChain:
             retrieved_context,
             attachments,
             template_override,
+            classified_legal_intent,
         ) = await self._retrieve_relevant_context(
             query=query,
             file_context=file_context,
@@ -256,6 +262,7 @@ class ChatChain:
             chat_history=history_formatted,
             assistant_name=assistant,
             attachments=attachments,
+            classified_legal_intent=classified_legal_intent,
         )
 
     async def _resolve_court_routing(
@@ -381,14 +388,14 @@ class ChatChain:
         file_context: str,
         chat_history: str,
         assistant: str,
-    ) -> tuple[str, list[dict[str, Any]], Any]:
+    ) -> tuple[str, list[dict[str, Any]], Any, str | None]:
         """
         Delegate retrieval to the assistant's own retrieve() method.
 
         Each assistant encapsulates its own search strategy, formatting,
         classification, and (optionally) multi-collection merging.
 
-        Returns (context, attachments, prompt_template_or_None).
+        Returns (context, attachments, prompt_template_or_None, classified_legal_intent).
         """
         assistant_instance = self._get_assistant(assistant)
         result = await assistant_instance.retrieve(
@@ -396,7 +403,12 @@ class ChatChain:
             file_context=file_context,
             chat_history=chat_history,
         )
-        return result.context, result.attachments, result.prompt_template
+        return (
+            result.context,
+            result.attachments,
+            result.prompt_template,
+            result.classified_legal_intent,
+        )
 
     #  Prompt & History Formatting
     async def _get_session_history_text(self, session_id: str) -> str:
@@ -436,6 +448,74 @@ class ChatChain:
         template: PromptTemplate, context: str, chat_history: str
     ) -> str:
         return template.format(context=context, chat_history=chat_history)
+
+    @staticmethod
+    def _strip_markdown_code_fence(text: str) -> str:
+        t = text.strip()
+        if not t.startswith("```"):
+            return text.strip()
+        lines = t.split("\n")
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+
+    async def _maybe_attach_llm_contract_docx(
+        self,
+        *,
+        user_id: str,
+        full_answer: str,
+        ctx: GenerationContext,
+    ) -> list[dict[str, Any]]:
+        """After LLM draft for contract template generation, add a downloadable .docx."""
+        merged = list(ctx.attachments or [])
+        if ctx.assistant_name != "contract_analyzer":
+            return merged
+        if (
+            ctx.classified_legal_intent
+            != LegalIntent.CONTRACT_TEMPLATE_GENERATION.value
+        ):
+            return merged
+
+        body = self._strip_markdown_code_fence(full_answer)
+        if len(body) < 80:
+            return merged
+
+        docx_bytes = contract_text_to_docx_bytes(body)
+        object_path = f"contract-drafts/{user_id}/{uuid.uuid4().hex}.docx"
+
+        def _upload() -> str:
+            storage = get_storage_service()
+            return storage.upload_file(
+                file_content=docx_bytes,
+                destination_path=object_path,
+                content_type=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "wordprocessingml.document"
+                ),
+                return_signed_url=True,
+            )
+
+        try:
+            url = await asyncio.to_thread(_upload)
+        except Exception as e:
+            logger.warning(
+                f"[ChatChain] LLM contract DOCX upload skipped: {e}", exc_info=True
+            )
+            return merged
+
+        merged.append(
+            {
+                "name": "shartnoma_loyihasi.docx",
+                "url": url,
+                "content_type": (
+                    "application/vnd.openxmlformats-officedocument."
+                    "wordprocessingml.document"
+                ),
+            }
+        )
+        return merged
 
     #  Generation (streaming & non-streaming)
     def _generate_streaming(
@@ -477,11 +557,14 @@ class ChatChain:
                 answer=full,
             )
 
-            meta["attachments"] = ctx.attachments or []
+            meta["attachments"] = await self._maybe_attach_llm_contract_docx(
+                user_id=ctx.user_id,
+                full_answer=full,
+                ctx=ctx,
+            )
 
-            # Send attachments if the assistant provided any
-            if ctx.attachments:
-                yield {"type": "attachments", "attachments": ctx.attachments}
+            if meta["attachments"]:
+                yield {"type": "attachments", "attachments": meta["attachments"]}
 
             yield {"type": "_generation_meta", "meta": meta}
 
@@ -517,7 +600,11 @@ class ChatChain:
             answer=cleaned,
         )
 
-        meta["attachments"] = ctx.attachments or []
+        meta["attachments"] = await self._maybe_attach_llm_contract_docx(
+            user_id=ctx.user_id,
+            full_answer=cleaned,
+            ctx=ctx,
+        )
 
         return cleaned, meta
 
