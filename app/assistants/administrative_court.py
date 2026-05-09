@@ -7,7 +7,7 @@ from typing import Any
 from app.assistants.base import BaseAssistant, RetrievalConfig, RetrievalResult
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
-from app.core.dependencies import get_intent_classifier, get_milvus_query_agent
+from app.core.dependencies import get_milvus_query_agent, get_prompt_registry
 from app.core.logger import logger
 from app.utils.text_cleaning import clean_pdf_html_text
 
@@ -16,11 +16,21 @@ class AdministrativeCourtAssistant(BaseAssistant):
     """Administrative-court assistant with file-level retrieval and domain routing.
 
     Owns its own:
-    - Intent classification (tax vs general domain)
+    - Specialist prompt from ``court_route_tag`` (set by ``CourtClassifier`` when assistant=court)
     - Milvus filter generation (court/instance/category)
     - File-level search expansion
     - Court-specific metadata formatting
     """
+
+    # court_route_tag (from CourtClassifier) → prompts_registry key
+    ADMINISTRATIVE_ROUTE_TO_PROMPT: dict[str, str] = {
+        "administrative_tax_predicting_lawsuit": "predicting_lawsuit_result",
+        "administrative_tax_appeal_tax_admin": "appeal_tax_administration",
+        "administrative_tax_appeal_court_decision": "appeal_court_decision",
+        "administrative_general_admin_litigation": "supreme_admin_litigation",
+        "administrative_general_judicial_review": "supreme_judicial_review",
+    }
+    DEFAULT_COURT_ROUTE_TAG = "administrative_general_admin_litigation"
 
     # Number of unique files to return per search
     TOP_K_FILES = 3  # NOT THE TOP_K
@@ -43,7 +53,6 @@ class AdministrativeCourtAssistant(BaseAssistant):
             collection_name=settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
             top_k=settings.TOP_K,
         )
-        self.intent_classifier = get_intent_classifier()
         self.milvus_agent = get_milvus_query_agent()
 
     # Retrieve — classification + domain routing (all internal)
@@ -56,19 +65,22 @@ class AdministrativeCourtAssistant(BaseAssistant):
         **kwargs,
     ) -> RetrievalResult:
         """
-        1. Classify intent  → domain_type + prompt template
+        1. Prompt from ``court_route_tag`` (court router) or default administrative litigation
         2. Generate Milvus filter expression
-        3. Route to the correct multi-collection strategy
+        3. Route to tax vs general multi-collection merge
         """
         try:
-            # Intent classification (returns domain str + PromptTemplate)
-            domain_type, template, _legal_intent = (
-                await self.intent_classifier.classify_intent(
-                    query, chat_history, file_context
-                )
+            court_route_tag = kwargs.get("court_route_tag")
+            template = self._prompt_template_for_route(court_route_tag)
+            domain_type = (
+                "tax"
+                if (court_route_tag or "").startswith("administrative_tax_")
+                else "general"
             )
             logger.info(
-                f"[AdministrativeCourtAssistant] Intent classified as domain: {domain_type}"
+                "[AdministrativeCourtAssistant] court_route_tag=%s → domain=%s",
+                court_route_tag,
+                domain_type,
             )
 
             # Milvus filter expression (court, instance, category)
@@ -95,6 +107,21 @@ class AdministrativeCourtAssistant(BaseAssistant):
                 f"[AdministrativeCourtAssistant] Retrieval failed: {e}", exc_info=True
             )
             return self._error_result()
+
+    def _prompt_template_for_route(self, court_route_tag: str | None):
+        registry = get_prompt_registry()
+        tag = court_route_tag or self.DEFAULT_COURT_ROUTE_TAG
+        if not tag.startswith("administrative_"):
+            tag = self.DEFAULT_COURT_ROUTE_TAG
+        prompt_key = self.ADMINISTRATIVE_ROUTE_TO_PROMPT.get(tag)
+        if not prompt_key:
+            logger.warning(
+                "[AdministrativeCourtAssistant] Unknown court_route_tag=%s → %s",
+                court_route_tag,
+                self.DEFAULT_COURT_ROUTE_TAG,
+            )
+            prompt_key = self.ADMINISTRATIVE_ROUTE_TO_PROMPT[self.DEFAULT_COURT_ROUTE_TAG]
+        return registry.get_prompt(prompt_key)
 
     # Search strategy (file-level)
     def search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:

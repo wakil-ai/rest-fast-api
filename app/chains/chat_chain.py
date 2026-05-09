@@ -48,6 +48,8 @@ class GenerationContext:
     assistant_name: str
     attachments: list[dict[str, Any]] | None = None
     classified_legal_intent: str | None = None
+    # Fine-grained court router label for administrative_court (e.g. administrative_tax_...)
+    court_route_tag: str | None = None
 
 
 class ChatChain:
@@ -167,6 +169,7 @@ class ChatChain:
                 assistant=routing_decision.assistant_name or assistant,
                 file_context=file_context,
                 history_formatted=history_formatted,
+                court_route_tag=routing_decision.court_route_tag,
             )
 
             llm = self._select_llm()
@@ -208,6 +211,7 @@ class ChatChain:
         assistant: str,
         file_context: str,
         history_formatted: str,
+        court_route_tag: str | None = None,
     ) -> GenerationContext:
         """Gather all pieces needed for generation: files, memory, retrieval, prompt."""
         # 1. Chat history + memory
@@ -227,6 +231,7 @@ class ChatChain:
             file_context=file_context,
             chat_history=history_formatted,
             assistant=assistant,
+            court_route_tag=court_route_tag,
         )
 
         # 3. Prompt template (assistant may override via intent classification)
@@ -263,6 +268,7 @@ class ChatChain:
             assistant_name=assistant,
             attachments=attachments,
             classified_legal_intent=classified_legal_intent,
+            court_route_tag=court_route_tag,
         )
 
     async def _resolve_court_routing(
@@ -388,6 +394,7 @@ class ChatChain:
         file_context: str,
         chat_history: str,
         assistant: str,
+        court_route_tag: str | None = None,
     ) -> tuple[str, list[dict[str, Any]], Any, str | None]:
         """
         Delegate retrieval to the assistant's own retrieve() method.
@@ -402,6 +409,7 @@ class ChatChain:
             query=query,
             file_context=file_context,
             chat_history=chat_history,
+            court_route_tag=court_route_tag,
         )
         return (
             result.context,
