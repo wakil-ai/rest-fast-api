@@ -260,6 +260,8 @@ class Settings(BaseSettings):
     AUTH_SECRET_KEY: str = "secret-key-change-me"
 
     GEMINI_API_KEY: str | None = None
+    #: Model id for `ChatGoogleGenerativeAI` on `/api/v3/chat` (e.g. `gemini-2.5-flash`).
+    GEMINI_LANGCHAIN_CHAT_MODEL: str | None = None
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379

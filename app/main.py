@@ -22,6 +22,7 @@ from app.api.v2 import (
     referral,
     speech_to_text,
 )
+from app.api.v3 import chat as v3_chat
 from app.api.v2.history.router import router as chat_history
 from app.api.v2.history.share import router as share_router
 from app.core.config import settings
@@ -84,6 +85,11 @@ def create_app() -> FastAPI:
     app.include_router(
         chat.router,
         prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key_or_dt_key)],
+    )
+    app.include_router(
+        v3_chat.router,
+        prefix="/api/v3",
         dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(
