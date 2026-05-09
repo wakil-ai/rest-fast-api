@@ -20,11 +20,14 @@ flowchart LR
   tools -->|no| END([END])
 ```
 
-Checkpoint storage: ``MemorySaver`` (in-process RAM), keyed by ``configurable.thread_id``.
+Checkpoint storage: **Redis** (``AsyncRedisSaver``) when
+``LANGGRAPH_CHECKPOINT_USE_REDIS`` is true and setup succeeds; otherwise
+``MemorySaver`` (in-process). Redis checkpoints use ``LANGGRAPH_CHECKPOINT_TTL_SECONDS`` (default 3 days) so keys auto-expire; session delete also removes the thread immediately.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -51,8 +54,131 @@ try:
 except ImportError:
     TavilySearchResults = None  # type: ignore[misc, assignment]
 
-_general_checkpointer = MemorySaver()
+_general_checkpointer: Any = None  # MemorySaver | AsyncRedisSaver
 _compiled_general_agent = None
+_checkpointer_needs_async_close = False
+
+
+def _build_langgraph_redis_url() -> str:
+    uri = getattr(settings, "REDIS_URI", None)
+    if isinstance(uri, str) and uri.strip():
+        return uri.strip()
+    password = getattr(settings, "REDIS_PASSWORD", None)
+    if isinstance(password, str) and password:
+        return (
+            f"redis://:{password}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
+        )
+    return f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
+
+
+def _default_ttl_minutes_for_checkpoints() -> float:
+    """LangGraph Redis saver expects ``default_ttl`` in minutes."""
+    secs = max(int(getattr(settings, "LANGGRAPH_CHECKPOINT_TTL_SECONDS", 86400 * 3)), 60)
+    return float(secs) / 60.0
+
+
+def langgraph_thread_id(user_id: str, session_id: str) -> str:
+    """Must match ``thread_id`` passed to chat invoke (``user_id:resolved_session_id``)."""
+    return f"{user_id}:{session_id}"
+
+
+async def delete_general_agent_thread(*, user_id: str, session_id: str) -> None:
+    """
+    Remove LangGraph checkpoint state for this chat session (Redis or MemorySaver).
+
+    Best-effort: never raises; logs a warning on failure. Call after Mongo session
+    delete if you need immediate cleanup; otherwise Redis TTL still expires keys.
+    """
+    thread_id = langgraph_thread_id(user_id, session_id)
+    try:
+        cp = _get_general_checkpointer()
+        adelete = getattr(cp, "adelete_thread", None)
+        if adelete is not None:
+            await adelete(thread_id)
+            logger.info("[general_lc] Deleted LangGraph thread %s", thread_id)
+            return
+        sync_del = getattr(cp, "delete_thread", None)
+        if sync_del is not None:
+            await asyncio.to_thread(sync_del, thread_id)
+            logger.info("[general_lc] Deleted LangGraph thread %s (sync)", thread_id)
+    except Exception:
+        logger.warning(
+            "[general_lc] Failed to delete LangGraph thread %s",
+            thread_id,
+            exc_info=True,
+        )
+
+
+async def init_langgraph_checkpointer() -> None:
+    """Call from FastAPI lifespan startup. Reconfigures checkpointer and clears compiled graph."""
+    global _general_checkpointer, _compiled_general_agent, _checkpointer_needs_async_close
+
+    _compiled_general_agent = None
+    _checkpointer_needs_async_close = False
+
+    if not getattr(settings, "LANGGRAPH_CHECKPOINT_USE_REDIS", False):
+        _general_checkpointer = MemorySaver()
+        logger.info("[general_lc] LangGraph checkpointer: MemorySaver (LANGGRAPH_CHECKPOINT_USE_REDIS=false)")
+        return
+
+    try:
+        from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+    except ImportError:
+        logger.warning(
+            "[general_lc] langgraph-checkpoint-redis not installed; using MemorySaver"
+        )
+        _general_checkpointer = MemorySaver()
+        return
+
+    url = _build_langgraph_redis_url()
+    ttl_minutes = _default_ttl_minutes_for_checkpoints()
+    try:
+        saver = AsyncRedisSaver(
+            redis_url=url,
+            ttl={"default_ttl": ttl_minutes},
+            checkpoint_prefix="wakilai:lg:checkpoint",
+            checkpoint_write_prefix="wakilai:lg:checkpoint_write",
+        )
+        await saver.setup()
+        _general_checkpointer = saver
+        _checkpointer_needs_async_close = True
+        log_url = url.split("@")[-1] if "@" in url else url
+        logger.info(
+            "[general_lc] LangGraph checkpointer: AsyncRedisSaver (%s, ttl≈%.0f min, %ds)",
+            log_url,
+            ttl_minutes,
+            int(getattr(settings, "LANGGRAPH_CHECKPOINT_TTL_SECONDS", 86400 * 3)),
+        )
+    except Exception:
+        logger.exception(
+            "[general_lc] Redis checkpointer setup failed; falling back to MemorySaver "
+            "(ensure Redis supports RedisJSON + search modules as required by langgraph-checkpoint-redis)"
+        )
+        _general_checkpointer = MemorySaver()
+
+
+async def shutdown_langgraph_checkpointer() -> None:
+    """Call from FastAPI lifespan shutdown."""
+    global _general_checkpointer, _compiled_general_agent, _checkpointer_needs_async_close
+
+    _compiled_general_agent = None
+    cp = _general_checkpointer
+    should_close = _checkpointer_needs_async_close
+    _general_checkpointer = None
+    _checkpointer_needs_async_close = False
+
+    if cp is not None and should_close:
+        await cp.__aexit__(None, None, None)
+
+
+def _get_general_checkpointer() -> Any:
+    global _general_checkpointer
+    if _general_checkpointer is None:
+        _general_checkpointer = MemorySaver()
+        logger.warning(
+            "[general_lc] Checkpointer was unset; created MemorySaver (lifespan init missing?)"
+        )
+    return _general_checkpointer
 
 
 def _gemini_lc_model_name() -> str:
@@ -121,6 +247,8 @@ def _build_lc_llm() -> ChatGoogleGenerativeAI:
         model=_gemini_lc_model_name(),
         google_api_key=settings.GEMINI_API_KEY,
         temperature=settings.TEMPERATURE,
+        max_output_tokens=settings.OUTPUT_MAX_TOKENS,
+        thinking_level="high",
     )
 
 
@@ -139,7 +267,7 @@ def _get_compiled_general_agent():  # type: ignore[no-untyped-def]
             llm,
             _build_tools(),
             prompt=prompt,
-            checkpointer=_general_checkpointer,
+            checkpointer=_get_general_checkpointer(),
         )
         logger.info(
             "[general_lc] Compiled LangGraph react agent (Gemini=%s)",

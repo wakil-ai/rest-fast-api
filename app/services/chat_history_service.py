@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.chains.general_langchain_agent import delete_general_agent_thread
 from app.core.config import settings
 from app.core.dependencies import get_db_manager
 from app.core.exceptions import (
@@ -473,8 +474,8 @@ class ChatHistoryService:
     async def delete_session(self, session_id: str) -> None:
         """Delete a session and its messages."""
 
-        # Ensure session exists
-        await self._ensure_session_exists(session_id)
+        session = await self._ensure_session_exists(session_id)
+        user_id = session.get("user_id")
 
         # Delete session
         await self.db_manager.delete_documents(
@@ -492,6 +493,11 @@ class ChatHistoryService:
         )
 
         logger.info(f"Deleted session with session_id: {session_id} and its messages")
+
+        if user_id:
+            await delete_general_agent_thread(
+                user_id=str(user_id), session_id=session_id
+            )
 
     # Messages Management
     async def add_message(

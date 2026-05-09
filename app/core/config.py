@@ -266,6 +266,15 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_EXPIRATION_SECONDS: int = 86400 * 3  # 3 days in seconds
+    #: Full Redis URL for LangGraph checkpoints (optional). If unset, built from host/port/password.
+    REDIS_URI: str | None = None
+    REDIS_PASSWORD: str | None = None
+    #: Persist LangGraph thread state in Redis (AsyncRedisSaver). Requires ``langgraph-checkpoint-redis`` and a
+    #: Redis deployment with RedisJSON / RediSearch support (see package docs). On setup failure, falls back to memory.
+    #: Session delete calls ``adelete_thread``; keys also expire after ``LANGGRAPH_CHECKPOINT_TTL_SECONDS``.
+    LANGGRAPH_CHECKPOINT_USE_REDIS: bool = False
+    #: Redis TTL for LangGraph checkpoint keys (seconds). After this period Redis drops checkpoint data for a thread.
+    LANGGRAPH_CHECKPOINT_TTL_SECONDS: int = 86400 * 3  # 3 days, independent of general cache TTL if needed
 
     # OneID / B2B Integration
     DT_SERVER_IP: str = "87.192.230.47"  # OneID server IP for birdarcha web client
