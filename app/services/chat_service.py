@@ -3,24 +3,39 @@ from collections.abc import AsyncGenerator
 from time import perf_counter
 from typing import Any, cast
 
+from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from app.chains.general_langchain_agent import invoke_general_lc_agent
+from app.chains.general_langchain_handlers import (
+    astream_lc_with_persistence,
+    collect_lc_file_context,
+)
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
+    get_agentic_rag_flow_streaming,
     get_chat_chain,
     get_chat_history_service,
     get_project_service,
     get_rate_limit_service,
 )
 from app.core.exceptions import (
+    ChatException,
     ChatGenerationException,
+    FlowExecutionException,
     InsufficientCreditsException,
     InvalidInputError,
     QueryTooLongException,
 )
 from app.core.logger import logger
-from app.models.chat import AgenticRAGRequest, AssistantType, ChatResponse
+from app.models.chat import (
+    AgenticRAGRequest,
+    AssistantType,
+    ChatRequest,
+    ChatResponse,
+    ModelInfoResponse,
+)
 from app.utils.streaming import format_streaming_response, get_streaming_headers
 
 
@@ -400,3 +415,351 @@ class ChatService:
         except Exception as e:
             logger.error(f"Error generating answer: {e}", exc_info=True)
             raise ChatGenerationException(f"Failed to generate answer: {str(e)}")
+
+    @staticmethod
+    def is_dt_team_request(raw_request: Request) -> bool:
+        return bool(raw_request.headers.get(settings.DT_API_KEY_NAME.lower()))
+
+    @staticmethod
+    def append_dt_team_disclaimer(answer: str, *, is_dt_team_request: bool) -> str:
+        if not is_dt_team_request:
+            return answer
+        return f"{answer}{settings.DT_TEAM_DISCLAIMER}"
+
+    async def stream_chat_answer_for_assistant(
+        self,
+        request: ChatRequest,
+        *,
+        is_dt_team_request: bool,
+        assistant_name: str,
+        session_id: str,
+        message_id: str,
+    ) -> AsyncGenerator[Any, None]:
+        """Stream non-main assistant answers (SSE chunks + optional DT disclaimer)."""
+        response = await self.ask_question(
+            user_id=request.user_id,
+            session_id=session_id,
+            message_id=message_id,
+            query=request.query,
+            stream=True,
+            file_ids=request.file_ids,
+            assistant=assistant_name,
+            project_id=request.project_id,
+        )
+
+        if isinstance(response, tuple):
+            answer, meta = response
+            yield answer
+            if is_dt_team_request:
+                yield settings.DT_TEAM_DISCLAIMER
+
+            attachments = meta.get("attachments") if isinstance(meta, dict) else None
+            if attachments:
+                yield {"type": "attachments", "attachments": attachments}
+            return
+
+        if isinstance(response, str):
+            yield response
+            if is_dt_team_request:
+                yield settings.DT_TEAM_DISCLAIMER
+            return
+
+        async for item in cast(AsyncGenerator[Any, None], response):
+            yield item
+
+        if is_dt_team_request:
+            yield settings.DT_TEAM_DISCLAIMER
+
+    async def handle_chat_ask(
+        self, request: ChatRequest, raw_request: Request
+    ) -> ChatResponse | StreamingResponse:
+        """Full ``POST /chat/ask`` pipeline (all assistants)."""
+        try:
+            self.validate_query_length(request.query)
+
+            assistant_name = AssistantConfig.validate_assistant_or_default(
+                request.assistant.value if request.assistant else None
+            )
+
+            logger.info(f"Using assistant: {assistant_name}")
+
+            credit_cost, _ = self.extract_assistant_config(assistant_name)
+
+            await self.verify_user_credits(
+                user_id=request.user_id,
+                assistant_type=assistant_name,
+                required_credits=credit_cost,
+            )
+
+            should_stream = settings.STREAM if request.stream is None else request.stream
+            is_dt = self.is_dt_team_request(raw_request)
+
+            session_id, message_id = await self.prepare_chat_request(
+                user_id=request.user_id,
+                session_id=request.session_id,
+                project_id=request.project_id,
+            )
+
+            if assistant_name == "main":
+                logger.info(
+                    "General assistant: using LangGraph / LangChain (Gemini) path"
+                )
+                thread_id = f"{request.user_id}:{session_id}"
+                file_context = await collect_lc_file_context(
+                    user_id=request.user_id,
+                    query=request.query,
+                    file_ids=request.file_ids,
+                    project_id=request.project_id,
+                )
+                dt_suffix = settings.DT_TEAM_DISCLAIMER if is_dt else ""
+
+                if should_stream:
+                    started_stream = perf_counter()
+                    return self.create_streaming_response(
+                        astream_lc_with_persistence(
+                            thread_id=thread_id,
+                            query=request.query,
+                            file_context=file_context,
+                            user_id=request.user_id,
+                            session_id=session_id,
+                            message_id=message_id,
+                            file_ids=request.file_ids,
+                            assistant="main",
+                            started_at=started_stream,
+                            dt_team_disclaimer_suffix=dt_suffix,
+                            project_id=request.project_id,
+                        )
+                    )
+
+                started_at = perf_counter()
+                try:
+                    answer, lc_meta = await invoke_general_lc_agent(
+                        thread_id=thread_id,
+                        query=request.query,
+                        file_context=file_context,
+                        user_id_for_logs=request.user_id,
+                    )
+                except RuntimeError as e:
+                    logger.error(
+                        "[ChatService] LangChain general assistant misconfiguration: %s",
+                        e,
+                        exc_info=True,
+                    )
+                    raise ChatGenerationException(str(e)) from e
+
+                answer_out = self.append_dt_team_disclaimer(
+                    answer, is_dt_team_request=is_dt
+                )
+                latency_ms = int((perf_counter() - started_at) * 1000)
+                merged_meta = dict(lc_meta or {})
+                merged_meta["latency_ms"] = latency_ms
+                metadata = self.build_message_metadata(
+                    assistant="main",
+                    stream=False,
+                    latency_ms=latency_ms,
+                    generation_meta=merged_meta,
+                )
+                self.schedule_message_persistence(
+                    user_id=request.user_id,
+                    session_id=session_id,
+                    message_id=message_id,
+                    query=request.query,
+                    answer=answer_out,
+                    file_ids=request.file_ids,
+                    metadata=metadata,
+                    project_id=request.project_id,
+                )
+                return ChatResponse(
+                    answer=answer_out,
+                    session_id=session_id,
+                    message_id=message_id,
+                    latency_ms=latency_ms,
+                    attachments=None,
+                )
+
+            if should_stream:
+                return self.create_streaming_response(
+                    self.stream_chat_answer_for_assistant(
+                        request,
+                        is_dt_team_request=is_dt,
+                        assistant_name=assistant_name,
+                        session_id=session_id,
+                        message_id=message_id,
+                    )
+                )
+
+            response = await self.ask_question(
+                user_id=request.user_id,
+                session_id=session_id,
+                message_id=message_id,
+                query=request.query,
+                stream=should_stream,
+                file_ids=request.file_ids,
+                assistant=assistant_name,
+                project_id=request.project_id,
+            )
+
+            if isinstance(response, tuple):
+                answer, meta = response
+                return ChatResponse(
+                    answer=self.append_dt_team_disclaimer(
+                        answer, is_dt_team_request=is_dt
+                    ),
+                    session_id=session_id,
+                    message_id=message_id,
+                    latency_ms=meta.get("latency_ms"),
+                    attachments=meta.get("attachments") or None,
+                )
+
+            if not isinstance(response, str):
+                raise ChatGenerationException(
+                    "Unexpected streaming response for non-streaming request."
+                )
+
+            return ChatResponse(
+                answer=self.append_dt_team_disclaimer(
+                    response, is_dt_team_request=is_dt
+                ),
+                session_id=session_id,
+                message_id=message_id,
+            )
+
+        except ChatException:
+            raise
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(
+                f"[ChatService] Unexpected error in handle_chat_ask: {str(e)}",
+                exc_info=True,
+            )
+            raise ChatGenerationException()
+
+    async def handle_agentic_rag_stream(
+        self, request: AgenticRAGRequest
+    ) -> StreamingResponse:
+        """Build streaming response for agentic RAG (``POST /chat/agent/stream``)."""
+        try:
+            self.validate_query_length(request.query)
+
+            await self.verify_user_credits(
+                user_id=request.user_id,
+                assistant_type="deepresearch",
+                required_credits=settings.CREDIT_COST_DEEPRESEARCH,
+            )
+
+            session_id, message_id = await self.prepare_chat_request(
+                user_id=request.user_id,
+                session_id=request.session_id,
+                project_id=request.project_id,
+            )
+
+            progress_queue: asyncio.Queue = asyncio.Queue()
+
+            async def progress_callback(event: dict) -> None:
+                await progress_queue.put(event)
+
+            flow = get_agentic_rag_flow_streaming(progress_callback)
+
+            initial_state = self.build_agentic_state(request, message_id=message_id)
+            started_at = perf_counter()
+
+            async def response_generator() -> AsyncGenerator[Any, None]:
+                yield {
+                    "type": "metadata",
+                    "session_id": session_id,
+                    "message_id": message_id,
+                }
+
+                flow_task = asyncio.create_task(flow.kickoff_async(initial_state))
+
+                flow_complete = False
+                while not (flow_complete and progress_queue.empty()):
+                    if flow_task.done() and not flow_complete:
+                        flow_complete = True
+                        try:
+                            await flow_task
+                            latency_ms = int((perf_counter() - started_at) * 1000)
+                            generation_meta = dict(flow.state.generation_meta or {})
+                            generation_meta["workflow"] = "agentic_rag"
+                            if flow.state.selected_assistant:
+                                generation_meta["selected_assistant"] = (
+                                    flow.state.selected_assistant
+                                )
+                            if flow.state.web_search_output:
+                                generation_meta["used_web_search"] = bool(
+                                    flow.state.web_search_output.get("docs")
+                                )
+                            if flow.state.attachments:
+                                generation_meta["attachments"] = flow.state.attachments
+
+                            metadata = self.build_message_metadata(
+                                assistant="deepresearch",
+                                stream=True,
+                                latency_ms=latency_ms,
+                                generation_meta=generation_meta,
+                            )
+                            self.schedule_message_persistence(
+                                user_id=request.user_id,
+                                session_id=session_id,
+                                message_id=message_id,
+                                query=request.query,
+                                answer=flow.state.answer or "",
+                                file_ids=request.file_ids,
+                                metadata=metadata,
+                                project_id=request.project_id,
+                            )
+                        except Exception as e:
+                            logger.error("Flow execution error", exc_info=True)
+                            yield {
+                                "type": "error",
+                                "message": f"An error occurred: {str(e)}",
+                            }
+                            break
+
+                    try:
+                        event = await asyncio.wait_for(
+                            progress_queue.get(), timeout=0.1
+                        )
+                        yield event
+                    except asyncio.TimeoutError:
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error getting progress event: {e}")
+                        break
+
+            return self.create_streaming_response(response_generator())
+
+        except ChatException:
+            raise
+        except Exception as e:
+            logger.error(
+                f"[ChatService] Unexpected error in handle_agentic_rag_stream: {str(e)}",
+                exc_info=True,
+            )
+            raise FlowExecutionException("Failed to stream agentic RAG response.")
+
+    @staticmethod
+    def get_public_assistants_payload() -> dict[str, Any]:
+        assistants = AssistantConfig.get_public_assistants()
+        return {
+            "assistants": [
+                {
+                    "name": name,
+                    "description": config["description"],
+                    "credit_cost": config["credit_cost"],
+                }
+                for name, config in assistants.items()
+            ]
+        }
+
+    @staticmethod
+    def get_model_info_response() -> ModelInfoResponse:
+        return ModelInfoResponse(
+            service_provider=settings.LLM_PROVIDER,
+            embedding_model=settings.EMBEDDING_MODEL,
+            stream=settings.STREAM,
+            top_k=settings.TOP_K,
+            alpha=settings.ALPHA,
+            temperature=settings.TEMPERATURE,
+        )
