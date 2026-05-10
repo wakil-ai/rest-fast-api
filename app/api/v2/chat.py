@@ -1,6 +1,5 @@
 """
 Backward compatibility: chat routes are implemented in ``app.api.v3.chat``.
-
 Use ``POST /api/v3/chat/ask`` (recommended) or ``POST /api/v2/chat/ask`` — same behavior.
 """
 

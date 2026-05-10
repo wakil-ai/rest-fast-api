@@ -1,9 +1,3 @@
-"""
-Canonical chat API — all assistants, LangChain path for ``main``, agentic RAG stream.
-
-Mounted at ``/api/v3`` (primary) and re-exported under ``/api/v2`` for backward compatibility.
-"""
-
 from fastapi import APIRouter, Request
 
 from app.core.dependencies import get_chat_service
