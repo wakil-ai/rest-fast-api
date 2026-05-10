@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 from app.assistants.base import RetrievalConfig
@@ -101,6 +102,56 @@ class RetrievalService:
         unique = self._formatter.deduplicate_by_url(all_results)
         unique.sort(key=lambda x: x.get("score", 0), reverse=True)
         return unique[:top_k]
+
+    async def retrieve_project_context(
+        self,
+        *,
+        query: str,
+        project_id: str,
+        user_id: str,
+        top_k: int | None = None,
+    ) -> str:
+        """
+        Hybrid search over ``project_files`` scoped by ``project_id`` and ``user_id``.
+
+        Returns a plain-text block suitable to prepend to RAG context.
+        """
+        if not project_id or not project_id.strip() or not query.strip():
+            return ""
+
+        tk = top_k if top_k is not None else settings.TOP_K
+        expr = (
+            f'metadata["project_id"] == "{project_id}" '
+            f'and metadata["user_id"] == "{user_id}"'
+        )
+        try:
+            embedding = self._embedder.embed_query(query)
+            docs = await asyncio.to_thread(
+                self._db.search_hybrid,
+                embedding,
+                query,
+                tk,
+                settings.ALPHA,
+                settings.MILVUS_PROJECT_FILES,
+                expr,
+            )
+            if not docs:
+                return ""
+
+            chunks: list[str] = []
+            for index, doc in enumerate(docs, 1):
+                text = doc.get("metadata", {}).get("text") or ""
+                if text:
+                    chunks.append(f"[Project chunk {index}]\n{text}")
+            if not chunks:
+                return ""
+            return (
+                "## PROJECT WORKSPACE (uploaded case documents)\n"
+                + "\n\n".join(chunks)
+            )
+        except Exception as e:
+            logger.warning(f"retrieve_project_context failed: {e}", exc_info=True)
+            return ""
 
     # Low-level search dispatcher
     def _search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:

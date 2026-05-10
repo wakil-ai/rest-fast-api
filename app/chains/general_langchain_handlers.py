@@ -13,9 +13,12 @@ async def collect_lc_file_context(
     user_id: str,
     query: str,
     file_ids: list[str] | None,
+    project_id: str | None = None,
 ) -> str:
     chain = get_chat_chain()
-    return await chain._collect_file_context(file_ids, user_id, query)
+    return await chain._collect_file_context(
+        file_ids, user_id, query, project_id=project_id
+    )
 
 
 async def astream_lc_with_persistence(
@@ -30,6 +33,7 @@ async def astream_lc_with_persistence(
     assistant: str,
     started_at: float,
     dt_team_disclaimer_suffix: str = "",
+    project_id: str | None = None,
 ) -> AsyncGenerator[Any, None]:
     chat_service = get_chat_service()
     answer_chunks: list[str] = []
@@ -76,4 +80,5 @@ async def astream_lc_with_persistence(
         answer="".join(answer_chunks),
         file_ids=file_ids,
         metadata=metadata,
+        project_id=project_id,
     )

@@ -71,6 +71,9 @@ class SessionResponse(BaseModel):
 
     user_id: str = Field(..., description="User ID")
     session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
+    project_id: str | None = Field(
+        default=None, description="Legal project scope when set"
+    )
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
     status: SessionStatus = Field(default=SessionStatus.draft)
@@ -189,6 +192,9 @@ class FileUploadResponse(BaseModel):
     """Response model for file upload data"""
 
     file_id: str = Field(..., description="File ID (stored as _id)", alias="_id")
+    project_id: str | None = Field(
+        default=None, description="Set when the file belongs to a project workspace"
+    )
     file_url: str = Field(..., description="API endpoint to access the file")
     file_metadata: dict[str, Any] = Field(..., description="File metadata (name, type, size, gcs_path)")
     ocr_result: str = Field(..., description="OCR extracted text")

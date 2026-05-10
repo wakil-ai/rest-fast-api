@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.dependencies import (
     get_chat_chain,
     get_chat_history_service,
+    get_project_service,
     get_rate_limit_service,
 )
 from app.core.exceptions import (
@@ -119,9 +120,12 @@ class ChatService:
         )
 
     async def prepare_chat_request(
-        self, user_id: str, session_id: str
+        self,
+        user_id: str,
+        session_id: str,
+        project_id: str | None = None,
     ) -> tuple[str, str]:
-        """Validate chat session and allocate a message ID before generation."""
+        """Validate chat session, optionally link it to a project, and allocate message id."""
         session = await self.chat_history_service.ensure_session_for_user(
             user_id=user_id,
             session_id=session_id,
@@ -129,6 +133,18 @@ class ChatService:
         resolved_session_id = session.get("session_id") or session.get("_id")
         if not resolved_session_id:
             raise ChatGenerationException("Failed to resolve chat session.")
+
+        if project_id:
+            await get_project_service().get_project(project_id, user_id)
+            existing = session.get("project_id")
+            if existing and existing != project_id:
+                raise InvalidInputError(
+                    "This session is already linked to a different project."
+                )
+            if not existing:
+                await self.chat_history_service.attach_session_to_project(
+                    resolved_session_id, project_id
+                )
 
         return resolved_session_id, self.chat_history_service.create_message_id()
 
@@ -178,17 +194,23 @@ class ChatService:
         answer: str,
         file_ids: list[str] | None,
         metadata: dict[str, Any],
+        project_id: str | None = None,
     ) -> None:
         async def persist() -> None:
             try:
+                meta = dict(metadata)
+                if project_id:
+                    meta["project_id"] = project_id
                 await self.chat_history_service.upsert_message(
                     session_id=session_id,
                     message_id=message_id,
                     user_id=user_id,
                     file_ids=file_ids,
                     content={"query": query, "response": answer},
-                    metadata=metadata,
+                    metadata=meta,
                 )
+                if project_id:
+                    await get_project_service().increment_stat(project_id, "chats", 1)
             except Exception as e:
                 logger.warning(
                     f"Failed to persist message {message_id} for session {session_id}: {e}",
@@ -208,6 +230,7 @@ class ChatService:
         file_ids: list[str] | None,
         assistant: str,
         started_at: float,
+        project_id: str | None = None,
     ) -> AsyncGenerator[Any, None]:
         async def wrapped() -> AsyncGenerator[Any, None]:
             answer_chunks: list[str] = []
@@ -244,6 +267,7 @@ class ChatService:
                 answer="".join(answer_chunks),
                 file_ids=file_ids,
                 metadata=metadata,
+                project_id=project_id,
             )
 
         return wrapped()
@@ -257,6 +281,7 @@ class ChatService:
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
+        project_id: str | None = None,
     ) -> str | AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
         """
         Handle the question by retrieving context and generating an answer.
@@ -286,6 +311,7 @@ class ChatService:
                 stream=stream,
                 file_ids=file_ids,
                 assistant=assistant,
+                project_id=project_id,
             )
 
             if stream:
@@ -305,6 +331,7 @@ class ChatService:
                         file_ids=file_ids,
                         assistant=assistant,
                         started_at=started_at,
+                        project_id=project_id,
                     )
 
                 if isinstance(answer, str):
@@ -322,6 +349,7 @@ class ChatService:
                         file_ids=file_ids,
                         assistant=assistant,
                         started_at=started_at,
+                        project_id=project_id,
                     )
 
                 return await self._wrap_streaming_answer(
@@ -333,6 +361,7 @@ class ChatService:
                     file_ids=file_ids,
                     assistant=assistant,
                     started_at=started_at,
+                    project_id=project_id,
                 )
 
             latency_ms = int((perf_counter() - started_at) * 1000)
@@ -360,6 +389,7 @@ class ChatService:
                 answer=answer_text,
                 file_ids=file_ids,
                 metadata=metadata,
+                project_id=project_id,
             )
 
             response_meta = dict(generation_meta)

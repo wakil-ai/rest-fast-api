@@ -23,6 +23,7 @@ from app.services.streaming_speech_to_text import (
     StreamingSTTService,
 )
 from app.services.subscription_storage import SubscriptionStorage
+from app.services.project_service import ProjectService
 
 __all__ = [
     # Auth
@@ -52,4 +53,5 @@ __all__ = [
     "GoogleStreamingSTTService",
     "AzureStreamingSTTService",
     "SubscriptionStorage",
+    "ProjectService",
 ]

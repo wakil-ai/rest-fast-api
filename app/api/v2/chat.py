@@ -27,17 +27,11 @@ from app.models.chat import (
     ModelInfoResponse,
 )
 from app.utils.streaming import format_streaming_response, get_streaming_headers
+from app.core.config import settings
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
 chat_service = get_chat_service()
-
-DT_TEAM_DISCLAIMER = (
-    "\n\n> *DIQQAT! Ushbu protsessual hujjat loyihasi “WakilAI” sun’iy "
-    "intellekt tizimi yordamida shakllantirildi. Hujjatni sudga taqdim "
-    "etishdan avval malakali va professional advokat bilan maslahatlashish "
-    "tavsiya etiladi.*"
-)
 
 
 def _is_dt_team_request(request: Request) -> bool:
@@ -47,7 +41,7 @@ def _is_dt_team_request(request: Request) -> bool:
 def _append_dt_team_disclaimer(answer: str, *, is_dt_team_request: bool) -> str:
     if not is_dt_team_request:
         return answer
-    return f"{answer}{DT_TEAM_DISCLAIMER}"
+    return f"{answer}{settings.DT_TEAM_DISCLAIMER}"
 
 
 async def _stream_chat_answer(
@@ -65,13 +59,14 @@ async def _stream_chat_answer(
         stream=True,
         file_ids=request.file_ids,
         assistant=assistant_name,
+        project_id=request.project_id,
     )
 
     if isinstance(response, tuple):
         answer, meta = response
         yield answer
         if is_dt_team_request:
-            yield DT_TEAM_DISCLAIMER
+            yield settings.DT_TEAM_DISCLAIMER
 
         attachments = meta.get("attachments") if isinstance(meta, dict) else None
         if attachments:
@@ -81,14 +76,14 @@ async def _stream_chat_answer(
     if isinstance(response, str):
         yield response
         if is_dt_team_request:
-            yield DT_TEAM_DISCLAIMER
+            yield settings.DT_TEAM_DISCLAIMER
         return
 
     async for item in cast(AsyncGenerator[Any, None], response):
         yield item
 
     if is_dt_team_request:
-        yield DT_TEAM_DISCLAIMER
+        yield settings.DT_TEAM_DISCLAIMER
 
 
 @router.post("/ask", summary="Ask a legal question")
@@ -120,6 +115,7 @@ async def ask_question(request: ChatRequest, raw_request: Request):
         session_id, message_id = await chat_service.prepare_chat_request(
             user_id=request.user_id,
             session_id=request.session_id,
+            project_id=request.project_id,
         )
 
         if assistant_name == "main":
@@ -129,8 +125,9 @@ async def ask_question(request: ChatRequest, raw_request: Request):
                 user_id=request.user_id,
                 query=request.query,
                 file_ids=request.file_ids,
+                project_id=request.project_id,
             )
-            dt_suffix = DT_TEAM_DISCLAIMER if is_dt_team_request else ""
+            dt_suffix = settings.DT_TEAM_DISCLAIMER if is_dt_team_request else ""
 
             if should_stream:
                 started_stream = perf_counter()
@@ -146,6 +143,7 @@ async def ask_question(request: ChatRequest, raw_request: Request):
                         assistant="main",
                         started_at=started_stream,
                         dt_team_disclaimer_suffix=dt_suffix,
+                        project_id=request.project_id,
                     )
                 )
 
@@ -185,6 +183,7 @@ async def ask_question(request: ChatRequest, raw_request: Request):
                 answer=answer_out,
                 file_ids=request.file_ids,
                 metadata=metadata,
+                project_id=request.project_id,
             )
             return ChatResponse(
                 answer=answer_out,
@@ -213,6 +212,7 @@ async def ask_question(request: ChatRequest, raw_request: Request):
             stream=should_stream,
             file_ids=request.file_ids,
             assistant=assistant_name,
+            project_id=request.project_id,
         )
 
         if isinstance(response, tuple):
@@ -273,6 +273,7 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
         session_id, message_id = await chat_service.prepare_chat_request(
             user_id=request.user_id,
             session_id=request.session_id,
+            project_id=request.project_id,
         )
 
         progress_queue = asyncio.Queue()
@@ -330,6 +331,7 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
                             answer=flow.state.answer or "",
                             file_ids=request.file_ids,
                             metadata=metadata,
+                            project_id=request.project_id,
                         )
                     except Exception as e:
                         logger.error("Flow execution error", exc_info=True)

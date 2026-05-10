@@ -197,6 +197,21 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
                 query_translations, strategy, collection_name
             )
 
+            if self.state.project_id:
+                qtext = self.state.rewritten_query or self.state.query
+                project_block = await self.chat_chain.retrieval.retrieve_project_context(
+                    query=qtext,
+                    project_id=self.state.project_id,
+                    user_id=self.state.user_id,
+                    top_k=max(1, settings.TOP_K // 2),
+                )
+                if project_block:
+                    self.state.retrieval_docs = (
+                        (self.state.retrieval_docs or "").rstrip()
+                        + "\n\n"
+                        + project_block
+                    )
+
             if self.state.file_ids:
                 file_context = await self._get_file_id_context()
                 self.state.retrieval_docs += file_context

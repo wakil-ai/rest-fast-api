@@ -69,6 +69,13 @@ class ChatRequest(BaseModel):
     file_ids: list[str] | None = Field(
         default=None, description="Optional list of file IDs to use as context"
     )
+    project_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional legal project: links the session to this project on first use, "
+            "retrieves Milvus `project_files` by this id, and stores `project_id` on the message"
+        ),
+    )
 
 
 class ChatResponse(BaseModel):

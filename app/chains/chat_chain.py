@@ -147,6 +147,7 @@ class ChatChain:
         stream: bool = settings.STREAM,
         file_ids: list[str] | None = None,
         assistant: str = "main",
+        project_id: str | None = None,
     ) -> str | AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
         """
         Main entry point to generate a response (streaming or not).
@@ -154,7 +155,9 @@ class ChatChain:
         try:
             assistant = AssistantConfig.validate_assistant_or_default(assistant)
 
-            file_context = await self._collect_file_context(file_ids, user_id, query)
+            file_context = await self._collect_file_context(
+                file_ids, user_id, query, project_id=project_id
+            )
             history_formatted = await self._get_session_history_text(session_id)
             routing_decision = await self._resolve_court_routing(
                 assistant=assistant,
@@ -288,13 +291,26 @@ class ChatChain:
         )
 
     async def _collect_file_context(
-        self, file_ids: list[str] | None, user_id: str, query: str
+        self,
+        file_ids: list[str] | None,
+        user_id: str,
+        query: str,
+        project_id: str | None = None,
     ) -> str:
-        if not file_ids:
-            return ""
+        sections: list[str] = []
 
-        parts = []
-        for fid in file_ids:
+        if project_id:
+            block = await self.retrieval.retrieve_project_context(
+                query=query,
+                project_id=project_id,
+                user_id=user_id,
+                top_k=settings.TOP_K,
+            )
+            if block:
+                sections.append(block)
+
+        file_chunks: list[str] = []
+        for fid in file_ids or []:
             file = await self.history_service.get_file_by_id(fid)
             if not file:
                 continue
@@ -308,20 +324,28 @@ class ChatChain:
                     user_id=user_id,
                     query=query,
                     file_name=file_name,
+                    project_id=file.get("project_id"),
                 )
                 if context:
                     context = self._limit_file_context_for_llm(context)
-                    parts.append(context)
+                    file_chunks.append(context)
                     continue
 
             ocr_result = file.get("ocr_result") or ""
             if ocr_result:
-                parts.append(self._limit_file_context_for_llm(f"{file_name}\n{ocr_result}"))
+                file_chunks.append(
+                    self._limit_file_context_for_llm(f"{file_name}\n{ocr_result}")
+                )
 
-        if not parts:
+        if file_chunks:
+            sections.append(
+                self._user_file_context_prefix + "\n\n" + "\n\n".join(file_chunks)
+            )
+
+        if not sections:
             return ""
 
-        combined = self._user_file_context_prefix + "\n\n" + "\n\n".join(parts)
+        combined = "\n\n".join(sections)
         return self._limit_file_context_for_llm(combined)
 
     async def _retrieve_file_context(
@@ -331,11 +355,14 @@ class ChatChain:
         user_id: str,
         query: str,
         file_name: str,
+        project_id: str | None = None,
     ) -> str:
         expr = (
             f'metadata["file_id"] == "{file_id}" '
             f'and metadata["user_id"] == "{user_id}"'
         )
+        if project_id:
+            expr += f' and metadata["project_id"] == "{project_id}"'
         try:
             embedding = await self.embedding_manager.aembed_query(query)
             docs = await asyncio.to_thread(

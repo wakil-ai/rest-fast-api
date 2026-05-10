@@ -93,12 +93,14 @@ async def ask_question(request: ChatRequest, raw_request: Request):
         session_id, message_id = await chat_service.prepare_chat_request(
             user_id=request.user_id,
             session_id=request.session_id,
+            project_id=request.project_id,
         )
         thread_id = f"{request.user_id}:{session_id}"
         fc = await collect_lc_file_context(
             user_id=request.user_id,
             query=request.query,
             file_ids=request.file_ids,
+            project_id=request.project_id,
         )
         dt_suffix = DT_TEAM_DISCLAIMER if is_dt else ""
 
@@ -116,6 +118,7 @@ async def ask_question(request: ChatRequest, raw_request: Request):
                     assistant="main",
                     started_at=started_stream,
                     dt_team_disclaimer_suffix=dt_suffix,
+                    project_id=request.project_id,
                 ),
             )
 
@@ -152,6 +155,7 @@ async def ask_question(request: ChatRequest, raw_request: Request):
             answer=answer_out,
             file_ids=request.file_ids,
             metadata=metadata,
+            project_id=request.project_id,
         )
 
         return ChatResponse(

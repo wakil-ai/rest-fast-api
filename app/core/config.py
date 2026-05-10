@@ -177,7 +177,8 @@ class Settings(BaseSettings):
     SUPER_ADMIN_API_KEY: str = "super-admin"
     DT_API_KEY_NAME: str = "x-dt-team-api-key"
     DT_API_KEY: str | None = None  # DT team dedicated API key for backend access
-
+    DT_TEAM_DISCLAIMER: str = ""
+    
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
     STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0

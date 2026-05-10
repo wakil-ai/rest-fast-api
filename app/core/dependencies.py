@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         FileManager,
         OCRService,
         PromoCodeService,
+        ProjectService,
         RateLimitService,
         ReferralService,
         RedisService,
@@ -246,6 +247,13 @@ def get_file_manager() -> "FileManager":
     from app.services import FileManager
 
     return FileManager()
+
+
+@lru_cache
+def get_project_service() -> "ProjectService":
+    from app.services.project_service import ProjectService
+
+    return ProjectService()
 
 
 @lru_cache
