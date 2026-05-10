@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     MILVUS_ADMINISTRATIVE_COURT: str = "mamuriy_sud"
     MILVUS_ADMINISTRATIVE_COURT_ALL: str = "mamuriy_sud_all"
     MILVUS_CONTRACT_ANALYZER: str = "shartnoma"
+    # Min hybrid-search hit score (Milvus `score` on retrieved docs) to offer a file attachment
+    CONTRACT_ATTACHMENT_MIN_SIMILARITY: float = 0.6
     MILVUS_ECONOMIC_COURT: str = "economic_court"
     MILVUS_CIVIL_COURT: str = "civil_court"
     MILVUS_CRIMINAL_COURT: str = "criminal_court"
