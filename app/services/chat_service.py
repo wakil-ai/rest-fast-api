@@ -93,7 +93,9 @@ class ChatService:
 
     @staticmethod
     def build_agentic_state(
-        request: AgenticRAGRequest, message_id: str
+        request: AgenticRAGRequest,
+        message_id: str,
+        project_id: str | None = None,
     ) -> dict[str, Any]:
         """Build initial state for agentic RAG flow."""
         return {
@@ -101,8 +103,10 @@ class ChatService:
             "user_id": request.user_id,
             "session_id": request.session_id,
             "message_id": message_id,
-            "project_id": request.project_id,
+            "project_id": project_id if project_id is not None else request.project_id,
             "file_ids": request.file_ids,
+            "requested_assistant": "deepresearch",
+            "locked_assistant": "main",
         }
 
     @staticmethod
@@ -136,7 +140,7 @@ class ChatService:
         user_id: str,
         session_id: str,
         project_id: str | None = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str | None]:
         """Validate chat session, optionally link it to a project, and allocate message id."""
         session = await self.chat_history_service.ensure_session_for_user(
             user_id=user_id,
@@ -146,19 +150,24 @@ class ChatService:
         if not resolved_session_id:
             raise ChatGenerationException("Failed to resolve chat session.")
 
-        if project_id:
-            await get_project_service().get_project(project_id, user_id)
+        resolved_project_id = project_id or session.get("project_id")
+        if resolved_project_id:
+            await get_project_service().get_project(resolved_project_id, user_id)
             existing = session.get("project_id")
-            if existing and existing != project_id:
+            if existing and existing != resolved_project_id:
                 raise InvalidInputError(
                     "This session is already linked to a different project."
                 )
             if not existing:
                 await self.chat_history_service.attach_session_to_project(
-                    resolved_session_id, project_id
+                    resolved_session_id, resolved_project_id
                 )
 
-        return resolved_session_id, self.chat_history_service.create_message_id()
+        return (
+            resolved_session_id,
+            self.chat_history_service.create_message_id(),
+            str(resolved_project_id) if resolved_project_id else None,
+        )
 
     def build_message_metadata(
         self,
@@ -447,7 +456,7 @@ class ChatService:
             should_stream = settings.STREAM if request.stream is None else request.stream
             is_dt = self.is_dt_team_request(raw_request)
 
-            session_id, message_id = await self.prepare_chat_request(
+            session_id, message_id, resolved_project_id = await self.prepare_chat_request(
                 user_id=request.user_id,
                 session_id=request.session_id,
                 project_id=request.project_id,
@@ -467,7 +476,7 @@ class ChatService:
                         assistant=assistant_name,
                         started_at=started_stream,
                         dt_team_disclaimer_suffix=dt_suffix,
-                        project_id=request.project_id,
+                        project_id=resolved_project_id,
                     )
                 )
 
@@ -480,7 +489,7 @@ class ChatService:
                     query=request.query,
                     file_ids=request.file_ids,
                     assistant=assistant_name,
-                    project_id=request.project_id,
+                    project_id=resolved_project_id,
                 )
             except RuntimeError as e:
                 logger.error(
@@ -510,7 +519,7 @@ class ChatService:
                 answer=answer_out,
                 file_ids=request.file_ids,
                 metadata=metadata,
-                project_id=request.project_id,
+                project_id=resolved_project_id,
             )
             return ChatResponse(
                 answer=answer_out,
@@ -544,7 +553,7 @@ class ChatService:
                 required_credits=settings.CREDIT_COST_MAIN_ASSISTANT,
             )
 
-            session_id, message_id = await self.prepare_chat_request(
+            session_id, message_id, resolved_project_id = await self.prepare_chat_request(
                 user_id=request.user_id,
                 session_id=request.session_id,
                 project_id=request.project_id,
@@ -557,7 +566,11 @@ class ChatService:
 
             flow = get_agentic_rag_flow_streaming(progress_callback)
 
-            initial_state = self.build_agentic_state(request, message_id=message_id)
+            initial_state = self.build_agentic_state(
+                request,
+                message_id=message_id,
+                project_id=resolved_project_id,
+            )
             started_at = perf_counter()
 
             async def response_generator() -> AsyncGenerator[Any, None]:
@@ -618,7 +631,7 @@ class ChatService:
                                 answer=flow.state.answer or "",
                                 file_ids=request.file_ids,
                                 metadata=metadata,
-                                project_id=request.project_id,
+                                project_id=resolved_project_id,
                             )
                         except Exception as e:
                             logger.exception(

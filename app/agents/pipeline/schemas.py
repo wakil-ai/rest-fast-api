@@ -86,6 +86,10 @@ class ChatPipelineState(AgenticRAGState):
         default=None,
         description="User-selected assistant; constrains routing when set (e.g. /chat/ask).",
     )
+    requested_assistant: str | None = Field(
+        default=None,
+        description="Raw assistant id from the client before canonical routing aliases.",
+    )
     stream: bool = Field(default=False, description="Whether last_agent streams tokens")
     answer_prompt_template: Any | None = Field(
         default=None,

@@ -39,6 +39,8 @@ class AssistantType(str, Enum):
     """Supported assistant types."""
 
     MAIN = "main"
+    DEEPRESEARCH = "deepresearch"
+    DEEP_RESEARCH = "deep_research"
     COURT = "court"
     ADMINISTRATIVE_COURT = "administrative_court"
     ADMINISTRATIVE_COURT_LEGACY = "mamuriy_sud"

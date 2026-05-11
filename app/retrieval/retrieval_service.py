@@ -13,6 +13,11 @@ from app.core.dependencies import (
 from app.core.logger import logger
 
 
+def _vector_hit_text(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") or {}
+    return str(metadata.get("text") or doc.get("text") or "").strip()
+
+
 class RetrievalService:
     """
     Thin retrieval layer for generic, non-agent-specific operations.
@@ -155,7 +160,7 @@ class RetrievalService:
             f'and metadata["user_id"] == "{user_id}"'
         )
         try:
-            embedding = self._embedder.embed_query(query)
+            embedding = await self._embedder.aembed_query(query)
             docs = await asyncio.to_thread(
                 self._db.search_hybrid,
                 embedding,
@@ -170,7 +175,7 @@ class RetrievalService:
 
             chunks: list[str] = []
             for index, doc in enumerate(docs, 1):
-                text = doc.get("metadata", {}).get("text") or ""
+                text = _vector_hit_text(doc)
                 if text:
                     chunks.append(f"[Project chunk {index}]\n{text}")
             if not chunks:

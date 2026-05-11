@@ -120,8 +120,10 @@ class Settings(BaseSettings):
     )
     GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI default model
 
-    #: Small OpenAI model for LangGraph retrieval nodes (memory / strategy / eval JSON).
-    RETRIEVAL_CHAIN_MODEL: str = "gpt-4.1-mini"
+    #: Fast, low-cost OpenAI model for LangGraph retrieval JSON steps (not chat defaults).
+    RETRIEVAL_CHAIN_MODEL: str = "gpt-4.1-nano"
+    #: Max completion tokens for retrieval JSON steps (strategy, context eval, memory).
+    RETRIEVAL_CHAIN_MAX_TOKENS: int = 1024
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: str | None = None
@@ -157,6 +159,8 @@ class Settings(BaseSettings):
     # OCR Service
     DATALAB_API_KEY: str | None = None
     FILE_CONTENT_TOKEN_LIMIT: int = 50_000  # Max uploaded file context tokens for LLM prompts
+    #: Cap for combined assistant + upload context passed to eval / final answer.
+    RETRIEVAL_CONTEXT_TOKEN_LIMIT: int = 28_000
     MAX_RETRIEVAL_DOCS_TOKEN_LIMIT: int = 500_000  # Max tokens for retrieved documents
     EMBEDDING_QUERY_TOKEN_LIMIT: int = 10_000  # Max query tokens sent to embedding APIs
     FILE_SEARCH_TOP_K: int = 3

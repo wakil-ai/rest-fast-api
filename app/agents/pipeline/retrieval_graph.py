@@ -1,8 +1,8 @@
 """
 LangGraph ``StateGraph`` for the context-retrieval phase (chat/ask + agentic RAG).
 
-Topology: ``strategy`` → ``fetch`` → ``evaluate`` →
-(``web_search`` if insufficient) → ``END``.
+Topology: ``strategy`` → ``fetch`` → ``END``; assistants with web search enabled
+also run ``evaluate`` → (``web_search`` if insufficient) → ``END``.
 
 Conversation context for the final LLM is loaded separately via
 ``agent_session_thread_id`` (see ``build_pipeline_thread_chat_history``), not here.
@@ -51,7 +51,20 @@ def compile_context_retrieval_graph(runner: ContextRetrievalRunner) -> Any:
 
     builder.add_edge(START, "strategy")
     builder.add_edge("strategy", "fetch")
-    builder.add_edge("fetch", "evaluate")
+
+    def route_after_fetch(
+        s: dict[str, Any],
+    ) -> Literal["evaluate", "done"]:
+        state = ChatPipelineState.model_validate(s)
+        assistant = (
+            state.requested_assistant
+            or state.locked_assistant
+            or state.selected_assistant
+            or "main"
+        )
+        if runner._pipeline_web_search_enabled(assistant):
+            return "evaluate"
+        return "done"
 
     def route_after_evaluate(
         s: dict[str, Any],
@@ -61,6 +74,11 @@ def compile_context_retrieval_graph(runner: ContextRetrievalRunner) -> Any:
             return "needs_web"
         return "done"
 
+    builder.add_conditional_edges(
+        "fetch",
+        route_after_fetch,
+        {"evaluate": "evaluate", "done": END},
+    )
     builder.add_conditional_edges(
         "evaluate",
         route_after_evaluate,

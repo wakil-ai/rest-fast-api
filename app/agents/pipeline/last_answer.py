@@ -72,11 +72,11 @@ def _log_final_llm_inputs(
     logger.debug("[last_answer] Final LLM system_prompt (preview):\n{}", _preview(system_prompt))
     logger.debug(
         "[last_answer] Final LLM retrieval_docs / ctx.context (preview):\n{}",
-        ctx.context
+        _preview(ctx.context)
     )
     logger.debug(
         "[last_answer] Final LLM memory_docs / ctx.chat_history (preview):\n{}",
-        ctx.chat_history
+        _preview(ctx.chat_history)
     )
 
 

@@ -1,7 +1,7 @@
 """
 Context-retrieval stage orchestrated with LangGraph (``StateGraph``).
 
-Nodes: strategy → fetch → evaluate → (conditional) web search → END.
+Nodes: strategy → fetch → END; optional evaluate → web search when enabled.
 LLM steps use OpenAI JSON mode via ``retrieval_structured_llm``; web uses Tavily.
 Conversation history for the final LLM is not assembled here;
 see ``build_pipeline_thread_chat_history`` in ``runtime``.
@@ -10,6 +10,7 @@ see ``build_pipeline_thread_chat_history`` in ``runtime``.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Any
 
 from app.agents.common.state import AgentRequestContext
@@ -34,6 +35,7 @@ from app.agents.pipeline.schemas import (
     normalize_assistant_name_for_registry,
 )
 from app.utils.streaming import format_progress_event
+from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 
 class ContextRetrievalRunner:
@@ -49,8 +51,6 @@ class ContextRetrievalRunner:
         self.history_service = get_chat_history_service()
         self._get_agent_fn: Callable[[str], Any] | None = None
         self._retrieval_graph: Any | None = None
-        self._pipeline_file_context: str = ""
-        self._append_raw_uploads_after_fetch: bool = False
 
     def _build_retrieval_graph(self) -> Any:
         from app.agents.pipeline.retrieval_graph import compile_context_retrieval_graph
@@ -66,6 +66,10 @@ class ContextRetrievalRunner:
         if self._get_agent_fn is None:
             raise RuntimeError("get_agent unset; ContextRetrievalRunner.run() must set it.")
         return self._get_agent_fn
+
+    @staticmethod
+    def _pipeline_web_search_enabled(assistant_name: str | None) -> bool:
+        return AssistantConfig.is_web_search_enabled(assistant_name)
 
     async def _emit_progress(
         self,
@@ -85,7 +89,6 @@ class ContextRetrievalRunner:
     ) -> None:
         """Run retrieval subgraph as a LangGraph state machine (strategy → … → eval → [web])."""
         self._get_agent_fn = get_agent
-        self._pipeline_file_context = await self._preload_pipeline_file_context(state)
         try:
             initial = state.model_dump(mode="python")
             final = await self._compiled_retrieval_graph().ainvoke(initial)
@@ -94,8 +97,6 @@ class ContextRetrievalRunner:
                 setattr(state, name, getattr(merged, name))
         finally:
             self._get_agent_fn = None
-            self._pipeline_file_context = ""
-            self._append_raw_uploads_after_fetch = False
 
     async def _strategy_or_route_phase(self, state: ChatPipelineState) -> None:
         locked = state.locked_assistant
@@ -117,9 +118,7 @@ class ContextRetrievalRunner:
             "Determining best search strategy for your question...",
         )
         try:
-            strategy_response = await retrieval_strategy_llm(
-                state.query, file_context=self._pipeline_file_context
-            )
+            strategy_response = await retrieval_strategy_llm(state.query)
             state.retrieval_output = strategy_response.model_dump()
             state.selected_assistant = strategy_response.assistant
             if locked:
@@ -154,7 +153,9 @@ class ContextRetrievalRunner:
             "Searching legal document database...",
         )
         try:
-            self._append_raw_uploads_after_fetch = False
+            retrieval_output = state.retrieval_output or {}
+            state.rewritten_query = retrieval_output.get("query_rewrite", state.query)
+            upload_context = await self._fetch_upload_context(state)
             locked = state.locked_assistant
             canonical = (
                 AssistantConfig.validate_assistant_or_default(locked)
@@ -163,45 +164,32 @@ class ContextRetrievalRunner:
             )
 
             if canonical == "court":
-                await self._fetch_court_routed(state)
+                await self._fetch_court_routed(state, upload_context)
             elif canonical == "contract_analyzer":
-                await self._fetch_contract(state)
+                await self._fetch_contract(state, upload_context)
             elif canonical == "tax":
-                await self._fetch_tax(state)
+                await self._fetch_tax(state, upload_context)
             elif canonical in (
                 "administrative_court",
                 "criminal_court",
                 "civil_court",
                 "economic_court",
             ):
-                await self._fetch_direct_court_specialist(state, canonical)
+                await self._fetch_direct_court_specialist(
+                    state, canonical, upload_context
+                )
             else:
                 await self._fetch_lexuz_corpus(state)
-                self._append_raw_uploads_after_fetch = True
-
-            if state.project_id:
-                qtext = state.rewritten_query or state.query
-                project_block = await self.retrieval.retrieve_project_context(
-                    query=qtext,
-                    project_id=state.project_id,
-                    user_id=state.user_id,
-                    top_k=max(1, settings.TOP_K // 2),
-                )
-                if project_block:
+                if upload_context:
                     state.retrieval_docs = (
                         (state.retrieval_docs or "").rstrip()
                         + "\n\n"
-                        + project_block
+                        + upload_context
                     )
 
-            if self._append_raw_uploads_after_fetch:
-                file_block = (self._pipeline_file_context or "").strip()
-                if not file_block and (state.file_ids or []):
-                    file_block = (await self._get_file_id_context(state)).strip()
-                if file_block:
-                    state.retrieval_docs = (
-                        (state.retrieval_docs or "").rstrip() + "\n\n" + file_block
-                    )
+            state.retrieval_docs = self._limit_retrieval_docs(
+                state.retrieval_docs or ""
+            )
 
             await self._emit_progress(
                 ProgressEventType.DOCUMENT_RETRIEVAL,
@@ -218,54 +206,74 @@ class ContextRetrievalRunner:
         assistant = state.selected_assistant or "main"
         state.rewritten_query = retrieval_output.get("query_rewrite", state.query)
         collection_name = self._get_collection_name(assistant, strategy)
-        fc = (self._pipeline_file_context or "").strip()
-        if not fc and (state.file_ids or []):
-            fc = (await self._get_file_id_context(state)).strip()
-        fc = fc or None
         state.retrieval_docs = await self.retrieval.retrieve_formatted_corpus(
             query=state.rewritten_query or state.query,
             top_k=settings.TOP_K,
             alpha=settings.ALPHA,
             search_type=strategy,
             collection_name=collection_name,
-            file_context=fc,
         )
 
-    async def _preload_pipeline_file_context(self, state: ChatPipelineState) -> str:
-        """Same file resolution as chat agents (session-inherited file_ids + OCR/Milvus)."""
+    async def _fetch_upload_context(self, state: ChatPipelineState) -> str:
+        """One upload/project retrieval per turn (Milvus + OCR as needed)."""
         try:
             from app.agents.main import MainAgent
 
+            agent = MainAgent()
             req = self._request_from_state(state)
-            return (await MainAgent()._preload_file_context(req)) or ""
+            file_ids = await agent._resolve_turn_file_ids(req)
+            project_id = await agent._resolve_turn_project_id(req)
+            if not file_ids and not project_id:
+                return ""
+            block = await agent._collect_file_context(
+                file_ids,
+                state.user_id,
+                state.rewritten_query or state.query,
+                project_id=project_id,
+            )
+            return agent._limit_file_context_for_llm(block)
         except Exception as exc:
             logger.warning(
-                "[pipeline] retrieval file preload failed: %s", exc, exc_info=True
+                "[pipeline] upload context retrieval failed: %s", exc, exc_info=True
             )
             return ""
 
-    async def _fetch_tax(self, state: ChatPipelineState) -> None:
+    @staticmethod
+    def _limit_retrieval_docs(context: str) -> str:
+        text = (context or "").strip()
+        if not text:
+            return ""
+        limit = int(getattr(settings, "RETRIEVAL_CONTEXT_TOKEN_LIMIT", 28_000))
+        token_count = count_tokens(text)
+        if token_count <= limit:
+            return text
+        logger.warning(
+            "Retrieval context exceeds token limit (%s > %s). Truncating.",
+            token_count,
+            limit,
+        )
+        return truncate_to_token_limit(text, limit)
+
+    async def _fetch_tax(self, state: ChatPipelineState, upload_context: str) -> None:
         retrieval_output = state.retrieval_output or {}
         state.rewritten_query = retrieval_output.get("query_rewrite", state.query)
         agent = self._require_get_agent()("tax")
-        req = self._request_from_state(state)
-        file_context = await agent._preload_file_context(req)
         r = await agent.retrieve(
             query=state.rewritten_query,
-            file_context=file_context or "",
+            file_context=upload_context or "",
             chat_history="",
         )
         state.retrieval_docs = r.context or ""
 
-    async def _fetch_contract(self, state: ChatPipelineState) -> None:
+    async def _fetch_contract(
+        self, state: ChatPipelineState, upload_context: str
+    ) -> None:
         retrieval_output = state.retrieval_output or {}
         state.rewritten_query = retrieval_output.get("query_rewrite", state.query)
         agent = self._require_get_agent()("contract_analyzer")
-        req = self._request_from_state(state)
-        file_context = await agent._preload_file_context(req)
         r = await agent.retrieve(
             query=state.rewritten_query,
-            file_context=file_context or "",
+            file_context=upload_context or "",
             chat_history="",
         )
         state.retrieval_docs = r.context or ""
@@ -275,13 +283,14 @@ class ContextRetrievalRunner:
             state.attachments = list(state.attachments or []) + list(r.attachments)
 
     async def _fetch_direct_court_specialist(
-        self, state: ChatPipelineState, canonical: str
+        self,
+        state: ChatPipelineState,
+        canonical: str,
+        upload_context: str,
     ) -> None:
         retrieval_output = state.retrieval_output or {}
         state.rewritten_query = retrieval_output.get("query_rewrite", state.query)
         agent = self._require_get_agent()(canonical)
-        req = self._request_from_state(state)
-        file_context = await agent._preload_file_context(req)
         kwargs: dict[str, Any] = {}
         if canonical == "administrative_court":
             kwargs["court_route_tag"] = getattr(
@@ -289,15 +298,19 @@ class ContextRetrievalRunner:
             )
         r = await agent.retrieve(
             query=state.rewritten_query or "",
-            file_context=file_context or "",
+            file_context=upload_context or "",
             chat_history="",
             **kwargs,
         )
         state.retrieval_docs = r.context or ""
         state.answer_prompt_template = r.prompt_template
 
-    async def _fetch_court_routed(self, state: ChatPipelineState) -> None:
+    async def _fetch_court_routed(
+        self, state: ChatPipelineState, upload_context: str
+    ) -> None:
         req = self._request_from_state(state)
+        if upload_context:
+            req = replace(req, preloaded_file_context=upload_context)
         court = CourtAgent()
         sub_agent, routed_request, court_route_tag = await court._route(req)
         state.selected_assistant = routed_request.assistant
@@ -400,16 +413,6 @@ class ContextRetrievalRunner:
         if strategy == "specific":
             collection_name = settings.MILVUS_MAIN_NAME
         return collection_name
-
-    async def _get_file_id_context(self, state: ChatPipelineState) -> str:
-        file_context = ""
-        for file_id in state.file_ids or []:
-            file = await self.history_service.get_file_by_id(file_id)
-            if file:
-                file_context += (
-                    f"\n\nFile: {file['file_metadata']['file_name']}\n{file['ocr_result']}"
-                )
-        return file_context
 
     async def _set_default_retrieval_strategy(self, state: ChatPipelineState) -> None:
         default_response = RetrievalStrategyResponse(

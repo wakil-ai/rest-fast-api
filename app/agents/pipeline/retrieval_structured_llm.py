@@ -53,7 +53,15 @@ def _agent_instructions(name: str) -> str:
 
 
 def retrieval_chain_model() -> str:
-    return getattr(settings, "RETRIEVAL_CHAIN_MODEL", None) or "gpt-4.1-mini"
+    return getattr(settings, "RETRIEVAL_CHAIN_MODEL", None) or "gpt-4.1-nano"
+
+
+def retrieval_chain_max_tokens() -> int:
+    raw = getattr(settings, "RETRIEVAL_CHAIN_MAX_TOKENS", 1024)
+    try:
+        return max(128, min(int(raw), 4096))
+    except (TypeError, ValueError):
+        return 1024
 
 
 def _token_param(model: str) -> str:
@@ -77,7 +85,7 @@ async def _openai_json_object(system: str, user: str) -> dict[str, Any]:
         ],
         "temperature": 0.0,
         "response_format": {"type": "json_object"},
-        tparam: 4096,
+        tparam: retrieval_chain_max_tokens(),
     }
     try:
         resp = await client.chat.completions.create(**kwargs)
@@ -166,7 +174,9 @@ async def retrieval_strategy_llm(
     )
 
 
-_MAX_EVAL_CONTEXT = 120_000
+_MAX_EVAL_CONTEXT = int(
+    getattr(settings, "RETRIEVAL_CONTEXT_TOKEN_LIMIT", 28_000)
+)
 
 
 async def context_evaluation_llm(query: str, context: str) -> ContextEvaluationResponse:

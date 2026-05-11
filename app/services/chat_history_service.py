@@ -460,15 +460,42 @@ class ChatHistoryService:
     async def get_sessions_by_project(
         self, project_id: str, limit: int = 50, skip: int = 0
     ) -> list[dict]:
-        """Sessions linked to a project (any status)."""
+        """Active project sessions that have at least one persisted message."""
         if not project_id or not project_id.strip():
             raise InvalidInputError("Project ID cannot be empty")
-        return await self.db_manager.find_documents(
-            self.sessions_collection,
-            {"project_id": project_id},
-            limit=limit,
-            skip=skip,
-        )
+
+        collection = self.db_manager.mongo_handler.db[self.sessions_collection]
+        pipeline: list[dict[str, Any]] = [
+            {
+                "$match": {
+                    "project_id": project_id,
+                    "status": SessionStatus.active.value,
+                }
+            },
+            {
+                "$lookup": {
+                    "from": self.messages_collection,
+                    "let": {"session_id": "$_id"},
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {"$eq": ["$session_id", "$$session_id"]}
+                            }
+                        },
+                        {"$limit": 1},
+                        {"$project": {"_id": 1}},
+                    ],
+                    "as": "linked_messages",
+                }
+            },
+            {"$match": {"linked_messages.0": {"$exists": True}}},
+            {"$project": {"linked_messages": 0}},
+            {"$sort": {"updated_at": -1}},
+            {"$skip": skip},
+            {"$limit": limit},
+        ]
+        cursor = collection.aggregate(pipeline)
+        return await cursor.to_list(length=limit)
 
     async def get_session(self, session_id: str) -> dict | None:
         """Get session by session_id."""

@@ -611,9 +611,11 @@ class BaseAgent:
                 exc_info=True,
             )
             return ""
+        from app.retrieval.retrieval_service import _vector_hit_text
+
         chunks = []
         for index, doc in enumerate(docs or [], 1):
-            text = doc.get("metadata", {}).get("text") or ""
+            text = _vector_hit_text(doc)
             if text:
                 chunks.append(f"[File chunk {index}]\n{text}")
         if not chunks:

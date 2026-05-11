@@ -40,7 +40,10 @@ class CourtAgent(BaseAgent):
     async def _route(self, request: AgentRequestContext):
         # Load only what the classifier needs; no heavy RAG pre-retrieval.
         chat_history = await self._get_session_history_text(request.session_id)
-        file_context = await self._preload_file_context(request)
+        if request.preloaded_file_context is not None:
+            file_context = request.preloaded_file_context
+        else:
+            file_context = await self._preload_file_context(request)
         decision = await self.court_classifier.route_query(
             query=request.query,
             chat_history=chat_history,
