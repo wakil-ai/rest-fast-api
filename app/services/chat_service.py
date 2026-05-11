@@ -577,7 +577,7 @@ class ChatService:
                             await flow_task
                             latency_ms = int((perf_counter() - started_at) * 1000)
                             generation_meta = dict(flow.state.generation_meta or {})
-                            generation_meta["workflow"] = "agentic_rag"
+                            generation_meta["workflow"] = "two_stage_pipeline"
                             if flow.state.selected_assistant:
                                 generation_meta["selected_assistant"] = (
                                     flow.state.selected_assistant

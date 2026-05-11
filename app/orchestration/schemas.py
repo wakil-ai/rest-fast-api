@@ -3,6 +3,17 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+def normalize_assistant_name_for_registry(name: str | None) -> str:
+    """Map strategy / legacy aliases to keys in PromptRegistry.ASSISTANT_MAPPING."""
+    if not name:
+        return "main"
+    if name == "soliq":
+        return "tax"
+    if name == "umumiy":
+        return "main"
+    return name
+
+
 class AgenticRAGState(BaseModel):
     """State management for legal QA workflow"""
 
@@ -69,6 +80,28 @@ class AgenticRAGState(BaseModel):
         arbitrary_types_allowed = True
 
 
+class ChatPipelineState(AgenticRAGState):
+    """Shared state for two-stage chat: context retrieval then final answer."""
+
+    locked_assistant: str | None = Field(
+        default=None,
+        description="User-selected assistant; constrains routing when set (e.g. /chat/ask).",
+    )
+    stream: bool = Field(default=False, description="Whether last_agent streams tokens")
+    answer_prompt_template: Any | None = Field(
+        default=None,
+        description="Optional PromptTemplate from specialist retrieve() for last_agent formatting",
+    )
+    classified_legal_intent: str | None = Field(
+        default=None,
+        description="Contract analyzer intent after retrieval, if applicable",
+    )
+    court_route_tag: str | None = Field(
+        default=None,
+        description="Administrative court route tag when court pipeline ran",
+    )
+
+
 class MemoryAgentResponse(BaseModel):
     """Response schema for memory summarizer agent."""
 
@@ -92,7 +125,8 @@ class RetrievalStrategyResponse(BaseModel):
     )
     query_rewrite: str = Field(description="Optimized query for retrieval")
     query_translations: dict[str, str] = Field(
-        default_factory=dict, description="Query translated to en, ru, uz"
+        default_factory=dict,
+        description="Legacy field; pipeline retrieval uses query_rewrite only.",
     )
     assistant: str = Field(
         default="umumiy",

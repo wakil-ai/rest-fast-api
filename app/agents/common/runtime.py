@@ -18,13 +18,13 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
-from app.core.dependencies import get_chat_orchestrator, get_prompt_registry
+from app.core.dependencies import (
+    get_chat_history_service,
+    get_chat_orchestrator,
+    get_prompt_registry,
+)
 from app.core.logger import logger
-
-try:
-    from langchain_community.tools.tavily_search import TavilySearchResults
-except ImportError:
-    TavilySearchResults = None  # type: ignore[misc, assignment]
+from app.llms.gemini import resolve_gemini_model_name
 
 _agent_checkpointer: Any = None  # MemorySaver | AsyncRedisSaver
 _checkpointer_needs_async_close = False
@@ -49,7 +49,7 @@ def _default_ttl_minutes_for_checkpoints() -> float:
 
 
 def agent_session_thread_id(user_id: str, session_id: str) -> str:
-    """Must match ``thread_id`` passed to chat invoke (``user_id:resolved_session_id``)."""
+    """Stable LangGraph thread id for one chat session."""
     return f"{user_id}:{session_id}"
 
 
@@ -57,12 +57,11 @@ def agent_turn_thread_id(
     user_id: str, session_id: str, assistant_name: str, message_id: str
 ) -> str:
     """
-    One LangGraph thread per user message.
+    Legacy per-message thread id.
 
-    ``GenerationContext`` already embeds Mongo session history in ``system_prompt``,
-    so checkpoint state must not span multiple HTTP turns (which would duplicate
-    history). Ephemeral keys expire via Redis TTL; session delete removes only
-    ``agent_session_thread_id`` (legacy).
+    Chat turns now use ``agent_session_thread_id`` so LangGraph checkpoints carry
+    conversational memory across follow-up questions. Keep this helper for any
+    debug tooling or external callers that still reference old checkpoint keys.
     """
     safe_asst = AssistantConfig.validate_assistant_or_default(assistant_name)
     return f"{user_id}:{session_id}:{safe_asst}:{message_id}"
@@ -166,11 +165,11 @@ def _get_agent_checkpointer() -> Any:
 def _gemini_lc_model_name() -> str:
     raw = settings.GEMINI_LANGCHAIN_CHAT_MODEL
     if isinstance(raw, str) and raw.strip():
-        return raw.strip()
+        return resolve_gemini_model_name(raw)
     m = getattr(settings, "DEFAULT_CHAT_MODEL", "") or ""
     if isinstance(m, str) and m.strip().startswith("gemini"):
-        return m.strip()
-    return "gemini-2.5-flash"
+        return resolve_gemini_model_name(m)
+    return resolve_gemini_model_name("gemini-2.5-flash")
 
 
 def _format_main_system_instructions() -> str:
@@ -186,74 +185,32 @@ def _format_main_system_instructions() -> str:
     )
 
 
-async def _search_lexuz_via_assistant_registry(
-    search_query: str,
-    *,
-    assistant_name: str,
-    court_route_tag: str | None = None,
-) -> str:
-    """Delegates to ``ChatOrchestrator._get_agent`` (same as ``chat_orchestrator.py`` retrieval)."""
-    orchestrator = get_chat_orchestrator()
-    inst = orchestrator._get_agent(assistant_name)
-    logger.info(f"[chat_agent] Lexuz tool search ({assistant_name}): {search_query}")
-    try:
-        kwargs: dict[str, Any] = {}
-        if court_route_tag:
-            kwargs["court_route_tag"] = court_route_tag
-        result = await inst.retrieve(
-            query=search_query,
-            file_context="",
-            chat_history="",
-            **kwargs,
-        )
-        text = result.context.strip() if result.context else ""
-        return text if text else "No relevant corpus passages were returned."
-    except Exception as e:
-        logger.warning(f"[chat_agent] Lexuz retrieval failed: {e}", exc_info=True)
-        return (
-            "Lexuz search failed temporarily; retry or answer from general reasoning "
-            "where appropriate."
-        )
-
-
-def build_chat_agent_tools(
-    assistant_name: str,
-    *,
-    court_route_tag: str | None = None,
-) -> list[Any]:
-    canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
+def _build_debug_lexuz_tool() -> Any:
+    """Minimal Lexuz search tool used only for debug state snapshots."""
 
     @tool
     async def search_lexuz_legal_documents(search_query: str) -> str:
         """Hybrid search Uzbekistan legal corpus (Lexuz-style KB). Prefer focused legal keywords."""
-        return await _search_lexuz_via_assistant_registry(
-            search_query,
-            assistant_name=canonical,
-            court_route_tag=court_route_tag,
-        )
+        orchestrator = get_chat_orchestrator()
+        inst = orchestrator._get_agent("main")
+        try:
+            result = await inst.retrieve(query=search_query, file_context="", chat_history="")
+            text = result.context.strip() if result.context else ""
+            return text if text else "No relevant corpus passages were returned."
+        except Exception as e:
+            logger.warning(f"[chat_agent] Lexuz retrieval failed: {e}", exc_info=True)
+            return "Lexuz search failed temporarily."
 
-    tools: list[Any] = [search_lexuz_legal_documents]
-    if settings.TAVILY_API_KEY and TavilySearchResults is not None:
-        tools.append(
-            TavilySearchResults(
-                api_key=settings.TAVILY_API_KEY,
-                max_results=5,
-            )
-        )
-    return tools
+    return search_lexuz_legal_documents
 
 
 def _compile_lc_agent(
     *,
     system_prompt: str,
-    assistant_name: str,
-    court_route_tag: str | None = None,
+    tools: list[Any],
 ) -> Any:
-    """Build a fresh compiled graph (system prompt and tools vary by assistant / turn)."""
+    """Build a fresh compiled graph for a single turn."""
     llm = _build_lc_llm()
-    tools = build_chat_agent_tools(
-        assistant_name, court_route_tag=court_route_tag
-    )
     return create_agent(
         llm,
         tools,
@@ -342,8 +299,7 @@ async def aget_general_agent_state_snapshot(
     """
     agent = _compile_lc_agent(
         system_prompt=_format_main_system_instructions(),
-        assistant_name="main",
-        court_route_tag=None,
+        tools=[_build_debug_lexuz_tool()],
     )
     config = {"configurable": {"thread_id": thread_id}}
     snap = await agent.aget_state(config)
@@ -372,6 +328,82 @@ async def aget_general_agent_state_snapshot(
         "message_count": len(messages_out),
         "messages": messages_out,
     }
+
+
+def _format_checkpoint_rows_for_chat_history(
+    rows: list[dict[str, Any]], thread_id: str
+) -> str:
+    """Turn serialized checkpoint messages into plain text for ``{chat_history}`` prompts."""
+    parts: list[str] = [
+        f"Conversation from LangGraph checkpoint (thread_id={thread_id}):"
+    ]
+    for row in rows:
+        role = str(row.get("type") or "message")
+        body = row.get("content")
+        if body is None:
+            body = row.get("content_preview")
+        if not isinstance(body, str):
+            body = str(body) if body is not None else ""
+        body = body.strip()
+        if not body:
+            continue
+        parts.append(f"[{role}]\n{body}")
+    if len(parts) <= 1:
+        return ""
+    return "\n\n".join(parts).strip()
+
+
+async def _mongo_recent_turns_as_chat_history(session_id: str) -> str:
+    """Same shape as ``BaseAgent._get_session_history_text`` (Mongo recent messages)."""
+    if not session_id:
+        return ""
+    svc = get_chat_history_service()
+    messages = await svc.get_recent_messages(
+        session_id=session_id,
+        limit=int(getattr(settings, "CHAT_HISTORY_LIMIT", 5) or 5),
+    )
+    entries: list[tuple[str, str]] = []
+    for entry in messages or []:
+        content = entry.get("content") or {}
+        question = content.get("query")
+        answer = content.get("response")
+        if question and answer:
+            entries.append((str(question), str(answer)))
+    if not entries:
+        return ""
+    lines = ["Previous Conversation History:"]
+    for i, (question, answer) in enumerate(entries, 1):
+        lines.append(f"{i}. User: {question}")
+        lines.append(f"   Assistant: {answer}")
+    lines.append("Use the above conversation to maintain context and consistency.")
+    return "\n".join(lines)
+
+
+async def build_pipeline_thread_chat_history(user_id: str, session_id: str) -> str:
+    """
+    Text for ``{chat_history}`` in the two-stage pipeline final LLM.
+
+    Prefer LangGraph checkpoint messages for ``agent_session_thread_id``; if none,
+    fall back to Mongo session messages (recent turns).
+    """
+    if not session_id:
+        return ""
+    thread_id = agent_session_thread_id(user_id, session_id)
+    try:
+        snap = await aget_general_agent_state_snapshot(
+            thread_id, max_content_len=6000
+        )
+        rows = snap.get("messages") or []
+        hist = _format_checkpoint_rows_for_chat_history(rows, thread_id)
+        if hist:
+            return hist
+    except Exception as exc:
+        logger.debug(
+            "[pipeline] LangGraph chat history read skipped (%s): %s",
+            thread_id,
+            exc,
+        )
+    return await _mongo_recent_turns_as_chat_history(session_id)
 
 
 def _message_text(msg: AIMessage | AIMessageChunk) -> str:
@@ -493,14 +525,13 @@ async def invoke_chat_agent(
     query: str,
     system_prompt: str,
     assistant_name: str,
-    court_route_tag: str | None = None,
+    tools: list[Any],
     user_id_for_logs: str = "",
 ) -> tuple[str, dict[str, Any]]:
     canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
     agent = _compile_lc_agent(
         system_prompt=system_prompt,
-        assistant_name=canonical,
-        court_route_tag=court_route_tag,
+        tools=tools,
     )
 
     config = {"configurable": {"thread_id": thread_id}}
@@ -531,13 +562,12 @@ async def astream_chat_agent(
     query: str,
     system_prompt: str,
     assistant_name: str,
-    court_route_tag: str | None = None,
+    tools: list[Any],
 ) -> AsyncGenerator[str | dict[str, Any], None]:
     canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
     agent = _compile_lc_agent(
         system_prompt=system_prompt,
-        assistant_name=canonical,
-        court_route_tag=court_route_tag,
+        tools=tools,
     )
 
     config = {"configurable": {"thread_id": thread_id}}

@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     )
     from app.db import DBManager, MilvusHandler, MongoHandler, PineconeHandler
     from app.llms import LLM
-    from app.orchestration import AgenticRAGFlow
+    from app.orchestration.flow import AgenticRAGFlow
     from app.orchestration.agents import Agents
     from app.orchestration.crews import Crews
     from app.retrieval import (
@@ -183,7 +183,7 @@ def get_crews() -> "Crews":
 
 @lru_cache
 def get_agentic_rag_flow() -> "AgenticRAGFlow":
-    from app.orchestration import AgenticRAGFlow
+    from app.orchestration.flow import AgenticRAGFlow
 
     return AgenticRAGFlow()
 
@@ -192,7 +192,7 @@ def get_agentic_rag_flow() -> "AgenticRAGFlow":
 def get_agentic_rag_flow_streaming(
     progress_callback: Callable[..., object],
 ) -> "AgenticRAGFlow":
-    from app.orchestration import AgenticRAGFlow
+    from app.orchestration.flow import AgenticRAGFlow
 
     return AgenticRAGFlow(
         enable_progress_stream=True, progress_callback=progress_callback

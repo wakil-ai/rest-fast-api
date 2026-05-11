@@ -26,6 +26,13 @@ class ChatModel(str, Enum):
     # Gemini models
     GEMINI_3_PRO_PREVIEW = "gemini-3.1-pro-preview"
     GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
+    # Friendly short names — resolved to the actual preview/GA model id by
+    # ``app.llms.gemini.resolve_gemini_model_name`` so callers don't need to track
+    # which suffix Google currently exposes.
+    GEMINI_3_1_PRO = "gemini-3.1-pro"
+    GEMINI_3_1_FLASH = "gemini-3.1-flash"
+    GEMINI_3_PRO = "gemini-3-pro"
+    GEMINI_3_FLASH = "gemini-3-flash"
 
 
 class AssistantType(str, Enum):

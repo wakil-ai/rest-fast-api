@@ -7,11 +7,40 @@ from google.genai import types
 from app.core.config import settings
 from app.llms.base import LLM
 
+#: Alias map for short Gemini model names → currently available API model names.
+#:
+#: The Google Generative Language API only exposes the ``-preview`` variants of the
+#: Gemini 3 family (e.g. ``models/gemini-3.1-pro-preview``); requesting the bare
+#: ``gemini-3.1-pro`` returns ``404 NOT_FOUND``. This map lets callers / .env values
+#: use the friendlier marketing names and still hit a real model.
+GEMINI_MODEL_ALIASES: dict[str, str] = {
+    "gemini-3.1-pro": "gemini-3.1-pro-preview",
+    "gemini-3-pro": "gemini-3-pro-preview",
+    "gemini-3.1-flash": "gemini-3.1-flash-lite",
+    "gemini-3-flash": "gemini-3-flash-preview",
+}
+
+
+def resolve_gemini_model_name(model_name: str | None) -> str:
+    """Map short Gemini aliases to a model id the Google API actually serves.
+
+    Returns the input unchanged for unknown names so explicit preview/GA names keep
+    working. Defaults to ``gemini-3.1-pro-preview`` when nothing usable is provided.
+    """
+    if not isinstance(model_name, str) or not model_name.strip():
+        return "gemini-3.1-pro-preview"
+    name = model_name.strip()
+    # Strip "models/" prefix the Google ListModels endpoint returns so users can
+    # paste either form in env vars.
+    if name.startswith("models/"):
+        name = name[len("models/") :]
+    return GEMINI_MODEL_ALIASES.get(name, name)
+
 
 class Gemini(LLM):
     def __init__(self, model_name: str = "gemini-3.1-pro-preview"):
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self.model = model_name
+        self.model = resolve_gemini_model_name(model_name)
     
     @staticmethod
     def _google_search_tools() -> list[types.Tool]:

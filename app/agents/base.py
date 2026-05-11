@@ -6,12 +6,9 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from langchain_core.prompts import PromptTemplate
+from langchain_core.tools import tool
 
-from app.agents.common.runtime import (
-    agent_turn_thread_id,
-    astream_chat_agent,
-    invoke_chat_agent,
-)
+from app.agents.common.tools import build_web_search_tool
 from app.agents.common.state import (
     AgentRequestContext,
     AgentRunResult,
@@ -32,7 +29,6 @@ from app.core.dependencies import (
 )
 from app.core.logger import logger
 from app.llms import LLM, ChatGPT, Claude, Gemini, Novita
-from app.models.intent_types import LegalIntent
 from app.models.retrieval_models import RetrievalConfig, RetrievalResult
 from app.retrieval.embedding_manager import get_instruction
 from app.utils.contract_docx import contract_text_to_docx_bytes
@@ -92,162 +88,218 @@ class BaseAgent:
     def fallback_llm(self):
         return get_fallback_llm()
 
-    def build_graph(self) -> tuple[str, ...]:
-        """Return the ordered graph nodes this agent owns for a chat turn."""
-        return (
-            "load_history",
-            "load_memory",
-            "load_file_context",
-            "retrieve_context",
-            "build_prompt",
-            "generate_answer",
-            "attach_outputs",
-        )
-
     async def ainvoke(self, request: AgentRequestContext) -> AgentRunResult:
-        state = await self.prepare_state(request)
-        thread_id = agent_turn_thread_id(
-            request.user_id,
-            request.session_id,
-            state.resolved_assistant,
-            request.message_id,
-        )
-        answer, meta = await invoke_chat_agent(
-            thread_id=thread_id,
-            query=request.query,
-            system_prompt=state.system_prompt,
-            assistant_name=state.resolved_assistant,
-            court_route_tag=state.court_route_tag,
-            user_id_for_logs=request.user_id,
-        )
-        attachments = await self.attach_outputs(answer, state)
-        merged_meta = dict(meta or {})
-        merged_meta["attachments"] = attachments if attachments else None
-        state.answer = answer
-        state.attachments = attachments
-        state.metadata = merged_meta
-        return AgentRunResult(
-            answer=answer,
-            resolved_assistant=state.resolved_assistant,
-            metadata=merged_meta,
-            attachments=attachments,
-            generation_context=self.to_generation_context(state),
+        from app.agents.pipeline.chat_turn import run_two_stage_chat
+        from app.core.dependencies import get_chat_orchestrator
+
+        return await run_two_stage_chat(
+            request,
+            get_chat_orchestrator().get_agent,
         )
 
     async def astream(
         self, request: AgentRequestContext
     ) -> AsyncGenerator[str | dict[str, Any], None]:
-        state = await self.prepare_state(request)
-        thread_id = agent_turn_thread_id(
-            request.user_id,
-            request.session_id,
-            state.resolved_assistant,
-            request.message_id,
-        )
-        chunks: list[str] = []
-        generation_meta: dict[str, Any] = {}
-        async for item in astream_chat_agent(
-            thread_id=thread_id,
-            query=request.query,
-            system_prompt=state.system_prompt,
-            assistant_name=state.resolved_assistant,
-            court_route_tag=state.court_route_tag,
+        from app.agents.pipeline.chat_turn import astream_two_stage_chat
+        from app.core.dependencies import get_chat_orchestrator
+
+        async for item in astream_two_stage_chat(
+            request,
+            get_chat_orchestrator().get_agent,
         ):
-            if isinstance(item, dict) and item.get("type") == "_generation_meta":
-                generation_meta = (
-                    item.get("meta") if isinstance(item.get("meta"), dict) else {}
-                ) or {}
-                continue
-            if isinstance(item, str):
-                chunks.append(item)
             yield item
 
-        answer = "".join(chunks)
-        attachments = await self.attach_outputs(answer, state)
-        merged_meta = dict(generation_meta)
-        merged_meta["attachments"] = attachments if attachments else None
-        state.answer = answer
-        state.attachments = attachments
-        state.metadata = merged_meta
-        if attachments:
-            yield {"type": "attachments", "attachments": attachments}
-        yield {
-            "type": "_generation_meta",
-            "meta": merged_meta,
-            "resolved_assistant": state.resolved_assistant,
-        }
-
-    async def prepare_state(self, request: AgentRequestContext) -> AgentState:
-        state = AgentState(request=request, resolved_assistant=self.assistant_name)
-        await self.load_history(state)
-        await self.load_memory(state)
-        await self.load_file_context(state)
-        await self.retrieve_context(state)
-        self.build_prompt(state)
-        return state
-
-    async def load_history(self, state: AgentState) -> None:
-        state.chat_history = await self._get_session_history_text(
-            state.request.session_id
-        )
-
-    async def load_memory(self, state: AgentState) -> None:
-        state.memory_context = await self.memory_service.search_memory(
-            state.request.user_id,
-            state.request.query,
-        )
-
-    async def load_file_context(self, state: AgentState) -> None:
-        state.file_context = await self._collect_file_context(
-            state.request.file_ids,
-            state.request.user_id,
-            state.request.query,
-            project_id=state.request.project_id,
-        )
-
-    async def retrieve_context(self, state: AgentState) -> None:
-        result = await self.retrieve(
-            query=state.request.query,
-            file_context=state.file_context,
-            chat_history=state.chat_history,
-            court_route_tag=state.court_route_tag,
-        )
-        state.retrieval_context = result.context
-        state.attachments = result.attachments
-        state.classified_legal_intent = result.classified_legal_intent
-        state.metadata = {"prompt_template": result.prompt_template}
-
     def build_prompt(self, state: AgentState) -> None:
-        full_history_text = "\n".join(
-            part for part in [state.chat_history, state.memory_context] if part
-        )
-        retrieved_context = state.retrieval_context
-        total_tokens = count_tokens(retrieved_context + full_history_text)
-        if total_tokens > settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT:
-            logger.warning(
-                f"Context + history exceeds token limit ({total_tokens} > "
-                f"{settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT}). Truncating context."
-            )
-            max_ctx_tokens = settings.MAX_RETRIEVAL_DOCS_TOKEN_LIMIT - count_tokens(
-                full_history_text
-            )
-            retrieved_context = truncate_to_token_limit(
-                retrieved_context, max_ctx_tokens
-            )
-            state.retrieval_context = retrieved_context
-
-        template = None
-        if isinstance(state.metadata, dict):
-            template = state.metadata.get("prompt_template")
-        template = template or self.prompt_registry.get_assistant_prompt(
-            state.resolved_assistant
-        )
+        """Build the tool-first system prompt, embedding any preloaded file context."""
+        template = self.prompt_registry.get_assistant_prompt(state.resolved_assistant)
         state.system_prompt = self._build_system_prompt(
             template,
-            retrieved_context,
-            full_history_text,
+            self._compose_context_section(state),
+            "Use the `get_chat_history` tool to access recent conversation history.",
         )
         logger.debug(f"[{self.__class__.__name__} SYSTEM PROMPT]\n{state.system_prompt}")
+
+    def _compose_context_section(self, state: AgentState) -> str:
+        """Combine per-agent tool guidance with any eagerly preloaded uploaded-file context."""
+        parts: list[str] = [self._context_guidance_text()]
+        if state.file_context:
+            parts.append(
+                "The user has uploaded one or more files. Their content is provided below "
+                "for direct reference — analyze it as part of this turn instead of asking "
+                "for clarification about what to analyze. Use the `get_uploaded_file_context` "
+                "tool only when you need refined keyword searches over the same files."
+                f"\n\n{state.file_context}"
+            )
+        return "\n\n".join(parts)
+
+    def _context_guidance_text(self) -> str:
+        """Override per-agent to describe available domain tools."""
+        return (
+            "Use `search_legal_corpus` to retrieve relevant Uzbek legal texts and statutes. "
+            "Use `get_chat_history` for conversation context and `search_memory` for user preferences. "
+            "Uploaded file content (when present) is provided directly below; only call "
+            "`get_uploaded_file_context` for refined keyword searches across the same files. "
+            "Do not invent sources not returned by the search tools."
+        )
+
+    async def _preload_file_context(self, request: AgentRequestContext) -> str:
+        """Eagerly fetch uploaded-file / project context once per turn.
+
+        Reuses ``request.preloaded_file_context`` when a parent agent (e.g. ``CourtAgent``)
+        already loaded it. Returns ``""`` when nothing is uploaded or fetch fails.
+        """
+        if request.preloaded_file_context is not None:
+            return request.preloaded_file_context
+        effective_file_ids = await self._resolve_turn_file_ids(request)
+        effective_project_id = await self._resolve_turn_project_id(request)
+        if effective_file_ids and not request.file_ids:
+            # Keep tools bound to the inherited attachments for this turn.
+            request.file_ids = effective_file_ids
+        if effective_project_id and not request.project_id:
+            request.project_id = effective_project_id
+        if not (effective_file_ids or effective_project_id):
+            request.preloaded_file_context = ""
+            return ""
+        try:
+            ctx = await self._collect_file_context(
+                effective_file_ids,
+                request.user_id,
+                request.query,
+                project_id=effective_project_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"[{self.__class__.__name__}] file-context preload failed: {exc}",
+                exc_info=True,
+            )
+            ctx = ""
+        request.preloaded_file_context = ctx
+        return ctx
+
+    async def _resolve_turn_file_ids(
+        self, request: AgentRequestContext
+    ) -> list[str] | None:
+        """Use explicit file ids, otherwise inherit session-level attachments.
+
+        Frontends often attach ``file_ids`` only to the first "analyze this file"
+        message. Follow-up questions such as "who is the judge?" still refer to
+        the same document, so recover the session's attached file set from Mongo.
+        LangGraph checkpoints remember chat messages, but not the prior turn's
+        system prompt where file context was injected.
+        """
+        if request.file_ids:
+            return request.file_ids
+        if not request.session_id:
+            return None
+        try:
+            messages = await self.history_service.get_messages(
+                session_id=request.session_id,
+                limit=max(settings.CHAT_HISTORY_LIMIT, 20),
+            )
+        except Exception as exc:
+            logger.warning(
+                f"[{self.__class__.__name__}] failed to inherit session file_ids: {exc}",
+                exc_info=True,
+            )
+            return None
+        messages.sort(key=lambda msg: str(msg.get("created_at") or ""))
+        file_ids: list[str] = []
+        seen: set[str] = set()
+        for msg in messages:
+            ids = msg.get("file_ids") or []
+            if isinstance(ids, list):
+                for fid in ids:
+                    fid_str = str(fid) if fid else ""
+                    if fid_str and fid_str not in seen:
+                        seen.add(fid_str)
+                        file_ids.append(fid_str)
+        return file_ids or None
+
+    async def _resolve_turn_project_id(self, request: AgentRequestContext) -> str | None:
+        """Use explicit project id, otherwise inherit the session's project binding."""
+        if request.project_id:
+            return request.project_id
+        if not request.session_id:
+            return None
+        try:
+            session = await self.history_service.get_session(request.session_id)
+        except Exception as exc:
+            logger.warning(
+                f"[{self.__class__.__name__}] failed to inherit session project_id: {exc}",
+                exc_info=True,
+            )
+            return None
+        project_id = session.get("project_id") if isinstance(session, dict) else None
+        return str(project_id) if project_id else None
+
+    def build_tools(self, request: AgentRequestContext, state: AgentState) -> list[Any]:
+        """Return the full tool list for this agent turn."""
+        tools: list[Any] = []
+        tools.extend(self._build_domain_tools(request, state))
+        tools.extend(self._build_common_tools(request))
+        web_tool = build_web_search_tool()
+        if web_tool is not None:
+            tools.append(web_tool)
+        return tools
+
+    def _build_common_tools(self, request: AgentRequestContext) -> list[Any]:
+        """History, memory, and file-context tools bound to this request."""
+        session_id = request.session_id
+        user_id = request.user_id
+        file_ids = request.file_ids
+        project_id = request.project_id
+
+        @tool
+        async def get_chat_history() -> str:
+            """Retrieve recent conversation history to maintain context and consistency."""
+            return await self._get_session_history_text(session_id)
+
+        @tool
+        async def search_memory(query: str) -> str:
+            """Search the user's personal memory for relevant preferences and prior context."""
+            try:
+                return await self.memory_service.search_memory(user_id, query) or ""
+            except Exception as exc:
+                logger.warning(f"search_memory failed: {exc}", exc_info=True)
+                return ""
+
+        tools: list[Any] = [get_chat_history, search_memory]
+
+        if file_ids or project_id:
+            @tool
+            async def get_uploaded_file_context(query: str) -> str:
+                """Search user-uploaded files and project documents for content relevant to the query."""
+                return await self._collect_file_context(
+                    file_ids, user_id, query, project_id=project_id
+                )
+
+            tools.append(get_uploaded_file_context)
+
+        return tools
+
+    def _build_domain_tools(
+        self, request: AgentRequestContext, state: AgentState
+    ) -> list[Any]:
+        """Override in subclasses to provide domain-specific retrieval tools."""
+
+        @tool
+        async def search_legal_corpus(query: str) -> str:
+            """Search Uzbekistan legal corpus (Lexuz) for relevant statutes and codified norms."""
+            try:
+                result = await self.retrieve(query=query, file_context="", chat_history="")
+                return result.context or "No relevant legal documents found."
+            except Exception as exc:
+                logger.warning(f"search_legal_corpus failed: {exc}", exc_info=True)
+                return "Search failed; answer from general reasoning where appropriate."
+
+        return [search_legal_corpus]
+
+    async def prepare_state(self, request: AgentRequestContext) -> AgentState:
+        """Kept for callers that need an AgentState without tool-building (e.g. CourtAgent routing)."""
+        state = AgentState(request=request, resolved_assistant=self.assistant_name)
+        state.file_context = await self._preload_file_context(request)
+        self.build_prompt(state)
+        return state
 
     async def attach_outputs(
         self, answer: str, state: AgentState
@@ -255,6 +307,13 @@ class BaseAgent:
         return list(state.attachments or [])
 
     def to_generation_context(self, state: AgentState) -> GenerationContext:
+        from app.agents.common.runtime import agent_session_thread_id
+
+        tid = (
+            agent_session_thread_id(state.request.user_id, state.request.session_id)
+            if state.request.session_id
+            else None
+        )
         return GenerationContext(
             user_id=state.request.user_id,
             context=state.retrieval_context,
@@ -264,6 +323,7 @@ class BaseAgent:
             attachments=state.attachments,
             classified_legal_intent=state.classified_legal_intent,
             court_route_tag=state.court_route_tag,
+            langgraph_thread_id=tid,
         )
 
     async def retrieve(

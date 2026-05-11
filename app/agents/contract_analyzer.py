@@ -4,7 +4,10 @@ import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
+from langchain_core.tools import tool
+
 from app.agents.base import BaseAgent, RetrievalResult
+from app.agents.common.state import AgentRequestContext, AgentState
 from app.core.config import settings
 from app.core.dependencies import get_intent_classifier, get_storage_service
 from app.core.logger import logger
@@ -13,11 +16,12 @@ from app.utils.text_cleaning import TextCleaner
 
 
 class ContractAnalyzerAgent(BaseAgent):
-    """Contract analyzer assistant with intent classification and attachment-aware formatting.
+    """Contract analyzer with intent classification, multi-collection retrieval, and DOCX output.
 
-    Owns its own:
-    - Intent classification (template generation vs risk analysis)
-    - DOCX attachment handling via GCS signed URLs
+    Tool flow:
+    1. ``classify_contract_intent`` → sets state.classified_legal_intent
+    2. ``search_contract_corpus`` → retrieves templates + legal statutes, accumulates attachments
+    3. ``attach_outputs`` post-processes DOCX if intent is template_generation
     """
 
     def __init__(self):
@@ -28,7 +32,74 @@ class ContractAnalyzerAgent(BaseAgent):
         self.storage_service = get_storage_service()
         self.intent_classifier = get_intent_classifier()
 
-    async def attach_outputs(self, answer, state):
+    def _context_guidance_text(self) -> str:
+        return (
+            "First call `classify_contract_intent` to determine the intent: "
+            "template_generation or risk_analysis. "
+            "Then use `search_contract_corpus` to retrieve relevant contract templates and "
+            "legal statutes. "
+            "Use `get_chat_history` for conversation context. "
+            "Uploaded file content (when present) is provided directly below — analyze it "
+            "directly for risk_analysis intents; only call `get_uploaded_file_context` for "
+            "refined keyword searches across the same files. "
+            "For template generation: produce a complete contract draft. "
+            "For risk analysis: provide a structured risk assessment."
+        )
+
+    def _build_domain_tools(
+        self, request: AgentRequestContext, state: AgentState
+    ) -> list[Any]:
+        @tool
+        async def classify_contract_intent(query: str) -> str:
+            """Classify the contract request intent: template_generation or risk_analysis."""
+            try:
+                _, _, legal_intent = await self.intent_classifier.classify_intent(
+                    query, "", ""
+                )
+                state.classified_legal_intent = legal_intent.value
+                return f"Contract intent: {legal_intent.value}"
+            except Exception as exc:
+                logger.warning(f"classify_contract_intent failed: {exc}", exc_info=True)
+                return "Intent classification failed; proceed with contract analysis."
+
+        @tool
+        async def search_contract_corpus(query: str) -> str:
+            """Search contract templates and legal statutes for contract-related content."""
+            try:
+                result = await self._retrieve_contracts(query)
+                if result.attachments:
+                    state.attachments = list(state.attachments or []) + result.attachments
+                return result.context or "No relevant contract documents found."
+            except Exception as exc:
+                logger.warning(f"search_contract_corpus failed: {exc}", exc_info=True)
+                return "Contract search failed; answer from general reasoning."
+
+        return [classify_contract_intent, search_contract_corpus]
+
+    async def _retrieve_contracts(self, query: str) -> RetrievalResult:
+        """Multi-collection retrieval: contract templates + LexUZ statutes."""
+        contract_docs = await self.asearch(query, self._build_config())
+        contract_result = await self.format_results(contract_docs)
+
+        main_embedding = await self.embedder.aembed_query(query)
+        main_docs = await asyncio.to_thread(
+            self.db.search_hybrid,
+            dense_vector=main_embedding,
+            text_query=query,
+            top_k=settings.ADDITIONAL_TOP_K,
+            collection_name=settings.MILVUS_MAIN_NAME,
+        )
+        main_result = await self.formatter.format_results(main_docs)
+
+        combined_ctx = contract_result.context
+        if main_result.context:
+            combined_ctx += f"\n\n{'=' * 60}\n\n{main_result.context}"
+        return RetrievalResult(
+            context=combined_ctx,
+            attachments=contract_result.attachments,
+        )
+
+    async def attach_outputs(self, answer: str, state: AgentState) -> list[dict[str, Any]]:
         if state.classified_legal_intent != LegalIntent.CONTRACT_TEMPLATE_GENERATION.value:
             return []
         return await self.upload_contract_docx(
@@ -37,7 +108,7 @@ class ContractAnalyzerAgent(BaseAgent):
             existing_attachments=state.attachments,
         )
 
-    # Retrieve — classification + multi-collection retrieval
+    # retrieve() kept for backward-compat / debug state snapshots
     async def retrieve(
         self,
         query: str,
@@ -46,14 +117,7 @@ class ContractAnalyzerAgent(BaseAgent):
         chat_history: str = "",
         **kwargs,
     ) -> RetrievalResult:
-        """
-        1. Classify intent → domain_type + prompt template
-        2. Retrieve full top_k from contract analyzer collection (contract formatting)
-        3. Retrieve half top_k from main/lexuz (standard formatting)
-        4. Merge both results
-        """
         try:
-            # Intent classification (template generation vs risk analysis)
             domain_type, template, legal_intent = (
                 await self.intent_classifier.classify_intent(
                     query, chat_history, file_context
@@ -65,14 +129,13 @@ class ContractAnalyzerAgent(BaseAgent):
 
             effective_query = f"{query}\n\n\n{file_context}" if file_context else query
 
-            # Contract-analyzer portion — full top_k, contract formatting
             contract_config = self._build_config()
             contract_docs = await self.asearch(effective_query, contract_config)
             contract_result = await self.format_results(contract_docs)
 
-            # Main (lexuz) portion — half top_k, standard formatting
             logger.info(
-                f"[ContractAnalyzerAgent] Retrieving {self.top_k} from contract_analyzer + {settings.ADDITIONAL_TOP_K} from main"
+                f"[ContractAnalyzerAgent] Retrieving {self.top_k} from contract_analyzer "
+                f"+ {settings.ADDITIONAL_TOP_K} from main"
             )
             main_embedding = await self.embedder.aembed_query(effective_query)
             main_docs = await asyncio.to_thread(
@@ -84,27 +147,24 @@ class ContractAnalyzerAgent(BaseAgent):
             )
             main_result = await self.formatter.format_results(main_docs)
 
-            # Merge results
             combined_ctx = contract_result.context
             if main_result.context:
                 combined_ctx += f"\n\n{'=' * 60}\n\n{main_result.context}"
             if file_context and combined_ctx:
                 combined_ctx += f"\n\n\n{file_context}"
 
-            # Risk analysis: no template/DOCX downloads; only template generation may attach files
             retrieval_attachments = (
                 contract_result.attachments
                 if legal_intent != LegalIntent.CONTRACT_RISK_ANALYSIS
                 else []
             )
 
-            result = RetrievalResult(
+            return RetrievalResult(
                 context=combined_ctx,
                 attachments=retrieval_attachments,
                 prompt_template=template,
                 classified_legal_intent=legal_intent.value,
             )
-            return result
 
         except Exception as e:
             logger.error(
@@ -112,9 +172,6 @@ class ContractAnalyzerAgent(BaseAgent):
             )
             return self._error_result()
 
-    # Search: inherits default hybrid search from BaseAgent
-
-    # Formatting
     async def format_results(
         self,
         documents: list[dict[str, Any]],
@@ -159,7 +216,6 @@ class ContractAnalyzerAgent(BaseAgent):
             attachments=attachments,
         )
 
-    # Helpers
     async def _create_attachment(
         self, metadata: dict[str, Any]
     ) -> Optional[dict[str, Any]]:

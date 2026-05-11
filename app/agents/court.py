@@ -5,8 +5,10 @@ import os
 from dataclasses import replace
 from typing import Any
 
+from langchain_core.tools import tool
+
 from app.agents.base import BaseAgent, RetrievalConfig, RetrievalResult
-from app.agents.common.state import AgentRequestContext
+from app.agents.common.state import AgentRequestContext, AgentState
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
@@ -19,7 +21,7 @@ from app.utils.text_cleaning import clean_pdf_html_text
 
 
 class CourtAgent(BaseAgent):
-    """Public court agent that classifies and delegates to a concrete court agent."""
+    """Public court agent that classifies the query and delegates to a concrete court agent."""
 
     def __init__(self):
         super().__init__(
@@ -35,68 +37,38 @@ class CourtAgent(BaseAgent):
             "economic_court": EconomicCourtAgent(),
         }
 
-    def build_graph(self) -> tuple[str, ...]:
-        return (
-            "load_history",
-            "load_file_context",
-            "classify_court",
-            "delegate_to_court_agent",
-        )
-
     async def _route(self, request: AgentRequestContext):
-        state = await self.prepare_state_for_routing(request)
+        # Load only what the classifier needs; no heavy RAG pre-retrieval.
+        chat_history = await self._get_session_history_text(request.session_id)
+        file_context = await self._preload_file_context(request)
         decision = await self.court_classifier.route_query(
             query=request.query,
-            chat_history=state.chat_history,
-            uploaded_file_context=state.file_context,
+            chat_history=chat_history,
+            uploaded_file_context=file_context,
         )
         assistant_name = decision.assistant_name or "administrative_court"
         agent = self._routed_agents.get(assistant_name) or self._routed_agents[
             "administrative_court"
         ]
-        routed_request = replace(request, assistant=assistant_name)
+        # Forward the already-loaded file context so the routed sub-agent doesn't refetch.
+        routed_request = replace(
+            request,
+            assistant=assistant_name,
+            preloaded_file_context=file_context,
+        )
         return agent, routed_request, decision.court_route_tag
-
-    async def prepare_state_for_routing(self, request: AgentRequestContext):
-        state = await super().prepare_state(request)
-        return state
-
-    async def retrieve_context(self, state):
-        # Routing only needs history and files; concrete court agents own retrieval.
-        return None
-
-    def build_prompt(self, state):
-        return None
-
-    async def ainvoke(self, request: AgentRequestContext):
-        agent, routed_request, court_route_tag = await self._route(request)
-        agent._forced_court_route_tag = court_route_tag
-        try:
-            return await agent.ainvoke(routed_request)
-        finally:
-            agent._forced_court_route_tag = None
-
-    async def astream(self, request: AgentRequestContext):
-        agent, routed_request, court_route_tag = await self._route(request)
-        agent._forced_court_route_tag = court_route_tag
-        try:
-            async for item in agent.astream(routed_request):
-                yield item
-        finally:
-            agent._forced_court_route_tag = None
 
 
 class AdministrativeCourtAgent(BaseAgent):
     """Administrative-court assistant with file-level retrieval and domain routing.
 
     Owns its own:
-    - Specialist prompt from ``court_route_tag`` (set by ``CourtClassifier`` when assistant=court)
+    - Specialist prompt from ``court_route_tag`` (set by ``CourtClassifier``)
     - Milvus filter generation (court/instance/category)
     - File-level search expansion
     - Court-specific metadata formatting
     """
 
-    # court_route_tag (from CourtClassifier) → prompts_registry key
     ADMINISTRATIVE_ROUTE_TO_PROMPT: dict[str, str] = {
         "administrative_tax_predicting_lawsuit": "predicting_lawsuit_result",
         "administrative_tax_appeal_tax_admin": "appeal_tax_administration",
@@ -106,10 +78,8 @@ class AdministrativeCourtAgent(BaseAgent):
     }
     DEFAULT_COURT_ROUTE_TAG = "administrative_general_admin_litigation"
 
-    # Number of unique files to return per search
-    TOP_K_FILES = 3  # NOT THE TOP_K
+    TOP_K_FILES = 3
 
-    # Metadata fields rendered in formatted output
     METADATA_LABELS: dict[str, str] = {
         "case_number": "Ish raqami",
         "responsible_judge_name": "Masul Sudya nomi",
@@ -129,60 +99,47 @@ class AdministrativeCourtAgent(BaseAgent):
             assistant_name="administrative_court",
         )
         self.milvus_agent = get_milvus_query_agent()
-        self._forced_court_route_tag = None
+        self._forced_court_route_tag: str | None = None
 
-    # Retrieve — classification + domain routing (all internal)
-    async def retrieve(
-        self,
-        query: str,
-        file_context: str = "",
-        *,
-        chat_history: str = "",
-        **kwargs,
-    ) -> RetrievalResult:
-        """
-        1. Prompt from ``court_route_tag`` (court router) or default administrative litigation
-        2. Generate Milvus filter expression
-        3. Route to tax vs general multi-collection merge
-        """
-        try:
-            court_route_tag = kwargs.get("court_route_tag") or self._forced_court_route_tag
-            template = self._prompt_template_for_route(court_route_tag)
-            domain_type = (
-                "tax"
-                if (court_route_tag or "").startswith("administrative_tax_")
-                else "general"
-            )
-            logger.info(
-                "[AdministrativeCourtAgent] court_route_tag=%s → domain=%s",
-                court_route_tag,
-                domain_type,
-            )
+    def build_prompt(self, state: AgentState) -> None:
+        court_route_tag = self._forced_court_route_tag
+        template = self._prompt_template_for_route(court_route_tag)
+        state.system_prompt = self._build_system_prompt(
+            template,
+            self._compose_context_section(state),
+            "Use the `get_chat_history` tool to access recent conversation history.",
+        )
 
-            # Milvus filter expression (court, instance, category)
-            milvus_filter = await self.milvus_agent.generate_filter(
-                query,
-                chat_history,
-                file_context,
-                assistant="administrative_court",
-            )
+    def _context_guidance_text(self) -> str:
+        return (
+            "Use `search_court_cases` to retrieve relevant administrative court decisions. "
+            "Use `get_chat_history` for conversation context and `search_memory` for user preferences. "
+            "Uploaded file content (when present) is provided directly below; only call "
+            "`get_uploaded_file_context` for refined keyword searches across the same files. "
+            "Cite only retrieved case numbers and decisions; do not invent court rulings."
+        )
 
-            # Route by domain
-            if domain_type == "tax":
-                result = await self._retrieve_tax(query, file_context, milvus_filter)
-            else:
-                result = await self._retrieve_general(
-                    query, file_context, milvus_filter
+    def _build_domain_tools(
+        self, request: AgentRequestContext, state: AgentState
+    ) -> list[Any]:
+        court_route_tag = self._forced_court_route_tag
+
+        @tool
+        async def search_court_cases(query: str) -> str:
+            """Search administrative court cases with Milvus filter and file-level expansion."""
+            try:
+                result = await self.retrieve(
+                    query=query,
+                    file_context="",
+                    chat_history="",
+                    court_route_tag=court_route_tag,
                 )
+                return result.context or "No relevant court cases found."
+            except Exception as exc:
+                logger.warning(f"search_court_cases failed: {exc}", exc_info=True)
+                return "Court case search failed; answer from general reasoning."
 
-            result.prompt_template = template
-            return result
-
-        except Exception as e:
-            logger.error(
-                f"[AdministrativeCourtAgent] Retrieval failed: {e}", exc_info=True
-            )
-            return self._error_result()
+        return [search_court_cases]
 
     def _prompt_template_for_route(self, court_route_tag: str | None):
         registry = get_prompt_registry()
@@ -199,15 +156,51 @@ class AdministrativeCourtAgent(BaseAgent):
             prompt_key = self.ADMINISTRATIVE_ROUTE_TO_PROMPT[self.DEFAULT_COURT_ROUTE_TAG]
         return registry.get_prompt(prompt_key)
 
-    # Search strategy (file-level)
-    def search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
-        """
-        Hybrid search followed by file-level expansion.
+    async def retrieve(
+        self,
+        query: str,
+        file_context: str = "",
+        *,
+        chat_history: str = "",
+        **kwargs,
+    ) -> RetrievalResult:
+        try:
+            court_route_tag = kwargs.get("court_route_tag") or self._forced_court_route_tag
+            template = self._prompt_template_for_route(court_route_tag)
+            domain_type = (
+                "tax"
+                if (court_route_tag or "").startswith("administrative_tax_")
+                else "general"
+            )
+            logger.info(
+                "[AdministrativeCourtAgent] court_route_tag=%s → domain=%s",
+                court_route_tag,
+                domain_type,
+            )
 
-        For every unique ``file_id`` found in the top-K hits, fetch **all**
-        chunks belonging to that file, sort by ``chunk_index``, and
-        concatenate them into a single text.
-        """
+            milvus_filter = await self.milvus_agent.generate_filter(
+                query,
+                chat_history,
+                file_context,
+                assistant="administrative_court",
+            )
+
+            if domain_type == "tax":
+                result = await self._retrieve_tax(query, file_context, milvus_filter)
+            else:
+                result = await self._retrieve_general(query, file_context, milvus_filter)
+
+            result.prompt_template = template
+            return result
+
+        except Exception as e:
+            logger.error(
+                f"[AdministrativeCourtAgent] Retrieval failed: {e}", exc_info=True
+            )
+            return self._error_result()
+
+    def search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
+        """Hybrid search followed by file-level expansion."""
         embedding = self.embedder.embed_query(query)
         search_results = self.db.search_hybrid(
             dense_vector=embedding,
@@ -231,7 +224,6 @@ class AdministrativeCourtAgent(BaseAgent):
             file_name = metadata.get("file_name", "")
             hierarchy = os.path.splitext(file_name)[0].replace("_", " ")
 
-            # Fetch all chunks for this file
             file_filter = f"metadata['file_id'] == '{file_id}'"
             file_chunks = self.db.vector_handler.query(
                 filter=file_filter,
@@ -242,9 +234,7 @@ class AdministrativeCourtAgent(BaseAgent):
                 key=lambda x: self._safe_float(x["metadata"].get("chunk_index", 0))
             )
             file_text = "\n".join(c.get("text", "") for c in file_chunks)
-            file_text = clean_pdf_html_text(
-                file_text
-            )  # Cleaning HTML artifacts from PDF extraction (common in court documents)
+            file_text = clean_pdf_html_text(file_text)
             file_text = f"File Title: {hierarchy}\n\n{file_text}"
 
             documents.append(
@@ -265,9 +255,7 @@ class AdministrativeCourtAgent(BaseAgent):
 
         return documents
 
-    # Formatting (sud-specific metadata)
     async def format_results(self, documents: list[dict[str, Any]]) -> RetrievalResult:
-        """Format documents with administrative-court metadata fields."""
         entries: list[str] = []
         seen: set[str] = set()
 
@@ -300,17 +288,11 @@ class AdministrativeCourtAgent(BaseAgent):
                 context="Hech qanday hujjat topilmadi.", attachments=[]
             )
 
-        return RetrievalResult(
-            context="\n\n".join(entries),
-            attachments=[],
-        )
+        return RetrievalResult(context="\n\n".join(entries), attachments=[])
 
-    # Domain-specific retrieval (multi-collection merging)
     async def _retrieve_tax(
         self, query: str, file_context: str, filter: str
     ) -> RetrievalResult:
-        """Merge results from administrative court + tax collections."""
-        # Administrative-court portion
         mam_config = RetrievalConfig(
             top_k=settings.ADDITIONAL_TOP_K,
             collection_name=settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
@@ -320,7 +302,6 @@ class AdministrativeCourtAgent(BaseAgent):
         mam_docs = await self.asearch(effective, mam_config)
         mam_result = await self.format_results(mam_docs)
 
-        # tax portion (standard hybrid search + standard formatting)
         tax_coll = AssistantConfig.get_collection_name("tax")
         tax_embedding = await self.embedder.aembed_query(effective)
         tax_docs = await asyncio.to_thread(
@@ -344,10 +325,8 @@ class AdministrativeCourtAgent(BaseAgent):
     async def _retrieve_general(
         self, query: str, file_context: str, filter: str
     ) -> RetrievalResult:
-        """Merge results from administrative court + main (lexuz) collections."""
         effective = f"{query}\n\n\n{file_context}" if file_context else query
 
-        # Administrative-court portion
         mam_config = RetrievalConfig(
             top_k=settings.TOP_K,
             collection_name=settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
@@ -356,7 +335,6 @@ class AdministrativeCourtAgent(BaseAgent):
         mam_docs = await self.asearch(effective, mam_config)
         mam_result = await self.format_results(mam_docs)
 
-        # main (lexuz) portion (standard hybrid search + standard formatting)
         main_embedding = await self.embedder.aembed_query(effective)
         main_docs = await asyncio.to_thread(
             self.db.search_hybrid,
@@ -376,7 +354,6 @@ class AdministrativeCourtAgent(BaseAgent):
             attachments=mam_result.attachments + main_result.attachments,
         )
 
-    # Helpers
     @staticmethod
     def _safe_float(val) -> float:
         try:
@@ -396,6 +373,39 @@ class CivilCourtAgent(AdministrativeCourtAgent):
             assistant_name="civil_court",
         )
         self.milvus_agent = get_milvus_query_agent()
+        self._forced_court_route_tag = None
+
+    def build_prompt(self, state: AgentState) -> None:
+        template = self.prompt_registry.get_assistant_prompt("civil_court")
+        state.system_prompt = self._build_system_prompt(
+            template,
+            self._compose_context_section(state),
+            "Use the `get_chat_history` tool to access recent conversation history.",
+        )
+
+    def _context_guidance_text(self) -> str:
+        return (
+            "Use `search_court_cases` to retrieve relevant civil court decisions. "
+            "Use `get_chat_history` for conversation context. "
+            "Uploaded file content (when present) is provided directly below; only call "
+            "`get_uploaded_file_context` for refined keyword searches across the same files. "
+            "Cite only retrieved case numbers and decisions; do not invent court rulings."
+        )
+
+    def _build_domain_tools(
+        self, request: AgentRequestContext, state: AgentState
+    ) -> list[Any]:
+        @tool
+        async def search_court_cases(query: str) -> str:
+            """Search civil court cases with Milvus filter and file-level expansion."""
+            try:
+                result = await self.retrieve(query=query, file_context="", chat_history="")
+                return result.context or "No relevant court cases found."
+            except Exception as exc:
+                logger.warning(f"search_court_cases failed: {exc}", exc_info=True)
+                return "Court case search failed; answer from general reasoning."
+
+        return [search_court_cases]
 
     async def retrieve(
         self,
@@ -408,10 +418,7 @@ class CivilCourtAgent(AdministrativeCourtAgent):
         try:
             template = self.prompt_registry.get_assistant_prompt("civil_court")
             milvus_filter = await self.milvus_agent.generate_filter(
-                query,
-                chat_history,
-                file_context,
-                assistant="civil_court",
+                query, chat_history, file_context, assistant="civil_court",
             )
             result = await self._retrieve_court_collection_with_main(
                 query=query,
@@ -473,6 +480,39 @@ class EconomicCourtAgent(CivilCourtAgent):
             assistant_name="economic_court",
         )
         self.milvus_agent = get_milvus_query_agent()
+        self._forced_court_route_tag = None
+
+    def build_prompt(self, state: AgentState) -> None:
+        template = self.prompt_registry.get_assistant_prompt("economic_court")
+        state.system_prompt = self._build_system_prompt(
+            template,
+            self._compose_context_section(state),
+            "Use the `get_chat_history` tool to access recent conversation history.",
+        )
+
+    def _context_guidance_text(self) -> str:
+        return (
+            "Use `search_court_cases` to retrieve relevant economic court decisions. "
+            "Use `get_chat_history` for conversation context. "
+            "Uploaded file content (when present) is provided directly below; only call "
+            "`get_uploaded_file_context` for refined keyword searches across the same files. "
+            "Cite only retrieved case numbers and decisions; do not invent court rulings."
+        )
+
+    def _build_domain_tools(
+        self, request: AgentRequestContext, state: AgentState
+    ) -> list[Any]:
+        @tool
+        async def search_court_cases(query: str) -> str:
+            """Search economic court cases with Milvus filter and file-level expansion."""
+            try:
+                result = await self.retrieve(query=query, file_context="", chat_history="")
+                return result.context or "No relevant court cases found."
+            except Exception as exc:
+                logger.warning(f"search_court_cases failed: {exc}", exc_info=True)
+                return "Court case search failed; answer from general reasoning."
+
+        return [search_court_cases]
 
     async def retrieve(
         self,
@@ -485,10 +525,7 @@ class EconomicCourtAgent(CivilCourtAgent):
         try:
             template = self.prompt_registry.get_assistant_prompt("economic_court")
             milvus_filter = await self.milvus_agent.generate_filter(
-                query,
-                chat_history,
-                file_context,
-                assistant="economic_court",
+                query, chat_history, file_context, assistant="economic_court",
             )
             result = await self._retrieve_court_collection_with_main(
                 query=query,
@@ -510,4 +547,11 @@ class CriminalCourtAgent(BaseAgent):
         super().__init__(
             collection_name=collection_name,
             assistant_name="criminal_court",
+        )
+
+    def _context_guidance_text(self) -> str:
+        return (
+            "Use `search_legal_corpus` to retrieve relevant criminal law statutes and decisions. "
+            "Use `get_chat_history` for conversation context. "
+            "Cite only from retrieved sources; do not invent legal norms."
         )

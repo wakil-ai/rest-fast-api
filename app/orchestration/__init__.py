@@ -1,8 +1,8 @@
 from app.orchestration.agents import Agents
 from app.orchestration.crews import Crews
-from app.orchestration.flow import AgenticRAGFlow
 from app.orchestration.schemas import (
     AgenticRAGState,
+    ChatPipelineState,
     ContextEvaluationResponse,
     MemoryAgentResponse,
     ProgressEventType,
@@ -13,8 +13,8 @@ from app.orchestration.schemas import (
 __all__ = [
     "Agents",
     "Crews",
-    "AgenticRAGFlow",
     "AgenticRAGState",
+    "ChatPipelineState",
     "ContextEvaluationResponse",
     "MemoryAgentResponse",
     "ProgressEventType",

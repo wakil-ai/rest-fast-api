@@ -120,6 +120,9 @@ class Settings(BaseSettings):
     )
     GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI default model
 
+    #: Small OpenAI model for LangGraph retrieval nodes (memory / strategy / eval JSON).
+    RETRIEVAL_CHAIN_MODEL: str = "gpt-4.1-mini"
+
     # Anthropic Claude
     ANTHROPIC_API_KEY: str | None = None
 

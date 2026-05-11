@@ -20,7 +20,7 @@ class RetrievalService:
     Agent-specific retrieval is handled by each agent's ``retrieve()``
     method.  This service is used by:
     - ``/api/retrieval`` endpoints (direct vector search)
-    - ``AgenticRAGFlow`` (multilingual retrieval + project context)
+    - ``AgenticRAGFlow`` (corpus retrieval + project context)
     """
 
     def __init__(self):
@@ -64,7 +64,37 @@ class RetrievalService:
             logger.error(f"Retrieval failed: {e}", exc_info=True)
             return self._error_response(collection_name)
 
-    # Multilingual retrieval (deep research / agentic RAG)
+    async def retrieve_formatted_corpus(
+        self,
+        *,
+        query: str,
+        top_k: int = settings.TOP_K,
+        alpha: float = settings.ALPHA,
+        search_type: str = "hybrid",
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+        file_context: Optional[str] = None,
+    ) -> str:
+        """One hybrid/dense/sparse/specific search; optional ``file_context`` is fused into the search text."""
+        q = (query or "").strip()
+        fc = (file_context or "").strip()
+        effective = f"{q}\n\n\n{fc}" if fc else q
+        effective = effective.strip()
+        if not effective:
+            return ""
+        config = RetrievalConfig(
+            top_k=top_k,
+            alpha=alpha,
+            search_type=search_type,
+            collection_name=collection_name,
+        )
+        try:
+            raw_docs = self._search(effective, config)
+            result = await self._formatter.format_results(raw_docs)
+            return result.context
+        except Exception as e:
+            logger.error(f"Corpus retrieval failed: {e}", exc_info=True)
+            return self._error_response(collection_name)[0]
+
     async def retrieve_multilingual(
         self,
         query_translations: dict[str, str],
@@ -74,9 +104,9 @@ class RetrievalService:
         collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> list[dict[str, Any]]:
         """
-        Retrieve and merge documents for multiple query translations.
+        Legacy: merge searches over multiple query strings.
 
-        Returns deduplicated and score-sorted raw documents.
+        Prefer ``retrieve_formatted_corpus`` with a single refined query.
         """
         all_results: list[dict[str, Any]] = []
         per_lang_top_k = int(top_k * 1.5)

@@ -16,6 +16,9 @@ class AgentRequestContext:
     file_ids: list[str] | None = None
     project_id: str | None = None
     stream: bool = False
+    # Cached uploaded-file context for this turn so nested agents (e.g. ``CourtAgent``
+    # routing → sub-agent) reuse a single Milvus/OCR fetch.
+    preloaded_file_context: str | None = None
 
 
 @dataclass
@@ -49,6 +52,7 @@ class GenerationContext:
     attachments: list[dict[str, Any]] | None = None
     classified_legal_intent: str | None = None
     court_route_tag: str | None = None
+    langgraph_thread_id: str | None = None
 
 
 @dataclass
