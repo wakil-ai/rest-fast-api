@@ -25,9 +25,9 @@ from app.api.v2 import (
 from app.api.v3 import chat as v3_chat
 from app.api.v2.history.router import router as chat_history
 from app.api.v2.history.share import router as share_router
-from app.chains.general_langchain_agent import (
-    init_langgraph_checkpointer,
-    shutdown_langgraph_checkpointer,
+from app.agents.common.checkpoint import (
+    init_agent_checkpointer,
+    shutdown_agent_checkpointer,
 )
 from app.core.config import settings
 from app.core.logger import logger
@@ -48,11 +48,11 @@ async def lifespan(app: FastAPI):
     if settings.TRACING:
         os.environ["CREWAI_TRACING_ENABLED"] = "true"
 
-    await init_langgraph_checkpointer()
+    await init_agent_checkpointer()
 
     yield
 
-    await shutdown_langgraph_checkpointer()
+    await shutdown_agent_checkpointer()
 
 
 def create_app() -> FastAPI:

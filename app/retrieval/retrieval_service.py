@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Optional
 
-from app.assistants.base import RetrievalConfig
+from app.agents.base import RetrievalConfig
 from app.core.config import settings
 from app.core.dependencies import (
     get_context_formatter,
@@ -15,9 +15,9 @@ from app.core.logger import logger
 
 class RetrievalService:
     """
-    Thin retrieval layer for generic (non-assistant-specific) operations.
+    Thin retrieval layer for generic, non-agent-specific operations.
 
-    Assistant-specific retrieval is handled by each assistant's ``retrieve()``
+    Agent-specific retrieval is handled by each agent's ``retrieve()``
     method.  This service is used by:
     - ``/api/retrieval`` endpoints (direct vector search)
     - ``AgenticRAGFlow`` (multilingual retrieval + project context)
@@ -43,7 +43,7 @@ class RetrievalService:
         Generic retrieval + standard formatting.
 
         This is called from the ``/api/retrieval`` endpoints where there is
-        no assistant context.  Delegates to the base-class standard formatter.
+        no agent context. Delegates to the base-class standard formatter.
         """
         try:
             config = RetrievalConfig(

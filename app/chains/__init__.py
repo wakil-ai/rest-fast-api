@@ -1,15 +1,9 @@
-from app.chains.chat_chain import ChatChain, GenerationContext
-from app.chains.court_classifier import CourtClassifier, CourtRoutingDecision
-from app.chains.intent_classifier import IntentClassifier
-from app.chains.milvus_agent import MilvusQueryAgent
-from app.chains.prompts_registry import PromptRegistry
+"""Chain-adjacent classifiers and prompt registries.
 
-__all__ = [
-    "ChatChain",
-    "GenerationContext",
-    "CourtClassifier",
-    "CourtRoutingDecision",
-    "IntentClassifier",
-    "MilvusQueryAgent",
-    "PromptRegistry",
-]
+Imports stay lazy so importing one module, such as ``app.chains.court_classifier``,
+does not pull in every optional LangChain parser dependency.
+"""
+
+from app.chains.chat_orchestrator import ChatOrchestrator
+
+__all__ = ["ChatOrchestrator"]

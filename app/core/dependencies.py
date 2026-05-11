@@ -2,8 +2,8 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
+    from app.chains.chat_orchestrator import ChatOrchestrator
     from app.chains import (
-        ChatChain,
         CourtClassifier,
         IntentClassifier,
         MilvusQueryAgent,
@@ -91,37 +91,37 @@ def get_retrieval_service() -> "RetrievalService":
 # Chains
 @lru_cache
 def get_prompt_registry() -> "PromptRegistry":
-    from app.chains import PromptRegistry
+    from app.chains.prompts_registry import PromptRegistry
 
     return PromptRegistry()
 
 
 @lru_cache
 def get_intent_classifier() -> "IntentClassifier":
-    from app.chains import IntentClassifier
+    from app.chains.intent_classifier import IntentClassifier
 
     return IntentClassifier()
 
 
 @lru_cache
 def get_court_classifier() -> "CourtClassifier":
-    from app.chains import CourtClassifier
+    from app.chains.court_classifier import CourtClassifier
 
     return CourtClassifier()
 
 
 @lru_cache
 def get_milvus_query_agent() -> "MilvusQueryAgent":
-    from app.chains import MilvusQueryAgent
+    from app.chains.milvus_agent import MilvusQueryAgent
 
     return MilvusQueryAgent()
 
 
 @lru_cache
-def get_chat_chain() -> "ChatChain":
-    from app.chains import ChatChain
+def get_chat_orchestrator() -> "ChatOrchestrator":
+    from app.chains.chat_orchestrator import ChatOrchestrator
 
-    return ChatChain()
+    return ChatOrchestrator()
 
 
 @lru_cache

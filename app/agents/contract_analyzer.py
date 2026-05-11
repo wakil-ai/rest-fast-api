@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
-from app.assistants.base import BaseAssistant, RetrievalResult
+from app.agents.base import BaseAgent, RetrievalResult
 from app.core.config import settings
 from app.core.dependencies import get_intent_classifier, get_storage_service
 from app.core.logger import logger
@@ -12,7 +12,7 @@ from app.models.intent_types import LegalIntent
 from app.utils.text_cleaning import TextCleaner
 
 
-class ContractAnalyzerAssistant(BaseAssistant):
+class ContractAnalyzerAgent(BaseAgent):
     """Contract analyzer assistant with intent classification and attachment-aware formatting.
 
     Owns its own:
@@ -21,9 +21,21 @@ class ContractAnalyzerAssistant(BaseAssistant):
     """
 
     def __init__(self):
-        super().__init__(collection_name=settings.MILVUS_CONTRACT_ANALYZER)
+        super().__init__(
+            collection_name=settings.MILVUS_CONTRACT_ANALYZER,
+            assistant_name="contract_analyzer",
+        )
         self.storage_service = get_storage_service()
         self.intent_classifier = get_intent_classifier()
+
+    async def attach_outputs(self, answer, state):
+        if state.classified_legal_intent != LegalIntent.CONTRACT_TEMPLATE_GENERATION.value:
+            return []
+        return await self.upload_contract_docx(
+            user_id=state.request.user_id,
+            full_answer=answer,
+            existing_attachments=state.attachments,
+        )
 
     # Retrieve — classification + multi-collection retrieval
     async def retrieve(
@@ -48,7 +60,7 @@ class ContractAnalyzerAssistant(BaseAssistant):
                 )
             )
             logger.info(
-                f"[ContractAnalyzerAssistant] Contract intent classified as domain: {domain_type}"
+                f"[ContractAnalyzerAgent] Contract intent classified as domain: {domain_type}"
             )
 
             effective_query = f"{query}\n\n\n{file_context}" if file_context else query
@@ -60,7 +72,7 @@ class ContractAnalyzerAssistant(BaseAssistant):
 
             # Main (lexuz) portion — half top_k, standard formatting
             logger.info(
-                f"[ContractAnalyzerAssistant] Retrieving {self.top_k} from contract_analyzer + {settings.ADDITIONAL_TOP_K} from main"
+                f"[ContractAnalyzerAgent] Retrieving {self.top_k} from contract_analyzer + {settings.ADDITIONAL_TOP_K} from main"
             )
             main_embedding = await self.embedder.aembed_query(effective_query)
             main_docs = await asyncio.to_thread(
@@ -96,11 +108,11 @@ class ContractAnalyzerAssistant(BaseAssistant):
 
         except Exception as e:
             logger.error(
-                f"[ContractAnalyzerAssistant] Retrieval failed: {e}", exc_info=True
+                f"[ContractAnalyzerAgent] Retrieval failed: {e}", exc_info=True
             )
             return self._error_result()
 
-    # Search: inherits default hybrid search from BaseAssistant
+    # Search: inherits default hybrid search from BaseAgent
 
     # Formatting
     async def format_results(

@@ -70,7 +70,7 @@ run_service_tests "GCP Storage" "gcp_storage"
 echo ""
 run_service_tests "OCR Service" "ocr"
 echo ""
-run_service_tests "Chat Chain main" "chat_chain"
+run_service_tests "Chat Orchestrator main" "chat_orchestrator"
 echo ""
 
 

@@ -6,16 +6,13 @@ from typing import Any, cast
 from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.chains.general_langchain_agent import invoke_general_lc_agent
-from app.chains.general_langchain_handlers import (
-    astream_lc_with_persistence,
-    collect_lc_file_context,
-)
+from app.agents.registry import invoke_chat_agent_run
+from app.agents.streaming import astream_chat_with_persistence
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
     get_agentic_rag_flow_streaming,
-    get_chat_chain,
+    get_chat_orchestrator,
     get_chat_history_service,
     get_project_service,
     get_rate_limit_service,
@@ -43,7 +40,7 @@ class ChatService:
     """Service class to handle user questions and generate answers."""
 
     def __init__(self):
-        self.chat_chain = get_chat_chain()
+        self.chat_orchestrator = get_chat_orchestrator()
         self.chat_history_service = get_chat_history_service()
         self.rate_limit_service = get_rate_limit_service()
 
@@ -319,7 +316,7 @@ class ChatService:
         """
         try:
             started_at = perf_counter()
-            answer = await self.chat_chain.generate_answer(
+            answer = await self.chat_orchestrator.generate_answer(
                 user_id=user_id,
                 session_id=session_id,
                 query=query,
@@ -426,50 +423,6 @@ class ChatService:
             return answer
         return f"{answer}{settings.DT_TEAM_DISCLAIMER}"
 
-    async def stream_chat_answer_for_assistant(
-        self,
-        request: ChatRequest,
-        *,
-        is_dt_team_request: bool,
-        assistant_name: str,
-        session_id: str,
-        message_id: str,
-    ) -> AsyncGenerator[Any, None]:
-        """Stream non-main assistant answers (SSE chunks + optional DT disclaimer)."""
-        response = await self.ask_question(
-            user_id=request.user_id,
-            session_id=session_id,
-            message_id=message_id,
-            query=request.query,
-            stream=True,
-            file_ids=request.file_ids,
-            assistant=assistant_name,
-            project_id=request.project_id,
-        )
-
-        if isinstance(response, tuple):
-            answer, meta = response
-            yield answer
-            if is_dt_team_request:
-                yield settings.DT_TEAM_DISCLAIMER
-
-            attachments = meta.get("attachments") if isinstance(meta, dict) else None
-            if attachments:
-                yield {"type": "attachments", "attachments": attachments}
-            return
-
-        if isinstance(response, str):
-            yield response
-            if is_dt_team_request:
-                yield settings.DT_TEAM_DISCLAIMER
-            return
-
-        async for item in cast(AsyncGenerator[Any, None], response):
-            yield item
-
-        if is_dt_team_request:
-            yield settings.DT_TEAM_DISCLAIMER
-
     async def handle_chat_ask(
         self, request: ChatRequest, raw_request: Request
     ) -> ChatResponse | StreamingResponse:
@@ -500,128 +453,71 @@ class ChatService:
                 project_id=request.project_id,
             )
 
-            if assistant_name == "main":
-                logger.info(
-                    "General assistant: using LangGraph / LangChain (Gemini) path"
-                )
-                thread_id = f"{request.user_id}:{session_id}"
-                file_context = await collect_lc_file_context(
-                    user_id=request.user_id,
-                    query=request.query,
-                    file_ids=request.file_ids,
-                    project_id=request.project_id,
-                )
-                dt_suffix = settings.DT_TEAM_DISCLAIMER if is_dt else ""
-
-                if should_stream:
-                    started_stream = perf_counter()
-                    return self.create_streaming_response(
-                        astream_lc_with_persistence(
-                            thread_id=thread_id,
-                            query=request.query,
-                            file_context=file_context,
-                            user_id=request.user_id,
-                            session_id=session_id,
-                            message_id=message_id,
-                            file_ids=request.file_ids,
-                            assistant="main",
-                            started_at=started_stream,
-                            dt_team_disclaimer_suffix=dt_suffix,
-                            project_id=request.project_id,
-                        )
-                    )
-
-                started_at = perf_counter()
-                try:
-                    answer, lc_meta = await invoke_general_lc_agent(
-                        thread_id=thread_id,
-                        query=request.query,
-                        file_context=file_context,
-                        user_id_for_logs=request.user_id,
-                    )
-                except RuntimeError as e:
-                    logger.error(
-                        "[ChatService] LangChain general assistant misconfiguration: %s",
-                        e,
-                        exc_info=True,
-                    )
-                    raise ChatGenerationException(str(e)) from e
-
-                answer_out = self.append_dt_team_disclaimer(
-                    answer, is_dt_team_request=is_dt
-                )
-                latency_ms = int((perf_counter() - started_at) * 1000)
-                merged_meta = dict(lc_meta or {})
-                merged_meta["latency_ms"] = latency_ms
-                metadata = self.build_message_metadata(
-                    assistant="main",
-                    stream=False,
-                    latency_ms=latency_ms,
-                    generation_meta=merged_meta,
-                )
-                self.schedule_message_persistence(
-                    user_id=request.user_id,
-                    session_id=session_id,
-                    message_id=message_id,
-                    query=request.query,
-                    answer=answer_out,
-                    file_ids=request.file_ids,
-                    metadata=metadata,
-                    project_id=request.project_id,
-                )
-                return ChatResponse(
-                    answer=answer_out,
-                    session_id=session_id,
-                    message_id=message_id,
-                    latency_ms=latency_ms,
-                    attachments=None,
-                )
+            dt_suffix = settings.DT_TEAM_DISCLAIMER if is_dt else ""
 
             if should_stream:
+                started_stream = perf_counter()
                 return self.create_streaming_response(
-                    self.stream_chat_answer_for_assistant(
-                        request,
-                        is_dt_team_request=is_dt,
-                        assistant_name=assistant_name,
+                    astream_chat_with_persistence(
+                        user_id=request.user_id,
                         session_id=session_id,
                         message_id=message_id,
+                        query=request.query,
+                        file_ids=request.file_ids,
+                        assistant=assistant_name,
+                        started_at=started_stream,
+                        dt_team_disclaimer_suffix=dt_suffix,
+                        project_id=request.project_id,
                     )
                 )
 
-            response = await self.ask_question(
+            started_at = perf_counter()
+            try:
+                answer, lc_meta, generation_ctx = await invoke_chat_agent_run(
+                    user_id=request.user_id,
+                    session_id=session_id,
+                    message_id=message_id,
+                    query=request.query,
+                    file_ids=request.file_ids,
+                    assistant=assistant_name,
+                    project_id=request.project_id,
+                )
+            except RuntimeError as e:
+                logger.error(
+                    f"[ChatService] LangChain / LangGraph assistant misconfiguration: {e}",
+                    exc_info=True,
+                )
+                raise ChatGenerationException(str(e)) from e
+
+            answer_out = self.append_dt_team_disclaimer(
+                answer, is_dt_team_request=is_dt
+            )
+            latency_ms = int((perf_counter() - started_at) * 1000)
+            merged_meta = dict(lc_meta or {})
+            merged_meta["latency_ms"] = latency_ms
+            attachments_out = merged_meta.get("attachments")
+            metadata = self.build_message_metadata(
+                assistant=generation_ctx.assistant_name,
+                stream=False,
+                latency_ms=latency_ms,
+                generation_meta=merged_meta,
+            )
+            self.schedule_message_persistence(
                 user_id=request.user_id,
                 session_id=session_id,
                 message_id=message_id,
                 query=request.query,
-                stream=should_stream,
+                answer=answer_out,
                 file_ids=request.file_ids,
-                assistant=assistant_name,
+                metadata=metadata,
                 project_id=request.project_id,
             )
-
-            if isinstance(response, tuple):
-                answer, meta = response
-                return ChatResponse(
-                    answer=self.append_dt_team_disclaimer(
-                        answer, is_dt_team_request=is_dt
-                    ),
-                    session_id=session_id,
-                    message_id=message_id,
-                    latency_ms=meta.get("latency_ms"),
-                    attachments=meta.get("attachments") or None,
-                )
-
-            if not isinstance(response, str):
-                raise ChatGenerationException(
-                    "Unexpected streaming response for non-streaming request."
-                )
-
             return ChatResponse(
-                answer=self.append_dt_team_disclaimer(
-                    response, is_dt_team_request=is_dt
-                ),
+                answer=answer_out,
                 session_id=session_id,
                 message_id=message_id,
+                latency_ms=latency_ms,
+                attachments=attachments_out if attachments_out else None,
             )
 
         except ChatException:

@@ -182,6 +182,9 @@ class Settings(BaseSettings):
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
     STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0
+    #: Max characters per SSE ``chunk`` payload when the model sends a large delta at once
+    #: (avoids a single huge JSON line and improves progressive rendering).
+    STREAM_SSE_MAX_RESPONSE_CHARS: int = 200
     TOP_K: int = 10
     ADDITIONAL_TOP_K: int = (
         3  # For multi-collection retrievals (e.g. contract analyzer + main)
@@ -263,6 +266,9 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
     #: Model id for `ChatGoogleGenerativeAI` on `/api/v3/chat` (e.g. `gemini-2.5-flash`).
     GEMINI_LANGCHAIN_CHAT_MODEL: str | None = None
+    #: Gemini extended thinking for LangGraph chat: ``minimal`` / ``low`` / ``medium`` / ``high``.
+    #: Lower values reduce time-to-first-token when streaming (``high`` buffers reasoning before answer tokens).
+    GEMINI_LANGCHAIN_THINKING_LEVEL: str = "low"
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379

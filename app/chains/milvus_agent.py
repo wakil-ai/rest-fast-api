@@ -19,13 +19,13 @@ class MilvusQueryAgent:
     def _load_court_metadata(self) -> dict:
         config_path = (
             Path(__file__).resolve().parents[1]
-            / "assistants/config/court_metadata.yaml"
+            / "agents/config/court_metadata.yaml"
         )
         try:
             with config_path.open(encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
-            assistants = data.get("assistants")
-            return assistants if isinstance(assistants, dict) else {}
+            agents = data.get("agents")
+            return agents if isinstance(agents, dict) else {}
         except Exception as e:
             logger.warning(f"[MilvusQueryAgent] Failed to load court metadata: {e}")
             return {}

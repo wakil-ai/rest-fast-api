@@ -1,6 +1,6 @@
 from typing import Any
 
-from langchain.output_parsers import PydanticOutputParser
+from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import ValidationError
 
 from app.core.dependencies import get_classifier_llm, get_prompt_registry

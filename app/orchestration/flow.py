@@ -3,14 +3,16 @@ from typing import Any
 
 from crewai.flow.flow import Flow, listen, router, start
 
-from app.chains.chat_chain import GenerationContext
+from app.agents.main import MainAgent
+from app.agents.common.state import GenerationContext
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
-    get_chat_chain,
+    get_chat_history_service,
     get_crews,
     get_memory_service,
     get_prompt_registry,
+    get_retrieval_service,
 )
 from app.core.logger import logger
 from app.orchestration.schemas import (
@@ -46,9 +48,11 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
     def _initialize_services(self) -> None:
         """Initialize all required services."""
-        self.chat_chain = get_chat_chain()
+        self.retrieval = get_retrieval_service()
+        self.history_service = get_chat_history_service()
         self.memory_service = get_memory_service()
         self.prompt_registry = get_prompt_registry()
+        self.answer_agent = MainAgent()
 
     def _initialize_crews(self) -> None:
         """Initialize and cache all crews once."""
@@ -199,7 +203,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
 
             if self.state.project_id:
                 qtext = self.state.rewritten_query or self.state.query
-                project_block = await self.chat_chain.retrieval.retrieve_project_context(
+                project_block = await self.retrieval.retrieve_project_context(
                     query=qtext,
                     project_id=self.state.project_id,
                     user_id=self.state.user_id,
@@ -393,7 +397,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
     async def _retrieve_project_documents(self) -> str:
         """Retrieve documents for project context (dual retrieval)."""
         # Project-specific context
-        project_context = await self.chat_chain.retrieval.retrieve_project_context(
+        project_context = await self.retrieval.retrieve_project_context(
             query=self.state.rewritten_query,
             project_id=self.state.project_id,
             user_id=self.state.user_id,
@@ -406,7 +410,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         self, query_translations: dict, strategy: str, collection_name: str
     ) -> str:
         """Retrieve standard documents."""
-        documents_list = await self.chat_chain.retrieval.retrieve_multilingual(
+        documents_list = await self.retrieval.retrieve_multilingual(
             query_translations=query_translations,
             top_k=settings.TOP_K,
             search_type=strategy,
@@ -414,7 +418,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         )
 
         # Format using the standard context formatter
-        result = await self.chat_chain.retrieval._formatter.format_results(
+        result = await self.retrieval._formatter.format_results(
             documents_list
         )
         return result.context
@@ -423,7 +427,7 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
         """Retrieve documents for provided file IDs."""
         file_context = ""
         for file_id in self.state.file_ids or []:
-            file = await self.chat_chain.history_service.get_file_by_id(file_id)
+            file = await self.history_service.get_file_by_id(file_id)
             if file:
                 file_context += f"\n\nFile: {file['file_metadata']['file_name']}\n{file['ocr_result']}"
 
@@ -489,27 +493,15 @@ class AgenticRAGFlow(Flow[AgenticRAGState]):
             # Build system prompt
             system_prompt = self._build_system_prompt()
 
-            # Get LLM
-            llm = self.chat_chain._select_llm()
-
-            assistant_name = str(self.state.selected_assistant or "main")
-
             # Handle streaming vs non-streaming
+            response = await self.answer_agent.generate_from_context(
+                query=query,
+                ctx=self._create_chat_context(system_prompt),
+                stream=self.enable_progress_stream,
+            )
             if self.enable_progress_stream:
-                response = self.chat_chain._generate_streaming(
-                    llm=llm,
-                    query=query,
-                    ctx=self._create_chat_context(system_prompt),
-                    assistant=assistant_name,
-                )
                 return await self._handle_streaming_response(response)
-            else:
-                response = await self.chat_chain._generate_non_streaming(
-                    llm=llm,
-                    query=query,
-                    ctx=self._create_chat_context(system_prompt),
-                )
-                return self._handle_non_streaming_response(response)
+            return self._handle_non_streaming_response(response)
 
         except Exception as error:
             await self._handle_error("Answer generation", error)

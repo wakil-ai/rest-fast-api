@@ -1,14 +1,17 @@
 from typing import Any
 
-from app.assistants.base import BaseAssistant, RetrievalConfig
+from app.agents.base import BaseAgent, RetrievalConfig
 from app.core.config import settings
 
 
-class TaxAssistant(BaseAssistant):
+class TaxAgent(BaseAgent):
     """Tax assistant with dense-only vector search."""
 
     def __init__(self):
-        super().__init__(collection_name=settings.MILVUS_TAX_COLLECTION)
+        super().__init__(
+            collection_name=settings.MILVUS_TAX_COLLECTION,
+            assistant_name="tax",
+        )
 
     def search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
         """Dense-only search optimized for the tax Q&A collection."""
