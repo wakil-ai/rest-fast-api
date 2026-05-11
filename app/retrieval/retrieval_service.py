@@ -79,12 +79,10 @@ class RetrievalService:
         collection_name: str = settings.MILVUS_MAIN_NAME,
         file_context: Optional[str] = None,
     ) -> str:
-        """One hybrid/dense/sparse/specific search; optional ``file_context`` is fused into the search text."""
+        """One hybrid/dense/sparse search over the user query only."""
+        _ = file_context
         q = (query or "").strip()
-        fc = (file_context or "").strip()
-        effective = f"{q}\n\n\n{fc}" if fc else q
-        effective = effective.strip()
-        if not effective:
+        if not q:
             return ""
         config = RetrievalConfig(
             top_k=top_k,
@@ -93,7 +91,7 @@ class RetrievalService:
             collection_name=collection_name,
         )
         try:
-            raw_docs = self._search(effective, config)
+            raw_docs = self._search(q, config)
             result = await self._formatter.format_results(raw_docs)
             return result.context
         except Exception as e:
@@ -205,14 +203,7 @@ class RetrievalService:
                 embedding, config.top_k, config.collection_name
             )
 
-        if config.search_type == "specific":
-            return self._db.search_specific(
-                text_query=query,
-                top_k=config.top_k,
-                collection_name=config.collection_name,
-            )
-
-        # Default: hybrid
+        # Default: hybrid (legacy "specific" is treated as hybrid)
         return self._db.search_hybrid(
             dense_vector=embedding,
             text_query=query,

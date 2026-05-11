@@ -124,7 +124,7 @@ class RetrievalStrategyResponse(BaseModel):
     """Response schema for retrieval specialist agent."""
 
     strategy: str = Field(
-        description="Selected retrieval strategy: hybrid, dense, sparse, or specific"
+        description="Selected retrieval strategy: hybrid, dense, or sparse"
     )
     query_rewrite: str = Field(description="Optimized query for retrieval")
     query_translations: dict[str, str] = Field(

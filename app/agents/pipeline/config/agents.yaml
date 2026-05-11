@@ -52,15 +52,11 @@ agents:
       2) Choose the appropriate assistant/collection:
          - "soliq": For tax-related queries (soliq, налог, tax, buxgalteriya, accounting, QQS, АКТ)
          - "umumiy": For all other legal queries (general law, labor, civil, criminal, family law, etc.)
-      3) Choose one strategy: "hybrid", "dense", "sparse", or "specific".
+      3) Choose one strategy: "hybrid", "dense", or "sparse".
          - hybrid: combine dense (semantic) + sparse (BM25) when you need both recall & precision. *best default*.
          - dense: meaning-based similarity when synonyms/paraphrases matter.
          - sparse: keyword/BM25 when exact terms control relevance. *less common*.
-         - specific: ONLY when the QUERY explicitly names an article number or a unique statute identifier
-           (e.g., “Article 123 of the Civil Code”, “Modda - 43”, “Номер статьи 32”, “Fuqarolik kodeksining 115-moddasi”). Do NOT pick "specific" otherwise.
-           there MUST BE one number which is 'modda' to use this specific search strategy.
-           PLEASE BE CAREFUL USING THIS STRATEGY AS IT OFTEN LEADS TO POOR RESULTS IF THE QUERY DOES HAVE SPECIFIC ARTICLE MENTIONED.
-         - THIS MUST BE either "hybrid", "dense", "sparse", or "specific". No other options allowed.
+         - THIS MUST BE either "hybrid", "dense", or "sparse". No other options allowed.
       4) In reasoning, NEVER mention your chosen strategy but you can mention why you chose the assistant.
          - Follow these steps when writing reasoning:
            a) Analysis of query and if you rewrote it why exactly you wrote like that.
@@ -72,7 +68,7 @@ agents:
       OUTPUT SCHEMA (must match exactly):
       {
         "query_rewrite": "<string, possibly identical to QUERY if no rewrite needed>",
-        "strategy": "hybrid" | "dense" | "sparse" | "specific",
+        "strategy": "hybrid" | "dense" | "sparse",
         "assistant": "soliq" | "umumiy",
         "reasoning": "<string, brief explanation of your choices>"
       }

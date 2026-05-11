@@ -53,7 +53,7 @@ def _agent_instructions(name: str) -> str:
 
 
 def retrieval_chain_model() -> str:
-    return getattr(settings, "RETRIEVAL_CHAIN_MODEL", None) or "gpt-4.1-nano"
+    return getattr(settings, "RETRIEVAL_CHAIN_MODEL", None) or "gpt-4.1-mini"
 
 
 def retrieval_chain_max_tokens() -> int:
@@ -140,7 +140,7 @@ async def retrieval_strategy_llm(
         f"{spec}\n\nRespond with one JSON object only. Required keys: "
         '"query_rewrite" (string, one refined search query; keep the user\'s language unless '
         "a short clarifying phrase in another language clearly helps retrieval), "
-        '"strategy" (one of hybrid, dense, sparse, specific), '
+        '"strategy" (one of hybrid, dense, sparse), '
         '"assistant" (either soliq or umumiy), "reasoning" (string). No markdown.'
     )
     user_parts: list[str] = [f"QUERY:\n{query}"]
@@ -164,7 +164,9 @@ async def retrieval_strategy_llm(
             reasoning="",
         )
     strat = str(data.get("strategy") or "hybrid").lower()
-    if strat not in ("hybrid", "dense", "sparse", "specific"):
+    if strat == "specific":
+        strat = "hybrid"
+    if strat not in ("hybrid", "dense", "sparse"):
         strat = "hybrid"
     return RetrievalStrategyResponse(
         strategy=strat,

@@ -335,12 +335,13 @@ class BaseAgent:
         **kwargs,
     ) -> RetrievalResult:
         try:
-            effective_query = f"{query}\n\n\n{file_context}" if file_context else query
             config = self._build_config()
-            raw_docs = await self.asearch(effective_query, config)
+            raw_docs = await self.asearch(query, config)
             result = await self.format_results(raw_docs)
             if file_context and result.context:
                 result.context += f"\n\n\n{file_context}"
+            elif file_context:
+                result.context = file_context
             return result
         except Exception as e:
             logger.error(

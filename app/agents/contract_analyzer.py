@@ -127,21 +127,19 @@ class ContractAnalyzerAgent(BaseAgent):
                 f"[ContractAnalyzerAgent] Contract intent classified as domain: {domain_type}"
             )
 
-            effective_query = f"{query}\n\n\n{file_context}" if file_context else query
-
             contract_config = self._build_config()
-            contract_docs = await self.asearch(effective_query, contract_config)
+            contract_docs = await self.asearch(query, contract_config)
             contract_result = await self.format_results(contract_docs)
 
             logger.info(
                 f"[ContractAnalyzerAgent] Retrieving {self.top_k} from contract_analyzer "
                 f"+ {settings.ADDITIONAL_TOP_K} from main"
             )
-            main_embedding = await self.embedder.aembed_query(effective_query)
+            main_embedding = await self.embedder.aembed_query(query)
             main_docs = await asyncio.to_thread(
                 self.db.search_hybrid,
                 dense_vector=main_embedding,
-                text_query=effective_query,
+                text_query=query,
                 top_k=settings.ADDITIONAL_TOP_K,
                 collection_name=settings.MILVUS_MAIN_NAME,
             )

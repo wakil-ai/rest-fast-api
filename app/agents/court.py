@@ -301,16 +301,15 @@ class AdministrativeCourtAgent(BaseAgent):
             collection_name=settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
             filter=filter,
         )
-        effective = f"{query}\n\n\n{file_context}" if file_context else query
-        mam_docs = await self.asearch(effective, mam_config)
+        mam_docs = await self.asearch(query, mam_config)
         mam_result = await self.format_results(mam_docs)
 
         tax_coll = AssistantConfig.get_collection_name("tax")
-        tax_embedding = await self.embedder.aembed_query(effective)
+        tax_embedding = await self.embedder.aembed_query(query)
         tax_docs = await asyncio.to_thread(
             self.db.search_hybrid,
             dense_vector=tax_embedding,
-            text_query=effective,
+            text_query=query,
             top_k=settings.ADDITIONAL_TOP_K,
             collection_name=tax_coll,
         )
@@ -328,21 +327,19 @@ class AdministrativeCourtAgent(BaseAgent):
     async def _retrieve_general(
         self, query: str, file_context: str, filter: str
     ) -> RetrievalResult:
-        effective = f"{query}\n\n\n{file_context}" if file_context else query
-
         mam_config = RetrievalConfig(
             top_k=settings.TOP_K,
             collection_name=settings.MILVUS_ADMINISTRATIVE_COURT_ALL,
             filter=filter,
         )
-        mam_docs = await self.asearch(effective, mam_config)
+        mam_docs = await self.asearch(query, mam_config)
         mam_result = await self.format_results(mam_docs)
 
-        main_embedding = await self.embedder.aembed_query(effective)
+        main_embedding = await self.embedder.aembed_query(query)
         main_docs = await asyncio.to_thread(
             self.db.search_hybrid,
             dense_vector=main_embedding,
-            text_query=effective,
+            text_query=query,
             top_k=settings.ADDITIONAL_TOP_K,
             collection_name=settings.MILVUS_MAIN_NAME,
         )
@@ -443,20 +440,19 @@ class CivilCourtAgent(AdministrativeCourtAgent):
         filter: str,
         collection_name: str,
     ) -> RetrievalResult:
-        effective = f"{query}\n\n\n{file_context}" if file_context else query
         court_config = RetrievalConfig(
             top_k=settings.TOP_K,
             collection_name=collection_name,
             filter=filter,
         )
-        court_docs = await self.asearch(effective, court_config)
+        court_docs = await self.asearch(query, court_config)
         court_result = await self.format_results(court_docs)
 
-        main_embedding = await self.embedder.aembed_query(effective)
+        main_embedding = await self.embedder.aembed_query(query)
         main_docs = await asyncio.to_thread(
             self.db.search_hybrid,
             dense_vector=main_embedding,
-            text_query=effective,
+            text_query=query,
             top_k=settings.ADDITIONAL_TOP_K,
             collection_name=settings.MILVUS_MAIN_NAME,
         )
