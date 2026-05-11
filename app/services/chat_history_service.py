@@ -438,12 +438,19 @@ class ChatHistoryService:
             raise InvalidInputError(f"Failed to create session: {str(e)}")
 
     async def get_sessions(self, user_id: str, limit: int = 50, skip: int = 0) -> list[dict]:
-        """Retrieve sessions for a user."""
+        """Retrieve active non-project sessions for a user."""
         await self._ensure_user_exists(user_id)
         
         sessions = await self.db_manager.find_documents(
             self.sessions_collection,
-            {"user_id": user_id, "status": SessionStatus.active.value},
+            {
+                "user_id": user_id,
+                "status": SessionStatus.active.value,
+                "$or": [
+                    {"project_id": {"$exists": False}},
+                    {"project_id": None},
+                ],
+            },
             limit=limit,
             skip=skip,
         )
