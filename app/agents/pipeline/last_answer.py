@@ -15,7 +15,7 @@ from langchain_core.prompts import PromptTemplate
 
 from app.core.dependencies import get_prompt_registry
 from app.core.logger import logger
-from app.orchestration.schemas import (
+from app.agents.pipeline.schemas import (
     ChatPipelineState,
     ProgressEventType,
     normalize_assistant_name_for_registry,

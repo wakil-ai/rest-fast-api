@@ -9,6 +9,8 @@ class AssistantConfig:
     # Backward-compatible assistant name aliases.
     # Public API can keep using old names while internal code uses canonical ones.
     ASSISTANT_ALIASES: dict[str, str] = {
+        "deepresearch": "main",
+        "deep_research": "main",
         "court assistant": "court",
         "court": "court",
         "sud": "court",

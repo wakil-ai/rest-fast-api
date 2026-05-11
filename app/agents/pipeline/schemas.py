@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def normalize_assistant_name_for_registry(name: str | None) -> str:
@@ -76,8 +76,7 @@ class AgenticRAGState(BaseModel):
     # Error tracking
     errors: list[str] = Field(default_factory=list, description="Accumulated errors")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class ChatPipelineState(AgenticRAGState):
@@ -158,7 +157,7 @@ class WebSearchDocument(BaseModel):
 
 
 class WebSearchResponse(BaseModel):
-    """Response schema for web search summarizer agent."""
+    """Schema for web search summarizer agent."""
 
     docs: list[WebSearchDocument] = Field(
         default_factory=list,

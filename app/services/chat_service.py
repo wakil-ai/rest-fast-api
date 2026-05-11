@@ -540,8 +540,8 @@ class ChatService:
 
             await self.verify_user_credits(
                 user_id=request.user_id,
-                assistant_type="deepresearch",
-                required_credits=settings.CREDIT_COST_DEEPRESEARCH,
+                assistant_type=AssistantType.MAIN,
+                required_credits=settings.CREDIT_COST_MAIN_ASSISTANT,
             )
 
             session_id, message_id = await self.prepare_chat_request(
@@ -575,6 +575,17 @@ class ChatService:
                         flow_complete = True
                         try:
                             await flow_task
+                        except Exception as e:
+                            logger.exception(
+                                "[ChatService] Agent stream pipeline failed: %s", e
+                            )
+                            yield {
+                                "type": "error",
+                                "message": f"An error occurred: {str(e)}",
+                            }
+                            break
+
+                        try:
                             latency_ms = int((perf_counter() - started_at) * 1000)
                             generation_meta = dict(flow.state.generation_meta or {})
                             generation_meta["workflow"] = "two_stage_pipeline"
@@ -582,15 +593,19 @@ class ChatService:
                                 generation_meta["selected_assistant"] = (
                                     flow.state.selected_assistant
                                 )
-                            if flow.state.web_search_output:
-                                generation_meta["used_web_search"] = bool(
-                                    flow.state.web_search_output.get("docs")
+                            wo = flow.state.web_search_output
+                            if wo:
+                                docs = (
+                                    wo.get("docs")
+                                    if isinstance(wo, dict)
+                                    else getattr(wo, "docs", None)
                                 )
+                                generation_meta["used_web_search"] = bool(docs)
                             if flow.state.attachments:
                                 generation_meta["attachments"] = flow.state.attachments
 
                             metadata = self.build_message_metadata(
-                                assistant="deepresearch",
+                                assistant="main",
                                 stream=True,
                                 latency_ms=latency_ms,
                                 generation_meta=generation_meta,
@@ -606,7 +621,11 @@ class ChatService:
                                 project_id=request.project_id,
                             )
                         except Exception as e:
-                            logger.error("Flow execution error", exc_info=True)
+                            logger.exception(
+                                "[ChatService] Agent stream post-flow "
+                                "(metadata/persistence): %s",
+                                e,
+                            )
                             yield {
                                 "type": "error",
                                 "message": f"An error occurred: {str(e)}",

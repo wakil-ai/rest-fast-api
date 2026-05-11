@@ -3,7 +3,7 @@ Context-retrieval stage orchestrated with LangGraph (``StateGraph``).
 
 Nodes: strategy → fetch → evaluate → (conditional) web search → END.
 LLM steps use OpenAI JSON mode via ``retrieval_structured_llm``; web uses Tavily.
-No CrewAI in this path. Conversation history for the final LLM is not assembled here;
+Conversation history for the final LLM is not assembled here;
 see ``build_pipeline_thread_chat_history`` in ``runtime``.
 """
 
@@ -26,7 +26,7 @@ from app.core.dependencies import (
     get_retrieval_service,
 )
 from app.core.logger import logger
-from app.orchestration.schemas import (
+from app.agents.pipeline.schemas import (
     ChatPipelineState,
     ProgressEventType,
     RetrievalStrategyResponse,

@@ -19,10 +19,10 @@ async def ask_question(request: ChatRequest, raw_request: Request):
     return await chat_service.handle_chat_ask(request, raw_request)
 
 
-@router.post("/agent/stream", summary="Stream legal question answer via agentic RAG")
+@router.post("/agent/stream", summary="Stream legal answer (two-stage RAG pipeline)")
 async def stream_agentic_rag(request: AgenticRAGRequest):
     """
-    Execute legal QA flow using agentic RAG with streaming response.
+    Same retrieval + generation pipeline as the main assistant, with step progress events.
 
     Streams progress events for each pipeline step:
     - progress: Step-by-step updates

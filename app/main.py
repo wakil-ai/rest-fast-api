@@ -43,10 +43,7 @@ async def lifespan(app: FastAPI):
     # Startup actions
     logger.info("Started WakilAI API application")
 
-    # Disable all OpenTelemetry (including CrewAI)
     os.environ["OTEL_SDK_DISABLED"] = "true"
-    if settings.TRACING:
-        os.environ["CREWAI_TRACING_ENABLED"] = "true"
 
     await init_agent_checkpointer()
 

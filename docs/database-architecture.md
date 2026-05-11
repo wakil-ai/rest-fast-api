@@ -75,7 +75,7 @@ Stores all chat messages (questions and answers).
   "message_id": String,           // Unique message identifier
   "role": String,                 // "user" or "assistant"
   "content": String,              // Message text
-  "assistant_type": String,       // "main", "soliq", or "deepresearch"
+  "assistant_type": String,       // e.g. "main", "tax", "court"
   "model": String,                // LLM model used (e.g., "gpt-oss-120b")
   "timestamp": DateTime,          // Message timestamp
   "metadata": {
@@ -170,17 +170,10 @@ Tracks daily credit usage for users **without promo codes**.
 **How it works:**
 - **Resets daily**: Each day gets a new document
 - **Default limit**: 100 credits per day (configurable via `DAILY_CREDITS_LIMIT`)
-- **Credit costs**:
-  - Main assistant: 10 credits (`CREDIT_COST_MAIN_ASSISTANT`)
-  - Soliq assistant: 15 credits (`CREDIT_COST_SOLIQ_ASSISTANT`)
-  - Deep research: 25 credits (`CREDIT_COST_DEEPRESEARCH`)
+- **Credit costs**: Per assistant, see `CREDIT_COST_*` in `app/core/config.py` (e.g. main, tax, court).
 
 **Example calculation:**
-- User with 100 daily credits can make:
-  - 10 main assistant requests, OR
-  - 6 soliq assistant requests, OR
-  - 4 deep research requests, OR
-  - Any mix totaling 100 credits
+- User with 100 daily credits can make any mix of requests whose per-request costs sum to at most 100 for that day.
 
 ---
 
@@ -283,10 +276,10 @@ Links users to their assigned promo codes.
    │           ├─→ credits_used < 100 → Allow
    │           └─→ credits_used >= 100 → Block (429 error)
    │
-4. Deduct credits based on assistant type:
-   ├─→ Main: -10 credits
-   ├─→ Soliq: -15 credits
-   └─→ Deep research: -25 credits
+4. Deduct credits based on assistant type (see `AssistantConfig` / `settings.ASSISTANTS`):
+   ├─→ Main (umumiy)
+   ├─→ Tax (soliq)
+   └─→ Court and other specialists
    ↓
 5. Process request (retrieve documents, generate answer)
    ↓
@@ -418,19 +411,9 @@ if (!limit) {
 - **Tracked in**: `rate_limits` collection (same as default, but different limit)
 
 ### Credit Costs by Assistant Type
-| Assistant Type | Credit Cost | Requests per 100 credits |
-|----------------|-------------|--------------------------|
-| Main (umumiy) | 10 | 10 |
-| Soliq | 15 | 6-7 |
-| Deep Research | 25 | 4 |
+Costs are defined in `settings.ASSISTANTS` (see `app/core/config.py`). Typical entries include main (umumiy), tax (soliq), court, and contract analyzer.
 
-**Example:**
-- User with 100 credits can make: 5 main + 3 deep research (50 + 75 = 125 ❌ Not enough!)
-- User with 100 credits can make: 4 main + 4 deep research (40 + 100 = 140 ❌ Not enough!)
-- User with 100 credits can make: 4 main + 3 deep research (40 + 75 = 115 ❌ Not enough!)
-- User with 100 credits can make: 6 main + 2 deep research (60 + 50 = 110 ❌ Not enough!)
-- User with 100 credits can make: 7 main + 2 deep research (70 + 50 = 120 ❌ Not enough!)
-- User with 100 credits can make: 10 main requests (10 × 10 = 100 ✓)
+**Example:** With main at 10 credits per turn, a user with 100 daily credits can make up to 10 main-only requests if no other assistants are used.
 
 ---
 
@@ -469,7 +452,6 @@ All configurable via environment variables in `.env`:
 DAILY_CREDITS_LIMIT=100              # Default daily credits for users
 CREDIT_COST_MAIN_ASSISTANT=10        # Credits for main assistant
 CREDIT_COST_SOLIQ_ASSISTANT=15       # Credits for soliq assistant
-CREDIT_COST_DEEPRESEARCH=25          # Credits for deep research
 ```
 
 ### Database
@@ -513,8 +495,8 @@ TELEGRAM_SESSION_TIMEOUT=259200      # 3 days in seconds
 ### Chat
 - `POST /api/chat/ask` - Ask question to main or soliq assistant
 - `POST /api/chat/ask-file` - Ask question about uploaded file
-- `POST /api/chat/agent` - Deep research with agentic RAG
-- `POST /api/chat/agent/stream` - Streaming deep research
+- `POST /api/chat/agent` - Agentic RAG (if exposed on your deployment)
+- `POST /api/chat/agent/stream` - Streaming two-stage RAG (same pipeline as main; billed as main)
 
 ---
 

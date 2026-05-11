@@ -15,7 +15,10 @@ from app.agents.pipeline.last_answer import (
 )
 from app.agents.pipeline.retrieval_runner import ContextRetrievalRunner
 from app.core.assistants import AssistantConfig
-from app.orchestration.schemas import ChatPipelineState, normalize_assistant_name_for_registry
+from app.agents.pipeline.schemas import (
+    ChatPipelineState,
+    normalize_assistant_name_for_registry,
+)
 
 
 def _pipeline_state_from_request(request: AgentRequestContext) -> ChatPipelineState:

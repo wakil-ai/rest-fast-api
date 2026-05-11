@@ -1,7 +1,7 @@
 """
 Structured LLM + Tavily for LangGraph retrieval nodes.
 
-No CrewAI: memory summarization, retrieval strategy, and context evaluation use
+Memory summarization, retrieval strategy, and context evaluation use
 OpenAI ``response_format=json_object``; web augmentation uses the Tavily client
 when ``TAVILY_API_KEY`` is set.
 """
@@ -18,7 +18,7 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 from app.core.logger import logger
 from app.utils.tokens import count_tokens, truncate_to_token_limit
-from app.orchestration.schemas import (
+from app.agents.pipeline.schemas import (
     ContextEvaluationResponse,
     MemoryAgentResponse,
     RetrievalStrategyResponse,
@@ -28,12 +28,7 @@ from app.orchestration.schemas import (
 
 
 def _agents_config_path() -> Path:
-    return (
-        Path(__file__).resolve().parents[2]
-        / "orchestration"
-        / "config"
-        / "agents.yaml"
-    )
+    return Path(__file__).resolve().parent / "config" / "agents.yaml"
 
 
 @lru_cache

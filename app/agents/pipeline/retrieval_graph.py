@@ -14,7 +14,7 @@ from typing import Any, Literal, TYPE_CHECKING
 
 from langgraph.graph import END, START, StateGraph
 
-from app.orchestration.schemas import ChatPipelineState
+from app.agents.pipeline.schemas import ChatPipelineState
 
 if TYPE_CHECKING:
     from app.agents.pipeline.retrieval_runner import ContextRetrievalRunner

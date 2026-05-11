@@ -11,9 +11,7 @@ if TYPE_CHECKING:
     )
     from app.db import DBManager, MilvusHandler, MongoHandler, PineconeHandler
     from app.llms import LLM
-    from app.orchestration.flow import AgenticRAGFlow
-    from app.orchestration.agents import Agents
-    from app.orchestration.crews import Crews
+    from app.agents.pipeline.flow import AgenticRAGFlow
     from app.retrieval import (
         EmbeddingManager,
         RetrievalService,
@@ -167,32 +165,16 @@ def get_classifier_llm() -> "LLM":
     return ChatGPT(model_name=settings.GPT_COMPLETION_MODEL)
 
 
-@lru_cache
-def get_agents() -> "Agents":
-    from app.orchestration.agents import Agents
-
-    return Agents()
-
-
-@lru_cache
-def get_crews() -> "Crews":
-    from app.orchestration.crews import Crews
-
-    return Crews()
-
-
-@lru_cache
 def get_agentic_rag_flow() -> "AgenticRAGFlow":
-    from app.orchestration.flow import AgenticRAGFlow
+    from app.agents.pipeline.flow import AgenticRAGFlow
 
     return AgenticRAGFlow()
 
 
-@lru_cache
 def get_agentic_rag_flow_streaming(
     progress_callback: Callable[..., object],
 ) -> "AgenticRAGFlow":
-    from app.orchestration.flow import AgenticRAGFlow
+    from app.agents.pipeline.flow import AgenticRAGFlow
 
     return AgenticRAGFlow(
         enable_progress_stream=True, progress_callback=progress_callback

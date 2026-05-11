@@ -160,7 +160,9 @@ class AskFileRequest(BaseModel):
 
 class AgenticRAGRequest(BaseModel):
     """
-    Request body for agentic RAG questions.
+    Request body for streaming RAG (``/chat/agent/stream``).
+
+    Uses the same two-stage LangGraph retrieval + final answer pipeline as the main assistant.
     """
 
     query: str = Field(

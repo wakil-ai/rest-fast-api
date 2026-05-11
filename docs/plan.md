@@ -57,7 +57,7 @@ Refactor the chat agents so they do not pre-retrieve context and hand one static
   - final answer and metadata persist to DB.
   - attachments event and metadata are preserved.
 - Run:
-  - `.venv/bin/python -m compileall app/agents app/chains app/services app/orchestration app/main.py`
+  - `.venv/bin/python -m compileall app/agents app/chains app/services app/main.py`
   - `.venv/bin/pytest tests -q`
 
 ## Assumptions

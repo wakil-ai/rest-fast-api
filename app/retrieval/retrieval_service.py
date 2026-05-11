@@ -20,7 +20,7 @@ class RetrievalService:
     Agent-specific retrieval is handled by each agent's ``retrieve()``
     method.  This service is used by:
     - ``/api/retrieval`` endpoints (direct vector search)
-    - ``AgenticRAGFlow`` (corpus retrieval + project context)
+    - Two-stage chat pipeline (corpus retrieval + project context)
     """
 
     def __init__(self):

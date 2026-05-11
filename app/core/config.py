@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     DEVELOPMENT_MODE: bool = False
     HOST_URL: str = "https://backend.wakil.ai"
-    TRACING: bool = False  # Enable tracing for agents and crews
+    TRACING: bool = False  # Reserved for future OpenTelemetry wiring
 
     ALLOWED_ORIGINS: list[str] = [
         "https://chat.wakil.ai",
@@ -218,7 +218,6 @@ class Settings(BaseSettings):
     CREDIT_COST_SOLIQ_ASSISTANT: int = 20  # Credits for tax specialized assistant
     CREDIT_COST_SUD_ASSISTANT: int = 25  # Credits for sud specialized assistant
     CREDIT_COST_SHARTNOMA_ASSISTANT: int = 25  # Credits for contract analyzer assistant
-    CREDIT_COST_DEEPRESEARCH: int = 20  # Credits for deep research / agentic RAG
 
     # Payme Payment Configuration
     PAYME_MERCHANT_ID: str = None  # Payme merchant ID
@@ -355,12 +354,6 @@ class Settings(BaseSettings):
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Civil court specialized assistant",
                 "public": False,
-            },
-            "deepresearch": {
-                "name": "deepresearch",
-                "credit_cost": self.CREDIT_COST_DEEPRESEARCH,
-                "description": "Deep research assistant with agentic RAG",
-                "public": True,
             },
         }
 
