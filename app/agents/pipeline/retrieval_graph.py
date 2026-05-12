@@ -1,8 +1,8 @@
 """
 LangGraph ``StateGraph`` for the context-retrieval phase (chat/ask + agentic RAG).
 
-Topology: ``strategy`` → ``fetch`` → ``END``; assistants with web search enabled
-also run ``evaluate`` → (``web_search`` if insufficient) → ``END``.
+Topology: ``resolve_query`` → ``fetch`` → ``END``; deep-research assistants also run
+``evaluate`` → (``web_search`` if insufficient) → ``END``.
 
 Conversation context for the final LLM is loaded separately via
 ``agent_session_thread_id`` (see ``build_pipeline_thread_chat_history``), not here.
@@ -24,9 +24,9 @@ def compile_context_retrieval_graph(runner: ContextRetrievalRunner) -> Any:
     """Build and compile the retrieval subgraph; nodes delegate to ``runner`` methods."""
     builder = StateGraph(dict)
 
-    async def node_strategy(s: dict[str, Any]) -> dict[str, Any]:
+    async def node_resolve_query(s: dict[str, Any]) -> dict[str, Any]:
         m = ChatPipelineState.model_validate(s)
-        await runner._strategy_or_route_phase(m)
+        await runner._resolve_query_phase(m)
         return m.model_dump(mode="python")
 
     async def node_fetch(s: dict[str, Any]) -> dict[str, Any]:
@@ -44,13 +44,13 @@ def compile_context_retrieval_graph(runner: ContextRetrievalRunner) -> Any:
         await runner._perform_web_search(m)
         return m.model_dump(mode="python")
 
-    builder.add_node("strategy", node_strategy)
+    builder.add_node("resolve_query", node_resolve_query)
     builder.add_node("fetch", node_fetch)
     builder.add_node("evaluate", node_evaluate)
     builder.add_node("web_search", node_web)
 
-    builder.add_edge(START, "strategy")
-    builder.add_edge("strategy", "fetch")
+    builder.add_edge(START, "resolve_query")
+    builder.add_edge("resolve_query", "fetch")
 
     def route_after_fetch(
         s: dict[str, Any],

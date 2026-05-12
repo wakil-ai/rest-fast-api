@@ -1,9 +1,9 @@
 """
 Structured LLM + Tavily for LangGraph retrieval nodes.
 
-Memory summarization, retrieval strategy, and context evaluation use
-OpenAI ``response_format=json_object``; web augmentation uses the Tavily client
-when ``TAVILY_API_KEY`` is set.
+Optional query rewrite and deep-research context evaluation use non-streaming
+OpenAI ``response_format=json_object`` on ``gpt-4.1-mini``; web augmentation
+uses the Tavily client when ``TAVILY_API_KEY`` is set.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from tavily import TavilyClient
 from app.agents.pipeline.schemas import (
     ContextEvaluationResponse,
     MemoryAgentResponse,
+    RetrievalQueryRewriteResponse,
     RetrievalStrategyResponse,
     WebSearchDocument,
     WebSearchResponse,
@@ -53,8 +54,16 @@ def _agent_instructions(name: str) -> str:
     return f"Role: {role}\n\nInstructions:\n{goal}\n\nBackground:\n{back}".strip()
 
 
+DEFAULT_RETRIEVAL_OPENAI_MODEL = "gpt-4.1-mini"
+
+
 def retrieval_chain_model() -> str:
-    return settings.RETRIEVAL_CHAIN_MODEL or "gpt-4.1-mini"
+    raw = settings.RETRIEVAL_CHAIN_MODEL or DEFAULT_RETRIEVAL_OPENAI_MODEL
+    name = str(raw).strip()
+    if ":" in name:
+        _, name = name.split(":", 1)
+    name = name.strip()
+    return name or DEFAULT_RETRIEVAL_OPENAI_MODEL
 
 
 def retrieval_chain_max_tokens() -> int:
@@ -85,6 +94,7 @@ async def _openai_json_object(system: str, user: str) -> dict[str, Any]:
             {"role": "user", "content": user},
         ],
         "temperature": 0.0,
+        "stream": False,
         "response_format": {"type": "json_object"},
         tparam: retrieval_chain_max_tokens(),
     }
@@ -133,8 +143,68 @@ async def summarize_memory_llm(
 _RETRIEVAL_STRATEGY_FILE_CONTEXT_MAX_TOKENS = 8000
 
 
+async def retrieval_query_rewrite_llm(
+    query: str,
+    *,
+    chat_history: str = "",
+    thread_id: str | None = None,
+    file_context: str = "",
+) -> RetrievalQueryRewriteResponse:
+    spec = _agent_instructions("retrieval_specialist")
+    system = (
+        f"{spec}\n\nRespond with one JSON object only. Required keys: "
+        '"resolved_query" (string, the user question with follow-up references resolved), '
+        '"query_rewrite" (string, one refined search query; keep the user\'s language unless '
+        "a short clarifying phrase in another language clearly helps retrieval). "
+        "When CHAT_HISTORY is present, resolve follow-up references (for example numbered "
+        "choices or phrases like \"the second one\") before rewriting the search query. "
+        "If QUERY is only a follow-up selection token, copy the exact text of that numbered "
+        "item from the latest Assistant message (usually under Follow-up questions / "
+        "Aniqlashtiriluvchi savollar). Do not broaden to unrelated topics or earlier turns. "
+        "query_rewrite must stay on the same legal topic as resolved_query. "
+        "When UPLOADED_DOCUMENTS are present, derive concrete legal topics, parties, "
+        "article references, and domain terms for query_rewrite. "
+        "No markdown."
+    )
+    user_parts: list[str] = []
+    if thread_id:
+        user_parts.append(f"LANGGRAPH_THREAD_ID:\n{thread_id}")
+    history = (chat_history or "").strip()
+    if history:
+        user_parts.append(f"CHAT_HISTORY:\n{history}")
+    user_parts.append(f"QUERY:\n{query}")
+    fc = (file_context or "").strip()
+    if fc:
+        if count_tokens(fc) > _RETRIEVAL_STRATEGY_FILE_CONTEXT_MAX_TOKENS:
+            fc = truncate_to_token_limit(
+                fc, _RETRIEVAL_STRATEGY_FILE_CONTEXT_MAX_TOKENS
+            )
+        user_parts.append(
+            "UPLOADED_DOCUMENTS (user attached; when QUERY is short or only an instruction "
+            'such as "tahlil qil" / "analyze", derive concrete legal topics from this text):\n'
+            f"{fc}"
+        )
+    user = "\n\n".join(user_parts)
+    data = await _openai_json_object(system, user)
+    if not data:
+        return RetrievalQueryRewriteResponse(
+            resolved_query=query,
+            query_rewrite=query,
+        )
+    resolved = str(data.get("resolved_query") or query).strip() or query
+    rewrite = str(data.get("query_rewrite") or resolved).strip() or resolved
+    return RetrievalQueryRewriteResponse(
+        resolved_query=resolved,
+        query_rewrite=rewrite,
+    )
+
+
 async def retrieval_strategy_llm(
-    query: str, *, file_context: str = ""
+    query: str,
+    *,
+    file_context: str = "",
+    chat_history: str = "",
+    thread_id: str | None = None,
 ) -> RetrievalStrategyResponse:
     spec = _agent_instructions("retrieval_specialist")
     system = (
@@ -142,9 +212,18 @@ async def retrieval_strategy_llm(
         '"query_rewrite" (string, one refined search query; keep the user\'s language unless '
         "a short clarifying phrase in another language clearly helps retrieval), "
         '"strategy" (one of hybrid, dense, sparse), '
-        '"assistant" (either soliq or umumiy), "reasoning" (string). No markdown.'
+        '"assistant" (either soliq or umumiy), "reasoning" (string). '
+        "When CHAT_HISTORY is present, resolve follow-up references (for example numbered "
+        "choices or phrases like \"the second one\") before rewriting the search query. "
+        "No markdown."
     )
-    user_parts: list[str] = [f"QUERY:\n{query}"]
+    user_parts: list[str] = []
+    if thread_id:
+        user_parts.append(f"LANGGRAPH_THREAD_ID:\n{thread_id}")
+    history = (chat_history or "").strip()
+    if history:
+        user_parts.append(f"CHAT_HISTORY:\n{history}")
+    user_parts.append(f"QUERY:\n{query}")
     fc = (file_context or "").strip()
     if fc:
         if count_tokens(fc) > _RETRIEVAL_STRATEGY_FILE_CONTEXT_MAX_TOKENS:

@@ -12,3 +12,8 @@ warnings.filterwarnings(
     message=r"get_async_redis_connection will become async",
     category=DeprecationWarning,
 )
+warnings.filterwarnings(
+    "ignore",
+    message=r"Inheritance class AiohttpClientSession from ClientSession is discouraged",
+    category=DeprecationWarning,
+)

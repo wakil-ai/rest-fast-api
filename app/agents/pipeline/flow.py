@@ -31,7 +31,7 @@ class AgenticRAGFlow:
         else:
             self.state = initial_state
 
-        runner = ContextRetrievalRunner(progress_callback=self.progress_callback)
+        runner = ContextRetrievalRunner()
         await runner.run(self.state, get_chat_orchestrator().get_agent)
 
         from app.agents.pipeline.chat_turn import (

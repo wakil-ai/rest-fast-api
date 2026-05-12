@@ -22,6 +22,10 @@ class AgenticRAGState(BaseModel):
     user_id: str = Field(default="", description="User identifier")
     session_id: str = Field(default="", description="Session identifier")
     message_id: str = Field(default="", description="Current message identifier")
+    langgraph_thread_id: str | None = Field(
+        default=None,
+        description="LangGraph Redis checkpoint thread for session conversation memory",
+    )
     project_id: str | None = Field(default=None, description="Optional project ID")
     project_instructions: str | None = Field(
         default=None,
@@ -52,6 +56,10 @@ class AgenticRAGState(BaseModel):
     )
     retrieval_output: dict[str, Any] | None = Field(
         default=None, description="Retrieval metadata"
+    )
+    retrieval_timing_ms: dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-step retrieval phase timings in milliseconds",
     )
     retrieval_docs: str | None = Field(
         default=None, description="Retrieved document content"
@@ -121,6 +129,17 @@ class MemoryAgentResponse(BaseModel):
     resolved_query: str | None = Field(
         default=None,
         description="Query clarified with memory context, or None if no changes needed",
+    )
+
+
+class RetrievalQueryRewriteResponse(BaseModel):
+    """Structured query rewrite for retrieval (history and/or uploads)."""
+
+    resolved_query: str = Field(
+        description="User question with follow-up references resolved from chat history"
+    )
+    query_rewrite: str = Field(
+        description="Search-optimized query for Milvus and upload retrieval"
     )
 
 

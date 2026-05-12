@@ -2,29 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import warnings
-from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 
-from langchain.agents import create_agent
 from langchain_core.messages import (
     AIMessage,
-    AIMessageChunk,
     BaseMessage,
-    HumanMessage,
     ToolMessage,
 )
-from langchain_core.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
     get_chat_history_service,
-    get_chat_orchestrator,
     get_prompt_registry,
 )
 from app.core.logger import logger
-from app.llms.gemini import resolve_gemini_model_name
+from app.llms.lanchain import LangChain
 
 _agent_checkpointer: Any = None  # AsyncRedisSaver
 _checkpointer_needs_async_close = False
@@ -168,85 +161,18 @@ def _get_agent_checkpointer() -> Any:
     return _agent_checkpointer
 
 
-def _gemini_lc_model_name() -> str:
-    raw = settings.GEMINI_LANGCHAIN_CHAT_MODEL
-    if isinstance(raw, str) and raw.strip():
-        return resolve_gemini_model_name(raw)
-    m = settings.DEFAULT_CHAT_MODEL or ""
-    if isinstance(m, str) and m.strip().startswith("gemini"):
-        return resolve_gemini_model_name(m)
-    return resolve_gemini_model_name("gemini-2.5-flash")
-
-
 def _format_main_system_instructions() -> str:
     tmpl = get_prompt_registry().get_assistant_prompt("main")
     return tmpl.format(
-        context=(
-            "Substantive answers must rely on Uzbek legal corpus text retrieved with the "
-            "`search_lexuz_legal_documents` tool when the question calls for statutes or "
-            "codified norms. If web search is enabled, use it for current events or facts "
-            "not in the corpus."
-        ),
+        context="",
         chat_history="Earlier turns are kept in conversation messages for this thread.",
     )
 
 
-def _build_debug_lexuz_tool() -> Any:
-    """Minimal Lexuz search tool used only for debug state snapshots."""
-
-    @tool
-    async def search_lexuz_legal_documents(search_query: str) -> str:
-        """Hybrid search Uzbekistan legal corpus (Lexuz-style KB). Prefer focused legal keywords."""
-        orchestrator = get_chat_orchestrator()
-        inst = orchestrator._get_agent("main")
-        try:
-            result = await inst.retrieve(
-                query=search_query, file_context="", chat_history=""
-            )
-            text = result.context.strip() if result.context else ""
-            return text if text else "No relevant corpus passages were returned."
-        except Exception as e:
-            logger.warning(f"[chat_agent] Lexuz retrieval failed: {e}", exc_info=True)
-            return "Lexuz search failed temporarily."
-
-    return search_lexuz_legal_documents
-
-
-def _compile_lc_agent(
-    *,
-    system_prompt: str,
-    tools: list[Any],
-) -> Any:
-    """Build a fresh compiled graph for a single turn."""
-    llm = _build_lc_llm()
-    return create_agent(
-        llm,
-        tools,
+def _compile_lc_agent(*, system_prompt: str) -> Any:
+    """Build a fresh compiled graph for checkpoint reads and final turns."""
+    return LangChain(checkpointer=_get_agent_checkpointer()).compile_chat(
         system_prompt=system_prompt,
-        checkpointer=_get_agent_checkpointer(),
-    )
-
-
-def _build_lc_llm() -> ChatGoogleGenerativeAI:
-    if not settings.GEMINI_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY is required for the LangChain / LangGraph chat agent route."
-        )
-    level = settings.GEMINI_LANGCHAIN_THINKING_LEVEL or "low"
-    level = str(level).strip().lower()
-    if level in ("off", "false", "0", "none"):
-        level = "minimal"
-    allowed = frozenset({"minimal", "low", "medium", "high"})
-    if level not in allowed:
-        level = "low"
-    return ChatGoogleGenerativeAI(
-        model=_gemini_lc_model_name(),
-        google_api_key=settings.GEMINI_API_KEY,
-        temperature=settings.TEMPERATURE,
-        max_output_tokens=settings.OUTPUT_MAX_TOKENS,
-        thinking_level=level,
-        # Force streaming API on ainvoke so token callbacks fire for LangGraph stream_mode="messages".
-        streaming=True,
     )
 
 
@@ -307,10 +233,7 @@ async def aget_general_agent_state_snapshot(
     Uses a nominal ``main`` agent shape; checkpoints created with other agents
     may not load if graph identity does not match the saver backend.
     """
-    agent = _compile_lc_agent(
-        system_prompt=_format_main_system_instructions(),
-        tools=[_build_debug_lexuz_tool()],
-    )
+    agent = _compile_lc_agent(system_prompt=_format_main_system_instructions())
     config = {"configurable": {"thread_id": thread_id}}
     snap = await agent.aget_state(config)
     values: dict[str, Any] = snap.values if isinstance(snap.values, dict) else {}
@@ -383,18 +306,49 @@ async def _mongo_recent_turns_as_chat_history(session_id: str) -> str:
         return ""
     lines = ["Previous Conversation History:"]
     for i, (question, answer) in enumerate(entries, 1):
-        lines.append(f"{i}. User: {question}")
-        lines.append(f"   Assistant: {answer}")
+        lines.append(f"Turn {i}:")
+        lines.append(f"  User: {question}")
+        lines.append(f"  Assistant: {answer}")
+    lines.append(
+        "Note: numbered items inside an Assistant message (for example follow-up "
+        "questions 1. ... 2. ...) are not turn numbers."
+    )
     lines.append("Use the above conversation to maintain context and consistency.")
     return "\n".join(lines)
 
 
+async def build_retrieval_thread_chat_history(user_id: str, session_id: str) -> str:
+    """
+    Read-only session history for retrieval query rewrite.
+
+    Prefers Mongo recent turns (no Redis checkpoint compile) and falls back to
+    checkpoint snapshots when Mongo has no turns yet.
+    """
+    if not session_id:
+        return ""
+    hist = await _mongo_recent_turns_as_chat_history(session_id)
+    if hist.strip():
+        return hist
+    thread_id = agent_session_thread_id(user_id, session_id)
+    try:
+        snap = await aget_general_agent_state_snapshot(thread_id, max_content_len=6000)
+        rows = snap.get("messages") or []
+        return _format_checkpoint_rows_for_chat_history(rows, thread_id)
+    except Exception as exc:
+        logger.debug(
+            "[pipeline] LangGraph retrieval history read skipped (%s): %s",
+            thread_id,
+            exc,
+        )
+        return ""
+
+
 async def build_pipeline_thread_chat_history(user_id: str, session_id: str) -> str:
     """
-    Text for ``{chat_history}`` in the two-stage pipeline final LLM.
+    Legacy text formatter for checkpoint or Mongo history (debug / fallback).
 
-    Prefer LangGraph checkpoint messages for ``agent_session_thread_id``; if none,
-    fall back to Mongo session messages (recent turns).
+    Final LLM turns keep history on the LangGraph ``thread_id``; retrieval context
+    and file context are injected into the system prompt instead.
     """
     if not session_id:
         return ""
@@ -412,238 +366,3 @@ async def build_pipeline_thread_chat_history(user_id: str, session_id: str) -> s
             exc,
         )
     return await _mongo_recent_turns_as_chat_history(session_id)
-
-
-def _message_text(msg: AIMessage | AIMessageChunk) -> str:
-    content = getattr(msg, "content", None)
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict) and "text" in block:
-                parts.append(str(block["text"]))
-        return "".join(parts)
-    return ""
-
-
-def _stream_messages_event_to_message(event: Any) -> BaseMessage | None:
-    """
-    Normalize LangGraph ``stream_mode=\"messages\"`` payloads (v1 tuples vs v2 dicts).
-    """
-    if isinstance(event, dict) and event.get("type") == "messages":
-        data = event.get("data")
-        if isinstance(data, tuple) and data and isinstance(data[0], BaseMessage):
-            return data[0]
-        if isinstance(data, list) and data and isinstance(data[0], BaseMessage):
-            return data[0]
-        return None
-    if isinstance(event, tuple) and event:
-        if isinstance(event[0], BaseMessage):
-            return event[0]
-        if (
-            len(event) == 3
-            and event[1] == "messages"
-            and isinstance(event[2], tuple)
-            and event[2]
-            and isinstance(event[2][0], BaseMessage)
-        ):
-            return event[2][0]
-        if (
-            len(event) == 2
-            and isinstance(event[1], tuple)
-            and event[1]
-            and isinstance(event[1][0], BaseMessage)
-        ):
-            return event[1][0]
-    if isinstance(event, BaseMessage):
-        return event
-    return None
-
-
-def _sse_text_slice_limit() -> int:
-    try:
-        n = int(settings.STREAM_SSE_MAX_RESPONSE_CHARS)
-    except (TypeError, ValueError):
-        n = 200
-    return max(48, min(n, 4096))
-
-
-def _iter_text_slices_for_sse(text: str, *, max_chars: int) -> Iterator[str]:
-    """Split a large model delta into multiple strings for separate SSE chunk events."""
-    if not text:
-        return
-    if len(text) <= max_chars:
-        yield text
-        return
-    i = 0
-    n = len(text)
-    min_break = max(16, max_chars // 3)
-    while i < n:
-        end = min(i + max_chars, n)
-        if end < n:
-            window = text[i:end]
-            br = window.rfind("\n")
-            if br >= min_break:
-                end = i + br + 1
-            else:
-                sp = window.rfind(" ")
-                if sp >= min_break:
-                    end = i + sp + 1
-        yield text[i:end]
-        i = end
-
-
-def _visible_text_piece(msg: AIMessage | AIMessageChunk) -> str:
-    """Prefer LangChain normalized ``.text`` (text blocks only), then legacy extraction."""
-    t = getattr(msg, "text", None)
-    if t is not None:
-        s = str(t)
-        if s:
-            return s
-    return _message_text(msg)
-
-
-def _delta_stream_text(*, previous: str, piece: str) -> tuple[str, str]:
-    """
-    Return (delta_to_emit, new_cumulative) for LLM chunks that may be token-deltas
-    or growing cumulative strings.
-    """
-    if not piece:
-        return "", previous
-    if previous and piece.startswith(previous):
-        return piece[len(previous) :], piece
-    return piece, previous + piece
-
-
-def _last_ai_text(messages: list[BaseMessage]) -> str:
-    for msg in reversed(messages):
-        if isinstance(msg, AIMessage):
-            text = _message_text(msg)
-            if text.strip():
-                return text
-    return ""
-
-
-async def invoke_chat_agent(
-    *,
-    thread_id: str,
-    query: str,
-    system_prompt: str,
-    assistant_name: str,
-    tools: list[Any],
-    user_id_for_logs: str = "",
-) -> tuple[str, dict[str, Any]]:
-    canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
-    agent = _compile_lc_agent(
-        system_prompt=system_prompt,
-        tools=tools,
-    )
-
-    config = {"configurable": {"thread_id": thread_id}}
-    outcome = await agent.ainvoke(
-        {"messages": [HumanMessage(content=query.strip())]},
-        config,
-    )
-    msgs: list[BaseMessage] = list(outcome.get("messages") or [])
-    answer = _last_ai_text(msgs)
-
-    meta: dict[str, Any] = {}
-    usage = getattr(msgs[-1], "usage_metadata", None) if msgs else None
-    if isinstance(usage, dict):
-        meta["token_usage"] = usage
-
-    meta["model"] = _gemini_lc_model_name()
-    meta["workflow"] = f"langgraph_react_gemini_{canonical}"
-    meta["langgraph_assistant"] = canonical
-    meta["attachments"] = None
-    if user_id_for_logs:
-        meta["lc_user_ref"] = user_id_for_logs
-    return answer or "(empty model response)", meta
-
-
-async def astream_chat_agent(
-    *,
-    thread_id: str,
-    query: str,
-    system_prompt: str,
-    assistant_name: str,
-    tools: list[Any],
-) -> AsyncGenerator[str | dict[str, Any], None]:
-    canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
-    agent = _compile_lc_agent(
-        system_prompt=system_prompt,
-        tools=tools,
-    )
-
-    config = {"configurable": {"thread_id": thread_id}}
-
-    collected_meta: dict[str, Any] = {
-        "model": _gemini_lc_model_name(),
-        "workflow": f"langgraph_react_gemini_{canonical}_stream",
-        "langgraph_assistant": canonical,
-        "attachments": None,
-    }
-
-    input_state = {"messages": [HumanMessage(content=query.strip())]}
-    emitted_text = False
-    final_ai_text = ""
-    streamed_answer_prefix = ""
-    sse_slice = _sse_text_slice_limit()
-
-    # LangGraph: subgraphs=True so StreamMessagesHandler registers model runs (see
-    # langgraph/pregel/_messages.py). version="v2": unified StreamPart dicts as in
-    # https://docs.langchain.com/oss/python/langchain/streaming
-    async for event in agent.astream(
-        input_state,
-        config,
-        stream_mode="messages",
-        subgraphs=True,
-        version="v2",
-    ):
-        chunk: BaseMessage | None = None
-        if isinstance(event, dict) and event.get("type") == "messages":
-            data = event.get("data")
-            if (
-                isinstance(data, (tuple, list))
-                and data
-                and isinstance(data[0], BaseMessage)
-            ):
-                chunk = data[0]
-        if chunk is None:
-            chunk = _stream_messages_event_to_message(event)
-        if chunk is None:
-            chunk = event if isinstance(event, BaseMessage) else None
-        if chunk is None or not isinstance(chunk, BaseMessage):
-            continue
-
-        if isinstance(chunk, AIMessageChunk):
-            piece = _visible_text_piece(chunk)
-            if piece:
-                delta, streamed_answer_prefix = _delta_stream_text(
-                    previous=streamed_answer_prefix,
-                    piece=piece,
-                )
-                if delta:
-                    emitted_text = True
-                    for part in _iter_text_slices_for_sse(delta, max_chars=sse_slice):
-                        yield part
-            usage = getattr(chunk, "usage_metadata", None)
-            if isinstance(usage, dict):
-                collected_meta["token_usage"] = usage
-
-        elif isinstance(chunk, AIMessage):
-            text = _visible_text_piece(chunk)
-            if text.strip():
-                final_ai_text = text
-            usage = getattr(chunk, "usage_metadata", None)
-            if isinstance(usage, dict):
-                collected_meta["token_usage"] = usage
-
-    if not emitted_text and final_ai_text:
-        for part in _iter_text_slices_for_sse(final_ai_text, max_chars=sse_slice):
-            yield part
-
-    yield {"type": "_generation_meta", "meta": collected_meta}

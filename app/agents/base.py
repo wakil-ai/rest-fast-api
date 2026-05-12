@@ -435,10 +435,84 @@ class BaseAgent:
         ctx: GenerationContext,
         stream: bool,
     ) -> AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
+        if ctx.langgraph_thread_id:
+            return await self._generate_from_langchain_thread(
+                query=query, ctx=ctx, stream=stream
+            )
         llm = self._select_llm()
         if stream:
             return self._generate_streaming(llm, query, ctx)
         return await self._generate_non_streaming(llm, query, ctx)
+
+    async def _generate_from_langchain_thread(
+        self,
+        *,
+        query: str,
+        ctx: GenerationContext,
+        stream: bool,
+    ) -> AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
+        from app.agents.common.runtime import _get_agent_checkpointer
+        from app.llms.lanchain import LangChain
+
+        lc = LangChain(checkpointer=_get_agent_checkpointer())
+        if stream:
+            return self._stream_langchain_thread(lc, query=query, ctx=ctx)
+        answer, meta = await lc.invoke_turn(
+            thread_id=ctx.langgraph_thread_id or "",
+            query=query,
+            system_prompt=ctx.system_prompt,
+            assistant_name=ctx.assistant_name,
+            user_id_for_logs=ctx.user_id,
+        )
+        meta["attachments"] = list(ctx.attachments or [])
+        return answer, meta
+
+    def _stream_langchain_thread(
+        self,
+        lc: Any,
+        *,
+        query: str,
+        ctx: GenerationContext,
+    ) -> AsyncGenerator[Any, None]:
+        async def gen() -> AsyncGenerator[Any, None]:
+            answer_chunks: list[str] = []
+            async for item in lc.astream_turn(
+                thread_id=ctx.langgraph_thread_id or "",
+                query=query,
+                system_prompt=ctx.system_prompt,
+                assistant_name=ctx.assistant_name,
+            ):
+                if isinstance(item, str):
+                    answer_chunks.append(item)
+                    yield item
+                elif isinstance(item, dict) and item.get("type") == "think":
+                    yield item
+                elif isinstance(item, dict) and item.get("type") == "_generation_meta":
+                    meta = (
+                        item.get("meta") if isinstance(item.get("meta"), dict) else {}
+                    ) or {}
+                    meta["attachments"] = list(ctx.attachments or [])
+                    if meta["attachments"]:
+                        yield {
+                            "type": "attachments",
+                            "attachments": meta["attachments"],
+                        }
+                    yield {"type": "_generation_meta", "meta": meta}
+                    return
+
+            full = "".join(answer_chunks)
+            meta = await self._collect_generation_meta(
+                llm=lc,
+                query=query,
+                system_prompt=ctx.system_prompt,
+                answer=full,
+            )
+            meta["attachments"] = list(ctx.attachments or [])
+            if meta["attachments"]:
+                yield {"type": "attachments", "attachments": meta["attachments"]}
+            yield {"type": "_generation_meta", "meta": meta}
+
+        return gen()
 
     def _generate_streaming(
         self,

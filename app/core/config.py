@@ -113,12 +113,10 @@ class Settings(BaseSettings):
     # OpenAI GPT
     OPENAI_API_KEY: str | None = None
     DEFAULT_CHAT_MODEL: str = "gpt-5.2"  # Default model for chat completions
-    CLASSIFIER_MODEL: str = "gpt-5.2"  # Default model for routing/intent classification
+    CLASSIFIER_MODEL: str = "gpt-4.1"  # Default model for routing/intent classification
     GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI default model
 
-    #: Small OpenAI model for LangGraph retrieval JSON steps (strategy / eval / memory).
     RETRIEVAL_CHAIN_MODEL: str = "gpt-4.1-mini"
-    #: Max completion tokens for retrieval JSON steps (strategy, context eval, memory).
     RETRIEVAL_CHAIN_MAX_TOKENS: int = 1024
 
     # Anthropic Claude

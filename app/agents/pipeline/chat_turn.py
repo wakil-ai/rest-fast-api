@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
 from app.agents.base import BaseAgent
 from app.agents.common.state import AgentRequestContext, AgentRunResult
 from app.agents.main import MainAgent
+from app.agents.common.runtime import agent_session_thread_id
 from app.agents.pipeline.last_answer import (
     astream_last_answer,
     build_generation_context_for_result,
@@ -48,6 +50,11 @@ async def _resolve_pipeline_project_instructions(state: ChatPipelineState) -> No
 def _pipeline_state_from_request(request: AgentRequestContext) -> ChatPipelineState:
     requested = str(request.assistant or "main").strip()
     canonical = AssistantConfig.validate_assistant_or_default(request.assistant)
+    thread_id = (
+        agent_session_thread_id(request.user_id, request.session_id)
+        if request.session_id
+        else None
+    )
     return ChatPipelineState(
         query=request.query,
         user_id=request.user_id,
@@ -58,6 +65,7 @@ def _pipeline_state_from_request(request: AgentRequestContext) -> ChatPipelineSt
         locked_assistant=canonical,
         requested_assistant=requested,
         stream=request.stream,
+        langgraph_thread_id=thread_id,
     )
 
 
@@ -74,6 +82,17 @@ def get_attach_agent_for_pipeline(
     return get_agent(key)
 
 
+async def _resolve_pipeline_setup(state: ChatPipelineState) -> None:
+    if state.project_id:
+        await asyncio.gather(
+            _resolve_pipeline_project_id(state),
+            _resolve_pipeline_project_instructions(state),
+        )
+        return
+    await _resolve_pipeline_project_id(state)
+    await _resolve_pipeline_project_instructions(state)
+
+
 async def run_two_stage_chat(
     request: AgentRequestContext,
     get_agent: Callable[[str], BaseAgent],
@@ -81,9 +100,8 @@ async def run_two_stage_chat(
     progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> AgentRunResult:
     state = _pipeline_state_from_request(request)
-    await _resolve_pipeline_project_id(state)
-    await _resolve_pipeline_project_instructions(state)
-    runner = ContextRetrievalRunner(progress_callback=progress_callback)
+    await _resolve_pipeline_setup(state)
+    runner = ContextRetrievalRunner()
     await runner.run(state, get_agent)
 
     gen_agent = get_generation_agent_for_pipeline(state)
@@ -103,6 +121,8 @@ async def run_two_stage_chat(
         meta["selected_assistant"] = state.selected_assistant
     if state.web_search_output:
         meta["used_web_search"] = bool(state.web_search_output.get("docs"))
+    if state.retrieval_timing_ms:
+        meta["retrieval_timing_ms"] = state.retrieval_timing_ms
 
     resolved = normalize_assistant_name_for_registry(
         state.selected_assistant or request.assistant
@@ -122,8 +142,7 @@ async def astream_two_stage_chat(
     get_agent: Callable[[str], BaseAgent],
 ) -> AsyncGenerator[str | dict[str, Any], None]:
     state = _pipeline_state_from_request(request)
-    await _resolve_pipeline_project_id(state)
-    await _resolve_pipeline_project_instructions(state)
+    await _resolve_pipeline_setup(state)
     runner = ContextRetrievalRunner(progress_callback=None)
     await runner.run(state, get_agent)
 

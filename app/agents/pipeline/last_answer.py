@@ -1,4 +1,4 @@
-"""Final reasoning LLM: single generate_from_context call (no RAG tools)."""
+"""Final reasoning LLM: LangGraph thread memory + retrieval context in the prompt."""
 
 from __future__ import annotations
 
@@ -8,10 +8,7 @@ from typing import Any
 from langchain_core.prompts import PromptTemplate
 
 from app.agents.base import BaseAgent
-from app.agents.common.runtime import (
-    agent_session_thread_id,
-    build_pipeline_thread_chat_history,
-)
+from app.agents.common.runtime import agent_session_thread_id
 from app.agents.common.state import AgentState, GenerationContext
 from app.agents.pipeline.schemas import (
     ChatPipelineState,
@@ -159,7 +156,7 @@ def _build_system_prompt(state: ChatPipelineState) -> str:
     registry = get_prompt_registry()
     ctx_kw = {
         "context": state.retrieval_docs or "",
-        "chat_history": state.memory_docs or "",
+        "chat_history": "",
     }
     if state.answer_prompt_template is not None:
         base = _format_context_chat_prompt(state.answer_prompt_template, **ctx_kw)
@@ -193,7 +190,7 @@ def _create_generation_context(
         system_prompt=system_prompt,
         user_id=state.user_id,
         assistant_name=str(assistant),
-        chat_history=state.memory_docs or "",
+        chat_history="",
         attachments=list(state.attachments or []),
         classified_legal_intent=state.classified_legal_intent,
         court_route_tag=state.court_route_tag,
@@ -220,9 +217,6 @@ async def run_last_answer(
         ProgressEventType.ANSWER_GENERATION,
         "in_progress",
         "Generating final answer...",
-    )
-    state.memory_docs = await build_pipeline_thread_chat_history(
-        state.user_id, state.session_id
     )
     query = _build_enhanced_query(state)
     system_prompt = _build_system_prompt(state)
@@ -344,9 +338,6 @@ async def astream_last_answer(
     attach_agent: BaseAgent,
 ) -> AsyncGenerator[str | dict[str, Any], None]:
     """Yield answer chunks and metadata dicts (streaming)."""
-    state.memory_docs = await build_pipeline_thread_chat_history(
-        state.user_id, state.session_id
-    )
     query = _build_enhanced_query(state)
     system_prompt = _build_system_prompt(state)
     ctx = _create_generation_context(state, system_prompt)
