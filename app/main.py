@@ -3,6 +3,10 @@ import os
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+from app.core.warnings_config import configure_startup_warnings
+
+configure_startup_warnings()
+
 # FastAPI imports
 from contextlib import asynccontextmanager
 
