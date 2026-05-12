@@ -215,9 +215,7 @@ class ChatHistoryService:
             if not files:
                 raise InvalidInputError(f"File {file_id} not found")
             if files[0].get("user_id") != user_id:
-                raise InvalidInputError(
-                    f"File {file_id} does not belong to this user"
-                )
+                raise InvalidInputError(f"File {file_id} does not belong to this user")
 
     # Users Management
     async def create_user(
@@ -437,10 +435,12 @@ class ChatHistoryService:
         except Exception as e:
             raise InvalidInputError(f"Failed to create session: {str(e)}")
 
-    async def get_sessions(self, user_id: str, limit: int = 50, skip: int = 0) -> list[dict]:
+    async def get_sessions(
+        self, user_id: str, limit: int = 50, skip: int = 0
+    ) -> list[dict]:
         """Retrieve active non-project sessions for a user."""
         await self._ensure_user_exists(user_id)
-        
+
         sessions = await self.db_manager.find_documents(
             self.sessions_collection,
             {
@@ -477,11 +477,7 @@ class ChatHistoryService:
                     "from": self.messages_collection,
                     "let": {"session_id": "$_id"},
                     "pipeline": [
-                        {
-                            "$match": {
-                                "$expr": {"$eq": ["$session_id", "$$session_id"]}
-                            }
-                        },
+                        {"$match": {"$expr": {"$eq": ["$session_id", "$$session_id"]}}},
                         {"$limit": 1},
                         {"$project": {"_id": 1}},
                     ],
@@ -507,9 +503,7 @@ class ChatHistoryService:
         )
         return sessions[0] if sessions else None
 
-    async def attach_session_to_project(
-        self, session_id: str, project_id: str
-    ) -> dict:
+    async def attach_session_to_project(self, session_id: str, project_id: str) -> dict:
         """Set ``project_id`` on a session (e.g. first chat message in a project)."""
         await self._ensure_session_exists(session_id)
         if not project_id or not project_id.strip():
@@ -576,9 +570,7 @@ class ChatHistoryService:
         logger.info(f"Deleted session with session_id: {session_id} and its messages")
 
         if user_id:
-            await delete_agent_thread(
-                user_id=str(user_id), session_id=session_id
-            )
+            await delete_agent_thread(user_id=str(user_id), session_id=session_id)
 
     # Messages Management
     async def add_message(
@@ -823,7 +815,11 @@ class ChatHistoryService:
             },
         )
         logger.info(f"Submitted feedback for message_id: {message_id}")
-        return {"message_id": message_id, "feedback_type": feedback_type, "feedback_content": feedback_content}
+        return {
+            "message_id": message_id,
+            "feedback_type": feedback_type,
+            "feedback_content": feedback_content,
+        }
 
     async def get_feedback(self, message_id: str) -> dict | None:
         """Retrieve feedback from the message document."""
@@ -1101,7 +1097,12 @@ class ChatHistoryService:
         updated_count = await self.db_manager.update_documents(
             self.files_collection,
             {"_id": file_id},
-            {"$set": {"message_id": message_id, "updated_at": datetime.now(timezone.utc)}},
+            {
+                "$set": {
+                    "message_id": message_id,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
         )
 
         if updated_count == 0:

@@ -40,11 +40,7 @@ def _build_empty_sessions_pipeline(
                     "from": messages_collection_name,
                     "let": {"session_id": "$_id"},
                     "pipeline": [
-                        {
-                            "$match": {
-                                "$expr": {"$eq": ["$session_id", "$$session_id"]}
-                            }
-                        },
+                        {"$match": {"$expr": {"$eq": ["$session_id", "$$session_id"]}}},
                         {"$limit": 1},
                         {"$project": {"_id": 1}},
                     ],
@@ -138,7 +134,9 @@ async def cleanup_empty_sessions(
                 skipped_became_non_empty += 1
                 continue
 
-            session_delete_result = await sessions_collection.delete_one({"_id": session_id})
+            session_delete_result = await sessions_collection.delete_one(
+                {"_id": session_id}
+            )
             if session_delete_result.deleted_count == 0:
                 continue
 

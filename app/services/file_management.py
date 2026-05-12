@@ -41,7 +41,7 @@ class FileManager:
         """
         content = await file.read()
         content_hash = self._build_file_content_hash(content)
-        
+
         existing_by_content = await self.history.get_file_by_content_hash(
             content_hash=content_hash,
             user_id=user_id,
@@ -177,9 +177,7 @@ class FileManager:
                 destination_path=gcs_path,
                 content_type=file.content_type or "application/octet-stream",
             )
-            metadata = self._create_file_metadata(
-                file, content, gcs_path, content_hash
-            )
+            metadata = self._create_file_metadata(file, content, gcs_path, content_hash)
 
             record = await self.history.add_file_upload(
                 user_id=user_id,
@@ -606,7 +604,5 @@ class FileManager:
             chunk_overlap=1000,
         )
         return [
-            chunk.strip()
-            for chunk in splitter.split_text(content)
-            if chunk.strip()
+            chunk.strip() for chunk in splitter.split_text(content) if chunk.strip()
         ]

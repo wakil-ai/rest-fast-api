@@ -50,9 +50,10 @@ class CourtAgent(BaseAgent):
             uploaded_file_context=file_context,
         )
         assistant_name = decision.assistant_name or "administrative_court"
-        agent = self._routed_agents.get(assistant_name) or self._routed_agents[
-            "administrative_court"
-        ]
+        agent = (
+            self._routed_agents.get(assistant_name)
+            or self._routed_agents["administrative_court"]
+        )
         # Forward the already-loaded file context so the routed sub-agent doesn't refetch.
         routed_request = replace(
             request,
@@ -156,7 +157,9 @@ class AdministrativeCourtAgent(BaseAgent):
                 court_route_tag,
                 self.DEFAULT_COURT_ROUTE_TAG,
             )
-            prompt_key = self.ADMINISTRATIVE_ROUTE_TO_PROMPT[self.DEFAULT_COURT_ROUTE_TAG]
+            prompt_key = self.ADMINISTRATIVE_ROUTE_TO_PROMPT[
+                self.DEFAULT_COURT_ROUTE_TAG
+            ]
         return registry.get_prompt(prompt_key)
 
     async def retrieve(
@@ -168,7 +171,9 @@ class AdministrativeCourtAgent(BaseAgent):
         **kwargs,
     ) -> RetrievalResult:
         try:
-            court_route_tag = kwargs.get("court_route_tag") or self._forced_court_route_tag
+            court_route_tag = (
+                kwargs.get("court_route_tag") or self._forced_court_route_tag
+            )
             template = self._prompt_template_for_route(court_route_tag)
             domain_type = (
                 "tax"
@@ -191,7 +196,9 @@ class AdministrativeCourtAgent(BaseAgent):
             if domain_type == "tax":
                 result = await self._retrieve_tax(query, file_context, milvus_filter)
             else:
-                result = await self._retrieve_general(query, file_context, milvus_filter)
+                result = await self._retrieve_general(
+                    query, file_context, milvus_filter
+                )
 
             result.prompt_template = template
             return result
@@ -399,7 +406,9 @@ class CivilCourtAgent(AdministrativeCourtAgent):
         async def search_court_cases(query: str) -> str:
             """Search civil court cases with Milvus filter and file-level expansion."""
             try:
-                result = await self.retrieve(query=query, file_context="", chat_history="")
+                result = await self.retrieve(
+                    query=query, file_context="", chat_history=""
+                )
                 return result.context or "No relevant court cases found."
             except Exception as exc:
                 logger.warning(f"search_court_cases failed: {exc}", exc_info=True)
@@ -418,7 +427,10 @@ class CivilCourtAgent(AdministrativeCourtAgent):
         try:
             template = self.prompt_registry.get_assistant_prompt("civil_court")
             milvus_filter = await self.milvus_agent.generate_filter(
-                query, chat_history, file_context, assistant="civil_court",
+                query,
+                chat_history,
+                file_context,
+                assistant="civil_court",
             )
             result = await self._retrieve_court_collection_with_main(
                 query=query,
@@ -505,7 +517,9 @@ class EconomicCourtAgent(CivilCourtAgent):
         async def search_court_cases(query: str) -> str:
             """Search economic court cases with Milvus filter and file-level expansion."""
             try:
-                result = await self.retrieve(query=query, file_context="", chat_history="")
+                result = await self.retrieve(
+                    query=query, file_context="", chat_history=""
+                )
                 return result.context or "No relevant court cases found."
             except Exception as exc:
                 logger.warning(f"search_court_cases failed: {exc}", exc_info=True)
@@ -524,7 +538,10 @@ class EconomicCourtAgent(CivilCourtAgent):
         try:
             template = self.prompt_registry.get_assistant_prompt("economic_court")
             milvus_filter = await self.milvus_agent.generate_filter(
-                query, chat_history, file_context, assistant="economic_court",
+                query,
+                chat_history,
+                file_context,
+                assistant="economic_court",
             )
             result = await self._retrieve_court_collection_with_main(
                 query=query,

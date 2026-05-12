@@ -113,9 +113,9 @@ class ClickService(BasePaymentService):
                 "merchant_trans_id": str(merchant_trans_id or ""),
             }
 
-        if settings.CLICK_SERVICE_ID and int(
-            settings.CLICK_SERVICE_ID
-        ) != int(service_id):
+        if settings.CLICK_SERVICE_ID and int(settings.CLICK_SERVICE_ID) != int(
+            service_id
+        ):
             return {
                 "error": ClickError.ERROR_IN_REQUEST,
                 "error_note": "Error in request from click",
@@ -327,9 +327,9 @@ class ClickService(BasePaymentService):
                 "merchant_trans_id": str(merchant_trans_id or ""),
             }
 
-        if settings.CLICK_SERVICE_ID and int(
-            settings.CLICK_SERVICE_ID
-        ) != int(service_id):
+        if settings.CLICK_SERVICE_ID and int(settings.CLICK_SERVICE_ID) != int(
+            service_id
+        ):
             return {
                 "error": ClickError.ERROR_IN_REQUEST,
                 "error_note": "Error in request from click",

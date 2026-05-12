@@ -2,16 +2,16 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
-    from app.chains.chat_orchestrator import ChatOrchestrator
+    from app.agents.pipeline.flow import AgenticRAGFlow
     from app.chains import (
         CourtClassifier,
         IntentClassifier,
         MilvusQueryAgent,
         PromptRegistry,
     )
+    from app.chains.chat_orchestrator import ChatOrchestrator
     from app.db import DBManager, MilvusHandler, MongoHandler, PineconeHandler
     from app.llms import LLM
-    from app.agents.pipeline.flow import AgenticRAGFlow
     from app.retrieval import (
         EmbeddingManager,
         RetrievalService,
@@ -24,11 +24,11 @@ if TYPE_CHECKING:
         ClickService,
         FileManager,
         OCRService,
-        PromoCodeService,
         ProjectService,
+        PromoCodeService,
         RateLimitService,
-        ReferralService,
         RedisService,
+        ReferralService,
         StorageService,
         SubscriptionStorage,
         TransactionService,

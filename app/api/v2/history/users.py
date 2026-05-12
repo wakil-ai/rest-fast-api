@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.core.config import settings
 from app.core.dependencies import get_chat_history_service, get_redis_service
@@ -10,7 +10,7 @@ from app.models.chat_history import (
     UserPhoneUpdateRequest,
     UserUpdateRequest,
 )
-from app.security import verify_super_admin_key, verify_dt_user_web_client
+from app.security import verify_super_admin_key
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -59,27 +59,27 @@ async def get_user(user_id: str, request: Request):
         requested_web_client = settings.WAKILAI_WEB_CLIENT_NAME
     elif dt_api_key:
         requested_web_client = settings.DT_WEB_CLIENT_NAME
-    
+
     cache_key = f"user:{user_id}"
 
     # Try to get from Redis cache first
     cached_user = redis_service.cache_get(cache_key)
     if cached_user:
         user = json.loads(cached_user)
-        
+
         if user.get("web_client") != requested_web_client:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: User does not belong to the requested client",
-            )  
-        
+            )
+
         return create_response(user, "User retrieved (from cache)")
 
     # Cache miss - fetch from database
     user = await chat_history_service.get_user(user_id=user_id)
     if not user:
         raise HTTPException(404, f"User {user_id} not found")
-    
+
     if user.get("web_client") != requested_web_client:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

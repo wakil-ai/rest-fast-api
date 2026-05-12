@@ -16,9 +16,6 @@ from typing import Any
 from openai import AsyncOpenAI
 from tavily import TavilyClient
 
-from app.core.config import settings
-from app.core.logger import logger
-from app.utils.tokens import count_tokens, truncate_to_token_limit
 from app.agents.pipeline.schemas import (
     ContextEvaluationResponse,
     MemoryAgentResponse,
@@ -26,6 +23,9 @@ from app.agents.pipeline.schemas import (
     WebSearchDocument,
     WebSearchResponse,
 )
+from app.core.config import settings
+from app.core.logger import logger
+from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 
 def _agents_config_path() -> Path:
@@ -148,7 +148,9 @@ async def retrieval_strategy_llm(
     fc = (file_context or "").strip()
     if fc:
         if count_tokens(fc) > _RETRIEVAL_STRATEGY_FILE_CONTEXT_MAX_TOKENS:
-            fc = truncate_to_token_limit(fc, _RETRIEVAL_STRATEGY_FILE_CONTEXT_MAX_TOKENS)
+            fc = truncate_to_token_limit(
+                fc, _RETRIEVAL_STRATEGY_FILE_CONTEXT_MAX_TOKENS
+            )
         user_parts.append(
             "UPLOADED_DOCUMENTS (user attached; when QUERY is short or only an instruction "
             'such as "tahlil qil" / "analyze", derive concrete legal topics, parties, '
@@ -236,10 +238,7 @@ async def web_search_tavily(query: str) -> WebSearchResponse:
             continue
         title = item.get("title")
         content = str(
-            item.get("content")
-            or item.get("snippet")
-            or item.get("raw_content")
-            or ""
+            item.get("content") or item.get("snippet") or item.get("raw_content") or ""
         ).strip()
         docs.append(
             WebSearchDocument(

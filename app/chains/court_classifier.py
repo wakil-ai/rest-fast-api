@@ -118,12 +118,7 @@ class CourtClassifier:
     def _normalize_route_tag(response: str) -> str:
         text = (response or "").strip().lower()
         for raw_line in text.splitlines():
-            line = (
-                raw_line.strip()
-                .strip("`\"'")
-                .lstrip("*•-")
-                .strip()
-            )
+            line = raw_line.strip().strip("`\"'").lstrip("*•-").strip()
             if not line:
                 continue
             # strip leading "output:" style prefixes

@@ -224,7 +224,9 @@ class SiliconFlowEmbedding(BaseEmbedding):
     def embed_query(self, query: str) -> list[float]:
         return self.embed_doc(get_instruction(query))
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True
+    )
     def embed_doc(self, text: str) -> list[float]:
         payload = {"model": self.model_name, "input": text, "encoding_format": "float"}
         try:
@@ -237,7 +239,9 @@ class SiliconFlowEmbedding(BaseEmbedding):
             logger.warning(f"SiliconFlow embedding attempt failed: {e}")
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True
+    )
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []

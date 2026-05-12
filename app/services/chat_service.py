@@ -12,8 +12,8 @@ from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
     get_agentic_rag_flow_streaming,
-    get_chat_orchestrator,
     get_chat_history_service,
+    get_chat_orchestrator,
     get_project_service,
     get_rate_limit_service,
 )
@@ -453,13 +453,17 @@ class ChatService:
                 required_credits=credit_cost,
             )
 
-            should_stream = settings.STREAM if request.stream is None else request.stream
+            should_stream = (
+                settings.STREAM if request.stream is None else request.stream
+            )
             is_dt = self.is_dt_team_request(raw_request)
 
-            session_id, message_id, resolved_project_id = await self.prepare_chat_request(
-                user_id=request.user_id,
-                session_id=request.session_id,
-                project_id=request.project_id,
+            session_id, message_id, resolved_project_id = (
+                await self.prepare_chat_request(
+                    user_id=request.user_id,
+                    session_id=request.session_id,
+                    project_id=request.project_id,
+                )
             )
 
             dt_suffix = settings.DT_TEAM_DISCLAIMER if is_dt else ""
@@ -553,10 +557,12 @@ class ChatService:
                 required_credits=settings.CREDIT_COST_MAIN_ASSISTANT,
             )
 
-            session_id, message_id, resolved_project_id = await self.prepare_chat_request(
-                user_id=request.user_id,
-                session_id=request.session_id,
-                project_id=request.project_id,
+            session_id, message_id, resolved_project_id = (
+                await self.prepare_chat_request(
+                    user_id=request.user_id,
+                    session_id=request.session_id,
+                    project_id=request.project_id,
+                )
             )
 
             progress_queue: asyncio.Queue = asyncio.Queue()

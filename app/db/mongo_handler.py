@@ -49,7 +49,11 @@ class MongoHandler:
         return [str(doc_id) for doc_id in result.inserted_ids]
 
     async def find_documents(
-        self, collection_name: str, query: dict[str, Any], limit: int = 50, skip: int = 0
+        self,
+        collection_name: str,
+        query: dict[str, Any],
+        limit: int = 50,
+        skip: int = 0,
     ) -> list[dict[str, Any]]:
         """
         Find documents matching a query.

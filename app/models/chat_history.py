@@ -126,7 +126,10 @@ class MessageResponse(BaseModel):
     @classmethod
     def coerce_missing_file_ids(cls, v: Any) -> Any:
         return [] if v is None else v
-    feedback_type: str | None = Field(None, description="Feedback type (positive/negative)")
+
+    feedback_type: str | None = Field(
+        None, description="Feedback type (positive/negative)"
+    )
     feedback_content: str | None = Field(None, description="Optional feedback comment")
     created_at: datetime
     updated_at: datetime
@@ -170,7 +173,9 @@ class FeedbackCreateRequest(BaseModel):
     """Request model for submitting message feedback"""
 
     message_id: str = Field(..., description="Message ID")
-    feedback_type: str = Field(..., description="Type of feedback: positive or negative")
+    feedback_type: str = Field(
+        ..., description="Type of feedback: positive or negative"
+    )
     feedback_content: str | None = Field(
         None, max_length=500, description="Optional feedback comment"
     )
@@ -196,9 +201,13 @@ class FileUploadResponse(BaseModel):
         default=None, description="Set when the file belongs to a project workspace"
     )
     file_url: str = Field(..., description="API endpoint to access the file")
-    file_metadata: dict[str, Any] = Field(..., description="File metadata (name, type, size, gcs_path)")
+    file_metadata: dict[str, Any] = Field(
+        ..., description="File metadata (name, type, size, gcs_path)"
+    )
     ocr_result: str = Field(..., description="OCR extracted text")
-    status: str = Field(..., description="Processing status: processing/completed/failed")
+    status: str = Field(
+        ..., description="Processing status: processing/completed/failed"
+    )
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
@@ -217,6 +226,7 @@ class MessagesFetchRequest(BaseModel):
 
     session_id: str = Field(..., description="Session ID")
     limit: int = Field(100, ge=1, le=500)
+
 
 class FeedbackFetchRequest(BaseModel):
     """DEPRECATED: Use GET /feedback/{message_id} instead"""

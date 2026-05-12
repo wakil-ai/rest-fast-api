@@ -1,6 +1,6 @@
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
-import asyncio
 
 from fastapi import HTTPException, status
 
@@ -34,7 +34,9 @@ class ProjectService:
 
         project_id = generate_short_id(prefix=self.prefix, type="uuid7")
         now = datetime.now(timezone.utc)
-        settings_dict = (body.settings.model_dump(exclude_none=True) if body.settings else {})
+        settings_dict = (
+            body.settings.model_dump(exclude_none=True) if body.settings else {}
+        )
 
         doc = clean_for_mongodb(
             {
@@ -72,7 +74,9 @@ class ProjectService:
         )
 
     async def get_project(self, project_id: str, owner_id: str) -> dict[str, Any]:
-        rows = await self.db.find_documents(self.collection, {"_id": project_id}, limit=1)
+        rows = await self.db.find_documents(
+            self.collection, {"_id": project_id}, limit=1
+        )
         if not rows:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
@@ -130,9 +134,7 @@ class ProjectService:
             },
         )
 
-    async def increment_stat(
-        self, project_id: str, field: str, delta: int = 1
-    ) -> None:
+    async def increment_stat(self, project_id: str, field: str, delta: int = 1) -> None:
         if field not in ("docs", "chats", "reminders"):
             return
         key = f"stats.{field}"

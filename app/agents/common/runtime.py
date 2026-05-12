@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import warnings
 from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 
+from langchain.agents import create_agent
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -11,7 +13,6 @@ from langchain_core.messages import (
     HumanMessage,
     ToolMessage,
 )
-from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -48,9 +49,7 @@ def _build_langgraph_redis_url() -> str:
         return uri.strip()
     password = settings.REDIS_PASSWORD
     if isinstance(password, str) and password:
-        return (
-            f"redis://:{password}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
-        )
+        return f"redis://:{password}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
     return f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
 
 
@@ -123,13 +122,19 @@ async def init_agent_checkpointer() -> None:
 
     url = _build_langgraph_redis_url()
     ttl_minutes = _default_ttl_minutes_for_checkpoints()
-    saver = AsyncRedisSaver(
-        redis_url=url,
-        ttl={"default_ttl": ttl_minutes},
-        checkpoint_prefix="wakilai:lg:checkpoint",
-        checkpoint_write_prefix="wakilai:lg:checkpoint_write",
-    )
-    await saver.setup()
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"get_async_redis_connection will become async",
+            category=DeprecationWarning,
+        )
+        saver = AsyncRedisSaver(
+            redis_url=url,
+            ttl={"default_ttl": ttl_minutes},
+            checkpoint_prefix="wakilai:lg:checkpoint",
+            checkpoint_write_prefix="wakilai:lg:checkpoint_write",
+        )
+        await saver.setup()
     _agent_checkpointer = saver
     _checkpointer_needs_async_close = True
     log_url = url.split("@")[-1] if "@" in url else url
@@ -195,7 +200,9 @@ def _build_debug_lexuz_tool() -> Any:
         orchestrator = get_chat_orchestrator()
         inst = orchestrator._get_agent("main")
         try:
-            result = await inst.retrieve(query=search_query, file_context="", chat_history="")
+            result = await inst.retrieve(
+                query=search_query, file_context="", chat_history=""
+            )
             text = result.context.strip() if result.context else ""
             return text if text else "No relevant corpus passages were returned."
         except Exception as e:
@@ -249,7 +256,9 @@ def _truncate(s: str, max_len: int) -> str:
     return s[: max_len - 3] + "..."
 
 
-def serialize_graph_message(msg: BaseMessage, *, max_content_len: int = 4000) -> dict[str, Any]:
+def serialize_graph_message(
+    msg: BaseMessage, *, max_content_len: int = 4000
+) -> dict[str, Any]:
     """JSON-friendly view of one checkpoint message (for logs / debug)."""
     row: dict[str, Any] = {
         "type": getattr(msg, "type", msg.__class__.__name__),
@@ -391,9 +400,7 @@ async def build_pipeline_thread_chat_history(user_id: str, session_id: str) -> s
         return ""
     thread_id = agent_session_thread_id(user_id, session_id)
     try:
-        snap = await aget_general_agent_state_snapshot(
-            thread_id, max_content_len=6000
-        )
+        snap = await aget_general_agent_state_snapshot(thread_id, max_content_len=6000)
         rows = snap.get("messages") or []
         hist = _format_checkpoint_rows_for_chat_history(rows, thread_id)
         if hist:
@@ -599,8 +606,10 @@ async def astream_chat_agent(
         chunk: BaseMessage | None = None
         if isinstance(event, dict) and event.get("type") == "messages":
             data = event.get("data")
-            if isinstance(data, (tuple, list)) and data and isinstance(
-                data[0], BaseMessage
+            if (
+                isinstance(data, (tuple, list))
+                and data
+                and isinstance(data[0], BaseMessage)
             ):
                 chunk = data[0]
         if chunk is None:

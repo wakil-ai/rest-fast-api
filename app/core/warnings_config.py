@@ -29,3 +29,8 @@ def configure_startup_warnings() -> None:
         category=RuntimeWarning,
         module="pydub.utils",
     )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"get_async_redis_connection will become async",
+        category=DeprecationWarning,
+    )

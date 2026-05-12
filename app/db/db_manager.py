@@ -51,10 +51,16 @@ class DBManager:
 
     # MongoDB operations - asynchronous
     async def find_documents(
-        self, collection_name: str, query: dict[str, Any], limit: int = 50, skip: int = 0
+        self,
+        collection_name: str,
+        query: dict[str, Any],
+        limit: int = 50,
+        skip: int = 0,
     ) -> list[dict[str, Any]]:
         """Find documents in MongoDB based on query."""
-        return await self.mongo_handler.find_documents(collection_name, query, limit, skip)
+        return await self.mongo_handler.find_documents(
+            collection_name, query, limit, skip
+        )
 
     async def insert_documents(
         self, collection_name: str, documents: list[dict[str, Any]]

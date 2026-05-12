@@ -125,9 +125,7 @@ async def update_project_instructions(
     response_model=SessionResponse,
 )
 @handle_service_error
-async def create_project_session(
-    project_id: str, body: ProjectSessionCreateRequest
-):
+async def create_project_session(project_id: str, body: ProjectSessionCreateRequest):
     session = await project_service.create_session_for_project(
         project_id=project_id,
         user_id=body.user_id,
@@ -196,9 +194,7 @@ async def delete_project_file(project_id: str, file_id: str, user_id: str):
 
 @router.post("/{project_id}/search")
 @handle_service_error
-async def search_project_knowledge(
-    project_id: str, body: ProjectFileSearchQuery
-):
+async def search_project_knowledge(project_id: str, body: ProjectFileSearchQuery):
     await project_service.get_project(project_id, body.user_id)
     embedding_manager = get_embedding_manager()
     db = get_db_manager()

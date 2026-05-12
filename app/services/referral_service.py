@@ -55,9 +55,7 @@ class ReferralService:
             return_document=ReturnDocument.AFTER,
         )
 
-        logger.info(
-            f"[ReferralService] Tracked referral source '{normalized_source}'"
-        )
+        logger.info(f"[ReferralService] Tracked referral source '{normalized_source}'")
         return document
 
     async def get_stats(self, limit: int = 100) -> list[dict]:

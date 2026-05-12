@@ -112,12 +112,8 @@ class Settings(BaseSettings):
 
     # OpenAI GPT
     OPENAI_API_KEY: str | None = None
-    DEFAULT_CHAT_MODEL: str = (
-        "gpt-5.2"  # Default model for chat completions
-    )
-    CLASSIFIER_MODEL: str = (
-        "gpt-5.2"  # Default model for routing/intent classification
-    )
+    DEFAULT_CHAT_MODEL: str = "gpt-5.2"  # Default model for chat completions
+    CLASSIFIER_MODEL: str = "gpt-5.2"  # Default model for routing/intent classification
     GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI default model
 
     #: Small OpenAI model for LangGraph retrieval JSON steps (strategy / eval / memory).
@@ -158,7 +154,9 @@ class Settings(BaseSettings):
 
     # OCR Service
     DATALAB_API_KEY: str | None = None
-    FILE_CONTENT_TOKEN_LIMIT: int = 50_000  # Max uploaded file context tokens for LLM prompts
+    FILE_CONTENT_TOKEN_LIMIT: int = (
+        50_000  # Max uploaded file context tokens for LLM prompts
+    )
     #: Cap for combined assistant + upload context passed to the final answer LLM.
     RETRIEVAL_CONTEXT_TOKEN_LIMIT: int = 300_000
     EMBEDDING_QUERY_TOKEN_LIMIT: int = 10_000  # Max query tokens sent to embedding APIs
@@ -184,7 +182,7 @@ class Settings(BaseSettings):
     DT_API_KEY_NAME: str = "x-dt-team-api-key"
     DT_API_KEY: str | None = None  # DT team dedicated API key for backend access
     DT_TEAM_DISCLAIMER: str = ""
-    
+
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
     STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0
@@ -286,7 +284,9 @@ class Settings(BaseSettings):
     #: Session delete calls ``adelete_thread``; keys also expire after ``LANGGRAPH_CHECKPOINT_TTL_SECONDS``.
     LANGGRAPH_CHECKPOINT_USE_REDIS: bool = True
     #: Redis TTL for LangGraph checkpoint keys (seconds). After this period Redis drops checkpoint data for a thread.
-    LANGGRAPH_CHECKPOINT_TTL_SECONDS: int = 86400 * 3  # 3 days, independent of general cache TTL if needed
+    LANGGRAPH_CHECKPOINT_TTL_SECONDS: int = (
+        86400 * 3
+    )  # 3 days, independent of general cache TTL if needed
 
     # OneID / B2B Integration
     DT_SERVER_IP: str = "87.192.230.47"  # OneID server IP for birdarcha web client

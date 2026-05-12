@@ -14,12 +14,12 @@ from app.agents.pipeline.last_answer import (
     run_last_answer,
 )
 from app.agents.pipeline.retrieval_runner import ContextRetrievalRunner
-from app.core.assistants import AssistantConfig
-from app.core.dependencies import get_chat_history_service, get_project_service
 from app.agents.pipeline.schemas import (
     ChatPipelineState,
     normalize_assistant_name_for_registry,
 )
+from app.core.assistants import AssistantConfig
+from app.core.dependencies import get_chat_history_service, get_project_service
 
 
 async def _resolve_pipeline_project_id(state: ChatPipelineState) -> None:

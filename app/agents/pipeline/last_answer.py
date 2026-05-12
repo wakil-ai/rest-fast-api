@@ -5,21 +5,21 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
+from langchain_core.prompts import PromptTemplate
+
 from app.agents.base import BaseAgent
 from app.agents.common.runtime import (
     agent_session_thread_id,
     build_pipeline_thread_chat_history,
 )
 from app.agents.common.state import AgentState, GenerationContext
-from langchain_core.prompts import PromptTemplate
-
-from app.core.dependencies import get_prompt_registry
-from app.core.logger import logger
 from app.agents.pipeline.schemas import (
     ChatPipelineState,
     ProgressEventType,
     normalize_assistant_name_for_registry,
 )
+from app.core.dependencies import get_prompt_registry
+from app.core.logger import logger
 from app.utils.streaming import format_progress_event
 
 # Max characters per field in debug previews (avoid huge log lines).
@@ -69,14 +69,16 @@ def _log_final_llm_inputs(
         len(ctx.attachments or []),
     )
     logger.debug("[last_answer] Final LLM user_query (preview):\n{}", _preview(query))
-    logger.debug("[last_answer] Final LLM system_prompt (preview):\n{}", _preview(system_prompt))
+    logger.debug(
+        "[last_answer] Final LLM system_prompt (preview):\n{}", _preview(system_prompt)
+    )
     logger.debug(
         "[last_answer] Final LLM retrieval_docs / ctx.context (preview):\n{}",
-        _preview(ctx.context)
+        _preview(ctx.context),
     )
     logger.debug(
         "[last_answer] Final LLM memory_docs / ctx.chat_history (preview):\n{}",
-        _preview(ctx.chat_history)
+        _preview(ctx.chat_history),
     )
 
 
@@ -160,9 +162,7 @@ def _build_system_prompt(state: ChatPipelineState) -> str:
         "chat_history": state.memory_docs or "",
     }
     if state.answer_prompt_template is not None:
-        base = _format_context_chat_prompt(
-            state.answer_prompt_template, **ctx_kw
-        )
+        base = _format_context_chat_prompt(state.answer_prompt_template, **ctx_kw)
     else:
         assistant = normalize_assistant_name_for_registry(
             state.selected_assistant or "main"
@@ -252,9 +252,7 @@ async def run_last_answer(
         merged_meta["attachments"] = attachments if attachments else None
         state.generation_meta = merged_meta
         state.attachments = attachments
-        await emit(
-            ProgressEventType.ANSWER_GENERATION, "completed", "Answer ready"
-        )
+        await emit(ProgressEventType.ANSWER_GENERATION, "completed", "Answer ready")
         return answer
     except Exception as error:
         logger.error(f"Answer generation failed: {error}", exc_info=True)

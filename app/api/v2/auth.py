@@ -9,7 +9,6 @@ from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.dependencies import get_chat_history_service
-from app.core.exceptions import UserAlreadyExistsException
 from app.core.logger import logger
 from app.models.auth import DTUserCreateRequest, DTUserCreateResponse, TelegramAuth
 from app.security.dependencies import verify_dt_api_key

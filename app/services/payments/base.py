@@ -182,9 +182,7 @@ class BasePaymentService:
                 ],
                 "today_credits_used": credit_status["today_credits_used"],
                 "today_remaining_credits": credit_status["remaining_credits"],
-                "uses_combined_credit_pool": credit_status[
-                    "uses_combined_credit_pool"
-                ],
+                "uses_combined_credit_pool": credit_status["uses_combined_credit_pool"],
             }
 
         end_ms = int(sub.get("end_ms") or 0)
@@ -270,7 +268,9 @@ class BasePaymentService:
                 active_daily_pass_end_ms=int(active_daily_pass.get("end_ms") or 0),
             )
 
-        active_subscription = await self._get_active_subscription(user_id, current_time_ms)
+        active_subscription = await self._get_active_subscription(
+            user_id, current_time_ms
+        )
         if active_subscription is None:
             return
 

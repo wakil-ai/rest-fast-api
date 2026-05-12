@@ -36,7 +36,9 @@ class TaxAgent(BaseAgent):
         async def search_tax_corpus(query: str) -> str:
             """Search Uzbekistan tax law from soliq.uz, lex.uz, and buxgalter.uz sources."""
             try:
-                result = await self.retrieve(query=query, file_context="", chat_history="")
+                result = await self.retrieve(
+                    query=query, file_context="", chat_history=""
+                )
                 return result.context or "No relevant tax documents found."
             except Exception as exc:
                 logger.warning(f"search_tax_corpus failed: {exc}", exc_info=True)

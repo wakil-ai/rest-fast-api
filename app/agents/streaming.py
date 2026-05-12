@@ -68,9 +68,11 @@ async def astream_chat_with_persistence(
     try:
         async for item in get_chat_orchestrator().astream(request):
             if isinstance(item, dict) and item.get("type") == "_generation_meta":
-                generation_meta = (item.get("meta") or {}) if isinstance(
-                    item.get("meta"), dict
-                ) else {}
+                generation_meta = (
+                    (item.get("meta") or {})
+                    if isinstance(item.get("meta"), dict)
+                    else {}
+                )
                 resolved_assistant = str(item.get("resolved_assistant") or assistant)
                 continue
             if isinstance(item, str):

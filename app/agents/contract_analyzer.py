@@ -68,7 +68,9 @@ class ContractAnalyzerAgent(BaseAgent):
             try:
                 result = await self._retrieve_contracts(query)
                 if result.attachments:
-                    state.attachments = list(state.attachments or []) + result.attachments
+                    state.attachments = (
+                        list(state.attachments or []) + result.attachments
+                    )
                 return result.context or "No relevant contract documents found."
             except Exception as exc:
                 logger.warning(f"search_contract_corpus failed: {exc}", exc_info=True)
@@ -99,8 +101,13 @@ class ContractAnalyzerAgent(BaseAgent):
             attachments=contract_result.attachments,
         )
 
-    async def attach_outputs(self, answer: str, state: AgentState) -> list[dict[str, Any]]:
-        if state.classified_legal_intent != LegalIntent.CONTRACT_TEMPLATE_GENERATION.value:
+    async def attach_outputs(
+        self, answer: str, state: AgentState
+    ) -> list[dict[str, Any]]:
+        if (
+            state.classified_legal_intent
+            != LegalIntent.CONTRACT_TEMPLATE_GENERATION.value
+        ):
             return []
         return await self.upload_contract_docx(
             user_id=state.request.user_id,
@@ -197,7 +204,10 @@ class ContractAnalyzerAgent(BaseAgent):
                 score = float(score_raw) if score_raw is not None else None
             except (TypeError, ValueError):
                 score = None
-            if score is not None and score < settings.CONTRACT_ATTACHMENT_MIN_SIMILARITY:
+            if (
+                score is not None
+                and score < settings.CONTRACT_ATTACHMENT_MIN_SIMILARITY
+            ):
                 continue
 
             if (

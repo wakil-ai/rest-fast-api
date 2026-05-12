@@ -178,9 +178,8 @@ class RetrievalService:
                     chunks.append(f"[Project chunk {index}]\n{text}")
             if not chunks:
                 return ""
-            return (
-                "## PROJECT WORKSPACE (uploaded case documents)\n"
-                + "\n\n".join(chunks)
+            return "## PROJECT WORKSPACE (uploaded case documents)\n" + "\n\n".join(
+                chunks
             )
         except Exception as e:
             logger.warning(f"retrieve_project_context failed: {e}", exc_info=True)

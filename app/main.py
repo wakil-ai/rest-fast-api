@@ -16,6 +16,11 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.agents.common.checkpoint import (
+    init_agent_checkpointer,
+    shutdown_agent_checkpointer,
+)
+
 # Internal imports
 from app.api.v2 import (
     admin,
@@ -26,18 +31,13 @@ from app.api.v2 import (
     referral,
     speech_to_text,
 )
-from app.api.v3 import chat as v3_chat
 from app.api.v2.history.router import router as chat_history
 from app.api.v2.history.share import router as share_router
-from app.agents.common.checkpoint import (
-    init_agent_checkpointer,
-    shutdown_agent_checkpointer,
-)
+from app.api.v3 import chat as v3_chat
 from app.core.config import settings
 from app.core.logger import logger
 from app.security import (
     get_current_username,
-    verify_api_key,
     verify_api_key_or_dt_key,
 )
 

@@ -20,13 +20,6 @@ from app.agents.pipeline.retrieval_structured_llm import (
     retrieval_strategy_llm,
     web_search_tavily,
 )
-from app.core.assistants import AssistantConfig
-from app.core.config import settings
-from app.core.dependencies import (
-    get_chat_history_service,
-    get_retrieval_service,
-)
-from app.core.logger import logger
 from app.agents.pipeline.schemas import (
     ChatPipelineState,
     ProgressEventType,
@@ -34,6 +27,13 @@ from app.agents.pipeline.schemas import (
     WebSearchResponse,
     normalize_assistant_name_for_registry,
 )
+from app.core.assistants import AssistantConfig
+from app.core.config import settings
+from app.core.dependencies import (
+    get_chat_history_service,
+    get_retrieval_service,
+)
+from app.core.logger import logger
 from app.utils.streaming import format_progress_event
 from app.utils.tokens import count_tokens, truncate_to_token_limit
 
@@ -67,7 +67,9 @@ class ContextRetrievalRunner:
 
     def _require_get_agent(self) -> Callable[[str], Any]:
         if self._get_agent_fn is None:
-            raise RuntimeError("get_agent unset; ContextRetrievalRunner.run() must set it.")
+            raise RuntimeError(
+                "get_agent unset; ContextRetrievalRunner.run() must set it."
+            )
         return self._get_agent_fn
 
     @staticmethod
@@ -130,8 +132,8 @@ class ContextRetrievalRunner:
             state.rewritten_query = strategy_response.query_rewrite or state.query
             state.selected_assistant = strategy_response.assistant
             if locked:
-                state.selected_assistant = AssistantConfig.validate_assistant_or_default(
-                    locked
+                state.selected_assistant = (
+                    AssistantConfig.validate_assistant_or_default(locked)
                 )
             state.selected_assistant = normalize_assistant_name_for_registry(
                 state.selected_assistant or "main"
@@ -190,9 +192,7 @@ class ContextRetrievalRunner:
                 await self._fetch_lexuz_corpus(state)
                 if upload_context:
                     state.retrieval_docs = (
-                        (state.retrieval_docs or "").rstrip()
-                        + "\n\n"
-                        + upload_context
+                        (state.retrieval_docs or "").rstrip() + "\n\n" + upload_context
                     )
 
             state.retrieval_docs = self._limit_retrieval_docs(
@@ -362,7 +362,9 @@ class ContextRetrievalRunner:
         kwargs: dict[str, Any] = {}
         if canonical == "administrative_court":
             kwargs["court_route_tag"] = getattr(
-                agent, "DEFAULT_COURT_ROUTE_TAG", "administrative_general_admin_litigation"
+                agent,
+                "DEFAULT_COURT_ROUTE_TAG",
+                "administrative_general_admin_litigation",
             )
         r = await agent.retrieve(
             query=state.rewritten_query or "",
@@ -464,7 +466,9 @@ class ContextRetrievalRunner:
             web_response = await self._execute_web_search(state)
             await self._merge_web_documents(state, web_response)
             message = await self._format_web_search_message(web_response)
-            await self._emit_progress(ProgressEventType.WEB_SEARCH, "completed", message)
+            await self._emit_progress(
+                ProgressEventType.WEB_SEARCH, "completed", message
+            )
         except Exception as error:
             await self._handle_error(state, "Web search", error)
             await self._emit_progress(
@@ -507,9 +511,7 @@ class ContextRetrievalRunner:
             combined_docs += f"{doc.content}\n"
         state.retrieval_docs = combined_docs
 
-    async def _format_web_search_message(
-        self, web_response: WebSearchResponse
-    ) -> str:
+    async def _format_web_search_message(self, web_response: WebSearchResponse) -> str:
         docs = web_response.docs
         if not docs:
             return "No relevant web documents found"

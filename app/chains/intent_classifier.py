@@ -69,7 +69,9 @@ class IntentClassifier:
 
         return self.intent_prompt_template.format(query=full_context)
 
-    def _parse_response(self, response: str, uploaded_file_context: str) -> IntentOutput:
+    def _parse_response(
+        self, response: str, uploaded_file_context: str
+    ) -> IntentOutput:
         try:
             return self.output_parser.parse(response)
         except ValidationError:

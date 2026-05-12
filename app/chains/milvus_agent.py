@@ -18,8 +18,7 @@ class MilvusQueryAgent:
 
     def _load_court_metadata(self) -> dict:
         config_path = (
-            Path(__file__).resolve().parents[1]
-            / "agents/config/court_metadata.yaml"
+            Path(__file__).resolve().parents[1] / "agents/config/court_metadata.yaml"
         )
         try:
             with config_path.open(encoding="utf-8") as f:

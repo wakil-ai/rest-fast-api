@@ -8,13 +8,13 @@ from typing import Any
 from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import tool
 
-from app.agents.common.tools import build_web_search_tool
 from app.agents.common.state import (
     AgentRequestContext,
     AgentRunResult,
     AgentState,
     GenerationContext,
 )
+from app.agents.common.tools import build_web_search_tool
 from app.core.config import settings
 from app.core.dependencies import (
     get_chat_history_service,
@@ -118,7 +118,9 @@ class BaseAgent:
             self._compose_context_section(state),
             "Use the `get_chat_history` tool to access recent conversation history.",
         )
-        logger.debug(f"[{self.__class__.__name__} SYSTEM PROMPT]\n{state.system_prompt}")
+        logger.debug(
+            f"[{self.__class__.__name__} SYSTEM PROMPT]\n{state.system_prompt}"
+        )
 
     def _compose_context_section(self, state: AgentState) -> str:
         """Combine per-agent tool guidance with any eagerly preloaded uploaded-file context."""
@@ -216,7 +218,9 @@ class BaseAgent:
                         file_ids.append(fid_str)
         return file_ids or None
 
-    async def _resolve_turn_project_id(self, request: AgentRequestContext) -> str | None:
+    async def _resolve_turn_project_id(
+        self, request: AgentRequestContext
+    ) -> str | None:
         """Use explicit project id, otherwise inherit the session's project binding."""
         if request.project_id:
             return request.project_id
@@ -267,6 +271,7 @@ class BaseAgent:
         tools: list[Any] = [get_chat_history, search_memory]
 
         if file_ids or project_id:
+
             @tool
             async def get_uploaded_file_context(query: str) -> str:
                 """Search user-uploaded files and project documents for content relevant to the query."""
@@ -287,7 +292,9 @@ class BaseAgent:
         async def search_legal_corpus(query: str) -> str:
             """Search Uzbekistan legal corpus (Lexuz) for relevant statutes and codified norms."""
             try:
-                result = await self.retrieve(query=query, file_context="", chat_history="")
+                result = await self.retrieve(
+                    query=query, file_context="", chat_history=""
+                )
                 return result.context or "No relevant legal documents found."
             except Exception as exc:
                 logger.warning(f"search_legal_corpus failed: {exc}", exc_info=True)
@@ -448,7 +455,9 @@ class BaseAgent:
                         answer_chunks.append(chunk)
                     yield chunk
             except Exception:
-                logger.warning("Primary LLM streaming failed -> fallback", exc_info=True)
+                logger.warning(
+                    "Primary LLM streaming failed -> fallback", exc_info=True
+                )
                 try:
                     active_llm = self.fallback_llm
                     async for chunk in self._stream_from_llm(
@@ -649,8 +658,7 @@ class BaseAgent:
             return ""
         return (
             f"\n\n## USER FILE CONTEXT: {file_name} "
-            f"(top {settings.FILE_SEARCH_TOP_K} Milvus chunks)\n"
-            + "\n\n".join(chunks)
+            f"(top {settings.FILE_SEARCH_TOP_K} Milvus chunks)\n" + "\n\n".join(chunks)
         )
 
     def _limit_file_context_for_llm(self, file_context: str) -> str:
@@ -663,9 +671,7 @@ class BaseAgent:
             "Uploaded file context exceeds LLM token limit "
             f"({token_count} > {settings.FILE_CONTENT_TOKEN_LIMIT}). Truncating."
         )
-        return truncate_to_token_limit(
-            file_context, settings.FILE_CONTENT_TOKEN_LIMIT
-        )
+        return truncate_to_token_limit(file_context, settings.FILE_CONTENT_TOKEN_LIMIT)
 
     async def _get_session_history_text(self, session_id: str) -> str:
         if not session_id:
