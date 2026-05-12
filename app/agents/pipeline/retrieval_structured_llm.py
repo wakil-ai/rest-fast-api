@@ -54,11 +54,11 @@ def _agent_instructions(name: str) -> str:
 
 
 def retrieval_chain_model() -> str:
-    return getattr(settings, "RETRIEVAL_CHAIN_MODEL", None) or "gpt-4.1-mini"
+    return settings.RETRIEVAL_CHAIN_MODEL or "gpt-4.1-mini"
 
 
 def retrieval_chain_max_tokens() -> int:
-    raw = getattr(settings, "RETRIEVAL_CHAIN_MAX_TOKENS", 1024)
+    raw = settings.RETRIEVAL_CHAIN_MAX_TOKENS
     try:
         return max(128, min(int(raw), 4096))
     except (TypeError, ValueError):
@@ -177,9 +177,7 @@ async def retrieval_strategy_llm(
     )
 
 
-_MAX_EVAL_CONTEXT = int(
-    getattr(settings, "RETRIEVAL_CONTEXT_TOKEN_LIMIT", 28_000)
-)
+_MAX_EVAL_CONTEXT = int(settings.RETRIEVAL_CONTEXT_TOKEN_LIMIT)
 
 
 async def context_evaluation_llm(query: str, context: str) -> ContextEvaluationResponse:

@@ -281,10 +281,10 @@ class Settings(BaseSettings):
     #: Full Redis URL for LangGraph checkpoints (optional). If unset, built from host/port/password.
     REDIS_URI: str | None = None
     REDIS_PASSWORD: str | None = None
-    #: Persist LangGraph thread state in Redis (AsyncRedisSaver). Requires ``langgraph-checkpoint-redis`` and a
-    #: Redis deployment with RedisJSON / RediSearch support (see package docs). On setup failure, falls back to memory.
+    #: Persist LangGraph thread state in Redis (AsyncRedisSaver). Required for chat agents.
+    #: Requires ``langgraph-checkpoint-redis`` and Redis with RedisJSON / RediSearch support.
     #: Session delete calls ``adelete_thread``; keys also expire after ``LANGGRAPH_CHECKPOINT_TTL_SECONDS``.
-    LANGGRAPH_CHECKPOINT_USE_REDIS: bool = False
+    LANGGRAPH_CHECKPOINT_USE_REDIS: bool = True
     #: Redis TTL for LangGraph checkpoint keys (seconds). After this period Redis drops checkpoint data for a thread.
     LANGGRAPH_CHECKPOINT_TTL_SECONDS: int = 86400 * 3  # 3 days, independent of general cache TTL if needed
 

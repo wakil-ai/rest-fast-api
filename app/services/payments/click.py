@@ -29,8 +29,8 @@ class ClickService(BasePaymentService):
     def create_payment_link(
         self, *, amount_sum: int, order_id: str, callback_url: str
     ) -> str:
-        merchant_id = getattr(settings, "CLICK_MERCHANT_ID", None)
-        service_id = getattr(settings, "CLICK_SERVICE_ID", None)
+        merchant_id = settings.CLICK_MERCHANT_ID
+        service_id = settings.CLICK_SERVICE_ID
         if not merchant_id or not service_id:
             raise ValueError("CLICK merchant_id/service_id not configured")
 
@@ -42,7 +42,7 @@ class ClickService(BasePaymentService):
             "transaction_param": str(order_id),
             "return_url": str(callback_url),
         }
-        merchant_user_id = getattr(settings, "CLICK_MERCHANT_USER_ID", None)
+        merchant_user_id = settings.CLICK_MERCHANT_USER_ID
         if merchant_user_id is not None:
             params["merchant_user_id"] = int(merchant_user_id)
 
@@ -59,7 +59,7 @@ class ClickService(BasePaymentService):
         sign_time,
         sign_string,
     ) -> bool:
-        secret_key = getattr(settings, "CLICK_SECRET_KEY", None)
+        secret_key = settings.CLICK_SECRET_KEY
         if not secret_key:
             return False
 
@@ -79,7 +79,7 @@ class ClickService(BasePaymentService):
         sign_time,
         sign_string,
     ) -> bool:
-        secret_key = getattr(settings, "CLICK_SECRET_KEY", None)
+        secret_key = settings.CLICK_SECRET_KEY
         if not secret_key:
             return False
 
@@ -113,7 +113,7 @@ class ClickService(BasePaymentService):
                 "merchant_trans_id": str(merchant_trans_id or ""),
             }
 
-        if getattr(settings, "CLICK_SERVICE_ID", None) and int(
+        if settings.CLICK_SERVICE_ID and int(
             settings.CLICK_SERVICE_ID
         ) != int(service_id):
             return {
@@ -327,7 +327,7 @@ class ClickService(BasePaymentService):
                 "merchant_trans_id": str(merchant_trans_id or ""),
             }
 
-        if getattr(settings, "CLICK_SERVICE_ID", None) and int(
+        if settings.CLICK_SERVICE_ID and int(
             settings.CLICK_SERVICE_ID
         ) != int(service_id):
             return {

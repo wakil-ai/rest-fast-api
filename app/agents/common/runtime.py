@@ -14,7 +14,6 @@ from langchain_core.messages import (
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.checkpoint.memory import MemorySaver
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
@@ -26,15 +25,28 @@ from app.core.dependencies import (
 from app.core.logger import logger
 from app.llms.gemini import resolve_gemini_model_name
 
-_agent_checkpointer: Any = None  # MemorySaver | AsyncRedisSaver
+_agent_checkpointer: Any = None  # AsyncRedisSaver
 _checkpointer_needs_async_close = False
 
 
+class LangGraphRedisCheckpointerError(RuntimeError):
+    """Raised when LangGraph AsyncRedisSaver is required but unavailable."""
+
+
+def _require_langgraph_redis_enabled() -> None:
+    if not settings.LANGGRAPH_CHECKPOINT_USE_REDIS:
+        raise LangGraphRedisCheckpointerError(
+            "LangGraph checkpoints require AsyncRedisSaver. "
+            "Set LANGGRAPH_CHECKPOINT_USE_REDIS=true and configure REDIS_URI "
+            "or REDIS_HOST/REDIS_PORT."
+        )
+
+
 def _build_langgraph_redis_url() -> str:
-    uri = getattr(settings, "REDIS_URI", None)
+    uri = settings.REDIS_URI
     if isinstance(uri, str) and uri.strip():
         return uri.strip()
-    password = getattr(settings, "REDIS_PASSWORD", None)
+    password = settings.REDIS_PASSWORD
     if isinstance(password, str) and password:
         return (
             f"redis://:{password}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
@@ -44,7 +56,7 @@ def _build_langgraph_redis_url() -> str:
 
 def _default_ttl_minutes_for_checkpoints() -> float:
     """LangGraph Redis saver expects ``default_ttl`` in minutes."""
-    secs = max(int(getattr(settings, "LANGGRAPH_CHECKPOINT_TTL_SECONDS", 86400 * 3)), 60)
+    secs = max(int(settings.LANGGRAPH_CHECKPOINT_TTL_SECONDS), 60)
     return float(secs) / 60.0
 
 
@@ -69,7 +81,7 @@ def agent_turn_thread_id(
 
 async def delete_agent_thread(*, user_id: str, session_id: str) -> None:
     """
-    Remove LangGraph checkpoint state for this chat session (Redis or MemorySaver).
+    Remove LangGraph checkpoint state for this chat session in Redis.
 
     Best-effort: never raises; logs a warning on failure. Call after Mongo session
     delete if you need immediate cleanup; otherwise Redis TTL still expires keys.
@@ -94,49 +106,38 @@ async def delete_agent_thread(*, user_id: str, session_id: str) -> None:
 
 
 async def init_agent_checkpointer() -> None:
-    """Call from FastAPI lifespan startup. Reconfigures checkpointer."""
+    """Initialize the required LangGraph AsyncRedisSaver checkpointer."""
     global _agent_checkpointer, _checkpointer_needs_async_close
 
     _checkpointer_needs_async_close = False
+    _agent_checkpointer = None
 
-    if not getattr(settings, "LANGGRAPH_CHECKPOINT_USE_REDIS", False):
-        _agent_checkpointer = MemorySaver()
-        logger.info("[chat_agent] LangGraph checkpointer: MemorySaver (LANGGRAPH_CHECKPOINT_USE_REDIS=false)")
-        return
+    _require_langgraph_redis_enabled()
 
     try:
         from langgraph.checkpoint.redis.aio import AsyncRedisSaver
-    except ImportError:
-        logger.warning(
-            "[chat_agent] langgraph-checkpoint-redis not installed; using MemorySaver"
-        )
-        _agent_checkpointer = MemorySaver()
-        return
+    except ImportError as exc:
+        raise LangGraphRedisCheckpointerError(
+            "LangGraph checkpoints require the langgraph-checkpoint-redis package."
+        ) from exc
 
     url = _build_langgraph_redis_url()
     ttl_minutes = _default_ttl_minutes_for_checkpoints()
-    try:
-        saver = AsyncRedisSaver(
-            redis_url=url,
-            ttl={"default_ttl": ttl_minutes},
-            checkpoint_prefix="wakilai:lg:checkpoint",
-            checkpoint_write_prefix="wakilai:lg:checkpoint_write",
-        )
-        await saver.setup()
-        _agent_checkpointer = saver
-        _checkpointer_needs_async_close = True
-        log_url = url.split("@")[-1] if "@" in url else url
-        ttl_seconds = int(getattr(settings, "LANGGRAPH_CHECKPOINT_TTL_SECONDS", 86400 * 3))
-        logger.info(
-            f"[chat_agent] LangGraph checkpointer: AsyncRedisSaver ({log_url}, "
-            f"ttl≈{ttl_minutes:.0f} min, {ttl_seconds}s)"
-        )
-    except Exception:
-        logger.exception(
-            "[chat_agent] Redis checkpointer setup failed; falling back to MemorySaver "
-            "(ensure Redis supports RedisJSON + search modules as required by langgraph-checkpoint-redis)"
-        )
-        _agent_checkpointer = MemorySaver()
+    saver = AsyncRedisSaver(
+        redis_url=url,
+        ttl={"default_ttl": ttl_minutes},
+        checkpoint_prefix="wakilai:lg:checkpoint",
+        checkpoint_write_prefix="wakilai:lg:checkpoint_write",
+    )
+    await saver.setup()
+    _agent_checkpointer = saver
+    _checkpointer_needs_async_close = True
+    log_url = url.split("@")[-1] if "@" in url else url
+    ttl_seconds = int(settings.LANGGRAPH_CHECKPOINT_TTL_SECONDS)
+    logger.info(
+        f"[chat_agent] LangGraph checkpointer: AsyncRedisSaver ({log_url}, "
+        f"ttl≈{ttl_minutes:.0f} min, {ttl_seconds}s)"
+    )
 
 
 async def shutdown_agent_checkpointer() -> None:
@@ -155,9 +156,9 @@ async def shutdown_agent_checkpointer() -> None:
 def _get_agent_checkpointer() -> Any:
     global _agent_checkpointer
     if _agent_checkpointer is None:
-        _agent_checkpointer = MemorySaver()
-        logger.warning(
-            "[chat_agent] Checkpointer was unset; created MemorySaver (lifespan init missing?)"
+        raise LangGraphRedisCheckpointerError(
+            "LangGraph AsyncRedisSaver is not initialized. "
+            "Application startup must call init_agent_checkpointer()."
         )
     return _agent_checkpointer
 
@@ -166,7 +167,7 @@ def _gemini_lc_model_name() -> str:
     raw = settings.GEMINI_LANGCHAIN_CHAT_MODEL
     if isinstance(raw, str) and raw.strip():
         return resolve_gemini_model_name(raw)
-    m = getattr(settings, "DEFAULT_CHAT_MODEL", "") or ""
+    m = settings.DEFAULT_CHAT_MODEL or ""
     if isinstance(m, str) and m.strip().startswith("gemini"):
         return resolve_gemini_model_name(m)
     return resolve_gemini_model_name("gemini-2.5-flash")
@@ -220,11 +221,11 @@ def _compile_lc_agent(
 
 
 def _build_lc_llm() -> ChatGoogleGenerativeAI:
-    if not getattr(settings, "GEMINI_API_KEY", None):
+    if not settings.GEMINI_API_KEY:
         raise RuntimeError(
             "GEMINI_API_KEY is required for the LangChain / LangGraph chat agent route."
         )
-    level = getattr(settings, "GEMINI_LANGCHAIN_THINKING_LEVEL", None) or "low"
+    level = settings.GEMINI_LANGCHAIN_THINKING_LEVEL or "low"
     level = str(level).strip().lower()
     if level in ("off", "false", "0", "none"):
         level = "minimal"
@@ -290,7 +291,7 @@ async def aget_general_agent_state_snapshot(
     max_content_len: int = 4000,
 ) -> dict[str, Any]:
     """
-    Read the latest LangGraph checkpoint for ``thread_id`` from ``MemorySaver``.
+    Read the latest LangGraph checkpoint for ``thread_id`` from AsyncRedisSaver.
 
     Empty ``messages`` if that thread has never run in this process.
 
@@ -360,7 +361,7 @@ async def _mongo_recent_turns_as_chat_history(session_id: str) -> str:
     svc = get_chat_history_service()
     messages = await svc.get_recent_messages(
         session_id=session_id,
-        limit=int(getattr(settings, "CHAT_HISTORY_LIMIT", 5) or 5),
+        limit=int(settings.CHAT_HISTORY_LIMIT or 5),
     )
     entries: list[tuple[str, str]] = []
     for entry in messages or []:
@@ -457,7 +458,7 @@ def _stream_messages_event_to_message(event: Any) -> BaseMessage | None:
 
 def _sse_text_slice_limit() -> int:
     try:
-        n = int(getattr(settings, "STREAM_SSE_MAX_RESPONSE_CHARS", 200))
+        n = int(settings.STREAM_SSE_MAX_RESPONSE_CHARS)
     except (TypeError, ValueError):
         n = 200
     return max(48, min(n, 4096))
