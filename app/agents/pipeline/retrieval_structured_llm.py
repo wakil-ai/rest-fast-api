@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
+from tavily import TavilyClient
 
 from app.core.config import settings
 from app.core.logger import logger
@@ -207,11 +208,6 @@ async def context_evaluation_llm(query: str, context: str) -> ContextEvaluationR
 async def web_search_tavily(query: str) -> WebSearchResponse:
     if not settings.TAVILY_API_KEY:
         logger.info("[retrieval_chain] TAVILY_API_KEY unset; skipping web search")
-        return WebSearchResponse(docs=[])
-    try:
-        from tavily import TavilyClient
-    except ImportError:
-        logger.warning("[retrieval_chain] tavily package not installed")
         return WebSearchResponse(docs=[])
 
     try:
