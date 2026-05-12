@@ -142,6 +142,17 @@ def _format_context_chat_prompt(
     )
 
 
+def _append_project_instructions(base_prompt: str, state: ChatPipelineState) -> str:
+    instructions = (state.project_instructions or "").strip()
+    if not instructions:
+        return base_prompt
+    return (
+        f"{base_prompt.rstrip()}\n\n"
+        "## Project-specific instructions (user-defined)\n"
+        f"{instructions}"
+    )
+
+
 def _build_system_prompt(state: ChatPipelineState) -> str:
     registry = get_prompt_registry()
     ctx_kw = {
@@ -149,14 +160,16 @@ def _build_system_prompt(state: ChatPipelineState) -> str:
         "chat_history": state.memory_docs or "",
     }
     if state.answer_prompt_template is not None:
-        return _format_context_chat_prompt(
+        base = _format_context_chat_prompt(
             state.answer_prompt_template, **ctx_kw
         )
-    assistant = normalize_assistant_name_for_registry(
-        state.selected_assistant or "main"
-    )
-    prompt_template = registry.get_assistant_prompt(assistant)
-    return _format_context_chat_prompt(prompt_template, **ctx_kw)
+    else:
+        assistant = normalize_assistant_name_for_registry(
+            state.selected_assistant or "main"
+        )
+        prompt_template = registry.get_assistant_prompt(assistant)
+        base = _format_context_chat_prompt(prompt_template, **ctx_kw)
+    return _append_project_instructions(base, state)
 
 
 def build_generation_context_for_result(state: ChatPipelineState) -> GenerationContext:

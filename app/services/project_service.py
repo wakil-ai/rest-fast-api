@@ -121,6 +121,15 @@ class ProjectService:
             },
         )
 
+    async def remove_file_id(self, project_id: str, file_id: str) -> None:
+        await self.db.mongo_handler.db[self.collection].update_one(
+            {"_id": project_id},
+            {
+                "$pull": {"files": file_id},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+        )
+
     async def increment_stat(
         self, project_id: str, field: str, delta: int = 1
     ) -> None:
@@ -160,3 +169,61 @@ class ProjectService:
     ) -> list[dict[str, Any]]:
         await self.get_project(project_id, user_id)
         return await self.history.get_files_by_project(project_id, limit=limit)
+
+    @staticmethod
+    def extract_instructions(project: dict[str, Any]) -> str | None:
+        settings_dict = project.get("settings") or {}
+        raw = settings_dict.get("instructions")
+        if not isinstance(raw, str):
+            return None
+        text = raw.strip()
+        return text or None
+
+    async def get_project_instructions(
+        self, project_id: str, owner_id: str
+    ) -> dict[str, Any]:
+        project = await self.get_project(project_id, owner_id)
+        return {
+            "project_id": project_id,
+            "instructions": self.extract_instructions(project),
+            "updated_at": project.get("updated_at"),
+        }
+
+    async def set_project_instructions(
+        self,
+        project_id: str,
+        owner_id: str,
+        instructions: str,
+        *,
+        create_only: bool = False,
+    ) -> dict[str, Any]:
+        project = await self.get_project(project_id, owner_id)
+        existing = self.extract_instructions(project)
+        if create_only and existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Project instructions already exist; use PUT to replace them",
+            )
+
+        prev_settings = project.get("settings") or {}
+        updates = {
+            "settings": {
+                **prev_settings,
+                "instructions": instructions.strip(),
+            },
+            "updated_at": datetime.now(timezone.utc),
+        }
+        await self.db.update_documents(
+            self.collection,
+            {"_id": project_id},
+            {"$set": clean_for_mongodb(updates)},
+        )
+        refreshed = await self.db.find_documents(
+            self.collection, {"_id": project_id}, limit=1
+        )
+        doc = refreshed[0] if refreshed else project
+        return {
+            "project_id": project_id,
+            "instructions": self.extract_instructions(doc),
+            "updated_at": doc.get("updated_at"),
+        }

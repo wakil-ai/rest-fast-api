@@ -152,6 +152,25 @@ class DBManager:
             partition_name=partition_name,
         )
 
+    def delete_vectors_by_filter(
+        self,
+        filter_expr: str,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> int:
+        """Delete vector rows matching a Milvus boolean filter expression."""
+        if settings.VECTOR_DB_TYPE != "milvus":
+            return 0
+
+        delete_fn = getattr(self.vector_handler, "delete_vectors_by_filter", None)
+        if delete_fn is None:
+            logger.warning(
+                f"Vector handler does not support delete_vectors_by_filter "
+                f"for collection {collection_name}"
+            )
+            return 0
+
+        return delete_fn(filter_expr, collection_name=collection_name)
+
     def close_all_connections(self):
         """Close all database connections."""
         self.mongo_handler.close_connection()

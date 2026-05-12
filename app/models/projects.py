@@ -68,3 +68,18 @@ class ProjectFileSearchQuery(BaseModel):
     user_id: str
     q: str = Field(..., min_length=1, description="Search query text")
     top_k: int = Field(default=8, ge=1, le=50)
+
+
+class ProjectInstructionsResponse(BaseModel):
+    project_id: str
+    instructions: str | None = None
+    updated_at: datetime
+
+
+class ProjectInstructionsWriteRequest(BaseModel):
+    user_id: str = Field(..., description="User ID for ownership check")
+    instructions: str = Field(
+        ...,
+        max_length=20000,
+        description="Project-scoped instructions appended after the main assistant prompt",
+    )

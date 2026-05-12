@@ -390,6 +390,37 @@ class MilvusHandler(VectorDBHandler):
 
         return formatted_results
 
+    def delete_vectors_by_filter(
+        self,
+        filter_expr: str,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> int:
+        """Delete vector rows matching a Milvus boolean filter expression."""
+        if not filter_expr:
+            return 0
+
+        try:
+            result = self.client.delete(
+                collection_name=collection_name,
+                filter=filter_expr,
+            )
+        except Exception as exc:
+            logger.error(
+                f"Error deleting vectors from {collection_name}: {exc}",
+                exc_info=True,
+            )
+            raise
+
+        deleted_count = 0
+        if isinstance(result, dict):
+            deleted_count = int(result.get("deleted_count") or 0)
+
+        logger.info(
+            f"Deleted {deleted_count} vectors from {collection_name} "
+            f"with filter {filter_expr!r}"
+        )
+        return deleted_count
+
     def delete_collection(
         self, collection_name: str = settings.MILVUS_MAIN_NAME
     ) -> None:

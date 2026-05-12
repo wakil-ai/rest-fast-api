@@ -23,6 +23,10 @@ class AgenticRAGState(BaseModel):
     session_id: str = Field(default="", description="Session identifier")
     message_id: str = Field(default="", description="Current message identifier")
     project_id: str | None = Field(default=None, description="Optional project ID")
+    project_instructions: str | None = Field(
+        default=None,
+        description="User-defined project instructions appended after the main assistant prompt",
+    )
     file_ids: list[str] | None = Field(
         default=None, description="List of file IDs attached to the current message"
     )

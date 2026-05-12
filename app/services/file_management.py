@@ -239,6 +239,58 @@ class FileManager:
         finally:
             self._safe_remove_temp_file(temp_path)
 
+    async def delete_project_file(
+        self,
+        project_id: str,
+        file_id: str,
+        user_id: str,
+    ) -> tuple[int, str | None]:
+        """Remove a project-scoped file from storage, Mongo, Milvus, and the project record."""
+        from app.core.dependencies import get_project_service
+
+        project_service = get_project_service()
+        await project_service.get_project(project_id, user_id)
+
+        file_record = await self.history.get_file_by_id(file_id)
+        if not file_record:
+            return 404, "File not found"
+        if file_record.get("project_id") != project_id:
+            return 404, "File not found"
+        if file_record.get("scope") != "project":
+            return 400, "File is not scoped to a project"
+        if file_record.get("user_id") != user_id:
+            return 403, "Access denied"
+
+        # No need to delete GCS file
+        # gcs_path = file_record.get("file_metadata", {}).get("gcs_path")
+        # if gcs_path:
+        #     try:
+        #         self.storage.delete_file(gcs_path)
+        #     except Exception as exc:
+        #         logger.warning(
+        #             f"Could not archive GCS file {gcs_path} for project={project_id}: {exc}"
+        #         )
+
+        try:
+            await asyncio.to_thread(
+                self.db.delete_vectors_by_filter,
+                f'metadata["file_id"] == "{file_id}"',
+                self.vector_db_collection,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Could not delete Milvus vectors for project file {file_id}: {exc}"
+            )
+
+        await self.history.delete_file_upload(file_id)
+        await project_service.remove_file_id(project_id, file_id)
+        await project_service.increment_stat(project_id, "docs", -1)
+
+        logger.info(
+            f"Deleted project file {file_id} from project {project_id} for user {user_id}"
+        )
+        return 204, None
+
     async def _finalize_project_file_ingestion(
         self,
         *,

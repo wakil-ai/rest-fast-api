@@ -15,6 +15,8 @@ from app.models.chat_history import FileUploadResponse, SessionResponse
 from app.models.projects import (
     ProjectCreateRequest,
     ProjectFileSearchQuery,
+    ProjectInstructionsResponse,
+    ProjectInstructionsWriteRequest,
     ProjectResponse,
     ProjectSessionCreateRequest,
     ProjectStatus,
@@ -76,6 +78,47 @@ async def patch_project(project_id: str, body: ProjectUpdateRequest):
     return _project_to_response(doc)
 
 
+@router.get(
+    "/{project_id}/instructions",
+    response_model=ProjectInstructionsResponse,
+)
+@handle_service_error
+async def get_project_instructions(project_id: str, user_id: str):
+    return await project_service.get_project_instructions(project_id, user_id)
+
+
+@router.post(
+    "/{project_id}/instructions",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ProjectInstructionsResponse,
+)
+@handle_service_error
+async def add_project_instructions(
+    project_id: str, body: ProjectInstructionsWriteRequest
+):
+    return await project_service.set_project_instructions(
+        project_id,
+        body.user_id,
+        body.instructions,
+        create_only=True,
+    )
+
+
+@router.put(
+    "/{project_id}/instructions",
+    response_model=ProjectInstructionsResponse,
+)
+@handle_service_error
+async def update_project_instructions(
+    project_id: str, body: ProjectInstructionsWriteRequest
+):
+    return await project_service.set_project_instructions(
+        project_id,
+        body.user_id,
+        body.instructions,
+    )
+
+
 @router.post(
     "/{project_id}/sessions",
     status_code=status.HTTP_201_CREATED,
@@ -134,6 +177,21 @@ async def upload_project_file(
 async def list_project_files(project_id: str, user_id: str, limit: int = 100):
     files = await project_service.list_project_files(project_id, user_id, limit=limit)
     return [serialize_mongo_id(f) for f in files]
+
+
+@router.delete(
+    "/{project_id}/files/{file_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+@handle_service_error
+async def delete_project_file(project_id: str, file_id: str, user_id: str):
+    code, detail = await file_manager.delete_project_file(
+        project_id=project_id,
+        file_id=file_id,
+        user_id=user_id,
+    )
+    if code != status.HTTP_204_NO_CONTENT:
+        raise HTTPException(status_code=code, detail=detail or "Failed to delete file")
 
 
 @router.post("/{project_id}/search")

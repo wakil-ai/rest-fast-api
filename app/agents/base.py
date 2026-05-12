@@ -23,6 +23,7 @@ from app.core.dependencies import (
     get_embedding_manager,
     get_fallback_llm,
     get_memory_service,
+    get_project_service,
     get_prompt_registry,
     get_retrieval_service,
     get_storage_service,
@@ -299,7 +300,32 @@ class BaseAgent:
         state = AgentState(request=request, resolved_assistant=self.assistant_name)
         state.file_context = await self._preload_file_context(request)
         self.build_prompt(state)
+        project_instructions = await self._load_project_instructions(request)
+        if project_instructions:
+            state.system_prompt = (
+                f"{state.system_prompt.rstrip()}\n\n"
+                "## Project-specific instructions (user-defined)\n"
+                f"{project_instructions}"
+            )
         return state
+
+    async def _load_project_instructions(
+        self, request: AgentRequestContext
+    ) -> str | None:
+        project_id = await self._resolve_turn_project_id(request)
+        if not project_id:
+            return None
+        try:
+            project = await get_project_service().get_project(
+                project_id, request.user_id
+            )
+        except Exception as exc:
+            logger.warning(
+                f"[{self.__class__.__name__}] failed to load project instructions: {exc}",
+                exc_info=True,
+            )
+            return None
+        return get_project_service().extract_instructions(project)
 
     async def attach_outputs(
         self, answer: str, state: AgentState
