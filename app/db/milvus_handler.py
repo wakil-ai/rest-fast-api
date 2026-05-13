@@ -369,22 +369,19 @@ class MilvusHandler(VectorDBHandler):
         return index_params
 
     def _parse_results(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        # Format results
         formatted_results = []
-        for hit in results[0]:  # results[0] contains the merged and reranked hits
-            metadata = hit.data["entity"]["metadata"]
-            text = hit.data["entity"]["text"]
-            if "hierarchy_path" in hit.data["entity"]:
-                hierarchy_path = hit.data["entity"]["hierarchy_path"]
-            else:
-                hierarchy_path = None
+        for hit in results[0]:
+            entity = hit.get("entity") or {}
+            metadata = dict(entity.get("metadata") or {})
+            text = entity.get("text", "")
+            hierarchy_path = entity.get("hierarchy_path")
             metadata["text"] = text
             formatted_results.append(
                 {
                     "id": hit.id,
                     "score": hit.score,
                     "metadata": metadata,
-                    "hierarchy_path": hierarchy_path if hierarchy_path else None,
+                    "hierarchy_path": hierarchy_path,
                 }
             )
 

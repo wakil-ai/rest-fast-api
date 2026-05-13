@@ -1,14 +1,14 @@
-from app.agents.base import BaseAgent
-from app.agents.contract_analyzer import ContractAnalyzerAgent
-from app.agents.court import (
+from app.assistants.base import BaseAgent
+from app.assistants.contract_analyzer import ContractAnalyzerAgent
+from app.assistants.court import (
+    CourtAgent,
     AdministrativeCourtAgent,
     CivilCourtAgent,
-    CourtAgent,
     CriminalCourtAgent,
     EconomicCourtAgent,
 )
-from app.agents.main import MainAgent
-from app.agents.tax import TaxAgent
+from app.assistants.main import MainAgent
+from app.assistants.tax import TaxAgent
 
 __all__ = [
     "MainAgent",

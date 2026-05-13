@@ -1,4 +1,4 @@
-from app.agents.base import BaseAgent
+from app.assistants.base import BaseAgent
 from app.core.config import settings
 
 

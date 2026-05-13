@@ -20,15 +20,15 @@ class BaseEmbedding:
 
     def embed_query(self, query: str) -> list[float]:
         """Generate embedding for a query with instruction."""
-        raise NotImplementedError
+        raise NotImplementedError("BaseEmbedding.embed_query is abstract.")
 
     def embed_doc(self, text: str) -> list[float]:
         """Generate embedding for a document without instruction."""
-        raise NotImplementedError
+        raise NotImplementedError("BaseEmbedding.embed_doc is abstract.")
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a batch of texts, with optional instruction for queries."""
-        raise NotImplementedError
+        raise NotImplementedError("BaseEmbedding.embed_batch is abstract.")
 
 
 # VLLM Implementation

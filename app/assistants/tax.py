@@ -4,8 +4,8 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from app.agents.base import BaseAgent, RetrievalConfig
-from app.agents.common.state import AgentRequestContext, AgentState
+from app.assistants.base import BaseAgent, RetrievalConfig
+from app.orchestration.utils import AgentRequestContext, AgentState
 from app.core.config import settings
 from app.core.logger import logger
 

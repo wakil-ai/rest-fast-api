@@ -19,15 +19,12 @@ async def ask_question(request: ChatRequest, raw_request: Request):
     return await chat_service.handle_chat_ask(request, raw_request)
 
 
-@router.post("/agent/stream", summary="Stream legal answer (two-stage RAG pipeline)")
+@router.post("/agent/stream", summary="Stream deep-research legal answer")
 async def stream_agentic_rag(request: AgenticRAGRequest):
     """
-    Same retrieval + generation pipeline as the main assistant, with step progress events.
+    Stream a deep-research answer through the orchestration graph.
 
-    Streams progress events for each pipeline step:
-    - progress: Step-by-step updates
-    - chunk: Final answer characters
-    - end: Stream completion
+    Returns session metadata followed by the final answer when generation completes.
     """
     return await chat_service.handle_agentic_rag_stream(request)
 

@@ -7,8 +7,8 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from app.agents.base import BaseAgent, RetrievalConfig, RetrievalResult
-from app.agents.common.state import AgentRequestContext, AgentState
+from app.assistants.base import BaseAgent, RetrievalConfig, RetrievalResult
+from app.orchestration.utils import AgentRequestContext, AgentState
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
@@ -47,7 +47,7 @@ class CourtAgent(BaseAgent):
         decision = await self.court_classifier.route_query(
             query=request.query,
             chat_history=chat_history,
-            uploaded_file_context=file_context,
+            file_context=file_context,
         )
         assistant_name = decision.assistant_name or "administrative_court"
         agent = (

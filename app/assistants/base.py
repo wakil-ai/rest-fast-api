@@ -8,13 +8,15 @@ from typing import Any
 from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import tool
 
-from app.agents.common.state import (
+from app.orchestration.utils import (
     AgentRequestContext,
-    AgentRunResult,
     AgentState,
     GenerationContext,
+    build_web_search_tool,
+    collect_file_and_project_context,
+    resolve_turn_file_ids,
+    resolve_turn_project_id,
 )
-from app.agents.common.tools import build_web_search_tool
 from app.core.config import settings
 from app.core.dependencies import (
     get_chat_history_service,
@@ -33,7 +35,6 @@ from app.llms import LLM, ChatGPT, Claude, Gemini, Novita
 from app.models.retrieval_models import RetrievalConfig, RetrievalResult
 from app.retrieval.embedding_manager import get_instruction
 from app.utils.contract_docx import contract_text_to_docx_bytes
-from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 
 class BaseAgent:
@@ -89,27 +90,6 @@ class BaseAgent:
     def fallback_llm(self):
         return get_fallback_llm()
 
-    async def ainvoke(self, request: AgentRequestContext) -> AgentRunResult:
-        from app.agents.pipeline.chat_turn import run_two_stage_chat
-        from app.core.dependencies import get_chat_orchestrator
-
-        return await run_two_stage_chat(
-            request,
-            get_chat_orchestrator().get_agent,
-        )
-
-    async def astream(
-        self, request: AgentRequestContext
-    ) -> AsyncGenerator[str | dict[str, Any], None]:
-        from app.agents.pipeline.chat_turn import astream_two_stage_chat
-        from app.core.dependencies import get_chat_orchestrator
-
-        async for item in astream_two_stage_chat(
-            request,
-            get_chat_orchestrator().get_agent,
-        ):
-            yield item
-
     def build_prompt(self, state: AgentState) -> None:
         """Build the tool-first system prompt, embedding any preloaded file context."""
         template = self.prompt_registry.get_assistant_prompt(state.resolved_assistant)
@@ -153,8 +133,8 @@ class BaseAgent:
         """
         if request.preloaded_file_context is not None:
             return request.preloaded_file_context
-        effective_file_ids = await self._resolve_turn_file_ids(request)
-        effective_project_id = await self._resolve_turn_project_id(request)
+        effective_file_ids = await resolve_turn_file_ids(request)
+        effective_project_id = await resolve_turn_project_id(request)
         if effective_file_ids and not request.file_ids:
             # Keep tools bound to the inherited attachments for this turn.
             request.file_ids = effective_file_ids
@@ -182,60 +162,12 @@ class BaseAgent:
     async def _resolve_turn_file_ids(
         self, request: AgentRequestContext
     ) -> list[str] | None:
-        """Use explicit file ids, otherwise inherit session-level attachments.
-
-        Frontends often attach ``file_ids`` only to the first "analyze this file"
-        message. Follow-up questions such as "who is the judge?" still refer to
-        the same document, so recover the session's attached file set from Mongo.
-        LangGraph checkpoints remember chat messages, but not the prior turn's
-        system prompt where file context was injected.
-        """
-        if request.file_ids:
-            return request.file_ids
-        if not request.session_id:
-            return None
-        try:
-            messages = await self.history_service.get_messages(
-                session_id=request.session_id,
-                limit=max(settings.CHAT_HISTORY_LIMIT, 20),
-            )
-        except Exception as exc:
-            logger.warning(
-                f"[{self.__class__.__name__}] failed to inherit session file_ids: {exc}",
-                exc_info=True,
-            )
-            return None
-        messages.sort(key=lambda msg: str(msg.get("created_at") or ""))
-        file_ids: list[str] = []
-        seen: set[str] = set()
-        for msg in messages:
-            ids = msg.get("file_ids") or []
-            if isinstance(ids, list):
-                for fid in ids:
-                    fid_str = str(fid) if fid else ""
-                    if fid_str and fid_str not in seen:
-                        seen.add(fid_str)
-                        file_ids.append(fid_str)
-        return file_ids or None
+        return await resolve_turn_file_ids(request)
 
     async def _resolve_turn_project_id(
         self, request: AgentRequestContext
     ) -> str | None:
-        """Use explicit project id, otherwise inherit the session's project binding."""
-        if request.project_id:
-            return request.project_id
-        if not request.session_id:
-            return None
-        try:
-            session = await self.history_service.get_session(request.session_id)
-        except Exception as exc:
-            logger.warning(
-                f"[{self.__class__.__name__}] failed to inherit session project_id: {exc}",
-                exc_info=True,
-            )
-            return None
-        project_id = session.get("project_id") if isinstance(session, dict) else None
-        return str(project_id) if project_id else None
+        return await resolve_turn_project_id(request)
 
     def build_tools(self, request: AgentRequestContext, state: AgentState) -> list[Any]:
         """Return the full tool list for this agent turn."""
@@ -319,7 +251,7 @@ class BaseAgent:
     async def _load_project_instructions(
         self, request: AgentRequestContext
     ) -> str | None:
-        project_id = await self._resolve_turn_project_id(request)
+        project_id = await resolve_turn_project_id(request)
         if not project_id:
             return None
         try:
@@ -340,7 +272,7 @@ class BaseAgent:
         return list(state.attachments or [])
 
     def to_generation_context(self, state: AgentState) -> GenerationContext:
-        from app.agents.common.runtime import agent_session_thread_id
+        from app.orchestration.utils import agent_session_thread_id
 
         tid = (
             agent_session_thread_id(state.request.user_id, state.request.session_id)
@@ -451,7 +383,7 @@ class BaseAgent:
         ctx: GenerationContext,
         stream: bool,
     ) -> AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
-        from app.agents.common.runtime import _get_agent_checkpointer
+        from app.orchestration.utils import _get_agent_checkpointer
         from app.llms.lanchain import LangChain
 
         lc = LangChain(checkpointer=_get_agent_checkpointer())
@@ -645,107 +577,13 @@ class BaseAgent:
         query: str,
         project_id: str | None = None,
     ) -> str:
-        sections: list[str] = []
-        if project_id:
-            block = await self.retrieval_service.retrieve_project_context(
-                query=query,
-                project_id=project_id,
-                user_id=user_id,
-                top_k=settings.TOP_K,
-            )
-            if block:
-                sections.append(block)
-
-        file_chunks: list[str] = []
-        for fid in file_ids or []:
-            file = await self.history_service.get_file_by_id(fid)
-            if not file:
-                continue
-            metadata = file.get("file_metadata") or {}
-            file_name = metadata.get("file_name", fid)
-            milvus_file_index = metadata.get("milvus_file_index") or {}
-            if milvus_file_index.get("enabled"):
-                context = await self._retrieve_file_context(
-                    file_id=fid,
-                    user_id=user_id,
-                    query=query,
-                    file_name=file_name,
-                    project_id=file.get("project_id"),
-                )
-                if context:
-                    file_chunks.append(self._limit_file_context_for_llm(context))
-                    continue
-            ocr_result = file.get("ocr_result") or ""
-            if ocr_result:
-                file_chunks.append(
-                    self._limit_file_context_for_llm(f"{file_name}\n{ocr_result}")
-                )
-
-        if file_chunks:
-            sections.append(
-                self._user_file_context_prefix + "\n\n" + "\n\n".join(file_chunks)
-            )
-        if not sections:
-            return ""
-        return self._limit_file_context_for_llm("\n\n".join(sections))
-
-    async def _retrieve_file_context(
-        self,
-        *,
-        file_id: str,
-        user_id: str,
-        query: str,
-        file_name: str,
-        project_id: str | None = None,
-    ) -> str:
-        expr = (
-            f'metadata["file_id"] == "{file_id}" '
-            f'and metadata["user_id"] == "{user_id}"'
+        _project_context, combined = await collect_file_and_project_context(
+            file_ids,
+            user_id,
+            query,
+            project_id=project_id,
         )
-        if project_id:
-            expr += f' and metadata["project_id"] == "{project_id}"'
-        try:
-            embedding = await self.embedder.aembed_query(query)
-            docs = await asyncio.to_thread(
-                self.retrieval_service._db.search_hybrid,
-                dense_vector=embedding,
-                text_query=query,
-                top_k=settings.FILE_SEARCH_TOP_K,
-                collection_name=settings.MILVUS_PROJECT_FILES,
-                expr=expr,
-            )
-        except Exception as exc:
-            logger.warning(
-                f"Milvus file context retrieval failed for file_id={file_id}, "
-                f"falling back to OCR context: {exc}",
-                exc_info=True,
-            )
-            return ""
-        from app.retrieval.retrieval_service import _vector_hit_text
-
-        chunks = []
-        for index, doc in enumerate(docs or [], 1):
-            text = _vector_hit_text(doc)
-            if text:
-                chunks.append(f"[File chunk {index}]\n{text}")
-        if not chunks:
-            return ""
-        return (
-            f"\n\n## USER FILE CONTEXT: {file_name} "
-            f"(top {settings.FILE_SEARCH_TOP_K} Milvus chunks)\n" + "\n\n".join(chunks)
-        )
-
-    def _limit_file_context_for_llm(self, file_context: str) -> str:
-        if not file_context:
-            return file_context
-        token_count = count_tokens(file_context)
-        if token_count <= settings.FILE_CONTENT_TOKEN_LIMIT:
-            return file_context
-        logger.warning(
-            "Uploaded file context exceeds LLM token limit "
-            f"({token_count} > {settings.FILE_CONTENT_TOKEN_LIMIT}). Truncating."
-        )
-        return truncate_to_token_limit(file_context, settings.FILE_CONTENT_TOKEN_LIMIT)
+        return combined
 
     async def _get_session_history_text(self, session_id: str) -> str:
         if not session_id:
@@ -809,7 +647,7 @@ class BaseAgent:
         def _upload() -> str:
             storage = get_storage_service()
             return storage.upload_file(
-                file_content=docx_bytes,
+                data=docx_bytes,
                 destination_path=object_path,
                 content_type=(
                     "application/vnd.openxmlformats-officedocument."

@@ -6,8 +6,8 @@ from typing import Any, Optional
 
 from langchain_core.tools import tool
 
-from app.agents.base import BaseAgent, RetrievalResult
-from app.agents.common.state import AgentRequestContext, AgentState
+from app.assistants.base import BaseAgent, RetrievalResult
+from app.orchestration.utils import AgentRequestContext, AgentState
 from app.core.config import settings
 from app.core.dependencies import get_intent_classifier, get_storage_service
 from app.core.logger import logger

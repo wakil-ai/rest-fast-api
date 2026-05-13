@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Optional
 
-from app.agents.base import RetrievalConfig
+from app.assistants.base import RetrievalConfig
 from app.core.config import settings
 from app.core.dependencies import (
     get_context_formatter,

@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.agents.common.checkpoint import delete_agent_thread
+from app.orchestration.utils import delete_agent_thread
 from app.core.config import settings
 from app.core.dependencies import get_db_manager
 from app.core.exceptions import (

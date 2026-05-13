@@ -159,7 +159,7 @@ Now, analyze the following inputs and generate a Milvus filter:
 
 **User Query**: {user_query}
 
-**Uploaded File Content**: {uploaded_file_content}
+**Uploaded file context**: {file_context}
 
 **Chat History**: {chat_history}
 

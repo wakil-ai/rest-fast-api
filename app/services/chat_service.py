@@ -6,21 +6,17 @@ from typing import Any, cast
 from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.agents.registry import invoke_chat_agent_run
-from app.agents.streaming import astream_chat_with_persistence
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
-    get_agentic_rag_flow_streaming,
     get_chat_history_service,
-    get_chat_orchestrator,
+    get_orchestration_service,
     get_project_service,
     get_rate_limit_service,
 )
 from app.core.exceptions import (
     ChatException,
     ChatGenerationException,
-    FlowExecutionException,
     InsufficientCreditsException,
     InvalidInputError,
     QueryTooLongException,
@@ -33,14 +29,49 @@ from app.models.chat import (
     ChatResponse,
     ModelInfoResponse,
 )
-from app.utils.streaming import format_streaming_response, get_streaming_headers
+from app.utils.streaming import (
+    format_progress_event,
+    format_streaming_response,
+    get_streaming_headers,
+)
+
+
+def _orchestration_exception_detail(exc: BaseException) -> str:
+    """Stable message for logs and HTTP detail; some failures use empty str(exc)."""
+    text = str(exc).strip()
+    if text:
+        return text
+    cause = exc.__cause__
+    if cause is not None and str(cause).strip():
+        return (
+            f"{type(exc).__name__} ({type(cause).__name__}: {str(cause).strip()})"
+        )
+    ctx = exc.__context__
+    if (
+        ctx is not None
+        and str(ctx).strip()
+        and ctx is not cause
+    ):
+        return f"{type(exc).__name__} ({type(ctx).__name__}: {str(ctx).strip()})"
+
+    name = type(exc).__name__
+    if isinstance(exc, NotImplementedError):
+        return (
+            f"{name} (empty message). See server traceback — e.g. LangGraph async "
+            "checkpoint methods on a sync-only saver, or an unimplemented "
+            "checkpoint/store base method."
+        )
+
+    return (
+        f"{name} with no message; see server logs (traceback). "
+        "If this is a missing-service error, verify GEMINI_API_KEY and Redis/Mongo URIs."
+    )
 
 
 class ChatService:
     """Service class to handle user questions and generate answers."""
 
     def __init__(self):
-        self.chat_orchestrator = get_chat_orchestrator()
         self.chat_history_service = get_chat_history_service()
         self.rate_limit_service = get_rate_limit_service()
 
@@ -90,24 +121,6 @@ class ChatService:
         except Exception as e:
             logger.error(f"Error extracting assistant config: {e}")
             raise ChatGenerationException("Failed to load assistant configuration.")
-
-    @staticmethod
-    def build_agentic_state(
-        request: AgenticRAGRequest,
-        message_id: str,
-        project_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Build initial state for agentic RAG flow."""
-        return {
-            "query": request.query,
-            "user_id": request.user_id,
-            "session_id": request.session_id,
-            "message_id": message_id,
-            "project_id": project_id if project_id is not None else request.project_id,
-            "file_ids": request.file_ids,
-            "requested_assistant": "deepresearch",
-            "locked_assistant": "main",
-        }
 
     @staticmethod
     def create_response(
@@ -205,6 +218,158 @@ class ChatService:
 
         return metadata
 
+    def orchestration_generation_meta(
+        self,
+        *,
+        assistant: str,
+        orchestration_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        state = orchestration_result.get("result") or {}
+        meta: dict[str, Any] = {
+            "workflow": "orchestration_graph",
+            "selected_assistant": state.get("selected_assistant") or assistant,
+        }
+        if state.get("web_search_output"):
+            meta["used_web_search"] = True
+        if attachments := state.get("attachments"):
+            meta["attachments"] = attachments
+        return meta
+
+    async def run_orchestrated_chat(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        message_id: str,
+        query: str,
+        assistant: str,
+        file_ids: list[str] | None = None,
+        project_id: str | None = None,
+        file_context: str | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        service = get_orchestration_service()
+        payload = service.build_payload(
+            query=query,
+            user_id=user_id,
+            session_id=session_id,
+            message_id=message_id,
+            assistant_name=assistant,
+            file_ids=file_ids,
+            project_id=project_id,
+            file_context=file_context,
+        )
+        result = await service.arun(payload)
+        return (
+            str(result.get("final_answer") or ""),
+            self.orchestration_generation_meta(
+                assistant=assistant,
+                orchestration_result=result,
+            ),
+        )
+
+    async def astream_orchestrated_chat(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        message_id: str,
+        query: str,
+        file_ids: list[str] | None,
+        assistant: str,
+        started_at: float,
+        is_dt_team_request: bool = False,
+        project_id: str | None = None,
+        file_context: str | None = None,
+    ) -> AsyncGenerator[Any, None]:
+        yield {
+            "type": "metadata",
+            "session_id": session_id,
+            "message_id": message_id,
+        }
+        yield await format_progress_event(
+            "orchestration",
+            "in_progress",
+            "Retrieving context and generating an answer…",
+        )
+
+        try:
+            answer, generation_meta = await self.run_orchestrated_chat(
+                user_id=user_id,
+                session_id=session_id,
+                message_id=message_id,
+                query=query,
+                assistant=assistant,
+                file_ids=file_ids,
+                project_id=project_id,
+                file_context=file_context,
+            )
+        except Exception as error:
+            detail = _orchestration_exception_detail(error)
+            logger.error(
+                f"[ChatService] Orchestration failed: {detail}",
+                exc_info=True,
+            )
+            raise ChatGenerationException(detail) from error
+
+        answer_out = self.append_dt_team_disclaimer(
+            answer,
+            is_dt_team_request=is_dt_team_request,
+        )
+        if answer_out:
+            yield answer_out
+
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        merged_meta = dict(generation_meta)
+        merged_meta["latency_ms"] = latency_ms
+        metadata = self.build_message_metadata(
+            assistant=str(merged_meta.get("selected_assistant") or assistant),
+            stream=True,
+            latency_ms=latency_ms,
+            generation_meta=merged_meta,
+        )
+        await self._persist_assistant_message_safe(
+            user_id=user_id,
+            session_id=session_id,
+            message_id=message_id,
+            query=query,
+            answer=answer_out,
+            file_ids=file_ids,
+            metadata=metadata,
+            project_id=project_id,
+        )
+
+    async def _persist_assistant_message_safe(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        message_id: str,
+        query: str,
+        answer: str,
+        file_ids: list[str] | None,
+        metadata: dict[str, Any],
+        project_id: str | None = None,
+    ) -> None:
+        try:
+            meta = dict(metadata)
+            if project_id:
+                meta["project_id"] = project_id
+            await self.chat_history_service.upsert_message(
+                session_id=session_id,
+                message_id=message_id,
+                user_id=user_id,
+                file_ids=file_ids,
+                content={"query": query, "response": answer},
+                metadata=meta,
+            )
+            if project_id:
+                await get_project_service().increment_stat(project_id, "chats", 1)
+        except Exception as e:
+            logger.warning(
+                f"Failed to persist message {message_id} for session {session_id}: {e}",
+                exc_info=True,
+            )
+
     def schedule_message_persistence(
         self,
         *,
@@ -217,210 +382,18 @@ class ChatService:
         metadata: dict[str, Any],
         project_id: str | None = None,
     ) -> None:
-        async def persist() -> None:
-            try:
-                meta = dict(metadata)
-                if project_id:
-                    meta["project_id"] = project_id
-                await self.chat_history_service.upsert_message(
-                    session_id=session_id,
-                    message_id=message_id,
-                    user_id=user_id,
-                    file_ids=file_ids,
-                    content={"query": query, "response": answer},
-                    metadata=meta,
-                )
-                if project_id:
-                    await get_project_service().increment_stat(project_id, "chats", 1)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to persist message {message_id} for session {session_id}: {e}",
-                    exc_info=True,
-                )
-
-        asyncio.create_task(persist())
-
-    async def _wrap_streaming_answer(
-        self,
-        *,
-        response: AsyncGenerator[Any, None],
-        user_id: str,
-        session_id: str,
-        message_id: str,
-        query: str,
-        file_ids: list[str] | None,
-        assistant: str,
-        started_at: float,
-        project_id: str | None = None,
-    ) -> AsyncGenerator[Any, None]:
-        async def wrapped() -> AsyncGenerator[Any, None]:
-            answer_chunks: list[str] = []
-            generation_meta: dict[str, Any] = {}
-
-            yield {
-                "type": "metadata",
-                "session_id": session_id,
-                "message_id": message_id,
-            }
-
-            async for item in response:
-                if isinstance(item, dict) and item.get("type") == "_generation_meta":
-                    generation_meta = item.get("meta") or {}
-                    continue
-
-                if isinstance(item, str):
-                    answer_chunks.append(item)
-
-                yield item
-
-            latency_ms = int((perf_counter() - started_at) * 1000)
-            metadata = self.build_message_metadata(
-                assistant=assistant,
-                stream=True,
-                latency_ms=latency_ms,
-                generation_meta=generation_meta,
-            )
-            self.schedule_message_persistence(
+        asyncio.create_task(
+            self._persist_assistant_message_safe(
                 user_id=user_id,
                 session_id=session_id,
                 message_id=message_id,
                 query=query,
-                answer="".join(answer_chunks),
+                answer=answer,
                 file_ids=file_ids,
                 metadata=metadata,
                 project_id=project_id,
             )
-
-        return wrapped()
-
-    async def ask_question(
-        self,
-        user_id: str,
-        session_id: str,
-        message_id: str,
-        query: str,
-        stream: bool = settings.STREAM,
-        file_ids: list[str] | None = None,
-        assistant: str = "main",
-        project_id: str | None = None,
-    ) -> str | AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
-        """
-        Handle the question by retrieving context and generating an answer.
-
-        Args:
-            user_id: User identifier
-            session_id: Session identifier used to load previous persisted messages
-            query: User's question
-            stream: Enable streaming response
-            file_ids: List of file IDs to use as context
-            assistant: Assistant name
-
-        Returns:
-            - str: Complete answer if streaming disabled and dev mode disabled
-            - Tuple[str, Dict]: Answer + debug data if streaming disabled and dev mode enabled
-            - AsyncGenerator[Any, None]: Streaming answer if streaming enabled
-
-        Raises:
-            ChatGenerationException: If answer generation fails
-        """
-        try:
-            started_at = perf_counter()
-            answer = await self.chat_orchestrator.generate_answer(
-                user_id=user_id,
-                session_id=session_id,
-                query=query,
-                stream=stream,
-                file_ids=file_ids,
-                assistant=assistant,
-                project_id=project_id,
-            )
-
-            if stream:
-                if isinstance(answer, tuple):
-                    answer_text, generation_meta = answer
-
-                    async def tuple_stream() -> AsyncGenerator[Any, None]:
-                        yield answer_text
-                        yield {"type": "_generation_meta", "meta": generation_meta}
-
-                    return await self._wrap_streaming_answer(
-                        response=tuple_stream(),
-                        user_id=user_id,
-                        session_id=session_id,
-                        message_id=message_id,
-                        query=query,
-                        file_ids=file_ids,
-                        assistant=assistant,
-                        started_at=started_at,
-                        project_id=project_id,
-                    )
-
-                if isinstance(answer, str):
-
-                    async def string_stream() -> AsyncGenerator[Any, None]:
-                        yield answer
-                        yield {"type": "_generation_meta", "meta": {}}
-
-                    return await self._wrap_streaming_answer(
-                        response=string_stream(),
-                        user_id=user_id,
-                        session_id=session_id,
-                        message_id=message_id,
-                        query=query,
-                        file_ids=file_ids,
-                        assistant=assistant,
-                        started_at=started_at,
-                        project_id=project_id,
-                    )
-
-                return await self._wrap_streaming_answer(
-                    response=cast(AsyncGenerator[Any, None], answer),
-                    user_id=user_id,
-                    session_id=session_id,
-                    message_id=message_id,
-                    query=query,
-                    file_ids=file_ids,
-                    assistant=assistant,
-                    started_at=started_at,
-                    project_id=project_id,
-                )
-
-            latency_ms = int((perf_counter() - started_at) * 1000)
-
-            if isinstance(answer, tuple):
-                answer_text, generation_meta = answer
-            elif isinstance(answer, str):
-                answer_text, generation_meta = answer, {}
-            else:
-                raise ChatGenerationException(
-                    "Unexpected streaming response for non-streaming request."
-                )
-
-            metadata = self.build_message_metadata(
-                assistant=assistant,
-                stream=False,
-                latency_ms=latency_ms,
-                generation_meta=generation_meta,
-            )
-            self.schedule_message_persistence(
-                user_id=user_id,
-                session_id=session_id,
-                message_id=message_id,
-                query=query,
-                answer=answer_text,
-                file_ids=file_ids,
-                metadata=metadata,
-                project_id=project_id,
-            )
-
-            response_meta = dict(generation_meta)
-            response_meta["latency_ms"] = latency_ms
-            return answer_text, response_meta
-        except InvalidInputError:
-            raise
-        except Exception as e:
-            logger.error(f"Error generating answer: {e}", exc_info=True)
-            raise ChatGenerationException(f"Failed to generate answer: {str(e)}")
+        )
 
     @staticmethod
     def is_dt_team_request(raw_request: Request) -> bool:
@@ -466,12 +439,10 @@ class ChatService:
                 )
             )
 
-            dt_suffix = settings.DT_TEAM_DISCLAIMER if is_dt else ""
-
             if should_stream:
                 started_stream = perf_counter()
                 return self.create_streaming_response(
-                    astream_chat_with_persistence(
+                    self.astream_orchestrated_chat(
                         user_id=request.user_id,
                         session_id=session_id,
                         message_id=message_id,
@@ -479,38 +450,41 @@ class ChatService:
                         file_ids=request.file_ids,
                         assistant=assistant_name,
                         started_at=started_stream,
-                        dt_team_disclaimer_suffix=dt_suffix,
+                        is_dt_team_request=is_dt,
                         project_id=resolved_project_id,
+                        file_context=request.file_context,
                     )
                 )
 
             started_at = perf_counter()
             try:
-                answer, lc_meta, generation_ctx = await invoke_chat_agent_run(
+                answer, generation_meta = await self.run_orchestrated_chat(
                     user_id=request.user_id,
                     session_id=session_id,
                     message_id=message_id,
                     query=request.query,
-                    file_ids=request.file_ids,
                     assistant=assistant_name,
+                    file_ids=request.file_ids,
                     project_id=resolved_project_id,
+                    file_context=request.file_context,
                 )
-            except RuntimeError as e:
+            except Exception as error:
+                detail = _orchestration_exception_detail(error)
                 logger.error(
-                    f"[ChatService] LangChain / LangGraph assistant misconfiguration: {e}",
+                    f"[ChatService] Orchestration failed: {detail}",
                     exc_info=True,
                 )
-                raise ChatGenerationException(str(e)) from e
+                raise ChatGenerationException(detail) from error
 
             answer_out = self.append_dt_team_disclaimer(
                 answer, is_dt_team_request=is_dt
             )
             latency_ms = int((perf_counter() - started_at) * 1000)
-            merged_meta = dict(lc_meta or {})
+            merged_meta = dict(generation_meta)
             merged_meta["latency_ms"] = latency_ms
             attachments_out = merged_meta.get("attachments")
             metadata = self.build_message_metadata(
-                assistant=generation_ctx.assistant_name,
+                assistant=str(merged_meta.get("selected_assistant") or assistant_name),
                 stream=False,
                 latency_ms=latency_ms,
                 generation_meta=merged_meta,
@@ -547,14 +521,17 @@ class ChatService:
     async def handle_agentic_rag_stream(
         self, request: AgenticRAGRequest
     ) -> StreamingResponse:
-        """Build streaming response for agentic RAG (``POST /chat/agent/stream``)."""
+        """Build streaming response for deep-research chat (``POST /chat/agent/stream``)."""
         try:
             self.validate_query_length(request.query)
 
+            assistant_name = "deepresearch"
+            credit_cost, _ = self.extract_assistant_config(assistant_name)
+
             await self.verify_user_credits(
                 user_id=request.user_id,
-                assistant_type=AssistantType.MAIN,
-                required_credits=settings.CREDIT_COST_MAIN_ASSISTANT,
+                assistant_type=assistant_name,
+                required_credits=credit_cost,
             )
 
             session_id, message_id, resolved_project_id = (
@@ -565,104 +542,20 @@ class ChatService:
                 )
             )
 
-            progress_queue: asyncio.Queue = asyncio.Queue()
-
-            async def progress_callback(event: dict) -> None:
-                await progress_queue.put(event)
-
-            flow = get_agentic_rag_flow_streaming(progress_callback)
-
-            initial_state = self.build_agentic_state(
-                request,
-                message_id=message_id,
-                project_id=resolved_project_id,
-            )
             started_at = perf_counter()
-
-            async def response_generator() -> AsyncGenerator[Any, None]:
-                yield {
-                    "type": "metadata",
-                    "session_id": session_id,
-                    "message_id": message_id,
-                }
-
-                flow_task = asyncio.create_task(flow.kickoff_async(initial_state))
-
-                flow_complete = False
-                while not (flow_complete and progress_queue.empty()):
-                    if flow_task.done() and not flow_complete:
-                        flow_complete = True
-                        try:
-                            await flow_task
-                        except Exception as e:
-                            logger.exception(
-                                "[ChatService] Agent stream pipeline failed: %s", e
-                            )
-                            yield {
-                                "type": "error",
-                                "message": f"An error occurred: {str(e)}",
-                            }
-                            break
-
-                        try:
-                            latency_ms = int((perf_counter() - started_at) * 1000)
-                            generation_meta = dict(flow.state.generation_meta or {})
-                            generation_meta["workflow"] = "two_stage_pipeline"
-                            if flow.state.selected_assistant:
-                                generation_meta["selected_assistant"] = (
-                                    flow.state.selected_assistant
-                                )
-                            wo = flow.state.web_search_output
-                            if wo:
-                                docs = (
-                                    wo.get("docs")
-                                    if isinstance(wo, dict)
-                                    else getattr(wo, "docs", None)
-                                )
-                                generation_meta["used_web_search"] = bool(docs)
-                            if flow.state.attachments:
-                                generation_meta["attachments"] = flow.state.attachments
-
-                            metadata = self.build_message_metadata(
-                                assistant="main",
-                                stream=True,
-                                latency_ms=latency_ms,
-                                generation_meta=generation_meta,
-                            )
-                            self.schedule_message_persistence(
-                                user_id=request.user_id,
-                                session_id=session_id,
-                                message_id=message_id,
-                                query=request.query,
-                                answer=flow.state.answer or "",
-                                file_ids=request.file_ids,
-                                metadata=metadata,
-                                project_id=resolved_project_id,
-                            )
-                        except Exception as e:
-                            logger.exception(
-                                "[ChatService] Agent stream post-flow "
-                                "(metadata/persistence): %s",
-                                e,
-                            )
-                            yield {
-                                "type": "error",
-                                "message": f"An error occurred: {str(e)}",
-                            }
-                            break
-
-                    try:
-                        event = await asyncio.wait_for(
-                            progress_queue.get(), timeout=0.1
-                        )
-                        yield event
-                    except asyncio.TimeoutError:
-                        continue
-                    except Exception as e:
-                        logger.error(f"Error getting progress event: {e}")
-                        break
-
-            return self.create_streaming_response(response_generator())
+            return self.create_streaming_response(
+                self.astream_orchestrated_chat(
+                    user_id=request.user_id,
+                    session_id=session_id,
+                    message_id=message_id,
+                    query=request.query,
+                    file_ids=request.file_ids,
+                    assistant=assistant_name,
+                    started_at=started_at,
+                    project_id=resolved_project_id,
+                    file_context=request.file_context,
+                )
+            )
 
         except ChatException:
             raise
@@ -671,7 +564,7 @@ class ChatService:
                 f"[ChatService] Unexpected error in handle_agentic_rag_stream: {str(e)}",
                 exc_info=True,
             )
-            raise FlowExecutionException("Failed to stream agentic RAG response.")
+            raise ChatGenerationException("Failed to stream deep-research response.")
 
     @staticmethod
     def get_public_assistants_payload() -> dict[str, Any]:

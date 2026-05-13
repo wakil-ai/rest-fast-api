@@ -78,6 +78,10 @@ class ChatRequest(BaseModel):
     file_ids: list[str] | None = Field(
         default=None, description="Optional list of file IDs to use as context"
     )
+    file_context: str | None = Field(
+        default=None,
+        description="Optional inline document or excerpt text to include as context for this turn",
+    )
     project_id: str | None = Field(
         default=None,
         description=(
@@ -162,9 +166,9 @@ class AskFileRequest(BaseModel):
 
 class AgenticRAGRequest(BaseModel):
     """
-    Request body for streaming RAG (``/chat/agent/stream``).
+    Request body for streaming deep-research chat (``/chat/agent/stream``).
 
-    Uses the same two-stage LangGraph retrieval + final answer pipeline as the main assistant.
+    Uses the orchestration graph with Tavily fallback when context is insufficient.
     """
 
     query: str = Field(
@@ -175,4 +179,8 @@ class AgenticRAGRequest(BaseModel):
     project_id: str | None = Field(default=None, description="Optional project ID")
     file_ids: list[str] | None = Field(
         default=None, description="List of file IDs attached to the current message"
+    )
+    file_context: str | None = Field(
+        default=None,
+        description="Optional inline text context for this turn",
     )

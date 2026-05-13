@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v2"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
+    ORCHESTRATION_DEBUG_THREAD_STATE: bool = (
+        False  # Log LangGraph thread snapshot after each orchestration turn
+    )
     DEVELOPMENT_MODE: bool = False
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Reserved for future OpenTelemetry wiring
@@ -195,7 +198,7 @@ class Settings(BaseSettings):
 
     # TEMPERATURE
     TEMPERATURE: float = 0.1
-    CHAT_HISTORY_LIMIT: int = 5
+    CHAT_HISTORY_LIMIT: int = 3
     OUTPUT_MAX_TOKENS: int = 8192
     MAX_QUERY_LENGTH: int = 5000
 

@@ -84,7 +84,7 @@ class FileManager:
                 user_id, file_id, file.filename
             )
             file_url = self.storage.upload_file(
-                file_content=content,
+                data=content,
                 destination_path=gcs_path,
                 content_type=file.content_type or "application/octet-stream",
             )
@@ -173,7 +173,7 @@ class FileManager:
                 project_id, file_id, file.filename or "upload"
             )
             file_url = self.storage.upload_file(
-                file_content=content,
+                data=content,
                 destination_path=gcs_path,
                 content_type=file.content_type or "application/octet-stream",
             )

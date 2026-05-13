@@ -470,7 +470,7 @@ Chat and streaming agent endpoints use a **LangGraph** retrieval subgraph (strat
 ### Project Structure
 ```
 app/
-├── agents/            # Assistant agents + pipeline (LangGraph retrieval, final answer)
+├── assistants/      # Specialist agents (retrieval, tools, prompts)
 ├── api/               # API route handlers
 │   ├── auth.py        # Telegram authentication
 │   ├── chat.py        # Chat and Q&A endpoints
@@ -480,7 +480,7 @@ app/
 │   ├── retrieval.py   # Search and retrieval
 │   ├── speech_to_text.py # Audio transcription
 │   └── ws_stt.py      # WebSocket speech-to-text
-├── chains/            # LangChain configurations
+├── orchestration/     # LangGraph orchestration + markdown prompts
 ├── core/              # Configuration and logging
 ├── db/                # Database handlers (MongoDB, Milvus, Pinecone)
 ├── llms/              # Language model providers

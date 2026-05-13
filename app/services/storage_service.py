@@ -46,7 +46,7 @@ class StorageService:
 
     def upload_file(
         self,
-        file_content: bytes,
+        data: bytes,
         destination_path: str,
         content_type: str = "application/octet-stream",
         return_signed_url: bool = True,
@@ -56,7 +56,7 @@ class StorageService:
         Upload a file to Google Cloud Storage.
 
         Args:
-            file_content: Binary content of the file
+            data: Binary content of the file
             destination_path: Path where file will be stored in the bucket (e.g., 'users/user123/file.pdf')
             content_type: MIME type of the file
             return_signed_url: If True, returns a signed URL (recommended). If False, returns public URL
@@ -67,7 +67,7 @@ class StorageService:
         """
         try:
             blob = self.bucket.blob(destination_path)
-            blob.upload_from_string(file_content, content_type=content_type)
+            blob.upload_from_string(data, content_type=content_type)
 
             logger.info(f"[StorageService] Uploaded file to: {destination_path}")
 

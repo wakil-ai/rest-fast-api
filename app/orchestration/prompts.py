@@ -7,14 +7,14 @@ from app.models.intent_types import DomainType, LegalIntent
 
 
 class PromptRegistry:
-    """Centralized prompt manager for WakilAI."""
+    """Centralized prompt manager for legal orchestration."""
 
     DEFAULT_INPUT_VARIABLES = ["context", "chat_history"]
 
-    # Prompt keys whose templates use different placeholders than {context}/{chat_history}
     PROMPT_INPUT_VARIABLES_OVERRIDES: dict[str, list[str]] = {
         "intent_classification": ["query"],
         "court_classify_prompt": [],
+        "retrieval_query_rewrite": [],
     }
 
     PROMPT_FILES = {
@@ -33,6 +33,7 @@ class PromptRegistry:
         "criminal_court": "criminal_court.md",
         "economic_court": "economic_court.md",
         "civil_court": "civil_court.md",
+        "retrieval_query_rewrite": "retrieval_query_rewrite.md",
     }
 
     ASSISTANT_MAPPING = {
@@ -46,15 +47,30 @@ class PromptRegistry:
         "civil_court": "civil_court",
     }
 
-    def __init__(self):
-        self.prompts_dir = Path(__file__).parent / "prompts"
+    def __init__(self) -> None:
+        self.prompts_dir = Path(__file__).resolve().parent / "prompts"
         self.prompts: Dict[str, PromptTemplate] = {}
         self._load_prompts()
 
-    def _load_prompts(self):
+    def _load_prompts(self) -> None:
         for key, filename in self.PROMPT_FILES.items():
             filepath = self.prompts_dir / filename
             if not filepath.exists():
+                if key == "retrieval_query_rewrite":
+                    self.prompts[key] = PromptTemplate(
+                        template=(
+                            "You are a retrieval query rewriting agent for a legal assistant.\n"
+                            "Rewrite the latest user query into a standalone query for legal "
+                            "document retrieval.\n"
+                            "Do not answer the question. Output only the rewritten retrieval query.\n\n"
+                            "Latest user query:\n{query}\n\n"
+                            "Recent session history:\n{history}\n\n"
+                            "Uploaded file context:\n{file_context}\n\n"
+                            "Long-term user memory:\n{long_memory}\n"
+                        ),
+                        input_variables=["query", "history", "file_context", "long_memory"],
+                    )
+                    continue
                 raise FileNotFoundError(f"Prompt file not found: {filepath}")
 
             input_variables = self.PROMPT_INPUT_VARIABLES_OVERRIDES.get(
@@ -75,7 +91,6 @@ class PromptRegistry:
             raise ValueError(
                 f"Prompt template for assistant '{assistant_name}' not found."
             )
-
         return self.get_prompt(self.ASSISTANT_MAPPING[assistant_name])
 
     def get_prompt_for_intent(

@@ -16,7 +16,7 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.agents.common.checkpoint import (
+from app.orchestration.utils import (
     init_agent_checkpointer,
     shutdown_agent_checkpointer,
 )
