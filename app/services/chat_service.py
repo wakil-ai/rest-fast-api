@@ -32,7 +32,6 @@ from app.models.chat import (
     ModelInfoResponse,
 )
 from app.utils.streaming import (
-    format_progress_event,
     format_streaming_response,
     get_streaming_headers,
 )
@@ -345,11 +344,6 @@ class ChatService:
             "session_id": session_id,
             "message_id": message_id,
         }
-        yield await format_progress_event(
-            "orchestration",
-            "in_progress",
-            "Retrieving context and generating an answer…",
-        )
 
         try:
             service = get_orchestration_service()
