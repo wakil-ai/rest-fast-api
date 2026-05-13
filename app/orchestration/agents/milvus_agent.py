@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +70,20 @@ class MilvusQueryAgent:
             categories_uz_values=categories_bullets,
         )
 
+    @staticmethod
+    def _normalize_filter(response: str) -> str:
+        text = (response or "").strip()
+        if not text:
+            return ""
+
+        fence = re.fullmatch(r"```(?:\w+)?\s*(.*?)\s*```", text, flags=re.S)
+        if fence:
+            text = fence.group(1).strip()
+
+        text = re.sub(r"^(filter|expr|expression)\s*:\s*", "", text, flags=re.I)
+        text = text.strip().strip("`").strip()
+        return text
+
     async def generate_filter(
         self,
         query: str,
@@ -90,8 +105,9 @@ class MilvusQueryAgent:
                 system_prompt=structured_prompt,
                 user_prompt=query,
             )
-            logger.debug(f"[MilvusQueryAgent] Generated filter: {response.strip()}")
-            return response.strip()
+            milvus_filter = self._normalize_filter(response)
+            logger.debug(f"[MilvusQueryAgent] Generated filter: {milvus_filter}")
+            return milvus_filter
         except Exception as error:
             logger.error(f"[MilvusQueryAgent] Failed to generate filter: {error}")
             return ""

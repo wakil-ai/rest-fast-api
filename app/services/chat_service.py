@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from collections.abc import AsyncGenerator
 from time import perf_counter
 from typing import Any, cast
@@ -13,6 +14,7 @@ from app.core.dependencies import (
     get_orchestration_service,
     get_project_service,
     get_rate_limit_service,
+    get_storage_service,
 )
 from app.core.exceptions import (
     ChatException,
@@ -34,6 +36,7 @@ from app.utils.streaming import (
     format_streaming_response,
     get_streaming_headers,
 )
+from app.utils.contract_docx import contract_text_to_docx_bytes
 
 
 def _orchestration_exception_detail(exc: BaseException) -> str:
@@ -70,6 +73,10 @@ def _orchestration_exception_detail(exc: BaseException) -> str:
 
 class ChatService:
     """Service class to handle user questions and generate answers."""
+
+    FINAL_ANSWER_DOCX_CONTENT_TYPE = (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
 
     def __init__(self):
         self.chat_history_service = get_chat_history_service()
@@ -235,6 +242,58 @@ class ChatService:
             meta["attachments"] = attachments
         return meta
 
+    @staticmethod
+    def should_attach_final_answer_docx(assistant: str | None) -> bool:
+        return (
+            AssistantConfig.validate_assistant_or_default(assistant)
+            == "contract_analyzer"
+        )
+
+    async def upload_final_answer_docx(
+        self,
+        *,
+        assistant: str | None,
+        user_id: str,
+        answer: str,
+        existing_attachments: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        attachments = list(existing_attachments or [])
+        if not self.should_attach_final_answer_docx(assistant):
+            return attachments
+
+        body = str(answer or "").strip()
+        if not body:
+            return attachments
+
+        docx_bytes = contract_text_to_docx_bytes(body)
+        object_path = f"chat-final-answers/{user_id}/{uuid.uuid4().hex}.docx"
+
+        def upload() -> str:
+            return get_storage_service().upload_file(
+                data=docx_bytes,
+                destination_path=object_path,
+                content_type=self.FINAL_ANSWER_DOCX_CONTENT_TYPE,
+                return_signed_url=True,
+            )
+
+        try:
+            url = await asyncio.to_thread(upload)
+        except Exception as error:
+            logger.warning(
+                f"[ChatService] Final answer DOCX upload skipped: {error}",
+                exc_info=True,
+            )
+            return attachments
+
+        attachments.append(
+            {
+                "name": "shartnoma.docx",
+                "url": url,
+                "content_type": self.FINAL_ANSWER_DOCX_CONTENT_TYPE,
+            }
+        )
+        return attachments
+
     async def run_orchestrated_chat(
         self,
         *,
@@ -351,6 +410,23 @@ class ChatService:
         )
         if is_dt_team_request and settings.DT_TEAM_DISCLAIMER:
             yield settings.DT_TEAM_DISCLAIMER
+        attachments = await self.upload_final_answer_docx(
+            assistant=assistant,
+            user_id=user_id,
+            answer=answer_out,
+            existing_attachments=generation_meta.get("attachments"),
+        )
+        if attachments:
+            generation_meta["attachments"] = attachments
+            new_attachments = [
+                attachment
+                for attachment in attachments
+                if isinstance(attachment, dict)
+                and str(attachment.get("url") or "").strip()
+                not in prev_attachment_urls
+            ]
+            if new_attachments:
+                yield {"type": "attachments", "attachments": new_attachments}
 
         latency_ms = int((perf_counter() - started_at) * 1000)
         merged_meta = dict(generation_meta)
@@ -513,6 +589,14 @@ class ChatService:
             answer_out = self.append_dt_team_disclaimer(
                 answer, is_dt_team_request=is_dt
             )
+            attachments = await self.upload_final_answer_docx(
+                assistant=assistant_name,
+                user_id=request.user_id,
+                answer=answer_out,
+                existing_attachments=generation_meta.get("attachments"),
+            )
+            if attachments:
+                generation_meta["attachments"] = attachments
             latency_ms = int((perf_counter() - started_at) * 1000)
             merged_meta = dict(generation_meta)
             merged_meta["latency_ms"] = latency_ms

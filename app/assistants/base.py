@@ -329,7 +329,27 @@ class BaseAgent:
     async def asearch(
         self, query: str, config: RetrievalConfig
     ) -> list[dict[str, Any]]:
-        return await asyncio.to_thread(self.search, query, config)
+        try:
+            return await asyncio.to_thread(self.search, query, config)
+        except Exception:
+            if not config.filter:
+                raise
+            logger.warning(
+                "[%s] Filtered Milvus search failed; retrying without filter. "
+                "collection=%s filter=%r",
+                self.__class__.__name__,
+                config.collection_name,
+                config.filter,
+                exc_info=True,
+            )
+            fallback_config = RetrievalConfig(
+                top_k=config.top_k,
+                alpha=config.alpha,
+                search_type=config.search_type,
+                collection_name=config.collection_name,
+                filter="",
+            )
+            return await asyncio.to_thread(self.search, query, fallback_config)
 
     async def format_results(self, documents: list[dict[str, Any]]) -> RetrievalResult:
         return await self.formatter.format_results(documents)

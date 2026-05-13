@@ -11,8 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from openai import AsyncOpenAI
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
 
@@ -21,11 +20,13 @@ from app.core.config import settings
 from app.core.dependencies import (
     get_chat_history_service,
     get_embedding_manager,
+    get_orchestration_service,
     get_prompt_registry,
     get_retrieval_service,
 )
 from app.core.logger import logger
 from app.orchestration.llms import LangChain
+from app.orchestration.text import message_content_to_plain_str
 from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 if TYPE_CHECKING:
@@ -333,62 +334,36 @@ def _agent_instructions(name: str) -> str:
     return f"Role: {role}\n\nInstructions:\n{goal}\n\nBackground:\n{back}".strip()
 
 
-DEFAULT_RETRIEVAL_OPENAI_MODEL = "gpt-4.1-mini"
+def _strip_json_fenced_block(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.split("\n")
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
 
 
-def retrieval_chain_model() -> str:
-    raw = settings.RETRIEVAL_CHAIN_MODEL or DEFAULT_RETRIEVAL_OPENAI_MODEL
-    name = str(raw).strip()
-    if ":" in name:
-        _, name = name.split(":", 1)
-    name = name.strip()
-    return name or DEFAULT_RETRIEVAL_OPENAI_MODEL
-
-
-def retrieval_chain_max_tokens() -> int:
-    raw = settings.RETRIEVAL_CHAIN_MAX_TOKENS
+async def _lite_llm_json_object(system: str, user: str) -> dict[str, Any]:
+    """Structured JSON via orchestration lite LLM (same as Purpose.LITE / DEFAULT_LITE_MODEL)."""
     try:
-        return max(128, min(int(raw), 4096))
-    except (TypeError, ValueError):
-        return 1024
-
-
-def _token_param(model: str) -> str:
-    if "gpt-5.2" in model or model.startswith("o1"):
-        return "max_completion_tokens"
-    return "max_tokens"
-
-
-async def _openai_json_object(system: str, user: str) -> dict[str, Any]:
-    if not settings.OPENAI_API_KEY:
-        logger.warning("[retrieval_chain] OPENAI_API_KEY unset; skipping JSON LLM call")
-        return {}
-    model = retrieval_chain_model()
-    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    tparam = _token_param(model)
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "temperature": 0.0,
-        "stream": False,
-        "response_format": {"type": "json_object"},
-        tparam: retrieval_chain_max_tokens(),
-    }
-    try:
-        resp = await client.chat.completions.create(**kwargs)
+        llm = get_orchestration_service().lite_llm
+        msg = await llm.ainvoke(
+            [SystemMessage(content=system), HumanMessage(content=user)]
+        )
+        raw = message_content_to_plain_str(getattr(msg, "content", None))
     except Exception as e:
-        logger.warning(f"[retrieval_chain] OpenAI JSON call failed: {e}", exc_info=True)
+        logger.warning(f"[retrieval_chain] Lite LLM JSON call failed: {e}", exc_info=True)
         return {}
-    raw = (resp.choices[0].message.content or "").strip()
     if not raw:
         return {}
+    payload = _strip_json_fenced_block(raw)
     try:
-        return json.loads(raw.replace(": None", ": null"))
+        return json.loads(payload.replace(": None", ": null"))
     except json.JSONDecodeError:
-        logger.warning(f"[retrieval_chain] Invalid JSON from model: {raw[:300]}...")
+        logger.warning(f"[retrieval_chain] Invalid JSON from lite model: {raw[:300]}...")
         return {}
 
 
@@ -404,7 +379,7 @@ async def context_evaluation_llm(query: str, context: str) -> ContextEvaluationR
         "No markdown."
     )
     user = f"QUERY:\n{query}\n\nRETRIEVED_CONTEXT:\n{ctx}"
-    data = await _openai_json_object(system, user)
+    data = await _lite_llm_json_object(system, user)
     if not data:
         return ContextEvaluationResponse(
             is_sufficient=True,
@@ -745,13 +720,15 @@ def get_chat_agent(assistant_name: str | None) -> BaseAgent:
     """Return a cached assistant agent for the canonical assistant name."""
     from app.assistants import MainAgent
 
+    global _AGENT_REGISTRY
     canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
     if canonical not in _CHAT_AGENT_CACHE:
+        if _AGENT_REGISTRY is None:
+            _AGENT_REGISTRY = _get_agent_registry()
         cls = _AGENT_REGISTRY.get(canonical, MainAgent)
         _CHAT_AGENT_CACHE[canonical] = cls()
     return _CHAT_AGENT_CACHE[canonical]
 
 
-_AGENT_REGISTRY = _get_agent_registry()
+_AGENT_REGISTRY: dict[str, type[Any]] | None = None
 _CHAT_AGENT_CACHE: dict[str, Any] = {}
-
