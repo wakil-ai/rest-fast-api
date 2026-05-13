@@ -1,7 +1,3 @@
-# Must run before ``graph`` (or any LangGraph pregel) imports ``merge_configs`` from
-# ``langgraph._internal._config`` — otherwise those modules keep a stale function
-# reference and the callback-shape patch never applies.
-import app.orchestration.langgraph_merge_configs_patch  # noqa: F401
 
 from app.orchestration.graph import compile_retrieval_graph
 from app.orchestration.nodes import (

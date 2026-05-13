@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_core.messages import BaseMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
-from app.core.logger import logger
 from app.llms.gemini import resolve_gemini_model_name
 from app.orchestration.agents import (
     CourtClassifier,
@@ -22,91 +19,6 @@ from app.orchestration.agents import (
 )
 from app.orchestration.prompts import PromptRegistry
 from app.orchestration.state import GraphContext, RetrievalRewriteState
-
-_MAX_DEBUG_STR = 500
-_MAX_DEBUG_MESSAGES = 12
-
-
-def _summary_for_thread_state_debug(values: dict[str, Any]) -> dict[str, Any]:
-    """Shrink orchestration state for a single debug log line."""
-    out: dict[str, Any] = {}
-    for key, raw in values.items():
-        if key == "messages":
-            rows: list[dict[str, Any]] = []
-            for msg in (raw or [])[-_MAX_DEBUG_MESSAGES:]:
-                if isinstance(msg, BaseMessage):
-                    body = msg.content
-                    if isinstance(body, str) and len(body) > _MAX_DEBUG_STR:
-                        body = body[:_MAX_DEBUG_STR] + "…"
-                    rows.append(
-                        {
-                            "type": getattr(msg, "type", type(msg).__name__),
-                            "content": body,
-                        }
-                    )
-                else:
-                    rows.append({"repr": repr(msg)[:200]})
-            out[key] = rows
-            continue
-        if key in (
-            "file_context",
-            "project_related_context",
-            "final_answer",
-        ):
-            s = raw if isinstance(raw, str) else ("" if raw is None else str(raw))
-            out[key] = (
-                f"<{len(s)} chars> {s[:_MAX_DEBUG_STR]}"
-                if len(s) > _MAX_DEBUG_STR
-                else s
-            )
-            continue
-        if key == "retrieval_context":
-            # Omitted from logs: large and cleared from checkpoint after answer anyway.
-            continue
-        if key == "answer_prompt_template" and raw is not None:
-            out[key] = f"<{type(raw).__name__}>"
-            continue
-        if isinstance(raw, (str, int, float, bool)) or raw is None:
-            if isinstance(raw, str) and len(raw) > _MAX_DEBUG_STR:
-                out[key] = raw[:_MAX_DEBUG_STR] + "…"
-            else:
-                out[key] = raw
-        elif isinstance(raw, (list, dict)):
-            try:
-                text = json.dumps(raw, default=str)
-                out[key] = text[:800] + ("…" if len(text) > 800 else "")
-            except TypeError:
-                out[key] = repr(raw)[:400]
-        else:
-            out[key] = repr(raw)[:400]
-    return out
-
-
-async def _log_orchestration_thread_state_debug(
-    *,
-    graph: Any,
-    thread_id: str,
-    message_id: str,
-    info: bool,
-) -> None:
-    try:
-        config = {"configurable": {"thread_id": thread_id}}
-        snap = await graph.aget_state(config)
-        values = snap.values if isinstance(snap.values, dict) else {}
-        summary = _summary_for_thread_state_debug(values)
-        state_json = json.dumps(summary, default=str, ensure_ascii=False)
-        next_nodes = list(getattr(snap, "next", []) or [])
-        created_at = getattr(snap, "created_at", None)
-        log_fn = logger.info if info else logger.debug
-        log_fn(
-            f"[orchestration] thread_state thread_id={thread_id} message_id={message_id} "
-            f"next={next_nodes} created_at={created_at} state={state_json}"
-        )
-    except Exception as exc:
-        log_fn = logger.info if info else logger.debug
-        log_fn(
-            f"[orchestration] thread_state snapshot skipped thread_id={thread_id}: {exc}"
-        )
 
 
 @dataclass
@@ -210,21 +122,6 @@ class OrchestrationService:
             config={"configurable": {"thread_id": thread_id}},
             context=self.context,
         )
-
-        if settings.ORCHESTRATION_DEBUG_THREAD_STATE:
-            await _log_orchestration_thread_state_debug(
-                graph=graph,
-                thread_id=thread_id,
-                message_id=str(payload.get("message_id") or ""),
-                info=True,
-            )
-        elif settings.DEBUG:
-            await _log_orchestration_thread_state_debug(
-                graph=graph,
-                thread_id=thread_id,
-                message_id=str(payload.get("message_id") or ""),
-                info=False,
-            )
 
         return {
             "original_query": payload["query"],
