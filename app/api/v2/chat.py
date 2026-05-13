@@ -6,6 +6,11 @@ from typing import Any, cast
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from app.chains.general_langchain_agent import invoke_general_lc_agent
+from app.chains.general_langchain_handlers import (
+    astream_lc_with_persistence,
+    collect_lc_file_context,
+)
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import get_agentic_rag_flow_streaming, get_chat_service
@@ -112,11 +117,84 @@ async def ask_question(request: ChatRequest, raw_request: Request):
         should_stream = settings.STREAM if request.stream is None else request.stream
         is_dt_team_request = _is_dt_team_request(raw_request)
 
-        if should_stream:
-            session_id, message_id = await chat_service.prepare_chat_request(
+        session_id, message_id = await chat_service.prepare_chat_request(
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+
+        if assistant_name == "main":
+            logger.info("General assistant: using LangGraph / LangChain (Gemini) path")
+            thread_id = f"{request.user_id}:{session_id}"
+            file_context = await collect_lc_file_context(
                 user_id=request.user_id,
-                session_id=request.session_id,
+                query=request.query,
+                file_ids=request.file_ids,
             )
+            dt_suffix = DT_TEAM_DISCLAIMER if is_dt_team_request else ""
+
+            if should_stream:
+                started_stream = perf_counter()
+                return chat_service.create_streaming_response(
+                    astream_lc_with_persistence(
+                        thread_id=thread_id,
+                        query=request.query,
+                        file_context=file_context,
+                        user_id=request.user_id,
+                        session_id=session_id,
+                        message_id=message_id,
+                        file_ids=request.file_ids,
+                        assistant="main",
+                        started_at=started_stream,
+                        dt_team_disclaimer_suffix=dt_suffix,
+                    )
+                )
+
+            started_at = perf_counter()
+            try:
+                answer, lc_meta = await invoke_general_lc_agent(
+                    thread_id=thread_id,
+                    query=request.query,
+                    file_context=file_context,
+                    user_id_for_logs=request.user_id,
+                )
+            except RuntimeError as e:
+                logger.error(
+                    "[ChatAPI/v2] LangChain general assistant misconfiguration: %s",
+                    e,
+                    exc_info=True,
+                )
+                raise ChatGenerationException(str(e)) from e
+
+            answer_out = _append_dt_team_disclaimer(
+                answer, is_dt_team_request=is_dt_team_request
+            )
+            latency_ms = int((perf_counter() - started_at) * 1000)
+            merged_meta = dict(lc_meta or {})
+            merged_meta["latency_ms"] = latency_ms
+            metadata = chat_service.build_message_metadata(
+                assistant="main",
+                stream=False,
+                latency_ms=latency_ms,
+                generation_meta=merged_meta,
+            )
+            chat_service.schedule_message_persistence(
+                user_id=request.user_id,
+                session_id=session_id,
+                message_id=message_id,
+                query=request.query,
+                answer=answer_out,
+                file_ids=request.file_ids,
+                metadata=metadata,
+            )
+            return ChatResponse(
+                answer=answer_out,
+                session_id=session_id,
+                message_id=message_id,
+                latency_ms=latency_ms,
+                attachments=None,
+            )
+
+        if should_stream:
             return chat_service.create_streaming_response(
                 _stream_chat_answer(
                     request,
@@ -126,11 +204,6 @@ async def ask_question(request: ChatRequest, raw_request: Request):
                     message_id,
                 )
             )
-
-        session_id, message_id = await chat_service.prepare_chat_request(
-            user_id=request.user_id,
-            session_id=request.session_id,
-        )
 
         response = await chat_service.ask_question(
             user_id=request.user_id,
