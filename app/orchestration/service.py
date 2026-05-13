@@ -28,6 +28,16 @@ class Purpose(Enum):
     LITE = "lite"
 
 
+class _NoOpLangGraphStore:
+    """Duck-typed stand-in for LangGraph ``store`` while long-term memory is off.
+
+    Implements only what ``nodes.load_long_term_memory`` calls (``search``).
+    """
+
+    def search(self, namespace: tuple[str, ...], limit: int = 5) -> list:
+        return []
+
+
 class OrchestrationService:
     """Loads external systems and exposes the compiled retrieval graph."""
 
@@ -228,16 +238,7 @@ class OrchestrationService:
         return _get_agent_checkpointer()
 
     def _build_store(self) -> Any:
-        from langgraph.store.mongodb import MongoDBStore
-
-        if not settings.MONGODB_URI:
-            raise RuntimeError("MONGODB_URI is required for orchestration long-term memory.")
-
-        store_cm = MongoDBStore.from_conn_string(
-            conn_string=settings.MONGODB_URI,
-            db_name=settings.MONGODB_DB_NAME,
-            collection_name="long_term_memory",
-        )
-        store = store_cm.__enter__()
-        self._store_cm = store_cm
-        return store
+        # Long-term cross-thread memory (MongoDBStore) is not wired in production yet.
+        # Redis checkpoint still holds per-thread state; rewrite prompt gets empty long_memory.
+        logger.debug("Orchestration long-term store: no-op (Mongo store disabled).")
+        return _NoOpLangGraphStore()
