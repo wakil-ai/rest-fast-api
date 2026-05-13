@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v2"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
+    #: Log LangGraph Redis thread messages to stdout after each orchestrated answer (noisy).
+    ORCHESTRATION_DEBUG_THREAD_STATE: bool = False
     DEVELOPMENT_MODE: bool = False
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Reserved for future OpenTelemetry wiring

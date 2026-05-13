@@ -15,6 +15,12 @@ from app.orchestration.agents import web_search_fallback as web_search_agent
 from app.orchestration.providers import resolve_gemini_model_name
 from app.orchestration.prompts import PromptRegistry
 from app.orchestration.state import GraphContext, RetrievalRewriteState
+from app.orchestration.utils import (
+    agent_session_thread_id,
+    log_langgraph_thread_state_debug,
+    log_orchestration_pipeline_messages_debug,
+    merge_langgraph_thread_into_state_messages,
+)
 
 
 class Purpose(Enum):
@@ -137,6 +143,7 @@ class OrchestrationService:
 
         await apply(await nodes.load_file_and_project_context(state, self))
         await apply(nodes.ingest_payload(state))
+        await merge_langgraph_thread_into_state_messages(state)
         await apply(nodes.load_long_term_memory(state, self, self.store))
         await apply(await nodes.recognize_intent(state, self))
         await apply(await nodes.route_court(state, self))
@@ -147,16 +154,36 @@ class OrchestrationService:
             await apply(await nodes.evaluate_context(state, self))
             await apply(await nodes.web_search_fallback(state, self))
 
+        log_orchestration_pipeline_messages_debug(
+            state, phase="after_prepare_final_state"
+        )
+        uid = str(state.get("user_id") or "").strip()
+        sid = str(state.get("session_id") or "").strip()
+        if uid and sid:
+            await log_langgraph_thread_state_debug(
+                agent_session_thread_id(uid, sid),
+                phase="after_prepare_final_state_redis_thread",
+            )
+
         return state
 
     async def astream_final_answer(
         self,
         state: dict[str, Any],
-    ) -> AsyncGenerator[str | dict[str, str], None]:
+    ) -> AsyncGenerator[str | dict[str, Any], None]:
         from app.orchestration import nodes
+
+        uid = str(state.get("user_id") or "").strip()
+        sid = str(state.get("session_id") or "").strip()
+        thread_id = agent_session_thread_id(uid, sid) if uid and sid else ""
 
         async for item in nodes.stream_final_answer(state, self):
             yield item
+
+        if thread_id:
+            await log_langgraph_thread_state_debug(
+                thread_id, phase="after_answer_stream_complete"
+            )
 
     def _build_llm(self, model_name: str, purpose: Purpose) -> ChatGoogleGenerativeAI:
         if not settings.GEMINI_API_KEY:

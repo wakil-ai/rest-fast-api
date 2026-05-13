@@ -8,7 +8,6 @@ from langchain_core.messages import (
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
-    SystemMessage,
 )
 
 from app.core.assistants import AssistantConfig
@@ -97,7 +96,7 @@ async def route_court(
 async def rewrite_query(
     state: RetrievalRewriteState, runtime: OrchestrationService
 ) -> dict:
-    history = state.get("messages", [])[-10:]
+    history = history_text_from_state(state)
     prompt = runtime.prompt_registry.get_prompt("retrieval_query_rewrite").format(
         query=state["query"],
         history=history,
@@ -176,44 +175,40 @@ async def generate_final_answer(
 async def stream_final_answer(
     state: RetrievalRewriteState,
     runtime: OrchestrationService,
-) -> AsyncGenerator[str | dict[str, str], None]:
+    *,
+    usage_holder: dict[str, Any] | None = None,
+) -> AsyncGenerator[str | dict[str, Any], None]:
+    """Stream final answer via LangGraph ``create_agent`` + Redis checkpointer (thread memory)."""
+    from app.orchestration.llms import LangChain
+    from app.orchestration.utils import agent_session_thread_id
+
     system_prompt, user_prompt = build_final_answer_messages(state, runtime)
-    streamed_answer_prefix = ""
-    streamed_think_prefix = ""
-
-    async for chunk in runtime.generation_llm.astream(
-        [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt),
-        ]
+    thread_id = agent_session_thread_id(
+        str(state.get("user_id") or ""),
+        str(state.get("session_id") or ""),
+    )
+    assistant = (
+        state.get("selected_assistant")
+        or state.get("assistant_name")
+        or state.get("collection_name")
+        or "main"
+    )
+    lc = LangChain(checkpointer=runtime.checkpointer)
+    async for item in lc.astream_turn(
+        thread_id=thread_id,
+        query=user_prompt.strip(),
+        system_prompt=system_prompt,
+        assistant_name=str(assistant),
     ):
-        if not isinstance(chunk, (AIMessage, AIMessageChunk)):
-            text = message_content_to_plain_str(getattr(chunk, "content", chunk))
-            if text:
-                delta, streamed_answer_prefix = _delta_stream_text(
-                    previous=streamed_answer_prefix,
-                    piece=text,
-                )
-                if delta:
-                    yield delta
-            continue
-
-        for kind, piece in _stream_pieces(chunk):
-            if kind == "think":
-                delta, streamed_think_prefix = _delta_stream_text(
-                    previous=streamed_think_prefix,
-                    piece=piece,
-                )
-                if delta:
-                    yield {"type": "think", "chunk": delta}
-                continue
-
-            delta, streamed_answer_prefix = _delta_stream_text(
-                previous=streamed_answer_prefix,
-                piece=piece,
-            )
-            if delta:
-                yield delta
+        if (
+            usage_holder is not None
+            and isinstance(item, dict)
+            and item.get("type") == "_generation_meta"
+        ):
+            meta = item.get("meta")
+            if isinstance(meta, dict) and isinstance(meta.get("token_usage"), dict):
+                usage_holder["token_usage"] = meta["token_usage"]
+        yield item
 
 
 def build_final_answer_messages(

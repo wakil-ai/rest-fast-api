@@ -16,11 +16,15 @@ def message_content_to_plain_str(content: Any) -> str:
 
 def history_text_from_state(state: dict[str, Any]) -> str:
     messages = state.get("messages") or []
-    return "\n".join(
-        f"{message.type}: {message.content}"
-        for message in messages
-        if getattr(message, "content", None)
-    )
+    lines: list[str] = []
+    for message in messages:
+        raw = getattr(message, "content", None)
+        if raw is None:
+            continue
+        text = message_content_to_plain_str(raw)
+        if text:
+            lines.append(f"{message.type}: {text}")
+    return "\n".join(lines)
 
 
 def _content_block_to_text(block: Any) -> str:

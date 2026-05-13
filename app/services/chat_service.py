@@ -377,9 +377,17 @@ class ChatService:
                     yield {"type": "attachments", "attachments": list(raw_atts)}
 
             answer_chunks: list[str] = []
+            final_generation_meta: dict[str, Any] = {}
             async for item in service.astream_final_answer(last_state):
                 if isinstance(item, str):
                     answer_chunks.append(item)
+                elif (
+                    isinstance(item, dict)
+                    and item.get("type") == "_generation_meta"
+                    and isinstance(item.get("meta"), dict)
+                ):
+                    final_generation_meta = item["meta"]
+                    continue
                 yield item
 
             answer = "".join(answer_chunks).strip()
@@ -396,6 +404,7 @@ class ChatService:
                 assistant=assistant,
                 orchestration_result=result_wrapped,
             )
+            generation_meta.update(final_generation_meta)
         except Exception as error:
             detail = _orchestration_exception_detail(error)
             logger.error(

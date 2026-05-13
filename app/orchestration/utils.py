@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import messages_from_dict
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
 
@@ -250,6 +251,119 @@ def _get_agent_checkpointer() -> Any:
             "Application startup must call init_agent_checkpointer()."
         )
     return _agent_checkpointer
+
+
+async def load_langgraph_agent_thread_messages(thread_id: str) -> list[BaseMessage]:
+    """Load persisted ``messages`` from the LangGraph Redis thread (``create_agent`` / LangChain)."""
+    if not str(thread_id or "").strip():
+        return []
+    cp = _get_agent_checkpointer()
+    aget = getattr(cp, "aget_tuple", None)
+    if not callable(aget):
+        return []
+    try:
+        tup = await aget({"configurable": {"thread_id": thread_id}})
+    except Exception as exc:
+        logger.warning(
+            "[orchestration] Failed to read LangGraph thread %r: %s",
+            thread_id,
+            exc,
+            exc_info=True,
+        )
+        return []
+    if tup is None:
+        return []
+    ch = (tup.checkpoint or {}).get("channel_values") or {}
+    raw = ch.get("messages")
+    if not isinstance(raw, list):
+        return []
+    out: list[BaseMessage] = []
+    for m in raw:
+        if isinstance(m, BaseMessage):
+            out.append(m)
+        elif isinstance(m, dict):
+            try:
+                out.extend(messages_from_dict([m]))
+            except Exception:
+                logger.debug(
+                    "[orchestration] Skip one non-LC message dict from thread %r",
+                    thread_id,
+                    exc_info=True,
+                )
+    return out
+
+
+def _debug_thread_state_enabled() -> bool:
+    return bool(settings.DEBUG or settings.ORCHESTRATION_DEBUG_THREAD_STATE)
+
+
+async def log_langgraph_thread_state_debug(
+    thread_id: str, *, phase: str = "after_answer"
+) -> None:
+    """Print and log persisted LangGraph ``messages`` for ``thread_id`` (orchestration final agent)."""
+    if not _debug_thread_state_enabled():
+        return
+    msgs = await load_langgraph_agent_thread_messages(thread_id)
+    lines = [
+        f"[orchestration-debug] LangGraph thread_id={thread_id!r} phase={phase} "
+        f"n_messages={len(msgs)}"
+    ]
+    for i, m in enumerate(msgs):
+        raw = getattr(m, "content", None)
+        preview = message_content_to_plain_str(raw)
+        if len(preview) > 800:
+            preview = preview[:800] + "…"
+        lines.append(f"  [{i}] {getattr(m, 'type', m.__class__.__name__)}: {preview!r}")
+    block = "\n".join(lines)
+    print(block, flush=True)
+    logger.info(block)
+
+
+def log_orchestration_pipeline_messages_debug(
+    state: dict[str, Any], *, phase: str
+) -> None:
+    """Print ``state['messages']`` used for rewrite / retrieval (includes merged Redis history)."""
+    if not _debug_thread_state_enabled():
+        return
+    msgs = state.get("messages")
+    if not isinstance(msgs, list):
+        msgs = []
+    lines = [
+        f"[orchestration-debug] pipeline state['messages'] phase={phase} n_messages={len(msgs)}"
+    ]
+    for i, m in enumerate(msgs):
+        if not isinstance(m, BaseMessage):
+            lines.append(f"  [{i}] (non-BaseMessage): {m!r}")
+            continue
+        raw = getattr(m, "content", None)
+        preview = message_content_to_plain_str(raw)
+        if len(preview) > 800:
+            preview = preview[:800] + "…"
+        lines.append(f"  [{i}] {getattr(m, 'type', m.__class__.__name__)}: {preview!r}")
+    block = "\n".join(lines)
+    print(block, flush=True)
+    logger.info(block)
+
+
+async def merge_langgraph_thread_into_state_messages(state: dict[str, Any]) -> None:
+    """Copy ``messages`` from the LangGraph Redis thread into ``state`` for pre-agent nodes.
+
+    Rewrite / intent / retrieval run outside ``create_agent``; they read ``state['messages']``.
+    This hydrates that list from the same ``thread_id`` the final LangChain agent uses.
+    """
+    user_id = str(state.get("user_id") or "").strip()
+    session_id = str(state.get("session_id") or "").strip()
+    if not user_id or not session_id:
+        return
+    tid = agent_session_thread_id(user_id, session_id)
+    prior = await load_langgraph_agent_thread_messages(tid)
+    if not prior:
+        return
+    current = state.get("messages") or []
+    if not isinstance(current, list) or not current:
+        state["messages"] = list(prior)
+        return
+    state["messages"] = list(prior) + list(current)
 
 
 def _format_main_system_instructions() -> str:
@@ -506,12 +620,18 @@ async def collect_file_and_project_context(
     query: str,
     project_id: str | None = None,
 ) -> tuple[str, str]:
-    """Return (project-only block, combined prompt context for uploads + project)."""
+    """Return (project-only block, combined prompt context for uploads + project).
+
+    Workspace Milvus (``retrieve_project_related_context``) runs only when
+    ``project_id`` is non-empty. Per-file Milvus uses ``file_id`` + ``user_id`` only
+    (see :func:`milvus_filter_for_uploaded_file_vectors`).
+    """
     project_context = ""
-    if project_id:
+    pid = str(project_id).strip() if project_id is not None else ""
+    if pid:
         project_context = await retrieve_project_related_context(
             query=query,
-            project_id=project_id,
+            project_id=pid,
             user_id=user_id,
         )
         if project_context:
@@ -541,9 +661,12 @@ async def retrieve_project_related_context(
     user_id: str,
 ) -> str:
     try:
+        pid = str(project_id).strip()
+        if not pid:
+            return ""
         block = await get_retrieval_service().retrieve_project_context(
             query=query,
-            project_id=project_id,
+            project_id=pid,
             user_id=user_id,
             top_k=settings.TOP_K,
         )
@@ -553,20 +676,37 @@ async def retrieve_project_related_context(
     return block or ""
 
 
+def milvus_filter_for_uploaded_file_vectors(file_id: str, user_id: str) -> str:
+    """Build a Milvus filter for chunks of a single uploaded file.
+
+    **Policy:** use only ``metadata["file_id"]`` and ``metadata["user_id"]``.
+    Never add ``metadata["project_id"]``, even when Mongo has a non-null
+    ``project_id``: many vectors are indexed without ``project_id`` (e.g.
+    message-scoped uploads), and a project clause would wrongly return no hits.
+    ``file_id`` is unique per upload; that is the authoritative scope.
+    """
+    fid = str(file_id or "").strip()
+    uid = str(user_id or "").strip()
+    return f'metadata["file_id"] == "{fid}" and metadata["user_id"] == "{uid}"'
+
+
 async def _retrieve_uploaded_file_context(
     *,
     file_id: str,
     user_id: str,
     query: str,
     file_name: str,
-    project_id: str | None = None,
 ) -> str:
-    expr = (
-        f'metadata["file_id"] == "{file_id}" '
-        f'and metadata["user_id"] == "{user_id}"'
-    )
-    if project_id:
-        expr += f' and metadata["project_id"] == "{project_id}"'
+    """Hybrid search over Milvus chunks for one uploaded file.
+
+    Uses :func:`milvus_filter_for_uploaded_file_vectors` only (never ``project_id``).
+    """
+    if not str(file_id or "").strip() or not str(user_id or "").strip():
+        return ""
+    if not str(query or "").strip():
+        return ""
+
+    expr = milvus_filter_for_uploaded_file_vectors(file_id, user_id)
     embedder = get_embedding_manager()
     retrieval_service = get_retrieval_service()
     try:
@@ -620,7 +760,6 @@ async def collect_uploaded_file_context(
                 user_id=user_id,
                 query=query,
                 file_name=file_name,
-                project_id=file.get("project_id"),
             )
             if context:
                 file_chunks.append(limit_file_context_for_llm(context))
