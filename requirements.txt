@@ -19,6 +19,11 @@ langchain-google-genai==4.2.2
 langchain-docling==2.0.0
 langgraph==1.1.10
 langgraph-checkpoint-redis==0.4.1
+# LangGraph MongoDBStore (``from langgraph.store.mongodb import MongoDBStore``) — not bundled; needs:
+langchain-mongodb==0.11.0
+pymongo-search-utils==0.3.0
+# Optional: Mongo checkpoints instead of Redis — only if you switch off ``langgraph-checkpoint-redis``:
+# langgraph-checkpoint-mongodb>=0.4.0
 
 # LLM providers
 openai>=1.90,<2.0.0
