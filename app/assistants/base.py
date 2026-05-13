@@ -31,7 +31,9 @@ from app.core.dependencies import (
     get_storage_service,
 )
 from app.core.logger import logger
-from app.llms import LLM, ChatGPT, Claude, Gemini, Novita
+from app.orchestration.providers import LLM
+from app.orchestration.providers import ChatGPT, Claude, Gemini, Novita
+from app.orchestration.llms import LangChain
 from app.models.retrieval_models import RetrievalConfig, RetrievalResult
 from app.retrieval.embedding_manager import get_instruction
 from app.utils.contract_docx import contract_text_to_docx_bytes
@@ -384,7 +386,6 @@ class BaseAgent:
         stream: bool,
     ) -> AsyncGenerator[Any, None] | tuple[str, dict[str, Any]]:
         from app.orchestration.utils import _get_agent_checkpointer
-        from app.llms.lanchain import LangChain
 
         lc = LangChain(checkpointer=_get_agent_checkpointer())
         if stream:

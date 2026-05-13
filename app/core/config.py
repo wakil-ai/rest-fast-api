@@ -2,6 +2,7 @@ import os
 from enum import Enum
 
 from dotenv import load_dotenv
+from google.genai._interactions.types.interaction import AgentConfig
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
@@ -112,12 +113,13 @@ class Settings(BaseSettings):
 
     # OpenAI GPT
     OPENAI_API_KEY: str | None = None
-    DEFAULT_CHAT_MODEL: str = "gpt-5.2"  # Default model for chat completions
-    CLASSIFIER_MODEL: str = "gpt-4.1"  # Default model for routing/intent classification
-    GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI default model
 
-    RETRIEVAL_CHAIN_MODEL: str = "gpt-4.1-mini"
-    RETRIEVAL_CHAIN_MAX_TOKENS: int = 1024
+    # Default models
+    DEFAULT_CHAT_MODEL: str = "gemini-3.1-pro-preview"  # Default model for chat completions
+    DEFAULT_LITE_MODEL: str = "gemini-2.5-flash-lite"  # Default model for routing/intent classification
+
+    # Fallback model for chat completions
+    GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI fallback model for chat completions
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: str | None = None
@@ -184,8 +186,6 @@ class Settings(BaseSettings):
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
     STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0
-    #: Max characters per SSE ``chunk`` payload when the model sends a large delta at once
-    #: (avoids a single huge JSON line and improves progressive rendering).
     STREAM_SSE_MAX_RESPONSE_CHARS: int = 200
     TOP_K: int = 10
     ADDITIONAL_TOP_K: int = (
@@ -265,11 +265,7 @@ class Settings(BaseSettings):
     AUTH_SECRET_KEY: str = "secret-key-change-me"
 
     GEMINI_API_KEY: str | None = None
-    #: Model id for `ChatGoogleGenerativeAI` on `/api/v3/chat` (e.g. `gemini-2.5-flash`).
-    GEMINI_LANGCHAIN_CHAT_MODEL: str | None = None
-    #: Gemini extended thinking for LangGraph chat: ``minimal`` / ``low`` / ``medium`` / ``high``.
-    #: Lower values reduce time-to-first-token when streaming (``high`` buffers reasoning before answer tokens).
-    GEMINI_LANGCHAIN_THINKING_LEVEL: str = "low"
+    GEMINI_LANGCHAIN_THINKING_LEVEL: str = "high"
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379

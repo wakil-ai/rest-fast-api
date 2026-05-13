@@ -8,13 +8,35 @@ from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 
 from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+)
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
-from app.llms.base import LLM
-from app.llms.gemini import resolve_gemini_model_name
+from app.orchestration.providers import LLM, resolve_gemini_model_name
+from app.orchestration.text import message_content_to_plain_str
+
+
+async def ainvoke_lite_classification_chat(
+    llm: ChatGoogleGenerativeAI,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+) -> str:
+    """Single-turn system + user call; returns assistant text only."""
+    out = await llm.ainvoke(
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+    )
+    return message_content_to_plain_str(getattr(out, "content", out))
 
 
 class LangChain(LLM):
@@ -33,7 +55,7 @@ class LangChain(LLM):
     def resolve_model_name(cls, model_name: str | None = None) -> str:
         if isinstance(model_name, str) and model_name.strip():
             return resolve_gemini_model_name(model_name)
-        raw = settings.GEMINI_LANGCHAIN_CHAT_MODEL
+        raw = getattr(settings, "GEMINI_LANGCHAIN_CHAT_MODEL", "")
         if isinstance(raw, str) and raw.strip():
             return resolve_gemini_model_name(raw)
         default = settings.DEFAULT_CHAT_MODEL or ""
@@ -417,4 +439,8 @@ class LangChain(LLM):
         return ""
 
 
-__all__ = ["LangChain"]
+__all__ = [
+    "LangChain",
+    "ainvoke_lite_classification_chat",
+    "message_content_to_plain_str",
+]

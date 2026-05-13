@@ -1,9 +1,11 @@
 from pathlib import Path
+from typing import Any
 
 import yaml
 
-from app.core.dependencies import get_classifier_llm
+from app.core.dependencies import get_orchestration_service
 from app.core.logger import logger
+from app.orchestration.llms import ainvoke_lite_classification_chat
 from app.orchestration.prompts import PromptRegistry
 
 
@@ -11,7 +13,6 @@ class MilvusQueryAgent:
     """Generate Milvus filter expressions for court retrieval."""
 
     def __init__(self, prompt_registry: PromptRegistry | None = None) -> None:
-        self.llm = get_classifier_llm()
         self.prompt_registry = prompt_registry or PromptRegistry()
         self.prompt = self.prompt_registry.get_prompt("milvus_query_agent").template
         self._court_metadata = self._load_court_metadata()
@@ -75,6 +76,7 @@ class MilvusQueryAgent:
         file_context: str = "",
         *,
         assistant: str | None = None,
+        llm: Any | None = None,
     ) -> str:
         try:
             structured_prompt = self._build_prompt(
@@ -83,10 +85,10 @@ class MilvusQueryAgent:
                 chat_history=chat_history,
                 file_context=file_context,
             )
-            response = await self.llm.generate_response(
-                user_prompt=query,
+            response = await ainvoke_lite_classification_chat(
+                llm or get_orchestration_service().lite_llm,
                 system_prompt=structured_prompt,
-                stream=False,
+                user_prompt=query,
             )
             logger.debug(f"[MilvusQueryAgent] Generated filter: {response.strip()}")
             return response.strip()

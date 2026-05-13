@@ -3,8 +3,9 @@ from typing import Any
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import ValidationError
 
-from app.core.dependencies import get_classifier_llm
+from app.core.dependencies import get_orchestration_service
 from app.core.logger import logger
+from app.orchestration.llms import ainvoke_lite_classification_chat
 from app.models.intent_types import DomainType, IntentOutput, LegalIntent
 from app.orchestration.prompts import PromptRegistry
 
@@ -12,7 +13,6 @@ from app.orchestration.prompts import PromptRegistry
 class IntentClassifier:
     def __init__(self, prompt_registry: PromptRegistry | None = None) -> None:
         self.prompt_registry = prompt_registry or PromptRegistry()
-        self.llm = get_classifier_llm()
         self.output_parser = PydanticOutputParser(pydantic_object=IntentOutput)
         self.intent_prompt_template = self.prompt_registry.get_prompt(
             "intent_classification"
@@ -23,15 +23,16 @@ class IntentClassifier:
         query: str,
         chat_history: str = "",
         file_context: str = "",
+        llm: Any | None = None,
     ) -> tuple[str, Any, LegalIntent]:
         try:
             structured_prompt = self._build_prompt(
                 query, chat_history, file_context
             )
-            response = await self.llm.generate_response(
-                user_prompt=query,
+            response = await ainvoke_lite_classification_chat(
+                llm or get_orchestration_service().lite_llm,
                 system_prompt=structured_prompt,
-                stream=False,
+                user_prompt=query,
             )
             parsed = self._parse_response(response, file_context)
             domain, intent = self._map_to_enums(

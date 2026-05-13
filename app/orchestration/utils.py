@@ -25,7 +25,7 @@ from app.core.dependencies import (
     get_retrieval_service,
 )
 from app.core.logger import logger
-from app.llms.lanchain import LangChain
+from app.orchestration.llms import LangChain
 from app.utils.tokens import count_tokens, truncate_to_token_limit
 
 if TYPE_CHECKING:
@@ -715,6 +715,7 @@ async def load_turn_file_context(state: RetrievalRewriteState) -> dict[str, Any]
         )
         return {}
 
+
 def _get_agent_registry() -> dict[str, type[Any]]:
     from app.assistants import (
         AdministrativeCourtAgent,
@@ -727,7 +728,7 @@ def _get_agent_registry() -> dict[str, type[Any]]:
         TaxAgent,
     )
 
-    _AGENT_REGISTRY = {
+    return {
         "main": MainAgent,
         "umumiy": MainAgent,
         "tax": TaxAgent,
@@ -738,7 +739,7 @@ def _get_agent_registry() -> dict[str, type[Any]]:
         "economic_court": EconomicCourtAgent,
         "civil_court": CivilCourtAgent,
     }
-    return _AGENT_REGISTRY
+
 
 def get_chat_agent(assistant_name: str | None) -> BaseAgent:
     """Return a cached assistant agent for the canonical assistant name."""
@@ -746,17 +747,11 @@ def get_chat_agent(assistant_name: str | None) -> BaseAgent:
 
     canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
     if canonical not in _CHAT_AGENT_CACHE:
-        registry = _get_agent_registry()
-        cls = registry.get(canonical, MainAgent)
+        cls = _AGENT_REGISTRY.get(canonical, MainAgent)
         _CHAT_AGENT_CACHE[canonical] = cls()
     return _CHAT_AGENT_CACHE[canonical]
 
 
 _AGENT_REGISTRY = _get_agent_registry()
 _CHAT_AGENT_CACHE: dict[str, Any] = {}
-
-
-
-
-
 

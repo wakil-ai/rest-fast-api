@@ -293,15 +293,49 @@ class ChatService:
         )
 
         try:
-            answer, generation_meta = await self.run_orchestrated_chat(
+            service = get_orchestration_service()
+            payload = service.build_payload(
+                query=query,
                 user_id=user_id,
                 session_id=session_id,
                 message_id=message_id,
-                query=query,
-                assistant=assistant,
+                assistant_name=assistant,
                 file_ids=file_ids,
                 project_id=project_id,
                 file_context=file_context,
+            )
+            last_state = await service.prepare_final_state(payload)
+            prev_attachment_urls: frozenset[str] = frozenset()
+            raw_atts = last_state.get("attachments")
+            if isinstance(raw_atts, list) and raw_atts:
+                urls = frozenset(
+                    str((a or {}).get("url") or "").strip()
+                    for a in raw_atts
+                    if isinstance(a, dict) and str((a or {}).get("url") or "").strip()
+                )
+                if urls and urls != prev_attachment_urls:
+                    prev_attachment_urls = urls
+                    yield {"type": "attachments", "attachments": list(raw_atts)}
+
+            answer_chunks: list[str] = []
+            async for item in service.astream_final_answer(last_state):
+                if isinstance(item, str):
+                    answer_chunks.append(item)
+                yield item
+
+            answer = "".join(answer_chunks).strip()
+            last_state["final_answer"] = answer
+            last_state["retrieval_context"] = ""
+            result_wrapped = {
+                "original_query": query,
+                "rewritten_query": last_state.get("rewritten_query"),
+                "retrieval_context": last_state.get("retrieval_context", ""),
+                "final_answer": answer,
+                "result": last_state,
+            }
+            generation_meta = self.orchestration_generation_meta(
+                assistant=assistant,
+                orchestration_result=result_wrapped,
             )
         except Exception as error:
             detail = _orchestration_exception_detail(error)
@@ -315,8 +349,8 @@ class ChatService:
             answer,
             is_dt_team_request=is_dt_team_request,
         )
-        if answer_out:
-            yield answer_out
+        if is_dt_team_request and settings.DT_TEAM_DISCLAIMER:
+            yield settings.DT_TEAM_DISCLAIMER
 
         latency_ms = int((perf_counter() - started_at) * 1000)
         merged_meta = dict(generation_meta)

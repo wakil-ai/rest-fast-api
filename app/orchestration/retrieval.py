@@ -8,6 +8,7 @@ from app.assistants.court import CourtAgent
 from app.core.assistants import AssistantConfig
 from app.models.retrieval_models import RetrievalResult
 from app.orchestration.state import COLLECTION_KEYS, RetrievalRewriteState
+from app.orchestration.text import history_text_from_state
 
 COURT_SPECIALISTS = frozenset(
     {
@@ -74,7 +75,7 @@ async def retrieve_for_assistant(
 ) -> dict[str, Any]:
     assistant = resolve_assistant(state)
     query = state.get("rewritten_query") or state["query"]
-    chat_history = _history_text(state)
+    chat_history = history_text_from_state(state)
     file_context = upload_context or state.get("file_context") or ""
 
     if assistant == "court":
@@ -156,12 +157,3 @@ async def _retrieve_court_routed(
     updates["selected_assistant"] = routed_request.assistant
     updates["court_route_tag"] = court_route_tag
     return updates
-
-
-def _history_text(state: RetrievalRewriteState) -> str:
-    messages = state.get("messages") or []
-    return "\n".join(
-        f"{message.type}: {message.content}"
-        for message in messages
-        if getattr(message, "content", None)
-    )

@@ -1,8 +1,10 @@
 import re
 from dataclasses import dataclass
+from typing import Any
 
-from app.core.dependencies import get_classifier_llm
+from app.core.dependencies import get_orchestration_service
 from app.core.logger import logger
+from app.orchestration.llms import ainvoke_lite_classification_chat
 from app.orchestration.prompts import PromptRegistry
 
 
@@ -39,7 +41,6 @@ class CourtClassifier:
 
     def __init__(self, prompt_registry: PromptRegistry | None = None) -> None:
         self.prompt_registry = prompt_registry or PromptRegistry()
-        self.llm = get_classifier_llm()
         self.court_prompt_template = self.prompt_registry.get_prompt(
             "court_classify_prompt"
         ).template
@@ -49,14 +50,15 @@ class CourtClassifier:
         query: str,
         chat_history: str = "",
         file_context: str = "",
+        llm: Any | None = None,
     ) -> CourtRoutingDecision:
         try:
-            response = await self.llm.generate_response(
+            response = await ainvoke_lite_classification_chat(
+                llm or get_orchestration_service().lite_llm,
+                system_prompt=self.court_prompt_template,
                 user_prompt=self._build_user_prompt(
                     query, chat_history, file_context
                 ),
-                system_prompt=self.court_prompt_template,
-                stream=False,
             )
             if not isinstance(response, str):
                 return CourtRoutingDecision(

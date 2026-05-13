@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Dict
 
 from langchain_core.prompts import PromptTemplate
 
@@ -49,7 +48,7 @@ class PromptRegistry:
 
     def __init__(self) -> None:
         self.prompts_dir = Path(__file__).resolve().parent / "prompts"
-        self.prompts: Dict[str, PromptTemplate] = {}
+        self.prompts: dict[str, PromptTemplate] = {}
         self._load_prompts()
 
     def _load_prompts(self) -> None:

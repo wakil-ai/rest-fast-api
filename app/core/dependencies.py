@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from app.orchestration.agents.intent_recognition import IntentClassifier
     from app.orchestration.agents.milvus_agent import MilvusQueryAgent
     from app.db import DBManager, MilvusHandler, MongoHandler, PineconeHandler
-    from app.llms import LLM
+    from app.orchestration.providers import LLM
     from app.orchestration.service import OrchestrationService
     from app.retrieval import (
         EmbeddingManager,
@@ -122,31 +122,9 @@ def get_orchestration_service() -> "OrchestrationService":
 @lru_cache
 def get_fallback_llm() -> "LLM":
     from app.core.config import settings
-    from app.llms import ChatGPT, Claude, Gemini, Novita
+    from app.orchestration.providers import ChatGPT, Claude, Gemini, Novita
 
     model_name = settings.DEFAULT_CHAT_MODEL
-    mapping = {
-        "gemma-": Novita,
-        "gpt-oss-": Novita,
-        "gpt-": ChatGPT,
-        "claude-": Claude,
-        "gemini-": Gemini,
-    }
-
-    for prefix, cls in mapping.items():
-        if model_name.startswith(prefix):
-            return cls(model_name=model_name)
-
-    return ChatGPT(model_name=settings.GPT_COMPLETION_MODEL)
-
-
-@lru_cache
-def get_classifier_llm() -> "LLM":
-    """Return a model optimized for lightweight classification tasks."""
-    from app.core.config import settings
-    from app.llms import ChatGPT, Claude, Gemini, Novita
-
-    model_name = settings.CLASSIFIER_MODEL or settings.DEFAULT_CHAT_MODEL
     mapping = {
         "gemma-": Novita,
         "gpt-oss-": Novita,

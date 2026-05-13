@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+)
 
 from app.core.assistants import AssistantConfig
 from app.orchestration.retrieval import (
@@ -10,29 +17,14 @@ from app.orchestration.retrieval import (
     retrieve_for_assistant,
 )
 from app.orchestration.state import RetrievalRewriteState
+from app.orchestration.text import (
+    history_text_from_state,
+    message_content_to_plain_str,
+)
 from app.orchestration.utils import load_turn_file_context
 
 if TYPE_CHECKING:
     from app.orchestration.service import OrchestrationService
-
-
-def _llm_content_to_str(content: Any) -> str:
-    """Normalize Gemini / LangChain message content to a plain string."""
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict) and block.get("type") == "text":
-                parts.append(str(block.get("text", "")))
-            else:
-                parts.append(str(block))
-        return "".join(parts).strip()
-    return str(content).strip()
 
 
 def ingest_payload(state: RetrievalRewriteState) -> dict:
@@ -68,11 +60,12 @@ async def recognize_intent(
     if assistant not in {"contract_analyzer", "contract"}:
         return {}
 
-    history = _history_text(state)
+    history = history_text_from_state(state)
     domain, _prompt, intent = await runtime.intent_classifier.classify_intent(
         state["query"],
         chat_history=history,
         file_context=state.get("file_context") or "",
+        llm=runtime.lite_llm,
     )
     return {
         "intent_domain": domain,
@@ -88,11 +81,12 @@ async def route_court(
     if assistant not in {"court", "administrative_court"}:
         return {}
 
-    history = _history_text(state)
+    history = history_text_from_state(state)
     decision = await runtime.court_classifier.route_query(
         state["query"],
         chat_history=history,
         file_context=state.get("file_context") or "",
+        llm=runtime.lite_llm,
     )
     return {
         "selected_assistant": decision.assistant_name or "administrative_court",
@@ -110,9 +104,9 @@ async def rewrite_query(
         file_context=state.get("file_context") or "",
         long_memory=state.get("long_term_memory") or "",
     )
-    response = await runtime.rewrite_llm.ainvoke(prompt)
+    response = await runtime.lite_llm.ainvoke(prompt)
     raw = response.content if hasattr(response, "content") else str(response)
-    return {"rewritten_query": _llm_content_to_str(raw)}
+    return {"rewritten_query": message_content_to_plain_str(raw)}
 
 
 async def retrieve_documents(
@@ -166,6 +160,66 @@ async def web_search_fallback(
 async def generate_final_answer(
     state: RetrievalRewriteState, runtime: OrchestrationService
 ) -> dict:
+    answer_chunks: list[str] = []
+    async for item in stream_final_answer(state, runtime):
+        if isinstance(item, str):
+            answer_chunks.append(item)
+    answer = "".join(answer_chunks).strip()
+    return {
+        "final_answer": answer,
+        "messages": [AIMessage(content=answer)],
+        # Drop bulky field from checkpointed thread state (used only mid-graph).
+        "retrieval_context": "",
+    }
+
+
+async def stream_final_answer(
+    state: RetrievalRewriteState,
+    runtime: OrchestrationService,
+) -> AsyncGenerator[str | dict[str, str], None]:
+    system_prompt, user_prompt = build_final_answer_messages(state, runtime)
+    streamed_answer_prefix = ""
+    streamed_think_prefix = ""
+
+    async for chunk in runtime.generation_llm.astream(
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+    ):
+        if not isinstance(chunk, (AIMessage, AIMessageChunk)):
+            text = message_content_to_plain_str(getattr(chunk, "content", chunk))
+            if text:
+                delta, streamed_answer_prefix = _delta_stream_text(
+                    previous=streamed_answer_prefix,
+                    piece=text,
+                )
+                if delta:
+                    yield delta
+            continue
+
+        for kind, piece in _stream_pieces(chunk):
+            if kind == "think":
+                delta, streamed_think_prefix = _delta_stream_text(
+                    previous=streamed_think_prefix,
+                    piece=piece,
+                )
+                if delta:
+                    yield {"type": "think", "chunk": delta}
+                continue
+
+            delta, streamed_answer_prefix = _delta_stream_text(
+                previous=streamed_answer_prefix,
+                piece=piece,
+            )
+            if delta:
+                yield delta
+
+
+def build_final_answer_messages(
+    state: RetrievalRewriteState,
+    runtime: OrchestrationService,
+) -> tuple[str, str]:
     assistant = resolve_assistant(state)
     prompt_template = state.get("answer_prompt_template")
     if prompt_template is not None:
@@ -183,28 +237,77 @@ async def generate_final_answer(
         f"{retrieval_context if retrieval_context else '[NO CONTEXT FOUND]'}\n\n"
         f"User uploaded file context:\n{state.get('file_context') or ''}\n\n"
     )
-
-    response = await runtime.generation_llm.ainvoke(
-        [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt),
-        ]
-    )
-    answer = _llm_content_to_str(
-        response.content if hasattr(response, "content") else response
-    )
-    return {
-        "final_answer": answer,
-        "messages": [AIMessage(content=answer)],
-        # Drop bulky field from checkpointed thread state (used only mid-graph).
-        "retrieval_context": "",
-    }
+    return system_prompt, user_prompt
 
 
-def _history_text(state: RetrievalRewriteState) -> str:
-    messages = state.get("messages") or []
-    return "\n".join(
-        f"{message.type}: {message.content}"
-        for message in messages
-        if getattr(message, "content", None)
-    )
+def _delta_stream_text(*, previous: str, piece: str) -> tuple[str, str]:
+    if not piece:
+        return "", previous
+    if previous and piece.startswith(previous):
+        return piece[len(previous) :], piece
+    return piece, previous + piece
+
+
+def _stream_pieces(msg: BaseMessage) -> list[tuple[str, str]]:
+    pieces: list[tuple[str, str]] = []
+    blocks = _content_blocks(msg)
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block_type = block.get("type")
+        if block_type == "reasoning":
+            text = block.get("reasoning")
+            if text:
+                pieces.append(("think", str(text)))
+        elif block_type == "thinking":
+            text = block.get("thinking")
+            if text:
+                pieces.append(("think", str(text)))
+        elif block_type == "text":
+            text = block.get("text")
+            if text:
+                pieces.append(("answer", str(text)))
+
+    if pieces:
+        return pieces
+
+    content = getattr(msg, "content", None)
+    if isinstance(content, list):
+        return _content_list_pieces(content)
+
+    text = message_content_to_plain_str(content)
+    if text:
+        return [("answer", text)]
+    return []
+
+
+def _content_blocks(msg: BaseMessage) -> list[Any]:
+    try:
+        blocks = msg.content_blocks
+    except Exception:
+        return []
+    return list(blocks or [])
+
+
+def _content_list_pieces(content: list[Any]) -> list[tuple[str, str]]:
+    pieces: list[tuple[str, str]] = []
+    for block in content:
+        if isinstance(block, str):
+            if block:
+                pieces.append(("answer", block))
+            continue
+        if not isinstance(block, dict):
+            text = str(block)
+            if text:
+                pieces.append(("answer", text))
+            continue
+        block_type = block.get("type")
+        if block_type == "thinking":
+            text = block.get("thinking")
+            if text:
+                pieces.append(("think", str(text)))
+            continue
+        text = block.get("text")
+        if text:
+            pieces.append(("answer", str(text)))
+    return pieces

@@ -1,32 +1,25 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import AsyncGenerator
+from enum import Enum
 from typing import Any
 
+from langchain_core.messages import AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
-from app.llms.gemini import resolve_gemini_model_name
-from app.orchestration.agents import (
-    CourtClassifier,
-    IntentClassifier,
-    MilvusQueryAgent,
-    evaluate_context_sufficiency,
-    merge_web_results,
-    run_web_search_fallback,
-    should_run_web_search,
-)
+from app.core.logger import logger
+from app.orchestration.agents import CourtClassifier, IntentClassifier, MilvusQueryAgent
+from app.orchestration.agents import web_search_fallback as web_search_agent
+from app.orchestration.providers import resolve_gemini_model_name
 from app.orchestration.prompts import PromptRegistry
 from app.orchestration.state import GraphContext, RetrievalRewriteState
 
 
-@dataclass
-class WebSearchAgent:
-    evaluate_context_sufficiency = staticmethod(evaluate_context_sufficiency)
-    run_web_search_fallback = staticmethod(run_web_search_fallback)
-    merge_web_results = staticmethod(merge_web_results)
-    should_run_web_search = staticmethod(should_run_web_search)
+class Purpose(Enum):
+    GENERATION = "generation"
+    LITE = "lite"
 
 
 class OrchestrationService:
@@ -38,11 +31,11 @@ class OrchestrationService:
         self.intent_classifier = IntentClassifier(self.prompt_registry)
         self.court_classifier = CourtClassifier(self.prompt_registry)
         self.milvus_agent = MilvusQueryAgent(self.prompt_registry)
-        self.web_search = WebSearchAgent()
+        self.web_search = web_search_agent
         self._checkpointer: Any | None = None
         self._store: Any | None = None
         self._graph: Any | None = None
-        self._rewrite_llm: Any | None = None
+        self._lite_llm: Any | None = None
         self._generation_llm: Any | None = None
 
     @property
@@ -58,15 +51,18 @@ class OrchestrationService:
         return self._store
 
     @property
-    def rewrite_llm(self) -> Any:
-        if self._rewrite_llm is None:
-            self._rewrite_llm = self._build_llm()
-        return self._rewrite_llm
+    def lite_llm(self) -> Any:
+        if self._lite_llm is None:
+            self._lite_llm = self._build_llm(settings.DEFAULT_LITE_MODEL, Purpose.LITE)
+        return self._lite_llm
 
     @property
     def generation_llm(self) -> Any:
         if self._generation_llm is None:
-            self._generation_llm = self._build_llm()
+            self._generation_llm = self._build_llm(
+                settings.DEFAULT_CHAT_MODEL,
+                Purpose.GENERATION,
+            )
         return self._generation_llm
 
     def graph(self) -> Any:
@@ -111,37 +107,86 @@ class OrchestrationService:
         return payload
 
     async def arun(self, payload: dict[str, Any]) -> dict[str, Any]:
-        user_id = payload["user_id"]
-        session_id = payload["session_id"]
-        self.context = GraphContext(user_id=user_id)
-        thread_id = f"{user_id}:{session_id}"
-        graph = self.graph()
-
-        result = await graph.ainvoke(
-            payload,
-            config={"configurable": {"thread_id": thread_id}},
-            context=self.context,
-        )
+        result = await self.prepare_final_state(payload)
+        answer_chunks: list[str] = []
+        async for item in self.astream_final_answer(result):
+            if isinstance(item, str):
+                answer_chunks.append(item)
+        answer = "".join(answer_chunks).strip()
+        result["final_answer"] = answer
+        result["messages"] = [AIMessage(content=answer)]
+        result["retrieval_context"] = ""
 
         return {
             "original_query": payload["query"],
             "rewritten_query": result.get("rewritten_query"),
             "retrieval_context": result.get("retrieval_context", ""),
-            "final_answer": result.get("final_answer"),
+            "final_answer": answer,
             "result": result,
         }
 
-    def _build_llm(self) -> ChatGoogleGenerativeAI:
-        if not settings.GEMINI_API_KEY:
-            raise RuntimeError("GEMINI_API_KEY is required for orchestration LLM calls.")
+    async def prepare_final_state(self, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.orchestration import nodes
 
-        model = resolve_gemini_model_name(
-            settings.GEMINI_LANGCHAIN_CHAT_MODEL or settings.DEFAULT_CHAT_MODEL or "gemini-2.5-flash"
-        )
+        self.context = GraphContext(user_id=payload["user_id"])
+        state: dict[str, Any] = dict(payload)
+
+        async def apply(update: dict[str, Any] | None) -> None:
+            if update:
+                state.update(update)
+
+        await apply(await nodes.load_file_and_project_context(state, self))
+        await apply(nodes.ingest_payload(state))
+        await apply(nodes.load_long_term_memory(state, self, self.store))
+        await apply(await nodes.recognize_intent(state, self))
+        await apply(await nodes.route_court(state, self))
+        await apply(await nodes.rewrite_query(state, self))
+        await apply(await nodes.retrieve_documents(state, self))
+
+        if self.web_search_enabled(state):
+            await apply(await nodes.evaluate_context(state, self))
+            await apply(await nodes.web_search_fallback(state, self))
+
+        return state
+
+    async def astream_final_answer(
+        self,
+        state: dict[str, Any],
+    ) -> AsyncGenerator[str | dict[str, str], None]:
+        from app.orchestration import nodes
+
+        async for item in nodes.stream_final_answer(state, self):
+            yield item
+
+    def _build_llm(self, model_name: str, purpose: Purpose) -> ChatGoogleGenerativeAI:
+        if not settings.GEMINI_API_KEY:
+            raise RuntimeError(
+                "GEMINI_API_KEY is required for orchestration LLM calls."
+            )
+
+        model_name = resolve_gemini_model_name(model_name)
+        logger.info(f"Gemini/Google Generative AI model: {model_name} for {purpose}")
+
+        additional_kwargs: dict[str, Any] = {}
+        if purpose == Purpose.GENERATION:
+            additional_kwargs = {
+                "max_output_tokens": settings.OUTPUT_MAX_TOKENS,
+                "temperature": settings.TEMPERATURE,
+                "thinking_level": settings.GEMINI_LANGCHAIN_THINKING_LEVEL,
+                "include_thoughts": True,
+                "streaming": True,
+            }
+        elif purpose == Purpose.LITE:
+            additional_kwargs = {
+                "max_output_tokens": 512,  # less tokens for rewrite
+                "temperature": 0.0,  # deterministic as possible
+                "streaming": False,
+            }
+
         return ChatGoogleGenerativeAI(
-            model=model,
+            model=model_name,
             google_api_key=settings.GEMINI_API_KEY,
-            temperature=settings.TEMPERATURE,
+            **additional_kwargs,
         )
 
     def _build_checkpointer(self) -> Any:
