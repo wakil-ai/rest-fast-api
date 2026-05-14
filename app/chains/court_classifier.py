@@ -7,7 +7,11 @@ from app.core.logger import logger
 
 @dataclass
 class CourtRoutingDecision:
+    """Court router output: assistant + optional fine-grained route tag."""
+
     assistant_name: str | None = None
+    # Full classifier label, e.g. administrative_tax_appeal_tax_admin; None for criminal/civil/economic
+    court_route_tag: str | None = None
 
 
 class CourtClassifier:
@@ -19,7 +23,21 @@ class CourtClassifier:
         "economic": "economic_court",
         "administrative": "administrative_court",
     }
+
+    BASE_COURT_LABELS = frozenset(COURT_TO_ASSISTANT.keys())
+
+    ADMINISTRATIVE_ROUTE_TAGS = frozenset(
+        {
+            "administrative_tax_predicting_lawsuit",
+            "administrative_tax_appeal_tax_admin",
+            "administrative_tax_appeal_court_decision",
+            "administrative_general_admin_litigation",
+            "administrative_general_judicial_review",
+        }
+    )
+
     DEFAULT_ASSISTANT = "administrative_court"
+    DEFAULT_ADMIN_ROUTE_TAG = "administrative_general_admin_litigation"
 
     def __init__(self):
         self.prompt_registry = get_prompt_registry()
@@ -43,16 +61,24 @@ class CourtClassifier:
                 stream=False,
             )
             if not isinstance(response, str):
-                return CourtRoutingDecision(assistant_name=self.DEFAULT_ASSISTANT)
+                return CourtRoutingDecision(
+                    assistant_name=self.DEFAULT_ASSISTANT,
+                    court_route_tag=self.DEFAULT_ADMIN_ROUTE_TAG,
+                )
 
             decision = self._build_routing_decision(response)
             logger.info(
-                f"[CourtClassifier] Routed `court` assistant to {decision.assistant_name}",
+                "[CourtClassifier] Routed court assistant to %s (route_tag=%s)",
+                decision.assistant_name,
+                decision.court_route_tag,
             )
             return decision
         except Exception as e:
             logger.error(f"[CourtClassifier] Classification failed: {e}")
-            return CourtRoutingDecision(assistant_name=self.DEFAULT_ASSISTANT)
+            return CourtRoutingDecision(
+                assistant_name=self.DEFAULT_ASSISTANT,
+                court_route_tag=self.DEFAULT_ADMIN_ROUTE_TAG,
+            )
 
     @staticmethod
     def _build_user_prompt(
@@ -71,27 +97,77 @@ class CourtClassifier:
         return "\n\n".join(parts)
 
     def _build_routing_decision(self, response: str) -> CourtRoutingDecision:
-        assistant_name = self._map_response_to_assistant(response)
-        if assistant_name:
-            return CourtRoutingDecision(assistant_name=assistant_name)
+        tag = self._normalize_route_tag(response)
+        assistant, canonical_tag = self._resolve_route(tag)
+        if assistant:
+            return CourtRoutingDecision(
+                assistant_name=assistant, court_route_tag=canonical_tag
+            )
 
         logger.warning(
             "[CourtClassifier] Unexpected classifier output '%s'; using default assistant '%s'",
             response.strip(),
             self.DEFAULT_ASSISTANT,
         )
-        return CourtRoutingDecision(assistant_name=self.DEFAULT_ASSISTANT)
+        return CourtRoutingDecision(
+            assistant_name=self.DEFAULT_ASSISTANT,
+            court_route_tag=self.DEFAULT_ADMIN_ROUTE_TAG,
+        )
 
-    def _map_response_to_assistant(self, response: str) -> str | None:
-        normalized = response.strip().lower()
+    @staticmethod
+    def _normalize_route_tag(response: str) -> str:
+        text = (response or "").strip().lower()
+        for raw_line in text.splitlines():
+            line = (
+                raw_line.strip()
+                .strip("`\"'")
+                .lstrip("*•-")
+                .strip()
+            )
+            if not line:
+                continue
+            # strip leading "output:" style prefixes
+            line = re.sub(r"^(classification|output|answer)\s*:\s*", "", line)
+            line = line.rstrip(".,;:")
+            return line
+        return ""
 
-        for label, assistant_name in self.COURT_TO_ASSISTANT.items():
-            if re.fullmatch(rf"{label}", normalized):
-                return assistant_name
+    def _resolve_route(self, tag: str) -> tuple[str | None, str | None]:
+        if not tag:
+            return None, None
 
-        compact = re.sub(r"[^a-z]", "", normalized)
-        for label, assistant_name in self.COURT_TO_ASSISTANT.items():
-            if compact == label:
-                return assistant_name
+        if tag in self.BASE_COURT_LABELS:
+            if tag == "administrative":
+                return (
+                    self.COURT_TO_ASSISTANT["administrative"],
+                    self.DEFAULT_ADMIN_ROUTE_TAG,
+                )
+            return self.COURT_TO_ASSISTANT[tag], tag
 
-        return None
+        compact = re.sub(r"[^a-z_]", "", tag)
+        if compact in self.BASE_COURT_LABELS:
+            return self._resolve_route(compact)
+
+        if tag in self.ADMINISTRATIVE_ROUTE_TAGS:
+            return self.COURT_TO_ASSISTANT["administrative"], tag
+
+        if compact in self.ADMINISTRATIVE_ROUTE_TAGS:
+            return self.COURT_TO_ASSISTANT["administrative"], compact
+
+        # tolerate missing underscores / minor typos: take longest known admin tag as substring
+        for known in sorted(self.ADMINISTRATIVE_ROUTE_TAGS, key=len, reverse=True):
+            if known in compact or known in tag.replace(" ", ""):
+                return self.COURT_TO_ASSISTANT["administrative"], known
+
+        if tag.startswith("administrative_") or compact.startswith("administrative"):
+            logger.warning(
+                "[CourtClassifier] Unknown administrative route '%s'; using %s",
+                tag,
+                self.DEFAULT_ADMIN_ROUTE_TAG,
+            )
+            return (
+                self.COURT_TO_ASSISTANT["administrative"],
+                self.DEFAULT_ADMIN_ROUTE_TAG,
+            )
+
+        return None, None

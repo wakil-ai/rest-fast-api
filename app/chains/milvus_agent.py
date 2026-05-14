@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from app.core.dependencies import get_fallback_llm, get_prompt_registry
+from app.core.dependencies import get_classifier_llm, get_prompt_registry
 from app.core.logger import logger
 
 
@@ -10,7 +10,7 @@ class MilvusQueryAgent:
     """Agent to determine the appropriate Milvus collection for a given query."""
 
     def __init__(self):
-        self.llm = get_fallback_llm()
+        self.llm = get_classifier_llm()
         self.prompt_registry = get_prompt_registry()
         self.prompt = self.prompt_registry.get_prompt("milvus_query_agent").template
 

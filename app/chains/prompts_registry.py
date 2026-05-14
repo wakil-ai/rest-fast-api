@@ -11,6 +11,12 @@ class PromptRegistry:
 
     DEFAULT_INPUT_VARIABLES = ["context", "chat_history"]
 
+    # Prompt keys whose templates use different placeholders than {context}/{chat_history}
+    PROMPT_INPUT_VARIABLES_OVERRIDES: dict[str, list[str]] = {
+        "intent_classification": ["query"],
+        "court_classify_prompt": [],
+    }
+
     PROMPT_FILES = {
         "system_prompt": "system_prompt.md",
         "soliq_assistant": "soliq_assistant.md",
@@ -51,9 +57,12 @@ class PromptRegistry:
             if not filepath.exists():
                 raise FileNotFoundError(f"Prompt file not found: {filepath}")
 
+            input_variables = self.PROMPT_INPUT_VARIABLES_OVERRIDES.get(
+                key, self.DEFAULT_INPUT_VARIABLES
+            )
             self.prompts[key] = PromptTemplate(
                 template=filepath.read_text(encoding="utf-8"),
-                input_variables=self.DEFAULT_INPUT_VARIABLES,
+                input_variables=input_variables,
             )
 
     def get_prompt(self, name: str) -> PromptTemplate:

@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     MILVUS_ADMINISTRATIVE_COURT: str = "mamuriy_sud"
     MILVUS_ADMINISTRATIVE_COURT_ALL: str = "mamuriy_sud_all"
     MILVUS_CONTRACT_ANALYZER: str = "shartnoma"
+    # Min hybrid-search hit score (Milvus `score` on retrieved docs) to offer a file attachment
+    CONTRACT_ATTACHMENT_MIN_SIMILARITY: float = 0.6
     MILVUS_ECONOMIC_COURT: str = "economic_court"
     MILVUS_CIVIL_COURT: str = "civil_court"
     MILVUS_CRIMINAL_COURT: str = "criminal_court"
@@ -258,10 +260,21 @@ class Settings(BaseSettings):
     AUTH_SECRET_KEY: str = "secret-key-change-me"
 
     GEMINI_API_KEY: str | None = None
+    #: Model id for `ChatGoogleGenerativeAI` on `/api/v3/chat` (e.g. `gemini-2.5-flash`).
+    GEMINI_LANGCHAIN_CHAT_MODEL: str | None = None
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_EXPIRATION_SECONDS: int = 86400 * 3  # 3 days in seconds
+    #: Full Redis URL for LangGraph checkpoints (optional). If unset, built from host/port/password.
+    REDIS_URI: str | None = None
+    REDIS_PASSWORD: str | None = None
+    #: Persist LangGraph thread state in Redis (AsyncRedisSaver). Requires ``langgraph-checkpoint-redis`` and a
+    #: Redis deployment with RedisJSON / RediSearch support (see package docs). On setup failure, falls back to memory.
+    #: Session delete calls ``adelete_thread``; keys also expire after ``LANGGRAPH_CHECKPOINT_TTL_SECONDS``.
+    LANGGRAPH_CHECKPOINT_USE_REDIS: bool = False
+    #: Redis TTL for LangGraph checkpoint keys (seconds). After this period Redis drops checkpoint data for a thread.
+    LANGGRAPH_CHECKPOINT_TTL_SECONDS: int = 86400 * 3  # 3 days, independent of general cache TTL if needed
 
     # OneID / B2B Integration
     DT_SERVER_IP: str = "87.192.230.47"  # OneID server IP for birdarcha web client

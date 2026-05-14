@@ -178,7 +178,7 @@ class MilvusHandler(VectorDBHandler):
         Perform hybrid search using both dense vectors and BM25 sparse vectors
         """
         logger.debug(
-            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}, filter: {expr}"
+            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}, filter: {expr}, query: {text_query}"
         )
 
         # Create search requests for both dense and sparse vectors

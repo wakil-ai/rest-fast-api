@@ -1,3 +1,5 @@
+from typing import Any
+
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import ValidationError
 
@@ -24,7 +26,7 @@ class IntentClassifier:
         query: str,
         chat_history: str = "",
         uploaded_file_context: str = "",
-    ) -> tuple[str, str]:
+    ) -> tuple[str, Any, LegalIntent]:
 
         try:
             structured_prompt = self._build_prompt(
@@ -37,21 +39,26 @@ class IntentClassifier:
                 stream=False,
             )
 
-            parsed = self._parse_response(response)
+            parsed = self._parse_response(response, uploaded_file_context)
 
+            # Contract-only classifier: never branch to tax/general assistant prompts
             domain, intent = self._map_to_enums(
-                parsed.domain,
+                DomainType.CONTRACT.value,
                 parsed.intent,
                 uploaded_file_context,
             )
 
         except Exception as e:
             logger.error(f"[IntentClassifier] Classification failed: {e}")
-            domain = DomainType.GENERAL
-            intent = LegalIntent.GENERAL_LEGAL
+            domain = DomainType.CONTRACT
+            intent = (
+                LegalIntent.CONTRACT_RISK_ANALYSIS
+                if uploaded_file_context.strip()
+                else LegalIntent.CONTRACT_TEMPLATE_GENERATION
+            )
 
         prompt = self.prompt_registry.get_prompt_for_intent(domain, intent)
-        return (domain.value, prompt)
+        return (domain.value, prompt, intent)
 
     def _build_prompt(self, query, chat_history, file_context):
         full_context = f"""
@@ -60,17 +67,21 @@ class IntentClassifier:
         Chat history: {chat_history}
         """
 
-        return self.intent_prompt_template.format(
-            query=full_context,
-            format_instructions=self.output_parser.get_format_instructions(),
-        )
+        return self.intent_prompt_template.format(query=full_context)
 
-    def _parse_response(self, response: str) -> IntentOutput:
+    def _parse_response(self, response: str, uploaded_file_context: str) -> IntentOutput:
         try:
             return self.output_parser.parse(response)
         except ValidationError:
             logger.warning("[IntentClassifier] Structured parsing failed, fallback.")
-            return IntentOutput(domain="general", intent="general_legal")
+            if uploaded_file_context.strip():
+                return IntentOutput(
+                    domain="contract", intent=LegalIntent.CONTRACT_RISK_ANALYSIS.value
+                )
+            return IntentOutput(
+                domain="contract",
+                intent=LegalIntent.CONTRACT_TEMPLATE_GENERATION.value,
+            )
 
     def _map_to_enums(
         self,
