@@ -1,155 +1,186 @@
 # WakilAI Database Architecture
 
 ## Overview
-WakilAI uses MongoDB as the primary database for storing user data, chat history, promo codes, and rate limiting information. This document provides a comprehensive overview of all collections, their schemas, relationships, and how the system works.
+WakilAI uses MongoDB as the primary database for storing user data, chat history, promo codes, subscriptions, and rate limiting information. This document provides a comprehensive overview of the collections, their schemas, relationships, and how the system works.
+
+---
+
+## Collection Names (Defaults)
+Collection names are configurable via environment variables (see `.env.example` and `app/core/config.py`).
+The table below lists the **default** collection names used by the API.
+
+| Purpose | Default name | Setting |
+| --- | --- | --- |
+| Users | `users` | `USERS_COLLECTION` |
+| Sessions | `sessions` | `SESSIONS_COLLECTION` |
+| Messages | `messages` | `MESSAGES_COLLECTION` |
+| Files | `files` | `FILES_COLLECTION` |
+| Rate limits / credits | `creditusage` | `RATE_LIMIT_COLLECTION` |
+| Promo codes | `promos` | `PROMO_CODE_COLLECTION` |
+| User promo codes | `user-promos` | `USER_PROMO_CODE_COLLECTION` |
+| Transactions | `transactions` | `TRANSACTION_COLLECTION` |
+| Subscriptions | `subscriptions` | `SUBSCRIPTIONS_COLLECTION` |
+| Daily subscriptions | `daily_subscriptions` | `DAILY_SUBSCRIPTIONS_COLLECTION` |
+| Token counts | `token_counts` | `TOKEN_COUNTING_COLLECTION` |
+| Telegram chats | `telegram_chats` | `TELEGRAM_CHATS_COLLECTION` |
+| Referral sources | `referral_sources` | `REFERRAL_SOURCES_COLLECTION` |
+| Projects | `projects` | `PROJECTS_COLLECTION` |
 
 ---
 
 ## Collections Structure
 
-### 1. **users** Collection
-Stores user authentication and profile information.
+### 1. **users** Collection (default: `users`)
+Stores user profiles and auth identifiers.
 
 **Schema:**
 ```javascript
 {
-  "_id": ObjectId,
-  "user_id": String,              // Unique user identifier (from Telegram or Google)
-  "telegram_id": String,          // Telegram user ID (if authenticated via Telegram)
-  "google_id": String,            // Google user ID (if authenticated via Google)
-  "email": String,                // User email
-  "name": String,                 // User full name
-  "username": String,             // Username
-  "created_at": DateTime,         // Account creation timestamp
-  "last_login": DateTime,         // Last login timestamp
-  "auth_provider": String         // "telegram" or "google"
+  "_id": String,                  // Internal user_id
+  "user_id": String,              // Duplicate for querying
+  "username": String,
+  "first_name": String,
+  "last_name": String,
+  "phone_number": String,
+  "picture": String,
+  "web_client": String,           // wakilai / birdarcha
+  "external_id": String,          // DT external ID (optional)
+  "is_blocked": Boolean,
+  "blocked_at": DateTime,
+  "blocked_reason": String,
+  "unblocked_at": DateTime,
+  "created_at": DateTime,
+  "updated_at": DateTime
 }
 ```
 
 **Indexes:**
-- `user_id` (unique)
-- `telegram_id` (unique, sparse)
-- `google_id` (unique, sparse)
-
----
-
-### 2. **sessions** Collection
-Manages user authentication sessions.
-
-**Schema:**
-```javascript
-{
-  "_id": ObjectId,
-  "user_id": String,              // Reference to users.user_id
-  "session_id": String,           // Unique session identifier
-  "session_token": String,        // Authentication token
-  "created_at": DateTime,         // Session creation time
-  "expires_at": DateTime,         // Session expiration time (3 days default)
-  "is_active": Boolean,           // Whether session is active
-  "ip_address": String,           // User's IP address
-  "user_agent": String            // Browser/client information
-}
-```
-
-**Indexes:**
-- `session_id` (unique)
-- `session_token` (unique)
+- `_id` (default)
 - `user_id`
-- `expires_at`
-
-**Lifecycle:**
-- Sessions expire after 3 days (configurable via `TELEGRAM_SESSION_TIMEOUT`)
-- Expired sessions are automatically invalidated
 
 ---
 
-### 3. **messages** Collection
-Stores all chat messages (questions and answers).
+### 2. **sessions** Collection (default: `sessions`)
+Stores chat sessions (conversation threads).
 
 **Schema:**
 ```javascript
 {
-  "_id": ObjectId,
-  "user_id": String,              // Reference to users.user_id
-  "session_id": String,           // Chat session identifier
-  "message_id": String,           // Unique message identifier
-  "role": String,                 // "user" or "assistant"
-  "content": String,              // Message text
-  "assistant_type": String,       // "main", "soliq", or "deepresearch"
-  "model": String,                // LLM model used (e.g., "gpt-oss-120b")
-  "timestamp": DateTime,          // Message timestamp
+  "_id": String,                  // Session ID (ses-...)
+  "session_id": String,           // Same as _id
+  "user_id": String,              // Reference to users._id
+  "title": String,                // Session title
+  "tags": Array,                  // Optional tags
+  "status": String,               // draft | active
+  "activated_at": DateTime,       // First activation timestamp
+  "created_at": DateTime,
+  "updated_at": DateTime
+}
+```
+
+**Indexes:**
+- `user_id`, `status`, `updated_at`
+
+---
+
+### 3. **messages** Collection (default: `messages`)
+Stores chat messages (query + response) with metadata.
+
+**Schema:**
+```javascript
+{
+  "_id": String,                  // Message ID (msg-...)
+  "message_id": String,           // Same as _id
+  "session_id": String,           // Reference to sessions._id
+  "user_id": String,              // Reference to users._id
+  "content": {
+    "query": String,
+    "response": String
+  },
+  "file_ids": Array,              // Optional file attachments
   "metadata": {
-    "retrieved_contents": Array,  // Retrieved documents (if applicable)
-    "processing_time": Number,    // Response generation time in seconds
-    "token_count": Number         // Tokens used
-  }
+    "assistant": String,          // main / soliq / deepresearch
+    "stream": Boolean,
+    "latency_ms": Number,
+    "token_usage": {
+      "input_token": Number,
+      "context_token": Number,
+      "output_token": Number,
+      "embedding_input_token": Number
+    },
+    "attachments": Array
+  },
+  "feedback_type": String,        // positive / negative
+  "feedback_content": String,     // Optional feedback text
+  "share_id": String,
+  "shared": Boolean,
+  "shared_at": DateTime,
+  "shared_by": String,
+  "created_at": DateTime,
+  "updated_at": DateTime
 }
 ```
 
 **Indexes:**
-- `user_id`
-- `session_id`
-- `message_id` (unique)
-- `timestamp`
+- `session_id`, `created_at`
+- `message_id`
 
 ---
 
-### 4. **files** Collection
-Stores uploaded files and their OCR results.
+### 4. **files** Collection (default: `files`)
+Stores uploaded files, OCR results, and storage metadata.
 
 **Schema:**
 ```javascript
 {
-  "_id": ObjectId,
-  "user_id": String,              // Reference to users.user_id
-  "file_id": String,              // Unique file identifier
-  "filename": String,             // Original filename
-  "file_url": String,             // Google Cloud Storage URL
-  "file_type": String,            // MIME type (e.g., "image/png", "application/pdf")
-  "file_size": Number,            // File size in bytes
-  "ocr_result": String,           // Extracted text from OCR
-  "uploaded_at": DateTime,        // Upload timestamp
-  "status": String                // "processing", "completed", "failed"
+  "_id": String,                  // File ID
+  "file_id": String,
+  "user_id": String,
+  "message_id": String | null,
+  "scope": "message",
+  "file_url": String,             // GCS public URL (or signed access)
+  "ocr_result": String,
+  "file_metadata": {
+    "file_name": String,
+    "file_type": String,
+    "file_size": Number,
+    "gcs_path": String,
+    "file_content_hash": String,
+    "ocr_token_count": Number,
+    "milvus_file_index": {
+      "enabled": Boolean,
+      "collection": String,
+      "chunk_count": Number,
+      "embedding_model": String,
+      "error": String
+    }
+  },
+  "status": String,               // pending / processing / completed / failed
+  "created_at": DateTime,
+  "updated_at": DateTime
 }
 ```
 
 **Indexes:**
-- `user_id`
-- `file_id` (unique)
-- `uploaded_at`
-
----
-
-### 5. **feedbacks** Collection
-Stores user feedback on assistant responses.
-
-**Schema:**
-```javascript
-{
-  "_id": ObjectId,
-  "user_id": String,              // Reference to users.user_id
-  "session_id": String,           // Reference to chat session
-  "message_id": String,           // Reference to messages.message_id
-  "feedback_type": String,        // "positive", "negative", or "neutral"
-  "rating": Number,               // 1-5 star rating
-  "comment": String,              // User's feedback comment
-  "timestamp": DateTime,          // Feedback submission time
-  "metadata": {
-    "assistant_type": String,     // Which assistant was used
-    "model": String               // Which model generated the response
-  }
-}
-```
-
-**Indexes:**
+- `_id` (file_id)
 - `user_id`
 - `message_id`
-- `timestamp`
 
 ---
 
-### 6. **rate_limits** Collection
-Tracks daily credit usage for users **without promo codes**.
+### 5. **Feedback (embedded in messages)**
+Feedback is stored directly on the `messages` documents rather than a separate
+collection.
+
+**Fields:**
+- `feedback_type` (positive / negative)
+- `feedback_content` (optional text)
+- `updated_at` (timestamp of feedback update)
+
+---
+
+### 6. **rate_limits** Collection (default: `creditusage`)
+Tracks daily credit usage for users (base limits + promo/subscription credits).
 
 **Schema:**
 ```javascript
@@ -184,7 +215,7 @@ Tracks daily credit usage for users **without promo codes**.
 
 ---
 
-### 7. **promo_codes** Collection
+### 7. **promo_codes** Collection (default: `promos`)
 Defines promo codes with their properties.
 
 **Schema:**
@@ -217,7 +248,7 @@ Defines promo codes with their properties.
 
 ---
 
-### 8. **user_promo_codes** Collection
+### 8. **user_promo_codes** Collection (default: `user-promos`)
 Links users to their assigned promo codes.
 
 **Schema:**
@@ -244,20 +275,116 @@ Links users to their assigned promo codes.
 
 ---
 
+### 9. **subscriptions** Collection (default: `subscriptions`)
+Tracks active subscription entitlements.
+
+**Schema:**
+```javascript
+{
+  "user_id": String,
+  "tier": String,
+  "period": String,
+  "daily_credits": Number,
+  "days": Number,
+  "total_credits": Number,
+  "amount_sum": Number,
+  "start_ms": Number,
+  "end_ms": Number,
+  "last_order_id": String,
+  "last_transaction_id": String,
+  "provider": String,
+  "created_at_ms": Number,
+  "updated_at_ms": Number
+}
+```
+
+### 10. **daily_subscriptions** Collection (default: `daily_subscriptions`)
+Stores daily-pass subscriptions (same schema as `subscriptions`).
+
+### 11. **transactions** Collection (default: `transactions`)
+Payment provider transaction records (Payme/Click).
+
+**Schema:**
+```javascript
+{
+  "id": String,
+  "user": ObjectId | String,
+  "state": Number,
+  "amount": Number,
+  "provider": String,
+  "create_time": Number,
+  "perform_time": Number,
+  "cancel_time": Number,
+  "reason": Number,
+  "createdAt": DateTime,
+  "updatedAt": DateTime
+}
+```
+
+### 12. **referral_sources** Collection (default: `referral_sources`)
+Tracks referral sources for the web client.
+
+**Schema:**
+```javascript
+{
+  "source": String,
+  "total_count": Number,
+  "first_seen_at": DateTime,
+  "last_seen_at": DateTime
+}
+```
+
+### 13. **telegram_chats** Collection (default: `telegram_chats`)
+Stores Telegram chat IDs for admin/broadcast operations.
+
+**Schema:**
+```javascript
+{
+  "chat_id": Number,
+  "user_id": Number,
+  "username": String,
+  "first_name": String,
+  "last_name": String,
+  "language_code": String,
+  "is_active": Boolean,
+  "created_at_ms": Number,
+  "updated_at_ms": Number
+}
+```
+
+### 14. **token_counts** Collection (default: `token_counts`)
+Reserved for token usage snapshots. Current implementation stores token usage inside
+`messages.metadata.token_usage`.
+
+### 15. **projects** Collection (default: `projects`)
+Project workspaces used by the document pipeline.
+
+**Schema:**
+```javascript
+{
+  "_id": String,
+  "user_id": String,
+  "name": String,
+  "created_at": DateTime
+}
+```
+
+---
+
 ## System Architecture & Data Flow
 
-### Authentication Flow
+### Access & User Initialization Flow
 
 ```
-1. User logs in via Telegram/Google
+1. Client authenticates via API key (or DT API key for DT integration)
    ↓
-2. System creates/updates record in `users` collection
+2. User logs in via Telegram/Google/DT auth endpoint
    ↓
-3. System generates session token and stores in `sessions` collection
+3. System creates/updates record in `users` collection
    ↓
-4. Session token returned to client
+4. Client receives internal user_id and uses it in subsequent requests
    ↓
-5. Client includes token in subsequent requests
+5. Chat sessions are created in `sessions` collection as needed
 ```
 
 ### Chat Request Flow
@@ -265,9 +392,9 @@ Links users to their assigned promo codes.
 ```
 1. User sends question
    ↓
-2. System validates session token (checks `sessions`)
+2. System validates API key and checks the session in `sessions`
    ↓
-3. Rate Limit Check:
+3. Rate Limit & Credit Check:
    │
    ├─→ Check if user has promo code (`user_promo_codes`)
    │   │
@@ -278,8 +405,8 @@ Links users to their assigned promo codes.
    │   │       ├─→ credit_amount = null → Unlimited
    │   │       └─→ credit_amount = N → N daily credits
    │   │
-   │   └─→ No promo code?
-   │       └─→ Check `rate_limits` for today
+    │   └─→ No promo code?
+    │       └─→ Check `creditusage` (rate_limits) for today
    │           ├─→ credits_used < 100 → Allow
    │           └─→ credits_used >= 100 → Block (429 error)
    │
@@ -290,11 +417,9 @@ Links users to their assigned promo codes.
    ↓
 5. Process request (retrieve documents, generate answer)
    ↓
-6. Save question to `messages` (role: "user")
+6. Save query/response payload to `messages` (content.query/content.response)
    ↓
-7. Save answer to `messages` (role: "assistant")
-   ↓
-8. Return response to client
+7. Return response to client
 ```
 
 ### File Upload Flow
@@ -336,9 +461,9 @@ Links users to their assigned promo codes.
 
 **For users WITHOUT promo codes:**
 ```javascript
-// Check today's usage in rate_limits collection
+// Check today's usage in creditusage collection
 const today = "2026-01-01";
-const limit = await db.rate_limits.findOne({ user_id, date: today });
+const limit = await db.creditusage.findOne({ user_id, date: today });
 
 if (!limit) {
   // First request today - allow and create record
@@ -353,7 +478,7 @@ if (!limit) {
   }
   
   // Deduct credits
-  await db.rate_limits.updateOne(
+  await db.creditusage.updateOne(
     { user_id, date: today },
     { $inc: { credits_used: credit_cost } }
   );
@@ -380,7 +505,7 @@ if (promo.credit_amount === null) {
 
 // Use promo code daily limit instead of default 100
 const today = "2026-01-01";
-const limit = await db.rate_limits.findOne({ user_id, date: today });
+const limit = await db.creditusage.findOne({ user_id, date: today });
 const daily_limit = promo.credit_amount; // e.g., 500
 
 if (!limit) {
@@ -392,7 +517,7 @@ if (!limit) {
     throw new Error("Insufficient credits");
   }
   
-  await db.rate_limits.updateOne(
+  await db.creditusage.updateOne(
     { user_id, date: today },
     { $inc: { credits_used: credit_cost } }
   );
@@ -406,7 +531,7 @@ if (!limit) {
 ### Default Credits (No Promo Code)
 - **Daily Limit**: 100 credits
 - **Resets**: Every day at midnight UTC
-- **Tracked in**: `rate_limits` collection
+- **Tracked in**: `creditusage` collection
 
 ### Promo Code Credits
 - **Daily Limit**: Defined by `promo_codes.credit_amount`
@@ -415,7 +540,7 @@ if (!limit) {
 - **Expiration**: Defined by `promo_codes.expiration_date`
   - `null` = Forever
   - DateTime = Expires at specified date
-- **Tracked in**: `rate_limits` collection (same as default, but different limit)
+- **Tracked in**: `creditusage` collection (same as default, but different limit)
 
 ### Credit Costs by Assistant Type
 | Assistant Type | Credit Cost | Requests per 100 credits |
@@ -440,14 +565,17 @@ if (!limit) {
 users (1) ←──→ (0..1) user_promo_codes ←──→ (1) promo_codes
   │
   ├──→ (0..*) sessions
-  │
   ├──→ (0..*) messages
-  │
   ├──→ (0..*) files
-  │
-  ├──→ (0..*) feedbacks
-  │
-  └──→ (0..*) rate_limits
+  ├──→ (0..*) creditusage (rate_limits)
+  ├──→ (0..1) subscriptions
+  ├──→ (0..1) daily_subscriptions
+  ├──→ (0..*) transactions
+  ├──→ (0..*) token_counts
+  └──→ (0..*) projects
+
+referral_sources (global)
+telegram_chats (global)
 ```
 
 **Cardinality:**
@@ -455,8 +583,11 @@ users (1) ←──→ (0..1) user_promo_codes ←──→ (1) promo_codes
 - One user can have **many** sessions
 - One user can have **many** messages
 - One user can have **many** files
-- One user can have **many** feedbacks
-- One user can have **many** rate limit records (one per day)
+- One user can have **many** credit usage records (one per day)
+- One user can have **zero or one** subscription and daily subscription
+- One user can have **many** transactions
+- One user can have **many** projects
+- `referral_sources` and `telegram_chats` are global collections (not user-scoped)
 
 ---
 
@@ -479,8 +610,17 @@ MONGODB_DB_NAME=wakilai
 USERS_COLLECTION=users
 SESSIONS_COLLECTION=sessions
 MESSAGES_COLLECTION=messages
-FEEDBACK_COLLECTION=feedbacks
 FILES_COLLECTION=files
+PROJECTS_COLLECTION=projects
+PROMO_CODE_COLLECTION=promos
+USER_PROMO_CODE_COLLECTION=user-promos
+RATE_LIMIT_COLLECTION=creditusage
+TRANSACTION_COLLECTION=transactions
+SUBSCRIPTIONS_COLLECTION=subscriptions
+DAILY_SUBSCRIPTIONS_COLLECTION=daily_subscriptions
+TOKEN_COUNTING_COLLECTION=token_counts
+TELEGRAM_CHATS_COLLECTION=telegram_chats
+REFERRAL_SOURCES_COLLECTION=referral_sources
 ```
 
 ### Session Management
@@ -490,55 +630,28 @@ TELEGRAM_SESSION_TIMEOUT=259200      # 3 days in seconds
 
 ---
 
-## API Endpoints Summary
+## API Endpoints
 
-### Rate Limits
-- `GET /api/admin/rate-limit/{user_id}` - Get user's remaining credits
-- `POST /api/admin/rate-limit/reset` - Reset user's daily credits (admin)
-
-### Promo Codes
-- `POST /api/admin/promo-codes` - Create promo code
-- `GET /api/admin/promo-codes` - List all promo codes
-- `GET /api/admin/promo-codes/{code}` - Get specific promo code
-- `PATCH /api/admin/promo-codes/{code}/activate` - Activate promo code
-- `PATCH /api/admin/promo-codes/{code}/deactivate` - Deactivate promo code
-- `DELETE /api/admin/promo-codes/{code}` - Delete promo code
-
-### User Promo Code Assignment
-- `POST /api/admin/promo-codes/assign` - Assign promo code to user
-- `DELETE /api/admin/promo-codes/assign/{user_id}` - Remove user's promo code
-- `GET /api/admin/promo-codes/users` - List all users with promo codes
-- `GET /api/admin/promo-codes/users/{user_id}` - Get user's promo code
-
-### Chat
-- `POST /api/chat/ask` - Ask question to main or soliq assistant
-- `POST /api/chat/ask-file` - Ask question about uploaded file
-- `POST /api/chat/agent` - Deep research with agentic RAG
-- `POST /api/chat/agent/stream` - Streaming deep research
+See [docs/api-reference.md](api-reference.md) for the full list of REST/WebSocket endpoints,
+including authentication requirements and v2/v3 paths.
 
 ---
 
 ## Data Retention & Cleanup
 
 ### Automatic Cleanup (Recommended)
-- **rate_limits**: Delete records older than 30 days
-- **sessions**: Delete expired sessions (expires_at < now)
+- **creditusage**: Delete records older than 30 days
 - **messages**: Archive messages older than 1 year
+- **sessions**: Prune inactive sessions if needed
 
 ### Manual Cleanup
 MongoDB TTL indexes can be used for automatic cleanup:
 
 ```javascript
-// Auto-delete rate_limits after 30 days
-db.rate_limits.createIndex(
+// Auto-delete creditusage after 30 days
+db.creditusage.createIndex(
   { "created_at": 1 }, 
   { expireAfterSeconds: 2592000 } // 30 days
-)
-
-// Auto-delete expired sessions
-db.sessions.createIndex(
-  { "expires_at": 1 }, 
-  { expireAfterSeconds: 0 }
 )
 ```
 
@@ -546,11 +659,11 @@ db.sessions.createIndex(
 
 ## Security Considerations
 
-1. **User Authentication**: All requests require valid session token
-2. **Rate Limiting**: Prevents abuse via credit system
-3. **Promo Code Validation**: Checks active status and expiration
-4. **Session Expiration**: Auto-expires after 3 days
-5. **Admin Endpoints**: Should be protected with admin authentication (not implemented yet)
+1. **API Keys**: Most endpoints require the API key header; DT endpoints require the DT key.
+2. **Rate Limiting**: Prevents abuse via the credit system.
+3. **Promo Code Validation**: Checks active status and expiration.
+4. **OAuth Flows**: Google/Telegram auth endpoints create user records.
+5. **Admin Endpoints**: Protected by admin API key and body secret where applicable.
 
 ---
 
