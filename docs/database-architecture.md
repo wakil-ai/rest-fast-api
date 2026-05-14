@@ -162,6 +162,7 @@ Stores uploaded files, OCR results, and storage metadata.
 ```
 
 **Indexes:**
+- `_id` (file_id)
 - `user_id`
 - `message_id`
 
