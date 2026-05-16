@@ -13,6 +13,7 @@ from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
     get_court_classifier,
+    get_criminal_case_graph_retriever,
     get_milvus_query_agent,
     get_prompt_registry,
 )
@@ -557,7 +558,10 @@ class EconomicCourtAgent(CivilCourtAgent):
 
 
 class CriminalCourtAgent(BaseAgent):
-    """Criminal-court agent using the main legal corpus collection."""
+    """Criminal-court agent: LexUZ corpus (Milvus) plus Neo4j/Mongo criminal case graph.
+
+    Tools are consumed by the shared LangGraph/LangChain agent runtime (see ``BaseAgent``).
+    """
 
     def __init__(self, collection_name: str = settings.MILVUS_MAIN_NAME):
         super().__init__(
@@ -565,9 +569,63 @@ class CriminalCourtAgent(BaseAgent):
             assistant_name="criminal_court",
         )
 
+    def build_prompt(self, state: AgentState) -> None:
+        template = self.prompt_registry.get_assistant_prompt("criminal_court")
+        retriever = get_criminal_case_graph_retriever()
+        try:
+            retrieved_cases = retriever.build_context(state.request.query)
+        except Exception as exc:
+            logger.warning("Criminal court pre-retrieval failed: %s", exc, exc_info=True)
+            retrieved_cases = (
+                "(Pre-loaded case retrieval failed; use the `search_criminal_case_graph` tool.)"
+            )
+        context_section = self._compose_context_section(state)
+        chat_history_hint = (
+            "Use the `get_chat_history` tool to access recent conversation history."
+        )
+        state.system_prompt = template.format(
+            context=context_section,
+            chat_history=chat_history_hint,
+            retrieved_cases=retrieved_cases,
+        )
+        logger.debug("[CriminalCourtAgent SYSTEM PROMPT]\n%s", state.system_prompt[:2000])
+
     def _context_guidance_text(self) -> str:
         return (
-            "Use `search_legal_corpus` to retrieve relevant criminal law statutes and decisions. "
+            "Three similar criminal cases are already injected at the top of this system prompt. "
+            "Use `search_criminal_case_graph` for additional graph search, and "
+            "`search_legal_corpus` for statutes and codified norms (LexUZ index). "
             "Use `get_chat_history` for conversation context. "
-            "Cite only from retrieved sources; do not invent legal norms."
+            "Cite only retrieved sources; do not invent articles or court outcomes."
         )
+
+    def _build_domain_tools(
+        self, request: AgentRequestContext, state: AgentState
+    ) -> list[Any]:
+        retriever = get_criminal_case_graph_retriever()
+
+        @tool
+        async def search_criminal_case_graph(query: str) -> str:
+            """Search the criminal-case graph: Neo4j vectors, entity filters, and Mongo case text."""
+            try:
+                return await asyncio.to_thread(retriever.build_context, query)
+            except Exception as exc:
+                logger.warning("search_criminal_case_graph failed: %s", exc, exc_info=True)
+                return (
+                    "Criminal case graph search failed. Verify Neo4j/Mongo configuration, "
+                    "or continue using LexUZ search and general reasoning where appropriate."
+                )
+
+        @tool
+        async def search_legal_corpus(query: str) -> str:
+            """Search the legal corpus (LexUZ) for statutes and norms relevant to the question."""
+            try:
+                result = await self.retrieve(
+                    query=query, file_context="", chat_history=""
+                )
+                return result.context or "No relevant legal documents found."
+            except Exception as exc:
+                logger.warning(f"search_legal_corpus failed: {exc}", exc_info=True)
+                return "Search failed; answer from general reasoning where appropriate."
+
+        return [search_criminal_case_graph, search_legal_corpus]

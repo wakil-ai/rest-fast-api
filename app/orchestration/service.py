@@ -67,13 +67,13 @@ class OrchestrationService:
         return self._store
 
     @property
-    def lite_llm(self) -> Any:
+    def lite_llm(self) -> ChatGoogleGenerativeAI:
         if self._lite_llm is None:
             self._lite_llm = self._build_llm(settings.DEFAULT_LITE_MODEL, Purpose.LITE)
         return self._lite_llm
 
     @property
-    def generation_llm(self) -> Any:
+    def generation_llm(self) -> ChatGoogleGenerativeAI:
         if self._generation_llm is None:
             self._generation_llm = self._build_llm(
                 settings.DEFAULT_CHAT_MODEL,

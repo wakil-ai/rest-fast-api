@@ -108,6 +108,20 @@ async def rewrite_query(
     return {"rewritten_query": message_content_to_plain_str(raw)}
 
 
+async def criminal_case_retrieval_subgraph(state: RetrievalRewriteState) -> dict:
+    """Run Neo4j + Mongo criminal retrieval LangGraph; output feeds criminal-court RAG."""
+    from app.orchestration.agents.criminal_retrieval_langgraph import (
+        build_criminal_retrieval_graph,
+    )
+
+    app = build_criminal_retrieval_graph()
+    q = (state.get("rewritten_query") or state.get("query") or "").strip()
+    if not q:
+        return {"criminal_case_context": ""}
+    result = await app.ainvoke({"question": q})
+    return {"criminal_case_context": str(result.get("context_markdown") or "")}
+
+
 async def retrieve_documents(
     state: RetrievalRewriteState, runtime: OrchestrationService
 ) -> dict:
@@ -169,6 +183,7 @@ async def generate_final_answer(
         "messages": [AIMessage(content=answer)],
         # Drop bulky field from checkpointed thread state (used only mid-graph).
         "retrieval_context": "",
+        "criminal_case_context": "",
     }
 
 

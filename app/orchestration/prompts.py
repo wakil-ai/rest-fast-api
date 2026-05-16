@@ -14,6 +14,8 @@ class PromptRegistry:
         "intent_classification": ["query"],
         "court_classify_prompt": [],
         "retrieval_query_rewrite": [],
+        "cypher_agent": [],
+        "criminal_court": ["context", "chat_history", "retrieved_cases"],
     }
 
     PROMPT_FILES = {
@@ -33,6 +35,7 @@ class PromptRegistry:
         "economic_court": "economic_court.md",
         "civil_court": "civil_court.md",
         "retrieval_query_rewrite": "retrieval_query_rewrite.md",
+        "cypher_agent": "cypher_agent.md",
     }
 
     ASSISTANT_MAPPING = {

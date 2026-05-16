@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         SubscriptionStorage,
         TransactionService,
     )
+    from app.services.criminal_case_graph_retrieval import CriminalCaseGraphRetriever
 
 
 # DB
@@ -110,6 +111,13 @@ def get_milvus_query_agent() -> "MilvusQueryAgent":
     from app.orchestration.agents.milvus_agent import MilvusQueryAgent
 
     return MilvusQueryAgent()
+
+
+@lru_cache
+def get_criminal_case_graph_retriever() -> "CriminalCaseGraphRetriever":
+    from app.services.criminal_case_graph_retrieval import CriminalCaseGraphRetriever
+
+    return CriminalCaseGraphRetriever()
 
 
 @lru_cache

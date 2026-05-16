@@ -1,6 +1,7 @@
 from urllib.parse import urljoin
 
 import requests
+from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -255,6 +256,19 @@ class SiliconFlowEmbedding(BaseEmbedding):
         except requests.RequestException as e:
             logger.warning(f"SiliconFlow batch embedding attempt failed: {e}")
             raise
+
+
+class SiliconFlowLangChainEmbeddings(Embeddings):
+    """LangChain `Embeddings` adapter for vector stores (e.g. Neo4jVector)."""
+
+    def __init__(self) -> None:
+        self._impl = SiliconFlowEmbedding()
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return self._impl.embed_batch(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._impl.embed_query(text)
 
 
 class EmbeddingManager:

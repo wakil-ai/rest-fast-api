@@ -44,6 +44,8 @@ class RetrievalRewriteState(TypedDict, total=False):
     milvus_filter: str
 
     retrieval_context: str
+    #: Neo4j + Mongo pack from ``criminal_retrieval_langgraph`` (criminal court only).
+    criminal_case_context: str
     answer_prompt_template: Any
     attachments: list[dict[str, Any]]
     classified_legal_intent: str

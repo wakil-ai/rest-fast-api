@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
+
+from app.core.dependencies import get_prompt_registry
 
 from app.orchestration.utils import AgentRequestContext, get_chat_agent
 from app.assistants.court import CourtAgent
@@ -117,6 +120,26 @@ async def retrieve_for_assistant(
         finally:
             if hasattr(agent, "_forced_court_route_tag"):
                 agent._forced_court_route_tag = None
+
+        if assistant == "criminal_court":
+            graph_cases = (state.get("criminal_case_context") or "").strip()
+            tpl = get_prompt_registry().get_assistant_prompt("criminal_court")
+            merged_ctx = (
+                "Statutes and LexUZ excerpts appear under **Retrieved legal context** in the "
+                "user message. Similar criminal cases are embedded in this system prompt under "
+                "**RETRIEVED SIMILAR CRIMINAL CASES**."
+            )
+            if file_context:
+                merged_ctx += "\n\n## Uploaded files\n" + file_context
+            formatted_system = tpl.format(
+                context=merged_ctx,
+                chat_history=(
+                    "Use the `get_chat_history` tool to access recent conversation history."
+                ),
+                retrieved_cases=graph_cases or "(No criminal graph matches for this query.)",
+            )
+            result.prompt_template = SimpleNamespace(template=formatted_system)
+
         return _updates_from_result(result)
 
     result = await get_agent("main").retrieve(

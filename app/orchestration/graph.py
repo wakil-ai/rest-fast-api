@@ -7,6 +7,7 @@ from langgraph.runtime import Runtime
 
 from app.orchestration import nodes
 from app.orchestration.state import GraphContext, RetrievalRewriteState
+from app.orchestration.retrieval import resolve_assistant
 
 if TYPE_CHECKING:
     from app.orchestration.service import OrchestrationService
@@ -41,6 +42,9 @@ def compile_retrieval_graph(service: OrchestrationService) -> Any:
     async def rewrite(state: RetrievalRewriteState) -> dict:
         return await nodes.rewrite_query(state, service)
 
+    async def criminal_subgraph(state: RetrievalRewriteState) -> dict:
+        return await nodes.criminal_case_retrieval_subgraph(state)
+
     async def retrieve(state: RetrievalRewriteState) -> dict:
         return await nodes.retrieve_documents(state, service)
 
@@ -59,6 +63,7 @@ def compile_retrieval_graph(service: OrchestrationService) -> Any:
     builder.add_node("recognize_intent", intent)
     builder.add_node("route_court", court)
     builder.add_node("rewrite_query", rewrite)
+    builder.add_node("criminal_case_retrieval_subgraph", criminal_subgraph)
     builder.add_node("retrieve_documents", retrieve)
     builder.add_node("evaluate_context", evaluate)
     builder.add_node("web_search_fallback", web_search)
@@ -70,7 +75,23 @@ def compile_retrieval_graph(service: OrchestrationService) -> Any:
     builder.add_edge("load_long_term_memory", "recognize_intent")
     builder.add_edge("recognize_intent", "route_court")
     builder.add_edge("route_court", "rewrite_query")
-    builder.add_edge("rewrite_query", "retrieve_documents")
+
+    def route_after_rewrite(
+        state: RetrievalRewriteState,
+    ) -> Literal["criminal_case_retrieval_subgraph", "retrieve_documents"]:
+        if resolve_assistant(state) == "criminal_court":
+            return "criminal_case_retrieval_subgraph"
+        return "retrieve_documents"
+
+    builder.add_conditional_edges(
+        "rewrite_query",
+        route_after_rewrite,
+        {
+            "criminal_case_retrieval_subgraph": "criminal_case_retrieval_subgraph",
+            "retrieve_documents": "retrieve_documents",
+        },
+    )
+    builder.add_edge("criminal_case_retrieval_subgraph", "retrieve_documents")
 
     def route_after_retrieve(
         state: RetrievalRewriteState,

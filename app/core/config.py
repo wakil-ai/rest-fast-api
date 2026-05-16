@@ -66,6 +66,32 @@ class Settings(BaseSettings):
     MONGODB_URI: str | None = None  # Make optional
     COLLECTION_NAME: str | None = None  # Make optional
     MONGODB_DB_NAME: str = "wakilai"
+    #: Criminal-case documents DB (same as ``neoj4`` ingest; often ``criminal``).
+    CRIMINAL_CASES_MONGODB_DATABASE: str = "criminal"
+
+    # Neo4j criminal-case graph (``neoj4`` stack)
+    NEO4J_URI: str | None = None
+    NEO4J_USERNAME: str = "neo4j"
+    NEO4J_PASSWORD: str | None = None
+    NEO4J_DATABASE: str = "neo4j"
+    NEO4J_CASE_VECTOR_INDEX: str = "case_summary_embedding"
+    #: Full-text index on the same ``Case`` label as ``NEO4J_CASE_VECTOR_INDEX``; enables
+    #: LangChain ``Neo4jVector`` hybrid (vector + keyword). Leave empty for vector-only.
+    NEO4J_CASE_FULLTEXT_INDEX: str = ""
+    #: LangChain ``Neo4jVector`` suffix after the index step. ``Case`` rows from neoj4 often have
+    #: no ``text`` property; coalesce avoids "missing or empty `text`" errors (full text lives in Mongo).
+    NEO4J_CASE_VECTOR_RETRIEVAL_QUERY: str = (
+        "RETURN coalesce(node.text, node.case_summary, node.case_number, node.doc_id, '') AS text, score, "
+        "node {.*, `text`: Null, `embedding`: Null, id: Null } AS metadata"
+    )
+    #: Optional ``Case`` node property names for metadata-filtered vector search (Neo4j 5.18+).
+    #: Map the cypher agent's first structured value to a property; unset = no property filter.
+    NEO4J_CASE_FILTER_ARTICLE_PROP: str | None = None
+    NEO4J_CASE_FILTER_COURT_PROP: str | None = None
+    NEO4J_CASE_FILTER_INSTANCE_PROP: str | None = None
+    NEO4J_SECTION_VECTOR_INDEX: str = "legal_section_embedding"
+    #: When false, ``search_criminal_case_graph`` returns a configuration hint only.
+    CRIMINAL_GRAPH_RETRIEVAL_ENABLED: bool = True
     USERS_COLLECTION: str = "users"
     SESSIONS_COLLECTION: str = "sessions"
     MESSAGES_COLLECTION: str = "messages"
