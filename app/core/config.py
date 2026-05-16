@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     #: Log LangGraph Redis thread messages to stdout after each orchestrated answer (noisy).
     ORCHESTRATION_DEBUG_THREAD_STATE: bool = False
+    #: Persist each final LLM turn (system + user message and raw context fields) as JSON under
+    #: ``ORCHESTRATION_LLM_CONTEXT_JSON_DIR`` (relative to process cwd, usually repo root).
+    ORCHESTRATION_SAVE_LLM_CONTEXT_JSON: bool = False
+    ORCHESTRATION_LLM_CONTEXT_JSON_DIR: str = "logs/llm_context"
     DEVELOPMENT_MODE: bool = False
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Reserved for future OpenTelemetry wiring

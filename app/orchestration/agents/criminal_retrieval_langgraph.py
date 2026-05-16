@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections import defaultdict
 from typing import Any, TypedDict
 
@@ -32,25 +33,8 @@ logger = logging.getLogger(__name__)
 
 CRIMINAL_RETRIEVAL_TOP_CASES = 3
 
-MONGO_CASE_METADATA_SKIP: frozenset[str] = frozenset(
-    {
-        "_id",
-        "altered_id",
-        "section_count",
-        "source_file",
-        "source_path",
-        "text_hash",
-        "is_active",
-        "is_deleted",
-        "ingested_at",
-        "ingestion_status",
-        "doc_id",
-        "graph_id",
-        "claim_id",
-        "claim_category",
-        "char_count",
-    }
-)
+# Max first segment for ``article_numbers`` list cleanup (JK article-ish tokens only).
+_MAX_JK_ARTICLE_HEAD = 450
 
 
 class CriminalRetrievalState(TypedDict, total=False):
@@ -222,23 +206,52 @@ def _mongo_client() -> MongoClient | None:
         return None
     return MongoClient(settings.MONGODB_URI, serverSelectionTimeoutMS=3000)
 
+def _format_case_block_sample(
+    rank: int,
+    *,
+    case: dict[str, Any] | None,
+    sections: list[dict[str, Any]],
+    neo4j_snippet: str,
+) -> str:
+    """Formats a single case block for LLM/RAG consumption."""
 
-def _format_mongo_case_metadata(case: dict[str, Any]) -> str:
-    """Pretty-print Mongo ``cases`` fields useful for legal context."""
-    lines: list[str] = []
+    def _list(value: Any) -> str:
+        return ", ".join(map(str, value or []))
 
-    for key in sorted(case.keys()):
-        if key in MONGO_CASE_METADATA_SKIP:
-            continue
-        val = case[key]
-        if isinstance(val, (dict, list, tuple)):
-            try:
-                dumped = json.dumps(val, ensure_ascii=False, default=str)
-            except TypeError:
-                dumped = str(val)
-            lines.append(f"- {key}: {dumped}")
-            continue
-        lines.append(f"- {key}: {'' if val is None else str(val)}")
+    def _field(key: str, default: str = "") -> str:
+        return str(case.get(key, default)) if case else default
+
+    lines = [f"### Case {rank}", ""]
+
+    metadata = {
+        "Raqami": _field("case_number"),
+        "Xulosasi": _field("case_summary", neo4j_snippet),
+        "Ayblangan Moddalar": _list(case.get("article_numbers")) if case else "",
+        "Ayblovlar": _list(case.get("claim_articles")) if case else "",
+        "Case Hujjat Turi": _list(case.get("claim_document_types")) if case else "",
+        "Sud zali": _field("db_name"),
+        "Sud bo'lib o'tgan sana": _field("hearing_date"),
+        "Instansiya Turi": _field("instance_type"),
+        "Sudya": _field("judge"),
+    }
+
+    lines.extend(f"{k}: {v}" for k, v in metadata.items())
+
+    body = "\n\n".join(
+        (sec.get("text") or "").strip()
+        for sec in sections
+        if (sec.get("text") or "").strip()
+    ).strip()
+
+    lines.extend(
+        [
+            "",
+            "#### TEXT:",
+            "",
+            body or neo4j_snippet.strip(),
+        ]
+    )
+
     return "\n".join(lines)
 
 
@@ -248,30 +261,29 @@ def _build_context_sync(documents: list[Document]) -> str:
     try:
         for rank, doc in enumerate(documents, start=1):
             did = _doc_id(doc)
-            header = f"### Match {rank}"
-            if did:
-                header += f" (`doc_id`: `{did}`)"
-            parts.append(header)
-            summary = (doc.page_content or "").strip()
-            if summary:
-                parts.append(summary)
+            neo4j_snippet = (doc.page_content or "").strip()
 
+            case: dict[str, Any] | None = None
+            sections: list[dict[str, Any]] = []
             if client and did:
                 db = client[settings.CRIMINAL_CASES_MONGODB_DATABASE]
-                case = db.cases.find_one({"doc_id": did})
-                if case:
-                    parts.append(
-                        "Mongo case (legal metadata):\n" + _format_mongo_case_metadata(case)
-                    )
+                found = db.cases.find_one({"doc_id": did})
+                if isinstance(found, dict):
+                    case = found
                 sections = list(
-                    db.case_sections.find({"doc_id": did}, {"_id": 0, "text": 1, "title": 1, "section_id": 1})
-                    .sort("order", 1)
+                    db.case_sections.find(
+                        {"doc_id": did}, {"_id": 0, "text": 1, "title": 1, "section_id": 1}
+                    ).sort("order", 1)
                 )
-                for sec in sections:
-                    title = sec.get("title") or sec.get("section_id") or "section"
-                    text = (sec.get("text") or "").strip()
-                    if text:
-                        parts.append(f"**{title}**\n{text}")
+
+            parts.append(
+                _format_case_block_sample(
+                    rank,
+                    case=case,
+                    sections=sections,
+                    neo4j_snippet=neo4j_snippet,
+                )
+            )
     finally:
         if client:
             client.close()

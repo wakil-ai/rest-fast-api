@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import warnings
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -317,6 +319,73 @@ async def log_langgraph_thread_state_debug(
     block = "\n".join(lines)
     print(block, flush=True)
     logger.info(block)
+
+
+def _safe_llm_context_filename_part(value: str, *, max_len: int = 96) -> str:
+    cleaned = re.sub(r"[^\w.\-]+", "_", (value or "").strip(), flags=re.UNICODE)
+    return (cleaned or "x")[:max_len]
+
+
+def save_orchestration_llm_context_json(
+    *,
+    state: dict[str, Any],
+    system_prompt: str,
+    user_prompt: str,
+    thread_id: str,
+) -> Path | None:
+    """Write the exact prompts sent to the final answer LLM to a JSON file (dev / inspection)."""
+    if not settings.ORCHESTRATION_SAVE_LLM_CONTEXT_JSON:
+        return None
+    base = Path(settings.ORCHESTRATION_LLM_CONTEXT_JSON_DIR)
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning(
+            "Could not create ORCHESTRATION_LLM_CONTEXT_JSON_DIR %r: %s",
+            str(base),
+            exc,
+        )
+        return None
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    sid = _safe_llm_context_filename_part(str(state.get("session_id") or ""))
+    mid = _safe_llm_context_filename_part(str(state.get("message_id") or "nomid"))
+    fname = f"llm_context_{ts}_{sid}_{mid}.json"
+    path = base / fname
+
+    payload: dict[str, Any] = {
+        "saved_at_utc": ts,
+        "thread_id": thread_id,
+        "user_id": state.get("user_id"),
+        "session_id": state.get("session_id"),
+        "message_id": state.get("message_id"),
+        "assistant": state.get("selected_assistant")
+        or state.get("assistant_name")
+        or state.get("collection_name"),
+        "court_route_tag": state.get("court_route_tag"),
+        "query": state.get("query"),
+        "rewritten_query": state.get("rewritten_query"),
+        "retrieval_context": state.get("retrieval_context") or "",
+        "criminal_case_context": state.get("criminal_case_context") or "",
+        "file_context": state.get("file_context") or "",
+        "project_related_context": state.get("project_related_context") or "",
+        "llm_messages": {
+            "system": system_prompt,
+            "user": user_prompt,
+        },
+    }
+
+    try:
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        logger.warning("Could not write LLM context JSON to %r: %s", str(path), exc)
+        return None
+
+    logger.info("Saved LLM context snapshot to %s", path)
+    return path
 
 
 def log_orchestration_pipeline_messages_debug(

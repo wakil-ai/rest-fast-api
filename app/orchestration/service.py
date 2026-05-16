@@ -14,6 +14,7 @@ from app.orchestration.agents import CourtClassifier, IntentClassifier, MilvusQu
 from app.orchestration.agents import web_search_fallback as web_search_agent
 from app.orchestration.providers import resolve_gemini_model_name
 from app.orchestration.prompts import PromptRegistry
+from app.orchestration.retrieval import resolve_assistant
 from app.orchestration.state import GraphContext, RetrievalRewriteState
 from app.orchestration.utils import (
     agent_session_thread_id,
@@ -158,6 +159,11 @@ class OrchestrationService:
         await apply(await nodes.recognize_intent(state, self))
         await apply(await nodes.route_court(state, self))
         await apply(await nodes.rewrite_query(state, self))
+        # Must mirror ``compile_retrieval_graph`` conditional after ``rewrite_query``:
+        # criminal graph RAG runs before Lex/Milvus retrieval so ``criminal_case_context``
+        # is present when ``retrieve_for_assistant`` builds the criminal-court system prompt.
+        if resolve_assistant(state) == "criminal_court":
+            await apply(await nodes.criminal_case_retrieval_subgraph(state))
         await apply(await nodes.retrieve_documents(state, self))
 
         if self.web_search_enabled(state):
