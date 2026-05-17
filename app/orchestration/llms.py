@@ -19,6 +19,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
+from app.core.langfuse_tracing import (
+    LlmRunName,
+    langchain_invoke_config,
+    merge_langchain_config,
+    traced_ainvoke,
+)
 from app.orchestration.providers import LLM, resolve_gemini_model_name
 from app.orchestration.text import message_content_to_plain_str
 
@@ -28,13 +34,21 @@ async def ainvoke_lite_classification_chat(
     *,
     system_prompt: str,
     user_prompt: str,
+    run_name: str = LlmRunName.INTENT_RECOGNITION,
+    user_id: str | None = None,
+    session_id: str | None = None,
 ) -> str:
     """Single-turn system + user call; returns assistant text only."""
-    out = await llm.ainvoke(
-        [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt),
-        ]
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt),
+    ]
+    out = await traced_ainvoke(
+        llm,
+        messages,
+        run_name=run_name,
+        user_id=user_id,
+        session_id=session_id,
     )
     return message_content_to_plain_str(getattr(out, "content", out))
 
@@ -112,13 +126,23 @@ class LangChain(LLM):
         system_prompt: str,
         assistant_name: str = "main",
         user_id_for_logs: str = "",
+        session_id: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
         agent = self.compile_chat(system_prompt=system_prompt)
 
+        invoke_config = merge_langchain_config(
+            self.thread_config(thread_id),
+            langchain_invoke_config(
+                LlmRunName.FINAL_ANSWER,
+                user_id=user_id_for_logs or None,
+                session_id=session_id,
+                tags=[f"assistant:{canonical}"],
+            ),
+        )
         outcome = await agent.ainvoke(
             {"messages": [HumanMessage(content=query.strip())]},
-            self.thread_config(thread_id),
+            invoke_config,
         )
         msgs: list[BaseMessage] = list(outcome.get("messages") or [])
         answer = self._last_ai_text(msgs)
@@ -144,9 +168,21 @@ class LangChain(LLM):
         query: str,
         system_prompt: str,
         assistant_name: str = "main",
+        user_id_for_logs: str = "",
+        session_id: str | None = None,
     ) -> AsyncGenerator[str | dict[str, Any], None]:
         canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
         agent = self.compile_chat(system_prompt=system_prompt)
+
+        stream_config = merge_langchain_config(
+            self.thread_config(thread_id),
+            langchain_invoke_config(
+                LlmRunName.FINAL_ANSWER,
+                user_id=user_id_for_logs or None,
+                session_id=session_id,
+                tags=[f"assistant:{canonical}"],
+            ),
+        )
 
         collected_meta: dict[str, Any] = {
             "model": self.model,
@@ -171,7 +207,7 @@ class LangChain(LLM):
             )
             stream = agent.astream(
                 input_state,
-                self.thread_config(thread_id),
+                stream_config,
                 stream_mode="messages",
                 subgraphs=True,
                 version="v2",
@@ -235,6 +271,7 @@ class LangChain(LLM):
         thread_id: str,
         assistant_name: str = "main",
         user_id_for_logs: str = "",
+        session_id: str | None = None,
     ) -> str | AsyncGenerator[str, None]:
         if stream:
             return self._generate_streaming(
@@ -242,6 +279,8 @@ class LangChain(LLM):
                 system_prompt=system_prompt,
                 thread_id=thread_id,
                 assistant_name=assistant_name,
+                user_id_for_logs=user_id_for_logs,
+                session_id=session_id,
             )
         answer, _meta = await self.invoke_turn(
             thread_id=thread_id,
@@ -249,6 +288,7 @@ class LangChain(LLM):
             system_prompt=system_prompt,
             assistant_name=assistant_name,
             user_id_for_logs=user_id_for_logs,
+            session_id=session_id,
         )
         return answer
 
@@ -259,12 +299,16 @@ class LangChain(LLM):
         system_prompt: str,
         thread_id: str,
         assistant_name: str = "main",
+        user_id_for_logs: str = "",
+        session_id: str | None = None,
     ) -> AsyncGenerator[str | dict[str, Any], None]:
         async for item in self.astream_turn(
             thread_id=thread_id,
             query=user_prompt,
             system_prompt=system_prompt,
             assistant_name=assistant_name,
+            user_id_for_logs=user_id_for_logs,
+            session_id=session_id,
         ):
             if isinstance(item, (str, dict)):
                 yield item

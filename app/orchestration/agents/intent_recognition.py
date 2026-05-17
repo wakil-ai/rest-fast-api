@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from app.core.dependencies import get_orchestration_service
 from app.core.logger import logger
+from app.core.langfuse_tracing import LlmRunName
 from app.orchestration.llms import ainvoke_lite_classification_chat
 from app.models.intent_types import DomainType, IntentOutput, LegalIntent
 from app.orchestration.prompts import PromptRegistry
@@ -24,6 +25,9 @@ class IntentClassifier:
         chat_history: str = "",
         file_context: str = "",
         llm: Any | None = None,
+        *,
+        user_id: str | None = None,
+        session_id: str | None = None,
     ) -> tuple[str, Any, LegalIntent]:
         try:
             structured_prompt = self._build_prompt(
@@ -33,6 +37,9 @@ class IntentClassifier:
                 llm or get_orchestration_service().lite_llm,
                 system_prompt=structured_prompt,
                 user_prompt=query,
+                run_name=LlmRunName.INTENT_RECOGNITION,
+                user_id=user_id,
+                session_id=session_id,
             )
             parsed = self._parse_response(response, file_context)
             domain, intent = self._map_to_enums(

@@ -16,6 +16,7 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.core.langfuse_tracing import configure_langfuse_env, flush_langfuse
 from app.orchestration.utils import (
     init_agent_checkpointer,
     shutdown_agent_checkpointer,
@@ -48,11 +49,13 @@ async def lifespan(app: FastAPI):
     logger.info("Started WakilAI API application")
 
     os.environ["OTEL_SDK_DISABLED"] = "true"
+    configure_langfuse_env()
 
     await init_agent_checkpointer()
 
     yield
 
+    flush_langfuse()
     await shutdown_agent_checkpointer()
 
 

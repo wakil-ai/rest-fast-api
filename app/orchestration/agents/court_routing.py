@@ -4,6 +4,7 @@ from typing import Any
 
 from app.core.dependencies import get_orchestration_service
 from app.core.logger import logger
+from app.core.langfuse_tracing import LlmRunName
 from app.orchestration.llms import ainvoke_lite_classification_chat
 from app.orchestration.prompts import PromptRegistry
 
@@ -51,6 +52,9 @@ class CourtClassifier:
         chat_history: str = "",
         file_context: str = "",
         llm: Any | None = None,
+        *,
+        user_id: str | None = None,
+        session_id: str | None = None,
     ) -> CourtRoutingDecision:
         try:
             response = await ainvoke_lite_classification_chat(
@@ -59,6 +63,9 @@ class CourtClassifier:
                 user_prompt=self._build_user_prompt(
                     query, chat_history, file_context
                 ),
+                run_name=LlmRunName.COURT_ROUTING,
+                user_id=user_id,
+                session_id=session_id,
             )
             if not isinstance(response, str):
                 return CourtRoutingDecision(

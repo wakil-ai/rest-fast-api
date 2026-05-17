@@ -13,6 +13,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
+from app.core.langfuse_tracing import LlmRunName, langchain_invoke_config, traced_ainvoke
 from app.core.logger import logger
 from app.orchestration.text import message_content_to_plain_str
 
@@ -76,12 +77,28 @@ class LangChainChatModel(LLM):
         user_prompt: str,
         system_prompt: str,
         stream: bool = settings.STREAM,
+        *,
+        run_name: str = LlmRunName.ASSISTANT_GENERATION,
+        user_id: str | None = None,
+        session_id: str | None = None,
     ) -> str | AsyncGenerator[str, None]:
         messages = self._messages(user_prompt, system_prompt)
         try:
             if stream:
-                return self._stream_messages(messages)
-            out = await self._lc.ainvoke(messages)
+                return self._stream_messages(
+                    messages,
+                    run_name=run_name,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+            out = await traced_ainvoke(
+                self._lc,
+                messages,
+                run_name=run_name,
+                user_id=user_id,
+                session_id=session_id,
+                tags=[self.__class__.__name__],
+            )
             return message_content_to_plain_str(getattr(out, "content", out))
         except Exception as error:
             logger.error(
@@ -95,8 +112,21 @@ class LangChainChatModel(LLM):
             HumanMessage(content=user_prompt),
         ]
 
-    async def _stream_messages(self, messages: list) -> AsyncGenerator[str, None]:
-        async for chunk in self._streaming_model().astream(messages):
+    async def _stream_messages(
+        self,
+        messages: list,
+        *,
+        run_name: str = LlmRunName.ASSISTANT_GENERATION,
+        user_id: str | None = None,
+        session_id: str | None = None,
+    ) -> AsyncGenerator[str, None]:
+        config = langchain_invoke_config(
+            run_name,
+            user_id=user_id,
+            session_id=session_id,
+            tags=[self.__class__.__name__],
+        )
+        async for chunk in self._streaming_model().astream(messages, config or None):
             raw = getattr(chunk, "content", None)
             if not raw:
                 continue

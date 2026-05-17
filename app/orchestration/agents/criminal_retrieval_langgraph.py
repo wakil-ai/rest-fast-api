@@ -33,9 +33,6 @@ logger = logging.getLogger(__name__)
 
 CRIMINAL_RETRIEVAL_TOP_CASES = 3
 
-# Max first segment for ``article_numbers`` list cleanup (JK article-ish tokens only).
-_MAX_JK_ARTICLE_HEAD = 450
-
 
 class CriminalRetrievalState(TypedDict, total=False):
     question: str
@@ -123,8 +120,12 @@ async def node_plan_filters(state: CriminalRetrievalState) -> dict[str, Any]:
     llm = get_orchestration_service().lite_llm
     registry = get_prompt_registry()
     system = registry.get_prompt("cypher_agent").format()
-    response = await llm.ainvoke(
-        [SystemMessage(content=system), HumanMessage(content=question)]
+    from app.core.langfuse_tracing import LlmRunName, traced_ainvoke
+
+    response = await traced_ainvoke(
+        llm,
+        [SystemMessage(content=system), HumanMessage(content=question)],
+        run_name=LlmRunName.CYPHER_FILTER_PLANNING,
     )
     raw = message_content_to_plain_str(getattr(response, "content", response))
     filters = parse_metadata_filter_json(raw)

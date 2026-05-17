@@ -6,6 +6,7 @@ import yaml
 
 from app.core.dependencies import get_orchestration_service
 from app.core.logger import logger
+from app.core.langfuse_tracing import LlmRunName
 from app.orchestration.llms import ainvoke_lite_classification_chat
 from app.orchestration.prompts import PromptRegistry
 
@@ -92,6 +93,8 @@ class MilvusQueryAgent:
         *,
         assistant: str | None = None,
         llm: Any | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
     ) -> str:
         try:
             structured_prompt = self._build_prompt(
@@ -104,6 +107,9 @@ class MilvusQueryAgent:
                 llm or get_orchestration_service().lite_llm,
                 system_prompt=structured_prompt,
                 user_prompt=query,
+                run_name=LlmRunName.MILVUS_FILTER,
+                user_id=user_id,
+                session_id=session_id,
             )
             milvus_filter = self._normalize_filter(response)
             logger.debug(f"[MilvusQueryAgent] Generated filter: {milvus_filter}")

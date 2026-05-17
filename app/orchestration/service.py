@@ -9,6 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
+from app.core.langfuse_tracing import allm_trace_context
 from app.core.logger import logger
 from app.orchestration.agents import CourtClassifier, IntentClassifier, MilvusQueryAgent
 from app.orchestration.agents import web_search_fallback as web_search_agent
@@ -147,11 +148,25 @@ class OrchestrationService:
 
         self.context = GraphContext(user_id=payload["user_id"])
         state: dict[str, Any] = dict(payload)
+        assistant = str(payload.get("assistant_name") or "main")
 
         async def apply(update: dict[str, Any] | None) -> None:
             if update:
                 state.update(update)
 
+        async with allm_trace_context(
+            user_id=str(payload.get("user_id") or ""),
+            session_id=str(payload.get("session_id") or ""),
+            tags=(f"assistant:{assistant}", "pipeline:orchestration"),
+        ):
+            return await self._prepare_final_state_inner(state, nodes, apply)
+
+    async def _prepare_final_state_inner(
+        self,
+        state: dict[str, Any],
+        nodes: Any,
+        apply: Any,
+    ) -> dict[str, Any]:
         await apply(await nodes.load_file_and_project_context(state, self))
         await apply(nodes.ingest_payload(state))
         await merge_langgraph_thread_into_state_messages(state)

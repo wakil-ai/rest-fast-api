@@ -11,6 +11,11 @@ from langchain_core.messages import (
 )
 
 from app.core.assistants import AssistantConfig
+from app.core.langfuse_tracing import (
+    LlmRunName,
+    langchain_invoke_config,
+    traced_ainvoke,
+)
 from app.orchestration.retrieval import (
     resolve_assistant,
     retrieve_for_assistant,
@@ -65,6 +70,8 @@ async def recognize_intent(
         chat_history=history,
         file_context=state.get("file_context") or "",
         llm=runtime.lite_llm,
+        user_id=str(state.get("user_id") or "") or None,
+        session_id=str(state.get("session_id") or "") or None,
     )
     return {
         "intent_domain": domain,
@@ -86,6 +93,8 @@ async def route_court(
         chat_history=history,
         file_context=state.get("file_context") or "",
         llm=runtime.lite_llm,
+        user_id=str(state.get("user_id") or "") or None,
+        session_id=str(state.get("session_id") or "") or None,
     )
     return {
         "selected_assistant": decision.assistant_name or "administrative_court",
@@ -103,7 +112,13 @@ async def rewrite_query(
         file_context=state.get("file_context") or "",
         long_memory=state.get("long_term_memory") or "",
     )
-    response = await runtime.lite_llm.ainvoke(prompt)
+    response = await traced_ainvoke(
+        runtime.lite_llm,
+        prompt,
+        run_name=LlmRunName.QUERY_REWRITE,
+        user_id=str(state.get("user_id") or "") or None,
+        session_id=str(state.get("session_id") or "") or None,
+    )
     raw = response.content if hasattr(response, "content") else str(response)
     return {"rewritten_query": message_content_to_plain_str(raw)}
 
@@ -118,7 +133,14 @@ async def criminal_case_retrieval_subgraph(state: RetrievalRewriteState) -> dict
     q = (state.get("rewritten_query") or state.get("query") or "").strip()
     if not q:
         return {"criminal_case_context": ""}
-    result = await app.ainvoke({"question": q})
+    result = await app.ainvoke(
+        {"question": q},
+        langchain_invoke_config(
+            LlmRunName.CRIMINAL_CASE_RETRIEVAL,
+            user_id=str(state.get("user_id") or "") or None,
+            session_id=str(state.get("session_id") or "") or None,
+        ),
+    )
     return {"criminal_case_context": str(result.get("context_markdown") or "")}
 
 
@@ -220,6 +242,8 @@ async def stream_final_answer(
         query=user_prompt.strip(),
         system_prompt=system_prompt,
         assistant_name=str(assistant),
+        user_id_for_logs=str(state.get("user_id") or ""),
+        session_id=str(state.get("session_id") or "") or None,
     ):
         if (
             usage_holder is not None
@@ -255,75 +279,3 @@ def build_final_answer_messages(
     )
     return system_prompt, user_prompt
 
-
-def _delta_stream_text(*, previous: str, piece: str) -> tuple[str, str]:
-    if not piece:
-        return "", previous
-    if previous and piece.startswith(previous):
-        return piece[len(previous) :], piece
-    return piece, previous + piece
-
-
-def _stream_pieces(msg: BaseMessage) -> list[tuple[str, str]]:
-    pieces: list[tuple[str, str]] = []
-    blocks = _content_blocks(msg)
-    for block in blocks:
-        if not isinstance(block, dict):
-            continue
-        block_type = block.get("type")
-        if block_type == "reasoning":
-            text = block.get("reasoning")
-            if text:
-                pieces.append(("think", str(text)))
-        elif block_type == "thinking":
-            text = block.get("thinking")
-            if text:
-                pieces.append(("think", str(text)))
-        elif block_type == "text":
-            text = block.get("text")
-            if text:
-                pieces.append(("answer", str(text)))
-
-    if pieces:
-        return pieces
-
-    content = getattr(msg, "content", None)
-    if isinstance(content, list):
-        return _content_list_pieces(content)
-
-    text = message_content_to_plain_str(content)
-    if text:
-        return [("answer", text)]
-    return []
-
-
-def _content_blocks(msg: BaseMessage) -> list[Any]:
-    try:
-        blocks = msg.content_blocks
-    except Exception:
-        return []
-    return list(blocks or [])
-
-
-def _content_list_pieces(content: list[Any]) -> list[tuple[str, str]]:
-    pieces: list[tuple[str, str]] = []
-    for block in content:
-        if isinstance(block, str):
-            if block:
-                pieces.append(("answer", block))
-            continue
-        if not isinstance(block, dict):
-            text = str(block)
-            if text:
-                pieces.append(("answer", text))
-            continue
-        block_type = block.get("type")
-        if block_type == "thinking":
-            text = block.get("thinking")
-            if text:
-                pieces.append(("think", str(text)))
-            continue
-        text = block.get("text")
-        if text:
-            pieces.append(("answer", str(text)))
-    return pieces

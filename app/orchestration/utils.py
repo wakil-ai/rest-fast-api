@@ -88,6 +88,7 @@ class GenerationContext:
     system_prompt: str
     chat_history: str
     assistant_name: str
+    session_id: str = ""
     attachments: list[dict[str, Any]] | None = None
     classified_legal_intent: str | None = None
     court_route_tag: str | None = None
@@ -531,10 +532,14 @@ def _strip_json_fenced_block(text: str) -> str:
 
 async def _lite_llm_json_object(system: str, user: str) -> dict[str, Any]:
     """Structured JSON via orchestration lite LLM (same as Purpose.LITE / DEFAULT_LITE_MODEL)."""
+    from app.core.langfuse_tracing import LlmRunName, traced_ainvoke
+
     try:
         llm = get_orchestration_service().lite_llm
-        msg = await llm.ainvoke(
-            [SystemMessage(content=system), HumanMessage(content=user)]
+        msg = await traced_ainvoke(
+            llm,
+            [SystemMessage(content=system), HumanMessage(content=user)],
+            run_name=LlmRunName.CONTEXT_EVALUATION,
         )
         raw = message_content_to_plain_str(getattr(msg, "content", None))
     except Exception as e:

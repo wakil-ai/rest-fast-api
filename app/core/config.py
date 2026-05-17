@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Reserved for future OpenTelemetry wiring
 
+    # Langfuse (LangChain callback tracing)
+    LANGFUSE_TRACING_ENABLED: bool = False
+    LANGFUSE_PUBLIC_KEY: str | None = None
+    LANGFUSE_SECRET_KEY: str | None = None
+    #: Self-hosted or cloud URL (e.g. https://cloud.langfuse.com). Also accepts LANGFUSE_HOST.
+    LANGFUSE_BASE_URL: str | None = None
+    LANGFUSE_HOST: str | None = None
+
     ALLOWED_ORIGINS: list[str] = [
         "https://chat.wakil.ai",
         "https://dev-chat.wakil.ai",

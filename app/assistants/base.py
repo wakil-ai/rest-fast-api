@@ -18,6 +18,7 @@ from app.orchestration.utils import (
     resolve_turn_project_id,
 )
 from app.core.config import settings
+from app.core.langfuse_tracing import LlmRunName
 from app.core.dependencies import (
     get_chat_history_service,
     get_context_formatter,
@@ -283,6 +284,7 @@ class BaseAgent:
         )
         return GenerationContext(
             user_id=state.request.user_id,
+            session_id=state.request.session_id,
             context=state.retrieval_context,
             system_prompt=state.system_prompt,
             chat_history=state.chat_history,
@@ -416,6 +418,7 @@ class BaseAgent:
             system_prompt=ctx.system_prompt,
             assistant_name=ctx.assistant_name,
             user_id_for_logs=ctx.user_id,
+            session_id=ctx.session_id or None,
         )
         meta["attachments"] = list(ctx.attachments or [])
         return answer, meta
@@ -434,6 +437,8 @@ class BaseAgent:
                 query=query,
                 system_prompt=ctx.system_prompt,
                 assistant_name=ctx.assistant_name,
+                user_id_for_logs=ctx.user_id,
+                session_id=ctx.session_id or None,
             ):
                 if isinstance(item, str):
                     answer_chunks.append(item)
@@ -477,7 +482,9 @@ class BaseAgent:
             answer_chunks: list[str] = []
             active_llm = llm
             try:
-                async for chunk in self._stream_from_llm(llm, query, ctx.system_prompt):
+                async for chunk in self._stream_from_llm(
+                    llm, query, ctx.system_prompt, ctx=ctx
+                ):
                     if isinstance(chunk, str):
                         answer_chunks.append(chunk)
                     yield chunk
@@ -488,7 +495,7 @@ class BaseAgent:
                 try:
                     active_llm = self.fallback_llm
                     async for chunk in self._stream_from_llm(
-                        active_llm, query, ctx.system_prompt
+                        active_llm, query, ctx.system_prompt, ctx=ctx
                     ):
                         if isinstance(chunk, str):
                             answer_chunks.append(chunk)
@@ -519,11 +526,13 @@ class BaseAgent:
     ) -> tuple[str, dict[str, Any]]:
         active_llm = llm
         try:
-            raw = await self._get_response(llm, query, ctx.system_prompt)
+            raw = await self._get_response(llm, query, ctx.system_prompt, ctx=ctx)
         except Exception:
             logger.warning("Primary LLM failed -> fallback", exc_info=True)
             active_llm = self.fallback_llm
-            raw = await self._get_response(active_llm, query, ctx.system_prompt)
+            raw = await self._get_response(
+                active_llm, query, ctx.system_prompt, ctx=ctx
+            )
         cleaned = self._clean_text(raw)
         meta = await self._collect_generation_meta(
             llm=active_llm,
@@ -535,12 +544,20 @@ class BaseAgent:
         return cleaned, meta
 
     async def _stream_from_llm(
-        self, llm: LLM, user_prompt: str, system_prompt: str
+        self,
+        llm: LLM,
+        user_prompt: str,
+        system_prompt: str,
+        *,
+        ctx: GenerationContext | None = None,
     ) -> AsyncGenerator[Any, None]:
         gen = await llm.generate_response(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             stream=True,
+            run_name=LlmRunName.ASSISTANT_GENERATION,
+            user_id=ctx.user_id if ctx else None,
+            session_id=(ctx.session_id or None) if ctx else None,
         )
         if isinstance(gen, str):
             raise TypeError("Expected streaming generator from LLM.")
@@ -555,12 +572,20 @@ class BaseAgent:
                 yield self._clean_text(chunk)
 
     async def _get_response(
-        self, llm: LLM, user_prompt: str, system_prompt: str
+        self,
+        llm: LLM,
+        user_prompt: str,
+        system_prompt: str,
+        *,
+        ctx: GenerationContext | None = None,
     ) -> str:
         response = await llm.generate_response(
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             stream=False,
+            run_name=LlmRunName.ASSISTANT_GENERATION,
+            user_id=ctx.user_id if ctx else None,
+            session_id=(ctx.session_id or None) if ctx else None,
         )
         if not isinstance(response, str):
             raise TypeError("Expected non-streaming response from LLM.")

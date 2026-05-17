@@ -47,9 +47,13 @@ class CriminalCaseGraphRetriever:
             chat_history="Use `get_chat_history` when multi-turn context is required.",
             retrieved_cases=cases,
         )
+        from app.core.langfuse_tracing import LlmRunName, traced_ainvoke
+
         llm = get_orchestration_service().generation_llm
-        response = await llm.ainvoke(
+        response = await traced_ainvoke(
+            llm,
             [SystemMessage(content=system), HumanMessage(content=query)],
+            run_name=LlmRunName.CRIMINAL_COURT_ANSWER,
         )
         return message_content_to_plain_str(getattr(response, "content", response))
 
