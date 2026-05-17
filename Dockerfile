@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
-COPY requirements.txt constraints.txt ./
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt -c constraints.txt
+    pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 # Runtime stage
 FROM python:3.10-slim
