@@ -256,26 +256,85 @@ async def stream_final_answer(
         yield item
 
 
+def _resolve_final_system_prompt(
+    state: RetrievalRewriteState,
+    runtime: OrchestrationService,
+    assistant: str,
+) -> str:
+    """Build the system prompt for the final LLM, injecting graph cases when needed."""
+    criminal_cases = (state.get("criminal_case_context") or "").strip()
+    answer_tpl = state.get("answer_prompt_template")
+    if answer_tpl is not None:
+        raw = str(getattr(answer_tpl, "template", answer_tpl) or "")
+        if (
+            assistant == "criminal_court"
+            and criminal_cases
+            and "{retrieved_cases}" in raw
+        ):
+            registry_tpl = runtime.prompt_registry.get_assistant_prompt("criminal_court")
+            merged_ctx = (
+                "Statutes and LexUZ excerpts appear under **Retrieved legal context** in the "
+                "user message. Similar criminal cases are listed under "
+                "**Retrieved similar criminal cases** in this message."
+            )
+            file_context = (state.get("file_context") or "").strip()
+            if file_context:
+                merged_ctx += "\n\n## Uploaded files\n" + file_context
+            return registry_tpl.format(
+                context=merged_ctx,
+                chat_history=(
+                    "Use the `get_chat_history` tool to access recent conversation history."
+                ),
+                retrieved_cases=criminal_cases,
+            )
+        return raw
+
+    tpl = runtime.prompt_registry.get_assistant_prompt(
+        AssistantConfig.validate_assistant_or_default(assistant)
+    )
+    if assistant == "criminal_court":
+        merged_ctx = (
+            "Statutes and LexUZ excerpts appear under **Retrieved legal context** in the "
+            "user message. Similar criminal cases are listed under "
+            "**Retrieved similar criminal cases** in this message."
+        )
+        file_context = (state.get("file_context") or "").strip()
+        if file_context:
+            merged_ctx += "\n\n## Uploaded files\n" + file_context
+        return tpl.format(
+            context=merged_ctx,
+            chat_history=(
+                "Use the `get_chat_history` tool to access recent conversation history."
+            ),
+            retrieved_cases=criminal_cases or "(No criminal graph matches for this query.)",
+        )
+    return tpl.template
+
+
 def build_final_answer_messages(
     state: RetrievalRewriteState,
     runtime: OrchestrationService,
 ) -> tuple[str, str]:
     assistant = resolve_assistant(state)
-    prompt_template = state.get("answer_prompt_template")
-    if prompt_template is not None:
-        system_prompt = prompt_template.template
-    else:
-        system_prompt = runtime.prompt_registry.get_assistant_prompt(
-            AssistantConfig.validate_assistant_or_default(assistant)
-        ).template
+    system_prompt = _resolve_final_system_prompt(state, runtime, assistant)
 
     retrieval_context = state.get("retrieval_context") or ""
-    user_prompt = (
-        f"User question:\n{state['query']}\n\n"
-        f"Rewritten retrieval query:\n{state.get('rewritten_query', '')}\n\n"
-        f"Retrieved legal context:\n"
-        f"{retrieval_context if retrieval_context else '[NO CONTEXT FOUND]'}\n\n"
-        f"User uploaded file context:\n{state.get('file_context') or ''}\n\n"
+    criminal_cases = (state.get("criminal_case_context") or "").strip()
+
+    user_sections = [
+        f"User question:\n{state['query']}",
+        f"Rewritten retrieval query:\n{state.get('rewritten_query', '')}",
+    ]
+    if criminal_cases:
+        user_sections.append(
+            "Retrieved similar criminal cases (Neo4j + Mongo graph):\n"
+            f"{criminal_cases}"
+        )
+    user_sections.append(
+        "Retrieved legal context:\n"
+        f"{retrieval_context if retrieval_context else '[NO CONTEXT FOUND]'}"
     )
+    user_sections.append(f"User uploaded file context:\n{state.get('file_context') or ''}")
+    user_prompt = "\n\n".join(user_sections) + "\n\n"
     return system_prompt, user_prompt
 

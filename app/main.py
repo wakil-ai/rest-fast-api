@@ -16,7 +16,11 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.core.langfuse_tracing import configure_langfuse_env, flush_langfuse
+from app.core.langfuse_tracing import (
+    configure_langfuse_env,
+    flush_langfuse,
+    is_langfuse_enabled,
+)
 from app.orchestration.utils import (
     init_agent_checkpointer,
     shutdown_agent_checkpointer,
@@ -48,8 +52,12 @@ async def lifespan(app: FastAPI):
     # Startup actions
     logger.info("Started WakilAI API application")
 
-    os.environ["OTEL_SDK_DISABLED"] = "true"
-    configure_langfuse_env()
+    # Langfuse Python SDK v4 uses OpenTelemetry; disabling OTEL blocks all traces.
+    if is_langfuse_enabled():
+        os.environ.pop("OTEL_SDK_DISABLED", None)
+        configure_langfuse_env()
+    else:
+        os.environ["OTEL_SDK_DISABLED"] = "true"
 
     await init_agent_checkpointer()
 

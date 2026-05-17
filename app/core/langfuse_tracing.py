@@ -75,7 +75,7 @@ def configure_langfuse_env() -> None:
     base = langfuse_base_url()
     if base:
         os.environ.setdefault("LANGFUSE_BASE_URL", base)
-    logger.info("Langfuse tracing enabled (host=%s)", base)
+    logger.info("Langfuse tracing enabled (host={})", base)
 
 
 def flush_langfuse() -> None:
@@ -87,7 +87,12 @@ def flush_langfuse() -> None:
 
         get_client().flush()
     except Exception as exc:
-        logger.warning("Langfuse flush failed: %s", exc)
+        logger.warning("Langfuse flush failed: {}", exc)
+
+
+def flush_langfuse_if_enabled() -> None:
+    """Push batched observations to Langfuse (call after a chat turn)."""
+    flush_langfuse()
 
 
 @contextmanager

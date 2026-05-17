@@ -23,6 +23,7 @@ from app.core.exceptions import (
     InvalidInputError,
     QueryTooLongException,
 )
+from app.core.langfuse_tracing import flush_langfuse_if_enabled
 from app.core.logger import logger
 from app.models.chat import (
     AgenticRAGRequest,
@@ -450,6 +451,7 @@ class ChatService:
             metadata=metadata,
             project_id=project_id,
         )
+        flush_langfuse_if_enabled()
 
     async def _persist_assistant_message_safe(
         self,
