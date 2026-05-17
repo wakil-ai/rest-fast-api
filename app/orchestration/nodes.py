@@ -25,7 +25,7 @@ from app.orchestration.text import (
     history_text_from_state,
     message_content_to_plain_str,
 )
-from app.orchestration.utils import load_turn_file_context, save_orchestration_llm_context_json
+from app.orchestration.utils import load_turn_file_context
 
 if TYPE_CHECKING:
     from app.orchestration.service import OrchestrationService
@@ -223,12 +223,6 @@ async def stream_final_answer(
     thread_id = agent_session_thread_id(
         str(state.get("user_id") or ""),
         str(state.get("session_id") or ""),
-    )
-    save_orchestration_llm_context_json(
-        state=dict(state),
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        thread_id=thread_id,
     )
     assistant = (
         state.get("selected_assistant")

@@ -55,7 +55,7 @@ class BasePaymentService:
             },
         }
 
-        if settings.DEVELOPMENT_MODE:
+        if settings.DEBUG:
             self._subscription_catalog["test"] = {
                 "daily_credits": 70,
                 "monthly": {

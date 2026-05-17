@@ -588,7 +588,6 @@ class CriminalCourtAgent(BaseAgent):
             chat_history=chat_history_hint,
             retrieved_cases=retrieved_cases,
         )
-        logger.debug("[CriminalCourtAgent SYSTEM PROMPT]\n%s", state.system_prompt[:2000])
 
     def _context_guidance_text(self) -> str:
         return (

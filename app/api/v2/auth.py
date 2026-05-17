@@ -51,7 +51,7 @@ def _is_allowed_frontend_redirect_uri(frontend_redirect_uri: str | None) -> bool
     if hostname == "wakil.ai" or hostname.endswith(".wakil.ai"):
         return True
 
-    if settings.DEVELOPMENT_MODE:
+    if settings.DEBUG:
         allowed_origins.update(
             {
                 "http://localhost:3000",
