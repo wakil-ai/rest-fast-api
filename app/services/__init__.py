@@ -1,4 +1,3 @@
-from app.services.auth_service import validate_telegram_data
 from app.services.bitrix24_service import Bitrix24Service
 from app.services.auth_service import (
     exchange_telegram_oauth_code,
