@@ -399,19 +399,11 @@ class ChatService:
                 if isinstance(last_state.get("attachments"), list)
                 else []
             )
-            prev_attachment_urls: frozenset[str] = frozenset()
             if state_attachments:
-                urls = frozenset(
-                    str((a or {}).get("url") or "").strip()
-                    for a in state_attachments
-                    if isinstance(a, dict) and str((a or {}).get("url") or "").strip()
-                )
-                if urls:
-                    prev_attachment_urls = urls
-                    yield {
-                        "type": "attachments",
-                        "attachments": list(state_attachments),
-                    }
+                yield {
+                    "type": "attachments",
+                    "attachments": list(state_attachments),
+                }
 
             answer_chunks: list[str] = []
             final_generation_meta: dict[str, Any] = {}
@@ -477,15 +469,10 @@ class ChatService:
         )
         if attachments:
             generation_meta["attachments"] = attachments
-            new_attachments = [
-                attachment
-                for attachment in attachments
-                if isinstance(attachment, dict)
-                and (url := str(attachment.get("url") or "").strip())
-                and url not in prev_attachment_urls
-            ]
-            if new_attachments:
-                yield {"type": "attachments", "attachments": new_attachments}
+            # Always send the full merged list at the end. Clients typically replace
+            # attachments on each event; sending only new items drops Milvus templates
+            # that were streamed earlier after retrieval.
+            yield {"type": "attachments", "attachments": attachments}
 
         latency_ms = int((perf_counter() - started_at) * 1000)
         merged_meta = dict(generation_meta)
@@ -506,6 +493,15 @@ class ChatService:
             metadata=metadata,
             project_id=project_id,
         )
+        end_event: dict[str, Any] = {
+            "type": "end",
+            "session_id": session_id,
+            "message_id": message_id,
+            "latency_ms": latency_ms,
+        }
+        if merged_meta.get("attachments"):
+            end_event["attachments"] = merged_meta["attachments"]
+        yield end_event
         flush_langfuse_if_enabled()
 
     async def _persist_assistant_message_safe(
