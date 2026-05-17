@@ -3,6 +3,10 @@ import os
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+from app.core.warnings_config import configure_startup_warnings
+
+configure_startup_warnings()
+
 # FastAPI imports
 from contextlib import asynccontextmanager
 
@@ -11,6 +15,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from starlette.middleware.sessions import SessionMiddleware
+
+from app.core.langfuse_tracing import (
+    configure_langfuse_env,
+    flush_langfuse,
+    is_langfuse_enabled,
+)
+from app.orchestration.utils import (
+    init_agent_checkpointer,
+    shutdown_agent_checkpointer,
+)
 
 # Internal imports
 from app.api.v2 import (
@@ -24,11 +38,11 @@ from app.api.v2 import (
 )
 from app.api.v2.history.router import router as chat_history
 from app.api.v2.history.share import router as share_router
+from app.api.v3 import chat as v3_chat
 from app.core.config import settings
 from app.core.logger import logger
 from app.security import (
     get_current_username,
-    verify_api_key,
     verify_api_key_or_dt_key,
 )
 
@@ -38,13 +52,19 @@ async def lifespan(app: FastAPI):
     # Startup actions
     logger.info("Started WakilAI API application")
 
-    # Disable all OpenTelemetry (including CrewAI)
-    os.environ["OTEL_SDK_DISABLED"] = "true"
-    if settings.TRACING:
-        os.environ["CREWAI_TRACING_ENABLED"] = "true"
+    # Langfuse Python SDK v4 uses OpenTelemetry; disabling OTEL blocks all traces.
+    if is_langfuse_enabled():
+        os.environ.pop("OTEL_SDK_DISABLED", None)
+        configure_langfuse_env()
+    else:
+        os.environ["OTEL_SDK_DISABLED"] = "true"
+
+    await init_agent_checkpointer()
 
     yield
-    # Shutdown (if needed)
+
+    flush_langfuse()
+    await shutdown_agent_checkpointer()
 
 
 def create_app() -> FastAPI:
@@ -62,7 +82,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=(
-            settings.ALLOWED_ORIGINS if not settings.DEVELOPMENT_MODE else ["*"]
+            settings.ALLOWED_ORIGINS if not settings.DEBUG else ["*"]
         ),
         allow_credentials=True,
         allow_methods=["*"],
@@ -84,6 +104,11 @@ def create_app() -> FastAPI:
     app.include_router(
         chat.router,
         prefix=settings.API_PREFIX,
+        dependencies=[Depends(verify_api_key_or_dt_key)],
+    )
+    app.include_router(
+        v3_chat.router,
+        prefix="/api/v3",
         dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(

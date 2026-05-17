@@ -1,0 +1,66 @@
+services:
+  api:
+    image: humblebeeai/wakil-ai-rest-api:latest
+    ports:
+      - 8080-8083:8080
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHONUNBUFFERED=1
+      - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    networks:
+      - wakilai-bridge
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 4
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # LangGraph AsyncRedisSaver needs RediSearch + RedisJSON (redisvl); plain redis lacks FT.* commands.
+  redis:
+    image: redis/redis-stack-server:7.4.0-v3
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - wakilai-bridge
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  wakilai-bridge:
+    driver: bridge
+
+volumes:
+  redis_data:

@@ -1,19 +1,21 @@
 import base64
 import json
+import secrets
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 from authlib.integrations.starlette_client import OAuth
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.dependencies import get_chat_history_service
-from app.core.exceptions import UserAlreadyExistsException
 from app.core.logger import logger
-from app.models.auth import DTUserCreateRequest, DTUserCreateResponse, TelegramAuth
+from app.models.auth import DTUserCreateRequest, DTUserCreateResponse
 from app.security.dependencies import verify_dt_api_key
-from app.services import validate_telegram_data
+from app.services import exchange_telegram_oauth_code, verify_telegram_id_token
+from app.services.auth_service import TELEGRAM_AUTH_URL
 from app.utils.user_management import generate_short_id
 
 router = APIRouter(prefix="/auth", tags=["Auth for Login"])
@@ -52,7 +54,7 @@ def _is_allowed_frontend_redirect_uri(frontend_redirect_uri: str | None) -> bool
     if hostname == "wakil.ai" or hostname.endswith(".wakil.ai"):
         return True
 
-    if settings.DEVELOPMENT_MODE:
+    if settings.DEBUG:
         allowed_origins.update(
             {
                 "http://localhost:3000",
@@ -79,6 +81,20 @@ def _build_google_user_payload(user_info: dict, internal_user_id: str) -> dict:
     }
 
 
+def _build_telegram_user_payload(claims: dict, internal_user_id: str) -> dict:
+    name = str(claims.get("name") or "").strip()
+    first_name, _, last_name = name.partition(" ")
+    return {
+        "id": internal_user_id,
+        "email": None,
+        "first_name": first_name or claims.get("preferred_username") or "Telegram User",
+        "last_name": last_name or None,
+        "username": claims.get("preferred_username"),
+        "photo_url": claims.get("picture"),
+        "auth_method": "telegram",
+    }
+
+
 def _encode_frontend_user_payload(user_payload: dict) -> str:
     raw_payload = json.dumps(user_payload, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw_payload).decode("utf-8").rstrip("=")
@@ -100,6 +116,12 @@ def _build_frontend_redirect_response(
 
     redirect_target = urlunparse(parsed._replace(query=urlencode(query)))
     return RedirectResponse(url=redirect_target, status_code=302)
+
+
+def _pkce_pair() -> tuple[str, str]:
+    """Generate a PKCE (verifier, S256 challenge) pair."""
+    verifier = secrets.token_urlsafe(64)
+    return verifier, create_s256_code_challenge(verifier)
 
 
 @router.get("/google/login")
@@ -283,64 +305,177 @@ async def auth_callback(request: Request):
         raise HTTPException(status_code=400, detail=f"Authentication failed: {str(e)}")
 
 
-# Telegram OAuth2 setup
+# Telegram OAuth 2.0 (OpenID Connect) — Authorization Code flow with PKCE.
+# Docs: https://core.telegram.org/widgets/login
 @router.get("/telegram/login")
-async def telegram_login(query_params: TelegramAuth = Depends(TelegramAuth)):
+async def telegram_login(request: Request):
     """
-    Telegram authentication endpoint.
-    """
-    telegram_token = settings.TELEGRAM_BOT_TOKEN
+    Initiate Telegram OIDC Authorization Code flow with PKCE.
 
-    # Check if hash parameter exists (required for validation)
-    if not query_params.model_dump().get("hash"):
+    Redirects the user agent to Telegram's authorization endpoint.
+    """
+    if not settings.TELEGRAM_CLIENT_ID or not settings.TELEGRAM_CLIENT_SECRET:
         raise HTTPException(
-            status_code=400,
-            detail="Missing authentication parameters. Please use Telegram login widget.",
+            status_code=500, detail="Telegram OAuth credentials not configured."
         )
 
+    frontend_redirect_uri = request.query_params.get("frontend_redirect_uri")
+    if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
+        request.session["telegram_frontend_redirect_uri"] = frontend_redirect_uri
+    else:
+        request.session.pop("telegram_frontend_redirect_uri", None)
+
+    redirect_uri = settings.TELEGRAM_REDIRECT_URI or str(
+        request.url_for("telegram_auth_callback")
+    )
+
+    state = secrets.token_urlsafe(32)
+    verifier, challenge = _pkce_pair()
+    nonce = secrets.token_urlsafe(32)
+
+    request.session["telegram_oidc_state"] = state
+    request.session["telegram_oidc_verifier"] = verifier
+    request.session["telegram_oidc_nonce"] = nonce
+
+    params = {
+        "client_id": settings.TELEGRAM_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid profile",
+        "state": state,
+        "nonce": nonce,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    }
+    logger.info("[TelegramOIDC] Redirecting to Telegram authorization endpoint")
+    return RedirectResponse(url=f"{TELEGRAM_AUTH_URL}?{urlencode(params)}")
+
+
+@router.get("/telegram/callback", name="telegram_auth_callback")
+async def telegram_auth_callback(request: Request):
+    """
+    Callback endpoint where Telegram redirects after authentication.
+
+    Exchanges the authorization code for tokens, verifies the ID token,
+    and creates/syncs the user in our database.
+    """
+    logger.info("[TelegramOIDC] Callback reached.")
+
+    frontend_redirect_uri = request.session.pop("telegram_frontend_redirect_uri", None)
+    expected_state = request.session.pop("telegram_oidc_state", None)
+    verifier = request.session.pop("telegram_oidc_verifier", None)
+    expected_nonce = request.session.pop("telegram_oidc_nonce", None)
+
     try:
-        # Validate Telegram data using the existing service
-        validated_data = validate_telegram_data(telegram_token, query_params)
-
-        if validated_data:
-            telegram_id = validated_data.get("id")
-            if telegram_id is None:
-                raise HTTPException(status_code=400, detail="Missing Telegram user id")
-
-            internal_user_id = str(telegram_id)
-            existing = await chat_history_service.get_user(internal_user_id)
-            if existing and existing.get("is_blocked"):
-                raise HTTPException(
-                    status_code=403,
-                    detail="User is blocked. Please contact support to unblock your account.",
-                )
-
-            user = await chat_history_service.create_user(
-                user_id=internal_user_id,
-                username=validated_data.get("username"),
-                first_name=validated_data.get("first_name"),
-                last_name=validated_data.get("last_name"),
-                picture=validated_data.get("photo_url"),
-                web_client=settings.WAKILAI_WEB_CLIENT_NAME,
-            )
-
-            # Return validated user data as JSON
-            return {
-                "success": True,
-                "user": {
-                    **validated_data,
-                    "user_id": user.get("_id") or internal_user_id,
-                    "is_blocked": bool(user.get("is_blocked")),
-                },
-                "message": "Authentication successful",
-            }
-        else:
+        error = request.query_params.get("error")
+        if error:
+            description = request.query_params.get("error_description") or error
             raise HTTPException(
-                status_code=400, detail="Authentication validation failed"
+                status_code=400, detail=f"Telegram OAuth error: {description}"
             )
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Authentication error: {str(e)}")
+        code = request.query_params.get("code")
+        state = request.query_params.get("state")
+        if not code:
+            raise HTTPException(
+                status_code=400, detail="Missing authorization code from Telegram."
+            )
+        if not expected_state or state != expected_state:
+            raise HTTPException(status_code=400, detail="Invalid OAuth state.")
+        if not verifier:
+            raise HTTPException(
+                status_code=400, detail="Missing PKCE verifier in session."
+            )
+
+        redirect_uri = settings.TELEGRAM_REDIRECT_URI or str(
+            request.url_for("telegram_auth_callback")
+        )
+
+        tokens = await exchange_telegram_oauth_code(
+            code=code,
+            code_verifier=verifier,
+            redirect_uri=redirect_uri,
+            client_id=settings.TELEGRAM_CLIENT_ID or "",
+            client_secret=settings.TELEGRAM_CLIENT_SECRET or "",
+        )
+
+        id_token = tokens.get("id_token")
+        if not id_token:
+            raise HTTPException(
+                status_code=400, detail="Telegram did not return an id_token."
+            )
+
+        claims = await verify_telegram_id_token(
+            id_token, settings.TELEGRAM_CLIENT_ID or ""
+        )
+
+        if expected_nonce and claims.get("nonce") and claims.get("nonce") != expected_nonce:
+            raise HTTPException(status_code=400, detail="OIDC nonce mismatch.")
+
+        telegram_user_id = str(claims.get("sub") or "")
+        if not telegram_user_id:
+            raise HTTPException(
+                status_code=400, detail="Missing subject claim in Telegram ID token."
+            )
+
+        existing = await chat_history_service.get_user(telegram_user_id)
+        if existing and existing.get("is_blocked"):
+            raise HTTPException(
+                status_code=403,
+                detail="User is blocked. Please contact support to unblock your account.",
+            )
+
+        frontend_user = _build_telegram_user_payload(claims, telegram_user_id)
+        user = await chat_history_service.create_user(
+            user_id=telegram_user_id,
+            username=frontend_user.get("username"),
+            first_name=frontend_user.get("first_name"),
+            last_name=frontend_user.get("last_name"),
+            picture=frontend_user.get("photo_url"),
+            web_client=settings.WAKILAI_WEB_CLIENT_NAME,
+        )
+
+        logger.info(
+            f"[TelegramOIDC] Successfully authenticated user: {telegram_user_id}"
+        )
+
+        if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
+            return _build_frontend_redirect_response(
+                frontend_redirect_uri, user_payload=frontend_user
+            )
+
+        return {
+            "success": True,
+            "user": {
+                **frontend_user,
+                "user_id": user.get("_id") or telegram_user_id,
+                "is_blocked": bool(user.get("is_blocked")),
+            },
+            "message": "Authentication successful",
+        }
+
+    except HTTPException as exc:
+        if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
+            return _build_frontend_redirect_response(
+                frontend_redirect_uri, error=str(exc.detail)
+            )
+        raise
+    except ValueError as exc:
+        logger.error(f"[TelegramOIDC] Validation error: {exc}")
+        if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
+            return _build_frontend_redirect_response(
+                frontend_redirect_uri, error=str(exc)
+            )
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as e:
+        logger.error(f"[TelegramOIDC] Error during callback: {e}", exc_info=True)
+        if _is_allowed_frontend_redirect_uri(frontend_redirect_uri):
+            return _build_frontend_redirect_response(
+                frontend_redirect_uri, error="Telegram authentication failed"
+            )
+        raise HTTPException(
+            status_code=400, detail=f"Authentication failed: {str(e)}"
+        )
 
 
 # DT Server Authentication (DT integration)

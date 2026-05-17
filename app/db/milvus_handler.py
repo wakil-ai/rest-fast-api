@@ -30,11 +30,7 @@ class MilvusHandler(VectorDBHandler):
             settings.MILVUS_ECONOMIC_COURT,
             settings.MILVUS_CIVIL_COURT,
         ]
-        self.client = MilvusClient(
-            uri=settings.MILVUS_URI,
-            user=settings.MILVUS_USER,
-            password=settings.MILVUS_PASSWORD,
-        )
+        self.client = MilvusClient(**self._build_connection_kwargs())
 
         # Create and load all collections at startup
         for col in self.milvus_collections:
@@ -42,6 +38,19 @@ class MilvusHandler(VectorDBHandler):
 
         # Ensure all collections are loaded into memory at startup
         self._load_all_collections()
+
+    @staticmethod
+    def _build_connection_kwargs() -> dict[str, str]:
+        kwargs = {"uri": settings.MILVUS_URI}
+        if settings.MILVUS_TOKEN:
+            kwargs["token"] = settings.MILVUS_TOKEN
+            return kwargs
+
+        if settings.MILVUS_USER:
+            kwargs["user"] = settings.MILVUS_USER
+        if settings.MILVUS_PASSWORD:
+            kwargs["password"] = settings.MILVUS_PASSWORD
+        return kwargs
 
     def _load_all_collections(self) -> None:
         """
@@ -61,7 +70,7 @@ class MilvusHandler(VectorDBHandler):
 
         # Create collection with schema
         self.client.create_collection(
-            collection_name=collection_name, schema=self._create_schema()
+            collection_name=collection_name, schema=self._create_schema(collection_name)
         )
 
         # Create index
@@ -169,7 +178,7 @@ class MilvusHandler(VectorDBHandler):
         Perform hybrid search using both dense vectors and BM25 sparse vectors
         """
         logger.debug(
-            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}, filter: {expr}"
+            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}, filter: {expr}, query: {text_query}"
         )
 
         # Create search requests for both dense and sparse vectors
@@ -280,7 +289,7 @@ class MilvusHandler(VectorDBHandler):
 
         return search_results
 
-    def _create_schema(self):
+    def _create_schema(self, collection_name: str = settings.MILVUS_MAIN_NAME):
         schema = MilvusClient.create_schema(auto_id=False)
         schema.add_field(
             field_name="id", datatype=DataType.VARCHAR, is_primary=True, max_length=100
@@ -301,7 +310,7 @@ class MilvusHandler(VectorDBHandler):
         schema.add_field(
             field_name="text_dense",
             datatype=DataType.FLOAT_VECTOR,
-            dim=settings.EMBEDDING_DIM,
+            dim=self._embedding_dim_for_collection(collection_name),
         )
         schema.add_field(
             field_name="text_sparse", datatype=DataType.SPARSE_FLOAT_VECTOR
@@ -331,6 +340,10 @@ class MilvusHandler(VectorDBHandler):
 
         return schema
 
+    @staticmethod
+    def _embedding_dim_for_collection(collection_name: str) -> int:
+        return settings.EMBEDDING_DIM
+
     def _create_index(self):
         index_params = self.client.prepare_index_params()
         index_params.add_index(
@@ -356,26 +369,54 @@ class MilvusHandler(VectorDBHandler):
         return index_params
 
     def _parse_results(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        # Format results
         formatted_results = []
-        for hit in results[0]:  # results[0] contains the merged and reranked hits
-            metadata = hit.data["entity"]["metadata"]
-            text = hit.data["entity"]["text"]
-            if "hierarchy_path" in hit.data["entity"]:
-                hierarchy_path = hit.data["entity"]["hierarchy_path"]
-            else:
-                hierarchy_path = None
+        for hit in results[0]:
+            entity = hit.get("entity") or {}
+            metadata = dict(entity.get("metadata") or {})
+            text = entity.get("text", "")
+            hierarchy_path = entity.get("hierarchy_path")
             metadata["text"] = text
             formatted_results.append(
                 {
                     "id": hit.id,
                     "score": hit.score,
                     "metadata": metadata,
-                    "hierarchy_path": hierarchy_path if hierarchy_path else None,
+                    "hierarchy_path": hierarchy_path,
                 }
             )
 
         return formatted_results
+
+    def delete_vectors_by_filter(
+        self,
+        filter_expr: str,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> int:
+        """Delete vector rows matching a Milvus boolean filter expression."""
+        if not filter_expr:
+            return 0
+
+        try:
+            result = self.client.delete(
+                collection_name=collection_name,
+                filter=filter_expr,
+            )
+        except Exception as exc:
+            logger.error(
+                f"Error deleting vectors from {collection_name}: {exc}",
+                exc_info=True,
+            )
+            raise
+
+        deleted_count = 0
+        if isinstance(result, dict):
+            deleted_count = int(result.get("deleted_count") or 0)
+
+        logger.info(
+            f"Deleted {deleted_count} vectors from {collection_name} "
+            f"with filter {filter_expr!r}"
+        )
+        return deleted_count
 
     def delete_collection(
         self, collection_name: str = settings.MILVUS_MAIN_NAME

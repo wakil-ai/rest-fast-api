@@ -1,12 +1,24 @@
 import io
 import os
+import shutil
 from abc import ABC, abstractmethod
 from functools import lru_cache
 
 import requests
-from pydub import AudioSegment
 
 from app.core.config import settings
+
+
+def _load_audio_segment(file):
+    if not (shutil.which("ffmpeg") or shutil.which("avconv")):
+        raise RuntimeError(
+            "ffmpeg is required for speech-to-text audio conversion. "
+            "Install ffmpeg on the host or use the API Docker image."
+        )
+
+    from pydub import AudioSegment
+
+    return AudioSegment.from_file(file)
 
 
 class SpeechToTextService(ABC):
@@ -38,7 +50,7 @@ class GoogleSpeechToTextService(SpeechToTextService):
         self, file, language: str, hints: list[str] | None = None
     ) -> str:
         audio_segment = (
-            AudioSegment.from_file(file).set_frame_rate(16000).set_sample_width(2)
+            _load_audio_segment(file).set_frame_rate(16000).set_sample_width(2)
         )
         buffer = io.BytesIO()
         audio_segment.export(buffer, format="wav")
@@ -91,7 +103,7 @@ class AzureSpeechToTextService(SpeechToTextService):
         self, file, language: str, hints: list[str] | None = None
     ) -> str:
         audio_segment = (
-            AudioSegment.from_file(file).set_frame_rate(16000).set_sample_width(2)
+            _load_audio_segment(file).set_frame_rate(16000).set_sample_width(2)
         )
         buffer = io.BytesIO()
         audio_segment.export(buffer, format="wav")
@@ -146,7 +158,7 @@ class AzureRESTSpeechToTextService(SpeechToTextService):
         try:
             # Convert audio to the required format
             audio_segment = (
-                AudioSegment.from_file(file)
+                _load_audio_segment(file)
                 .set_frame_rate(16000)
                 .set_sample_width(2)
                 .set_channels(1)

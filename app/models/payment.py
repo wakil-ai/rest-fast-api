@@ -4,7 +4,6 @@ from typing import Literal
 
 from bson import ObjectId
 from pydantic import BaseModel, Field
-from pydantic.aliases import AliasChoices
 
 
 # Methods
@@ -252,8 +251,12 @@ class PaymeInitRequest(BaseModel):
     user_id: str
     callback_url: str
     order_id: str | None = None  # If not provided, server generates a new one
-    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = Field(default=None)
-    subscription_period: Literal["daily", "monthly", "yearly"] | None = Field(default=None)
+    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = Field(
+        default=None
+    )
+    subscription_period: Literal["daily", "monthly", "yearly"] | None = Field(
+        default=None
+    )
     order_id: str | None = None  # Optional order/invoice id to include in `ac.order_id`
 
 
@@ -273,6 +276,7 @@ class SubscriptionPlan(BaseModel):
 
 class SubscriptionCatalogResponse(BaseModel):
     plans: list[SubscriptionPlan]
+
 
 class UserSubscriptionResponse(BaseModel):
     user_id: str
@@ -320,6 +324,7 @@ class ClickInitRequest(BaseModel):
     subscription_tier: Literal["daily", "standard", "pro", "test"] | None = None
     subscription_period: Literal["daily", "monthly", "yearly"] | None = None
 
+
 class ClickInitResponse(BaseModel):
     order_id: str
     link: str
@@ -331,6 +336,7 @@ class ClickPrepareResponse(BaseModel):
     merchant_prepare_id: int | None = None
     error: int
     error_note: str
+
 
 class ClickError:
     SUCCESS = 0
@@ -344,6 +350,7 @@ class ClickError:
     ERROR_IN_REQUEST = -8
     TRANSACTION_CANCELLED = -9
 
+
 class ClickCompleteResponse(BaseModel):
     click_trans_id: int
     merchant_trans_id: str
@@ -351,9 +358,11 @@ class ClickCompleteResponse(BaseModel):
     error: int
     error_note: str
 
+
 # DT Team Subscription Models
 class DTSubscriptionApplyResponse(BaseModel):
     """Response for DT team subscription application"""
+
     success: bool = True
     user_id: str
     tier: str
@@ -362,7 +371,8 @@ class DTSubscriptionApplyResponse(BaseModel):
     start_ms: int
     end_ms: int
     total_credits: int
-    
+
+
 class DTInitRequest(BaseModel):
     amount: int | None = None
     user_id: str

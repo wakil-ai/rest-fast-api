@@ -83,11 +83,15 @@ async def format_streaming_response(
             if isinstance(item, Exception):
                 raise item
 
+            if isinstance(item, dict) and item.get("type") == "end":
+                yield _format_sse_message(item)
+                break
+
             yield _format_sse_message(item)
 
-        # Send completion signal
-        end_signal = {"type": "end"}
-        yield _format_sse_message(end_signal)
+        else:
+            # Generator finished without an explicit end event
+            yield _format_sse_message({"type": "end"})
 
     except Exception as e:
         # Send error in streaming format

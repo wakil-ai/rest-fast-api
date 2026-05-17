@@ -2,10 +2,10 @@ import base64
 import secrets
 
 from fastapi import Depends, HTTPException, Request, Security, status
-from app.core.dependencies import get_chat_history_service
 from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
 
 from app.core.config import settings
+from app.core.dependencies import get_chat_history_service
 
 # HTTP Basic (docs)
 security = HTTPBasic()
@@ -37,6 +37,7 @@ dt_team_key_header = APIKeyHeader(
 
 # Verification functions
 
+
 # Docs Basic Auth
 def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
     correct_username = secrets.compare_digest(credentials.username, settings.DOCS_USER)
@@ -50,6 +51,7 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
+
 
 def verify_api_key(api_key: str = Security(api_key_header)):
     """Verify API key authentication."""
@@ -67,6 +69,7 @@ def verify_api_key(api_key: str = Security(api_key_header)):
         )
     return True
 
+
 def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
     """Verify the super-admin API key (separate from the regular API key)."""
     if api_key is None:
@@ -80,6 +83,7 @@ def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
             detail="Invalid Super Admin API Key",
         )
     return True
+
 
 def verify_dt_api_key(
     api_key: str = Security(dt_team_key_header), request: Request = None
@@ -106,6 +110,7 @@ def verify_dt_api_key(
         )
 
     return True
+
 
 def verify_api_key_or_dt_key(request: Request) -> bool:
     """Verify either default API key OR DT team key.
@@ -150,15 +155,16 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
         detail="API Key required (use either admin or x-dt-team-api-key header)",
     )
 
+
 async def verify_dt_user_web_client(user_id: str) -> bool:
     """Verify that a user belongs to DT client (birdarcha).
-    
+
     Args:
         user_id: The user ID to check
-        
+
     Returns:
         True if user is a DT user
-        
+
     Raises:
         HTTPException: If user not found or doesn't belong to DT client
     """
@@ -169,15 +175,16 @@ async def verify_dt_user_web_client(user_id: str) -> bool:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    
+
     user_web_client = user.get("web_client", settings.WAKILAI_WEB_CLIENT_NAME)
     if user_web_client != settings.DT_WEB_CLIENT_NAME:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: User does not belong to DT client (birdarcha)",
         )
-    
+
     return True
+
 
 # Dependency Injection for Orchestration and Services
 def verify_payme_authorization(authorization: str | None) -> bool:

@@ -74,9 +74,7 @@ async def get_user_rate_limit(user_id: str):
 
 
 #  Promo Code Management Endpoints
-@router.post(
-    "/promo-codes", summary="Create a new promo code", dependencies=admin_only
-)
+@router.post("/promo-codes", summary="Create a new promo code", dependencies=admin_only)
 async def create_promo_code(request: PromoCodeCreate, created_by: str = "admin"):
     """
     Create a new promo code for unlimited access.

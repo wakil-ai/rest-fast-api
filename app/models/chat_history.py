@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # User Models
@@ -71,6 +71,9 @@ class SessionResponse(BaseModel):
 
     user_id: str = Field(..., description="User ID")
     session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
+    project_id: str | None = Field(
+        default=None, description="Legal project scope when set"
+    )
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
     status: SessionStatus = Field(default=SessionStatus.draft)
@@ -112,9 +115,21 @@ class MessageResponse(BaseModel):
     user_id: str | None = Field(
         ..., description="User ID (auto-populated from session)"
     )  # optional for backward compatibility
+    file_ids: list[str] = Field(
+        default_factory=list,
+        description="File IDs attached to this message (saved with the message)",
+    )
     content: MessageContent
     metadata: dict[str, Any] | None = None
-    feedback_type: str | None = Field(None, description="Feedback type (positive/negative)")
+
+    @field_validator("file_ids", mode="before")
+    @classmethod
+    def coerce_missing_file_ids(cls, v: Any) -> Any:
+        return [] if v is None else v
+
+    feedback_type: str | None = Field(
+        None, description="Feedback type (positive/negative)"
+    )
     feedback_content: str | None = Field(None, description="Optional feedback comment")
     created_at: datetime
     updated_at: datetime
@@ -158,21 +173,41 @@ class FeedbackCreateRequest(BaseModel):
     """Request model for submitting message feedback"""
 
     message_id: str = Field(..., description="Message ID")
-    feedback_type: str = Field(..., description="Type of feedback: positive or negative")
+    feedback_type: str = Field(
+        ..., description="Type of feedback: positive or negative"
+    )
     feedback_content: str | None = Field(
         None, max_length=500, description="Optional feedback comment"
     )
 
 
 # File Models
+class FilePublicMetadataResponse(BaseModel):
+    """Safe subset of file metadata for clients (no storage paths, hashes, or OCR)."""
+
+    file_name: str | None = Field(None, description="Original upload filename")
+    file_type: str = Field(
+        default="application/octet-stream",
+        description="MIME type of the file",
+    )
+    file_size: int = Field(default=0, ge=0, description="Size in bytes")
+
+
 class FileUploadResponse(BaseModel):
     """Response model for file upload data"""
 
     file_id: str = Field(..., description="File ID (stored as _id)", alias="_id")
+    project_id: str | None = Field(
+        default=None, description="Set when the file belongs to a project workspace"
+    )
     file_url: str = Field(..., description="API endpoint to access the file")
-    file_metadata: dict[str, Any] = Field(..., description="File metadata (name, type, size, gcs_path)")
+    file_metadata: dict[str, Any] = Field(
+        ..., description="File metadata (name, type, size, gcs_path)"
+    )
     ocr_result: str = Field(..., description="OCR extracted text")
-    status: str = Field(..., description="Processing status: processing/completed/failed")
+    status: str = Field(
+        ..., description="Processing status: processing/completed/failed"
+    )
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
@@ -191,6 +226,7 @@ class MessagesFetchRequest(BaseModel):
 
     session_id: str = Field(..., description="Session ID")
     limit: int = Field(100, ge=1, le=500)
+
 
 class FeedbackFetchRequest(BaseModel):
     """DEPRECATED: Use GET /feedback/{message_id} instead"""

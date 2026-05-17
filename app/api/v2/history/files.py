@@ -1,5 +1,6 @@
 # app/routers/history/files.py
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import RedirectResponse
 
 from app.core.dependencies import (
     get_chat_history_service,
@@ -7,7 +8,7 @@ from app.core.dependencies import (
     get_storage_service,
 )
 from app.core.logger import logger
-from app.models.chat_history import FileUploadResponse
+from app.models.chat_history import FilePublicMetadataResponse, FileUploadResponse
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/files", tags=["Files"])
@@ -37,6 +38,30 @@ async def upload_file_for_message(
     if status != 200:
         raise HTTPException(status, resp)
     return resp
+
+
+@router.get(
+    "/{file_id}/public-metadata",
+    response_model=FilePublicMetadataResponse,
+    summary="Public file metadata (name, type, size only)",
+)
+@handle_service_error
+async def get_file_public_metadata(file_id: str):
+    """
+    Return only non-sensitive display fields. Full `file_metadata` (GCS paths,
+    content hashes, indexing details) is not exposed; use upload or internal APIs for that.
+    """
+
+    record = await chat_history_service.get_file_by_id(file_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    meta = record.get("file_metadata") or {}
+    return FilePublicMetadataResponse(
+        file_name=meta.get("file_name"),
+        file_type=meta.get("file_type") or "application/octet-stream",
+        file_size=int(meta.get("file_size") or 0),
+    )
 
 
 @router.patch("/{file_id}/message")
@@ -76,6 +101,35 @@ async def get_file_view_url(file_id: str, expiration_minutes: int = 60):
         "expires_in_minutes": expiration_minutes,
         "content_type": file.get("file_metadata", {}).get("file_type"),
     }
+
+
+@router.get("/{file_id}/download")
+@handle_service_error
+async def redirect_file_download(
+    file_id: str,
+    user_id: str,
+    expiration_minutes: int = 60,
+):
+    """Issue a redirect to a time-limited GCS signed URL for the owner's file."""
+
+    record = await chat_history_service.get_file_by_id(file_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    owner_id = record.get("user_id")
+    if owner_id != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="File does not belong to the provided user",
+        )
+
+    gcs_path = record.get("file_metadata", {}).get("gcs_path")
+
+    if not gcs_path:
+        raise HTTPException(status_code=500, detail="File path missing in metadata")
+
+    signed_url = storage_service.get_signed_url(gcs_path, expiration_minutes)
+    return RedirectResponse(url=signed_url, status_code=302)
 
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)

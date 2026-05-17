@@ -9,5 +9,6 @@ class RateLimitResponse(BaseModel):
     today_credits_used: int
     uses_combined_credit_pool: bool = True
 
+
 class ResetLimitRequest(BaseModel):
     user_id: str

@@ -2,6 +2,7 @@ import os
 from enum import Enum
 
 from dotenv import load_dotenv
+from google.genai._interactions.types.interaction import AgentConfig
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
@@ -41,9 +42,16 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v2"
     VERSION: str = "5.0.0"
     DEBUG: bool = False
-    DEVELOPMENT_MODE: bool = False
     HOST_URL: str = "https://backend.wakil.ai"
-    TRACING: bool = False  # Enable tracing for agents and crews
+    TRACING: bool = False  # Reserved for future OpenTelemetry wiring
+
+    # Langfuse (LangChain callback tracing)
+    LANGFUSE_TRACING_ENABLED: bool = False
+    LANGFUSE_PUBLIC_KEY: str | None = None
+    LANGFUSE_SECRET_KEY: str | None = None
+    #: Self-hosted or cloud URL (e.g. https://cloud.langfuse.com). Also accepts LANGFUSE_HOST.
+    LANGFUSE_BASE_URL: str | None = None
+    LANGFUSE_HOST: str | None = None
 
     ALLOWED_ORIGINS: list[str] = [
         "https://chat.wakil.ai",
@@ -63,6 +71,32 @@ class Settings(BaseSettings):
     MONGODB_URI: str | None = None  # Make optional
     COLLECTION_NAME: str | None = None  # Make optional
     MONGODB_DB_NAME: str = "wakilai"
+    #: Criminal-case documents DB (same as ``neoj4`` ingest; often ``criminal``).
+    CRIMINAL_CASES_MONGODB_DATABASE: str = "criminal"
+
+    # Neo4j criminal-case graph (``neoj4`` stack)
+    NEO4J_URI: str | None = None
+    NEO4J_USERNAME: str = "neo4j"
+    NEO4J_PASSWORD: str | None = None
+    NEO4J_DATABASE: str = "neo4j"
+    NEO4J_CASE_VECTOR_INDEX: str = "case_summary_embedding"
+    #: Full-text index on the same ``Case`` label as ``NEO4J_CASE_VECTOR_INDEX``; enables
+    #: LangChain ``Neo4jVector`` hybrid (vector + keyword). Leave empty for vector-only.
+    NEO4J_CASE_FULLTEXT_INDEX: str = ""
+    #: LangChain ``Neo4jVector`` suffix after the index step. ``Case`` rows from neoj4 often have
+    #: no ``text`` property; coalesce avoids "missing or empty `text`" errors (full text lives in Mongo).
+    NEO4J_CASE_VECTOR_RETRIEVAL_QUERY: str = (
+        "RETURN coalesce(node.text, node.case_summary, node.case_number, node.doc_id, '') AS text, score, "
+        "node {.*, `text`: Null, `embedding`: Null, id: Null } AS metadata"
+    )
+    #: Optional ``Case`` node property names for metadata-filtered vector search (Neo4j 5.18+).
+    #: Map the cypher agent's first structured value to a property; unset = no property filter.
+    NEO4J_CASE_FILTER_ARTICLE_PROP: str | None = None
+    NEO4J_CASE_FILTER_COURT_PROP: str | None = None
+    NEO4J_CASE_FILTER_INSTANCE_PROP: str | None = None
+    NEO4J_SECTION_VECTOR_INDEX: str = "legal_section_embedding"
+    #: When false, ``search_criminal_case_graph`` returns a configuration hint only.
+    CRIMINAL_GRAPH_RETRIEVAL_ENABLED: bool = True
     USERS_COLLECTION: str = "users"
     SESSIONS_COLLECTION: str = "sessions"
     MESSAGES_COLLECTION: str = "messages"
@@ -90,12 +124,15 @@ class Settings(BaseSettings):
     MILVUS_ADMINISTRATIVE_COURT: str = "mamuriy_sud"
     MILVUS_ADMINISTRATIVE_COURT_ALL: str = "mamuriy_sud_all"
     MILVUS_CONTRACT_ANALYZER: str = "shartnoma"
+    # Min hybrid-search hit score (Milvus `score` on retrieved docs) to offer a file attachment
+    CONTRACT_ATTACHMENT_MIN_SIMILARITY: float = 0.6
     MILVUS_ECONOMIC_COURT: str = "economic_court"
     MILVUS_CIVIL_COURT: str = "civil_court"
     MILVUS_CRIMINAL_COURT: str = "criminal_court"
     MILVUS_URI: str = "http://localhost:19530"
     MILVUS_USER: str | None = None
     MILVUS_PASSWORD: str | None = None
+    MILVUS_TOKEN: str | None = None
 
     # Pinecone
     PINECONE_API_KEY: str | None = None
@@ -109,10 +146,13 @@ class Settings(BaseSettings):
 
     # OpenAI GPT
     OPENAI_API_KEY: str | None = None
-    DEFAULT_CHAT_MODEL: str = (
-        "gemini-3-pro-preview"  # Default model for chat completions
-    )
-    GPT_COMPLETION_MODEL: str = "gpt-4.1"  # Legacy OpenAI default model
+
+    # Default models
+    DEFAULT_CHAT_MODEL: str = "gemini-3.1-pro-preview"  # Default model for chat completions
+    DEFAULT_LITE_MODEL: str = "gemini-2.5-flash-lite"  # Default model for routing/intent classification
+
+    # Fallback model for chat completions
+    GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI fallback model for chat completions
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: str | None = None
@@ -147,8 +187,13 @@ class Settings(BaseSettings):
 
     # OCR Service
     DATALAB_API_KEY: str | None = None
-    FILE_CONTENT_TOKEN_LIMIT: int = 30_000  # Max tokens for file content extraction
-    MAX_RETRIEVAL_DOCS_TOKEN_LIMIT: int = 200_000  # Max tokens for retrieved documents
+    FILE_CONTENT_TOKEN_LIMIT: int = (
+        50_000  # Max uploaded file context tokens for LLM prompts
+    )
+    #: Cap for combined assistant + upload context passed to the final answer LLM.
+    RETRIEVAL_CONTEXT_TOKEN_LIMIT: int = 300_000
+    EMBEDDING_QUERY_TOKEN_LIMIT: int = 10_000  # Max query tokens sent to embedding APIs
+    FILE_SEARCH_TOP_K: int = 3
 
     # OpenAI Embedding Model
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
@@ -169,10 +214,12 @@ class Settings(BaseSettings):
     SUPER_ADMIN_API_KEY: str = "super-admin"
     DT_API_KEY_NAME: str = "x-dt-team-api-key"
     DT_API_KEY: str | None = None  # DT team dedicated API key for backend access
+    DT_TEAM_DISCLAIMER: str = ""
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
-    STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 25.0
+    STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0
+    STREAM_SSE_MAX_RESPONSE_CHARS: int = 200
     TOP_K: int = 10
     ADDITIONAL_TOP_K: int = (
         3  # For multi-collection retrievals (e.g. contract analyzer + main)
@@ -181,7 +228,7 @@ class Settings(BaseSettings):
 
     # TEMPERATURE
     TEMPERATURE: float = 0.1
-    CHAT_HISTORY_LIMIT: int = 5
+    CHAT_HISTORY_LIMIT: int = 3
     OUTPUT_MAX_TOKENS: int = 8192
     MAX_QUERY_LENGTH: int = 5000
 
@@ -189,10 +236,15 @@ class Settings(BaseSettings):
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
 
-    # Auth (For Telegram Login)
-    TELEGRAM_BOT_TOKEN: str = None
-    TELEGRAM_BOT_LOGIN: str = None
-    TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3  # 3 day in seconds
+    # Telegram OAuth 2.0 (OpenID Connect)
+    # Client ID is the bot ID issued by @BotFather; Client Secret is also issued by BotFather
+    # via the Web Login section. Allowed redirect URIs must be pre-registered there too.
+    TELEGRAM_CLIENT_ID: str | None = None
+    TELEGRAM_CLIENT_SECRET: str | None = None
+    TELEGRAM_REDIRECT_URI: str | None = None
+    # Bot token kept for outgoing Bot API calls (notifications, messages); no longer used for login.
+    TELEGRAM_BOT_TOKEN: str | None = None
+    TELEGRAM_BOT_LOGIN: str | None = None
 
     # Web Scraping
     TAVILY_API_KEY: str | None = None
@@ -203,7 +255,6 @@ class Settings(BaseSettings):
     CREDIT_COST_SOLIQ_ASSISTANT: int = 20  # Credits for tax specialized assistant
     CREDIT_COST_SUD_ASSISTANT: int = 25  # Credits for sud specialized assistant
     CREDIT_COST_SHARTNOMA_ASSISTANT: int = 25  # Credits for contract analyzer assistant
-    CREDIT_COST_DEEPRESEARCH: int = 20  # Credits for deep research / agentic RAG
 
     # Payme Payment Configuration
     PAYME_MERCHANT_ID: str = None  # Payme merchant ID
@@ -252,10 +303,22 @@ class Settings(BaseSettings):
     AUTH_SECRET_KEY: str = "secret-key-change-me"
 
     GEMINI_API_KEY: str | None = None
+    GEMINI_LANGCHAIN_THINKING_LEVEL: str = "high"
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_EXPIRATION_SECONDS: int = 86400 * 3  # 3 days in seconds
+    #: Full Redis URL for LangGraph checkpoints (optional). If unset, built from host/port/password.
+    REDIS_URI: str | None = None
+    REDIS_PASSWORD: str | None = None
+    #: Persist LangGraph thread state in Redis (AsyncRedisSaver). Required for chat agents.
+    #: Requires ``langgraph-checkpoint-redis`` and Redis with RedisJSON / RediSearch support.
+    #: Session delete calls ``adelete_thread``; keys also expire after ``LANGGRAPH_CHECKPOINT_TTL_SECONDS``.
+    LANGGRAPH_CHECKPOINT_USE_REDIS: bool = True
+    #: Redis TTL for LangGraph checkpoint keys (seconds). After this period Redis drops checkpoint data for a thread.
+    LANGGRAPH_CHECKPOINT_TTL_SECONDS: int = (
+        86400 * 3
+    )  # 3 days, independent of general cache TTL if needed
 
     # OneID / B2B Integration
     DT_SERVER_IP: str = "87.192.230.47"  # OneID server IP for birdarcha web client
@@ -334,12 +397,6 @@ class Settings(BaseSettings):
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Civil court specialized assistant",
                 "public": False,
-            },
-            "deepresearch": {
-                "name": "deepresearch",
-                "credit_cost": self.CREDIT_COST_DEEPRESEARCH,
-                "description": "Deep research assistant with agentic RAG",
-                "public": True,
             },
         }
 

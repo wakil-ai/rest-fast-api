@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 from app.assistants.base import RetrievalConfig
@@ -12,14 +13,19 @@ from app.core.dependencies import (
 from app.core.logger import logger
 
 
+def _vector_hit_text(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") or {}
+    return str(metadata.get("text") or doc.get("text") or "").strip()
+
+
 class RetrievalService:
     """
-    Thin retrieval layer for generic (non-assistant-specific) operations.
+    Thin retrieval layer for generic, non-agent-specific operations.
 
-    Assistant-specific retrieval is handled by each assistant's ``retrieve()``
+    Agent-specific retrieval is handled by each agent's ``retrieve()``
     method.  This service is used by:
     - ``/api/retrieval`` endpoints (direct vector search)
-    - ``AgenticRAGFlow`` (multilingual retrieval + project context)
+    - Two-stage chat pipeline (corpus retrieval + project context)
     """
 
     def __init__(self):
@@ -42,7 +48,7 @@ class RetrievalService:
         Generic retrieval + standard formatting.
 
         This is called from the ``/api/retrieval`` endpoints where there is
-        no assistant context.  Delegates to the base-class standard formatter.
+        no agent context. Delegates to the base-class standard formatter.
         """
         try:
             config = RetrievalConfig(
@@ -63,7 +69,35 @@ class RetrievalService:
             logger.error(f"Retrieval failed: {e}", exc_info=True)
             return self._error_response(collection_name)
 
-    # Multilingual retrieval (deep research / agentic RAG)
+    async def retrieve_formatted_corpus(
+        self,
+        *,
+        query: str,
+        top_k: int = settings.TOP_K,
+        alpha: float = settings.ALPHA,
+        search_type: str = "hybrid",
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+        file_context: Optional[str] = None,
+    ) -> str:
+        """One hybrid/dense/sparse search over the user query only."""
+        _ = file_context
+        q = (query or "").strip()
+        if not q:
+            return ""
+        config = RetrievalConfig(
+            top_k=top_k,
+            alpha=alpha,
+            search_type=search_type,
+            collection_name=collection_name,
+        )
+        try:
+            raw_docs = self._search(q, config)
+            result = await self._formatter.format_results(raw_docs)
+            return result.context
+        except Exception as e:
+            logger.error(f"Corpus retrieval failed: {e}", exc_info=True)
+            return self._error_response(collection_name)[0]
+
     async def retrieve_multilingual(
         self,
         query_translations: dict[str, str],
@@ -73,9 +107,9 @@ class RetrievalService:
         collection_name: str = settings.MILVUS_MAIN_NAME,
     ) -> list[dict[str, Any]]:
         """
-        Retrieve and merge documents for multiple query translations.
+        Legacy: merge searches over multiple query strings.
 
-        Returns deduplicated and score-sorted raw documents.
+        Prefer ``retrieve_formatted_corpus`` with a single refined query.
         """
         all_results: list[dict[str, Any]] = []
         per_lang_top_k = int(top_k * 1.5)
@@ -102,6 +136,55 @@ class RetrievalService:
         unique.sort(key=lambda x: x.get("score", 0), reverse=True)
         return unique[:top_k]
 
+    async def retrieve_project_context(
+        self,
+        *,
+        query: str,
+        project_id: str,
+        user_id: str,
+        top_k: int | None = None,
+    ) -> str:
+        """
+        Hybrid search over ``project_files`` scoped by ``project_id`` and ``user_id``.
+
+        Returns a plain-text block suitable to prepend to RAG context.
+        """
+        if not project_id or not project_id.strip() or not query.strip():
+            return ""
+
+        tk = top_k if top_k is not None else settings.TOP_K
+        expr = (
+            f'metadata["project_id"] == "{project_id}" '
+            f'and metadata["user_id"] == "{user_id}"'
+        )
+        try:
+            embedding = await self._embedder.aembed_query(query)
+            docs = await asyncio.to_thread(
+                self._db.search_hybrid,
+                embedding,
+                query,
+                tk,
+                settings.ALPHA,
+                settings.MILVUS_PROJECT_FILES,
+                expr,
+            )
+            if not docs:
+                return ""
+
+            chunks: list[str] = []
+            for index, doc in enumerate(docs, 1):
+                text = _vector_hit_text(doc)
+                if text:
+                    chunks.append(f"[Project chunk {index}]\n{text}")
+            if not chunks:
+                return ""
+            return "## PROJECT WORKSPACE (uploaded case documents)\n" + "\n\n".join(
+                chunks
+            )
+        except Exception as e:
+            logger.warning(f"retrieve_project_context failed: {e}", exc_info=True)
+            return ""
+
     # Low-level search dispatcher
     def _search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
         """Route to the correct search method based on ``config.search_type``."""
@@ -119,14 +202,7 @@ class RetrievalService:
                 embedding, config.top_k, config.collection_name
             )
 
-        if config.search_type == "specific":
-            return self._db.search_specific(
-                text_query=query,
-                top_k=config.top_k,
-                collection_name=config.collection_name,
-            )
-
-        # Default: hybrid
+        # Default: hybrid (legacy "specific" is treated as hybrid)
         return self._db.search_hybrid(
             dense_vector=embedding,
             text_query=query,

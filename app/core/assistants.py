@@ -9,6 +9,8 @@ class AssistantConfig:
     # Backward-compatible assistant name aliases.
     # Public API can keep using old names while internal code uses canonical ones.
     ASSISTANT_ALIASES: dict[str, str] = {
+        "deepresearch": "main",
+        "deep_research": "main",
         "court assistant": "court",
         "court": "court",
         "sud": "court",
@@ -74,6 +76,19 @@ class AssistantConfig:
         """Get description for an assistant."""
         config = cls.get_assistant_config(assistant_name)
         return config["description"]
+
+    @classmethod
+    def is_deep_research_assistant(cls, assistant_name: str | None) -> bool:
+        """True when the client explicitly selected the deep-research assistant."""
+        raw = (assistant_name or "").strip().lower()
+        return raw in {"deepresearch", "deep_research"}
+
+    @classmethod
+    def is_web_search_enabled(cls, assistant_name: str | None) -> bool:
+        """Pipeline Tavily fallback is only for deep-research turns."""
+        return bool(settings.TAVILY_API_KEY) and cls.is_deep_research_assistant(
+            assistant_name
+        )
 
     @classmethod
     def validate_assistant_or_default(cls, assistant_name: str | None) -> str:
