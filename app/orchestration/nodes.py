@@ -31,6 +31,11 @@ if TYPE_CHECKING:
     from app.orchestration.service import OrchestrationService
 
 
+def _query_for_classification(state: RetrievalRewriteState) -> str:
+    """Intent / court routing run after rewrite — use expanded retrieval query."""
+    return (state.get("rewritten_query") or state.get("query") or "").strip()
+
+
 def ingest_payload(state: RetrievalRewriteState) -> dict:
     return {"messages": [HumanMessage(content=state["query"])]}
 
@@ -64,10 +69,9 @@ async def recognize_intent(
     if assistant not in {"contract_analyzer", "contract"}:
         return {}
 
-    history = history_text_from_state(state)
     domain, _prompt, intent = await runtime.intent_classifier.classify_intent(
-        state["query"],
-        chat_history=history,
+        _query_for_classification(state),
+        chat_history="",
         file_context=state.get("file_context") or "",
         llm=runtime.lite_llm,
         user_id=str(state.get("user_id") or "") or None,
@@ -87,10 +91,9 @@ async def route_court(
     if assistant not in {"court", "administrative_court"}:
         return {}
 
-    history = history_text_from_state(state)
     decision = await runtime.court_classifier.route_query(
-        state["query"],
-        chat_history=history,
+        _query_for_classification(state),
+        chat_history="",
         file_context=state.get("file_context") or "",
         llm=runtime.lite_llm,
         user_id=str(state.get("user_id") or "") or None,

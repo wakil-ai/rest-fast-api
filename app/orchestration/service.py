@@ -166,10 +166,10 @@ class OrchestrationService:
         await apply(nodes.ingest_payload(state))
         await merge_langgraph_thread_into_state_messages(state)
         await apply(nodes.load_long_term_memory(state, self, self.store))
+        await apply(await nodes.rewrite_query(state, self))
         await apply(await nodes.recognize_intent(state, self))
         await apply(await nodes.route_court(state, self))
-        await apply(await nodes.rewrite_query(state, self))
-        # Must mirror ``compile_retrieval_graph`` conditional after ``rewrite_query``:
+        # Must mirror ``compile_retrieval_graph`` conditional after ``route_court``:
         # criminal graph RAG runs before Lex/Milvus retrieval so ``criminal_case_context``
         # is present when ``retrieve_for_assistant`` builds the criminal-court system prompt.
         if resolve_assistant(state) == "criminal_court":

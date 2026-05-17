@@ -61,7 +61,7 @@ class IntentClassifier:
 
     def _build_prompt(self, query: str, chat_history: str, file_context: str) -> str:
         full_context = f"""
-        Query: {query}
+        Retrieval query (expanded; includes session context when needed): {query}
         Uploaded file context: {file_context}
         Chat history: {chat_history}
         """

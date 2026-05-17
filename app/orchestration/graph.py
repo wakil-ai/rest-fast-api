@@ -72,11 +72,11 @@ def compile_retrieval_graph(service: OrchestrationService) -> Any:
     builder.add_edge(START, "load_file_and_project_context")
     builder.add_edge("load_file_and_project_context", "ingest_payload")
     builder.add_edge("ingest_payload", "load_long_term_memory")
-    builder.add_edge("load_long_term_memory", "recognize_intent")
+    builder.add_edge("load_long_term_memory", "rewrite_query")
+    builder.add_edge("rewrite_query", "recognize_intent")
     builder.add_edge("recognize_intent", "route_court")
-    builder.add_edge("route_court", "rewrite_query")
 
-    def route_after_rewrite(
+    def route_after_court(
         state: RetrievalRewriteState,
     ) -> Literal["criminal_case_retrieval_subgraph", "retrieve_documents"]:
         if resolve_assistant(state) == "criminal_court":
@@ -84,8 +84,8 @@ def compile_retrieval_graph(service: OrchestrationService) -> Any:
         return "retrieve_documents"
 
     builder.add_conditional_edges(
-        "rewrite_query",
-        route_after_rewrite,
+        "route_court",
+        route_after_court,
         {
             "criminal_case_retrieval_subgraph": "criminal_case_retrieval_subgraph",
             "retrieve_documents": "retrieve_documents",

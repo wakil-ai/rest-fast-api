@@ -92,7 +92,10 @@ class CourtClassifier:
         chat_history: str,
         file_context: str,
     ) -> str:
-        parts = [f"User query:\n{query}"]
+        parts = [
+            "Retrieval query (already expanded with session context when needed):\n"
+            f"{query}"
+        ]
         if file_context:
             parts.append(f"Uploaded file context:\n{file_context}")
         if chat_history:
