@@ -1,8 +1,6 @@
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: humblebeeai/wakil-ai-rest-api:latest
     ports:
       - 8080-8083:8080
     env_file:

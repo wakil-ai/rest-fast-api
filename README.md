@@ -52,51 +52,27 @@ WakilAI API provides intelligent legal document search, question-answering, and 
 
 ## 🛠️ API Endpoints
 
-### Health Check
-- `GET /` - API health status and system information
+For the **complete, up-to-date** endpoint list (REST + WebSocket), see
+[docs/api-reference.md](docs/api-reference.md).
 
-### Chat Endpoints
-- `POST /api/chat/ask` - Ask legal questions with RAG (Retrieval Augmented Generation)
-- `GET /api/chat/model-info` - Get current model configuration and capabilities
+### Quick overview
+- Health: `GET /`, `GET /health`
+- Auth: `/api/v2/auth/*` (Google, Telegram, DT)
+- Chat: `/api/v2/chat/ask`, `/api/v2/chat/agent/stream`
+- Chat history: `/api/v2/history/*` (users, sessions, messages, files, feedback)
+- Memory: `/api/v2/memory/*`
+- Speech-to-text: `/api/v2/speech-to-text/*` (REST + WS)
+- Admin: `/api/v2/admin/*` (rate limits, promo codes, Telegram chats)
+- Payments: `/api/v2/transaction/*`
+- Referrals: `/api/v2/referrals/*`
+- v3 Chat: `/api/v3/chat/ask`
+- Docs (protected): `/docs`, `/redoc`, `/openapi.json`
 
-### Retrieval & Search Endpoints
-- `POST /api/retrieval/mongo` - Full-text search in MongoDB
-- `POST /api/retrieval/mongo-metadata` - Metadata-based search in MongoDB
-- `POST /api/retrieval/search-hybrid` - Hybrid vector search (dense + sparse)
-- `POST /api/retrieval/search-dense` - Dense vector search only
-- `POST /api/retrieval/search-sparse` - Sparse vector search only
-- `POST /api/retrieval/search-specific` - Specific document search
-
-### User Management & History
-- `POST /api/chat_history/create/user/` - Create new user profile
-- `POST /api/chat_history/create/session/` - Create new chat session
-- `GET /api/chat_history/sessions/{user_id}` - List user's chat sessions
-- `POST /api/chat_history/add/message/` - Add message to session
-- `GET /api/chat_history/messages/{user_id}/{session_id}` - Get session messages
-- `POST /api/chat_history/submit/feedback/` - Submit response feedback
-- `GET /api/chat_history/feedback/{user_id}/{session_id}/{message_id}` - Get feedback details
-
-### Memory Management
-- `GET /api/memory/user/{user_id}/` - Get all user memories
-- `POST /api/memory/save/` - Save interaction to persistent memory
-- `PUT /api/memory/update/{memory_id}` - Update specific memory
-- `DELETE /api/memory/user/{user_id}/` - Delete all user memories
-- `DELETE /api/memory/{memory_id}/` - Delete specific memory
-
-### Speech-to-Text Services
-- `POST /api/speech_to_text/transcribe` - Upload audio file for transcription
-- `WS /api/ws/stt` - Real-time WebSocket speech-to-text streaming
-
-### Utility Services
-- `POST /api/count/tokens` - Count tokens in text using TikToken
-
-### Authentication
-- `GET /login` - Telegram bot authentication endpoint
-
-### Documentation (Protected)
-- `GET /docs` - Swagger UI interactive documentation
-- `GET /redoc` - ReDoc documentation
-- `GET /openapi.json` - OpenAPI schema specification
+## 📖 Documentation
+- [Documentation index](docs/README.md)
+- [API reference (all endpoints)](docs/api-reference.md)
+- [Database architecture](docs/database-architecture.md)
+- [Infrastructure overview](docs/infrastructure.md)
 
 ## 🚀 Getting Started
 
