@@ -257,6 +257,33 @@ async def atraced_llm_span(
         yield span
 
 
+def final_answer_trace_input(system_prompt: str, user_prompt: str) -> dict[str, Any]:
+    """ChatML-style payload for Langfuse (``create_agent`` hides system in model I/O)."""
+    return {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+    }
+
+
+def record_final_answer_span_input(
+    span: Any,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+) -> None:
+    """Attach full system + user prompts to the parent ``final answer`` span."""
+    if span is None or not is_langfuse_enabled():
+        return
+    try:
+        update = getattr(span, "update", None)
+        if callable(update):
+            update(input=final_answer_trace_input(system_prompt, user_prompt))
+    except Exception as exc:
+        logger.debug("Langfuse final-answer span input update skipped: {}", exc)
+
+
 async def traced_ainvoke(
     runnable: Any,
     input: Any,
@@ -294,12 +321,14 @@ __all__ = [
     "allm_trace_context",
     "atraced_llm_span",
     "configure_langfuse_env",
+    "final_answer_trace_input",
     "flush_langfuse",
     "is_langfuse_enabled",
     "langchain_invoke_config",
     "langfuse_base_url",
     "llm_trace_context",
     "merge_langchain_config",
+    "record_final_answer_span_input",
     "traced_ainvoke",
     "traced_llm_span",
 ]

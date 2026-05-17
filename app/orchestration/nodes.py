@@ -250,59 +250,60 @@ async def stream_final_answer(
         yield item
 
 
+_FINAL_CHAT_HISTORY_HINT = (
+    "Earlier turns in this chat are available in the conversation thread. "
+    "Ground legal analysis only in the retrieved legal context below—not in the user turn."
+)
+
+
+def _get_final_prompt_template(
+    state: RetrievalRewriteState,
+    runtime: OrchestrationService,
+    assistant: str,
+):
+    """Route-specific court prompts when set; otherwise the assistant default template."""
+    answer_tpl = state.get("answer_prompt_template")
+    if answer_tpl is not None and hasattr(answer_tpl, "format"):
+        return answer_tpl
+    return runtime.prompt_registry.get_assistant_prompt(
+        AssistantConfig.validate_assistant_or_default(assistant)
+    )
+
+
 def _resolve_final_system_prompt(
     state: RetrievalRewriteState,
     runtime: OrchestrationService,
     assistant: str,
 ) -> str:
-    """Build the system prompt for the final LLM, injecting graph cases when needed."""
+    """Inject Milvus/LexUZ/Neo4j retrieval into ``{context}`` (and ``{retrieved_cases}`` for criminal court)."""
+    tpl = _get_final_prompt_template(state, runtime, assistant)
+    retrieval_context = (state.get("retrieval_context") or "").strip()
     criminal_cases = (state.get("criminal_case_context") or "").strip()
-    answer_tpl = state.get("answer_prompt_template")
-    if answer_tpl is not None:
-        raw = str(getattr(answer_tpl, "template", answer_tpl) or "")
-        if (
-            assistant == "criminal_court"
-            and criminal_cases
-            and "{retrieved_cases}" in raw
-        ):
-            registry_tpl = runtime.prompt_registry.get_assistant_prompt("criminal_court")
-            merged_ctx = (
-                "Statutes and LexUZ excerpts appear under **Retrieved legal context** in the "
-                "user message. Similar criminal cases are listed under "
-                "**Retrieved similar criminal cases** in this message."
-            )
-            file_context = (state.get("file_context") or "").strip()
-            if file_context:
-                merged_ctx += "\n\n## Uploaded files\n" + file_context
-            return registry_tpl.format(
-                context=merged_ctx,
-                chat_history=(
-                    "Use the `get_chat_history` tool to access recent conversation history."
-                ),
-                retrieved_cases=criminal_cases,
-            )
-        return raw
 
-    tpl = runtime.prompt_registry.get_assistant_prompt(
-        AssistantConfig.validate_assistant_or_default(assistant)
-    )
-    if assistant == "criminal_court":
-        merged_ctx = (
-            "Statutes and LexUZ excerpts appear under **Retrieved legal context** in the "
-            "user message. Similar criminal cases are listed under "
-            "**Retrieved similar criminal cases** in this message."
+    format_kwargs: dict[str, str] = {
+        "context": retrieval_context or "[NO RETRIEVED LEGAL CONTEXT]",
+        "chat_history": _FINAL_CHAT_HISTORY_HINT,
+    }
+    input_vars = getattr(tpl, "input_variables", None) or []
+    if "retrieved_cases" in input_vars:
+        format_kwargs["retrieved_cases"] = (
+            criminal_cases or "(No criminal graph matches for this query.)"
         )
-        file_context = (state.get("file_context") or "").strip()
-        if file_context:
-            merged_ctx += "\n\n## Uploaded files\n" + file_context
-        return tpl.format(
-            context=merged_ctx,
-            chat_history=(
-                "Use the `get_chat_history` tool to access recent conversation history."
-            ),
-            retrieved_cases=criminal_cases or "(No criminal graph matches for this query.)",
-        )
-    return tpl.template
+    return tpl.format(**format_kwargs)
+
+
+def _uploaded_file_context_only(state: RetrievalRewriteState) -> str:
+    """User-uploaded file text only (excludes project workspace Milvus block)."""
+    combined = (state.get("file_context") or "").strip()
+    if not combined:
+        return ""
+    project = (state.get("project_related_context") or "").strip()
+    if not project:
+        return combined
+    if combined.startswith(project):
+        remainder = combined[len(project) :].lstrip("\n")
+        return remainder.strip()
+    return combined
 
 
 def build_final_answer_messages(
@@ -312,23 +313,17 @@ def build_final_answer_messages(
     assistant = resolve_assistant(state)
     system_prompt = _resolve_final_system_prompt(state, runtime, assistant)
 
-    retrieval_context = state.get("retrieval_context") or ""
-    criminal_cases = (state.get("criminal_case_context") or "").strip()
-
     user_sections = [
         f"User question:\n{state['query']}",
-        f"Rewritten retrieval query:\n{state.get('rewritten_query', '')}",
+        f"Rewritten retrieval query:\n{state.get('rewritten_query') or ''}",
     ]
-    if criminal_cases:
-        user_sections.append(
-            "Retrieved similar criminal cases (Neo4j + Mongo graph):\n"
-            f"{criminal_cases}"
-        )
-    user_sections.append(
-        "Retrieved legal context:\n"
-        f"{retrieval_context if retrieval_context else '[NO CONTEXT FOUND]'}"
-    )
-    user_sections.append(f"User uploaded file context:\n{state.get('file_context') or ''}")
+    uploads = _uploaded_file_context_only(state)
+    if uploads:
+        user_sections.append(f"User uploaded files:\n{uploads}")
+    project_files = (state.get("project_related_context") or "").strip()
+    if project_files:
+        user_sections.append(f"Project files:\n{project_files}")
+
     user_prompt = "\n\n".join(user_sections) + "\n\n"
     return system_prompt, user_prompt
 

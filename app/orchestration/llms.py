@@ -21,8 +21,10 @@ from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.langfuse_tracing import (
     LlmRunName,
+    atraced_llm_span,
     langchain_invoke_config,
     merge_langchain_config,
+    record_final_answer_span_input,
     traced_ainvoke,
 )
 from app.orchestration.providers import LLM, resolve_gemini_model_name
@@ -140,10 +142,21 @@ class LangChain(LLM):
                 tags=[f"assistant:{canonical}"],
             ),
         )
-        outcome = await agent.ainvoke(
-            {"messages": [HumanMessage(content=query.strip())]},
-            invoke_config,
-        )
+        user_text = query.strip()
+        async with atraced_llm_span(
+            LlmRunName.FINAL_ANSWER,
+            user_id=user_id_for_logs or None,
+            session_id=session_id,
+        ) as span:
+            record_final_answer_span_input(
+                span,
+                system_prompt=system_prompt,
+                user_prompt=user_text,
+            )
+            outcome = await agent.ainvoke(
+                {"messages": [HumanMessage(content=user_text)]},
+                invoke_config,
+            )
         msgs: list[BaseMessage] = list(outcome.get("messages") or [])
         answer = self._last_ai_text(msgs)
 
@@ -192,69 +205,80 @@ class LangChain(LLM):
             "attachments": None,
         }
 
-        input_state = {"messages": [HumanMessage(content=query.strip())]}
+        user_text = query.strip()
+        input_state = {"messages": [HumanMessage(content=user_text)]}
         emitted_text = False
         final_ai_text = ""
         streamed_answer_prefix = ""
         streamed_think_prefix = ""
         sse_slice = self._sse_text_slice_limit()
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message=r"Inheritance class AiohttpClientSession from ClientSession is discouraged",
-                category=DeprecationWarning,
+        async with atraced_llm_span(
+            LlmRunName.FINAL_ANSWER,
+            user_id=user_id_for_logs or None,
+            session_id=session_id,
+        ) as span:
+            record_final_answer_span_input(
+                span,
+                system_prompt=system_prompt,
+                user_prompt=user_text,
             )
-            stream = agent.astream(
-                input_state,
-                stream_config,
-                stream_mode="messages",
-                subgraphs=True,
-                version="v2",
-            )
-            async for event in stream:
-                chunk = self._stream_messages_event_to_message(event)
-                if chunk is None or not isinstance(chunk, BaseMessage):
-                    continue
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"Inheritance class AiohttpClientSession from ClientSession is discouraged",
+                    category=DeprecationWarning,
+                )
+                stream = agent.astream(
+                    input_state,
+                    stream_config,
+                    stream_mode="messages",
+                    subgraphs=True,
+                    version="v2",
+                )
+                async for event in stream:
+                    chunk = self._stream_messages_event_to_message(event)
+                    if chunk is None or not isinstance(chunk, BaseMessage):
+                        continue
 
-                if isinstance(chunk, AIMessageChunk):
-                    for kind, piece in self._stream_pieces(chunk):
-                        if not piece:
-                            continue
-                        if kind == "think":
-                            delta, streamed_think_prefix = self._delta_stream_text(
-                                previous=streamed_think_prefix,
+                    if isinstance(chunk, AIMessageChunk):
+                        for kind, piece in self._stream_pieces(chunk):
+                            if not piece:
+                                continue
+                            if kind == "think":
+                                delta, streamed_think_prefix = self._delta_stream_text(
+                                    previous=streamed_think_prefix,
+                                    piece=piece,
+                                )
+                                if not delta:
+                                    continue
+                                yield {"type": "think", "chunk": delta}
+                                await asyncio.sleep(0)
+                                continue
+
+                            delta, streamed_answer_prefix = self._delta_stream_text(
+                                previous=streamed_answer_prefix,
                                 piece=piece,
                             )
                             if not delta:
                                 continue
-                            yield {"type": "think", "chunk": delta}
-                            await asyncio.sleep(0)
-                            continue
+                            emitted_text = True
+                            for part in self._iter_text_slices_for_sse(
+                                delta, max_chars=sse_slice
+                            ):
+                                yield part
+                                await asyncio.sleep(0)
 
-                        delta, streamed_answer_prefix = self._delta_stream_text(
-                            previous=streamed_answer_prefix,
-                            piece=piece,
-                        )
-                        if not delta:
-                            continue
-                        emitted_text = True
-                        for part in self._iter_text_slices_for_sse(
-                            delta, max_chars=sse_slice
-                        ):
-                            yield part
-                            await asyncio.sleep(0)
+                        usage = getattr(chunk, "usage_metadata", None)
+                        if isinstance(usage, dict):
+                            collected_meta["token_usage"] = usage
+                        continue
 
-                    usage = getattr(chunk, "usage_metadata", None)
-                    if isinstance(usage, dict):
-                        collected_meta["token_usage"] = usage
-                    continue
-
-                if isinstance(chunk, AIMessage):
-                    usage = getattr(chunk, "usage_metadata", None)
-                    if isinstance(usage, dict):
-                        collected_meta["token_usage"] = usage
-                    final_ai_text = self._answer_text(chunk)
+                    if isinstance(chunk, AIMessage):
+                        usage = getattr(chunk, "usage_metadata", None)
+                        if isinstance(usage, dict):
+                            collected_meta["token_usage"] = usage
+                        final_ai_text = self._answer_text(chunk)
 
         if not emitted_text and final_ai_text:
             for part in self._iter_text_slices_for_sse(final_ai_text, max_chars=sse_slice):
