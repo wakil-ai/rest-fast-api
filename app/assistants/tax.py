@@ -1,17 +1,53 @@
+from __future__ import annotations
+
 from typing import Any
 
-from app.assistants.base import BaseAssistant, RetrievalConfig
+from langchain_core.tools import tool
+
+from app.assistants.base import BaseAgent, RetrievalConfig
+from app.orchestration.utils import AgentRequestContext, AgentState
 from app.core.config import settings
+from app.core.logger import logger
 
 
-class TaxAssistant(BaseAssistant):
-    """Tax assistant with dense-only vector search."""
+class TaxAgent(BaseAgent):
+    """Tax assistant with dense-only vector search across lex.uz and buxgalter.uz sources."""
 
     def __init__(self):
-        super().__init__(collection_name=settings.MILVUS_TAX_COLLECTION)
+        super().__init__(
+            collection_name=settings.MILVUS_TAX_COLLECTION,
+            assistant_name="tax",
+        )
+
+    def _context_guidance_text(self) -> str:
+        return (
+            "Use `search_tax_corpus` to retrieve tax regulations from soliq.uz, lex.uz, and "
+            "buxgalter.uz sources. "
+            "Use `get_chat_history` for conversation context and `search_memory` for user preferences. "
+            "Uploaded file content (when present) is provided directly below; only call "
+            "`get_uploaded_file_context` for refined keyword searches across the same files. "
+            "Cite only from retrieved sources; do not invent tax rules or rates."
+        )
+
+    def _build_domain_tools(
+        self, request: AgentRequestContext, state: AgentState
+    ) -> list[Any]:
+        @tool
+        async def search_tax_corpus(query: str) -> str:
+            """Search Uzbekistan tax law from soliq.uz, lex.uz, and buxgalter.uz sources."""
+            try:
+                result = await self.retrieve(
+                    query=query, file_context="", chat_history=""
+                )
+                return result.context or "No relevant tax documents found."
+            except Exception as exc:
+                logger.warning(f"search_tax_corpus failed: {exc}", exc_info=True)
+                return "Tax search failed; answer from general reasoning where appropriate."
+
+        return [search_tax_corpus]
 
     def search(self, query: str, config: RetrievalConfig) -> list[dict[str, Any]]:
-        """Dense-only search optimized for the tax Q&A collection."""
+        """Three-pass search prioritising lex.uz then buxgalter.uz then all sources."""
         embedding = self.embedder.embed_query(query)
 
         filters = [

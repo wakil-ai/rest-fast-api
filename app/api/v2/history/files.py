@@ -124,7 +124,7 @@ async def redirect_file_download(
         )
 
     gcs_path = record.get("file_metadata", {}).get("gcs_path")
-    
+
     if not gcs_path:
         raise HTTPException(status_code=500, detail="File path missing in metadata")
 

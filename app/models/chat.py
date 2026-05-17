@@ -26,12 +26,19 @@ class ChatModel(str, Enum):
     # Gemini models
     GEMINI_3_PRO_PREVIEW = "gemini-3.1-pro-preview"
     GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
+    # Friendly short names — map to actual Google model ids via deployment settings.
+    GEMINI_3_1_PRO = "gemini-3.1-pro"
+    GEMINI_3_1_FLASH = "gemini-3.1-flash"
+    GEMINI_3_PRO = "gemini-3-pro"
+    GEMINI_3_FLASH = "gemini-3-flash"
 
 
 class AssistantType(str, Enum):
     """Supported assistant types."""
 
     MAIN = "main"
+    DEEPRESEARCH = "deepresearch"
+    DEEP_RESEARCH = "deep_research"
     COURT = "court"
     ADMINISTRATIVE_COURT = "administrative_court"
     ADMINISTRATIVE_COURT_LEGACY = "mamuriy_sud"
@@ -68,6 +75,17 @@ class ChatRequest(BaseModel):
     )
     file_ids: list[str] | None = Field(
         default=None, description="Optional list of file IDs to use as context"
+    )
+    file_context: str | None = Field(
+        default=None,
+        description="Optional inline document or excerpt text to include as context for this turn",
+    )
+    project_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional legal project: links the session to this project on first use, "
+            "retrieves Milvus `project_files` by this id, and stores `project_id` on the message"
+        ),
     )
 
 
@@ -146,7 +164,9 @@ class AskFileRequest(BaseModel):
 
 class AgenticRAGRequest(BaseModel):
     """
-    Request body for agentic RAG questions.
+    Request body for streaming deep-research chat (``/chat/agent/stream``).
+
+    Uses the orchestration graph with Tavily fallback when context is insufficient.
     """
 
     query: str = Field(
@@ -157,4 +177,8 @@ class AgenticRAGRequest(BaseModel):
     project_id: str | None = Field(default=None, description="Optional project ID")
     file_ids: list[str] | None = Field(
         default=None, description="List of file IDs attached to the current message"
+    )
+    file_context: str | None = Field(
+        default=None,
+        description="Optional inline text context for this turn",
     )

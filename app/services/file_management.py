@@ -17,6 +17,7 @@ from app.core.dependencies import (
 )
 from app.core.logger import logger
 from app.models.chat_history import FileUploadResponse
+from app.utils.progress_webhook import send_project_file_progress_webhook
 from app.utils.tokens import count_tokens
 
 
@@ -40,7 +41,7 @@ class FileManager:
         """
         content = await file.read()
         content_hash = self._build_file_content_hash(content)
-        
+
         existing_by_content = await self.history.get_file_by_content_hash(
             content_hash=content_hash,
             user_id=user_id,
@@ -83,7 +84,7 @@ class FileManager:
                 user_id, file_id, file.filename
             )
             file_url = self.storage.upload_file(
-                file_content=content,
+                data=content,
                 destination_path=gcs_path,
                 content_type=file.content_type or "application/octet-stream",
             )
@@ -127,6 +128,300 @@ class FileManager:
         finally:
             self._safe_remove_temp_file(temp_path)
 
+    async def upload_project_file(
+        self,
+        file: UploadFile,
+        user_id: str,
+        project_id: str,
+        webhook_url: str | None = None,
+        session_id: str | None = None,
+    ) -> tuple[int, FileUploadResponse | str]:
+        """
+        Upload a document into a project: OCR (webhook 25%), then async chunking,
+        embeddings (50%), Milvus upsert in ``project_files`` with ``project_id`` (100%).
+        """
+        from app.core.dependencies import get_project_service
+
+        project_service = get_project_service()
+        await project_service.get_project(project_id, user_id)
+
+        content = await file.read()
+        content_hash = self._build_file_content_hash(content)
+
+        existing_by_content = await self.history.get_file_by_content_hash_for_project(
+            content_hash=content_hash,
+            user_id=user_id,
+            project_id=project_id,
+        )
+        if existing_by_content:
+            fid = existing_by_content["_id"]
+            response = self._build_success_response(
+                file_id=fid,
+                metadata=existing_by_content.get("file_metadata", {}),
+                ocr_result=existing_by_content.get("ocr_result", ""),
+                record=existing_by_content,
+                project_id=project_id,
+            )
+            return 200, response
+
+        temp_path = self._create_temp_file(content, file.filename or "upload")
+
+        try:
+            ocr_result = await self.ocr.process_file(temp_path)
+            file_id = self._build_deterministic_file_id(ocr_result)
+            gcs_path = self.storage.generate_project_file_path(
+                project_id, file_id, file.filename or "upload"
+            )
+            file_url = self.storage.upload_file(
+                data=content,
+                destination_path=gcs_path,
+                content_type=file.content_type or "application/octet-stream",
+            )
+            metadata = self._create_file_metadata(file, content, gcs_path, content_hash)
+
+            record = await self.history.add_file_upload(
+                user_id=user_id,
+                file_id=file_id,
+                file_url=file_url,
+                ocr_result=ocr_result,
+                file_metadata=metadata,
+                status="processing",
+                scope="project",
+                project_id=project_id,
+                session_id=session_id,
+                webhook_url=webhook_url,
+            )
+
+            await project_service.append_file_id(project_id, file_id)
+
+            await send_project_file_progress_webhook(
+                webhook_url or "",
+                project_id=project_id,
+                file_id=file_id,
+                stage="ocr_complete",
+                progress_percent=25,
+                status="processing",
+            )
+
+            asyncio.create_task(
+                self._finalize_project_file_ingestion(
+                    file_id=file_id,
+                    project_id=project_id,
+                    user_id=user_id,
+                    ocr_result=ocr_result,
+                    record=record,
+                    webhook_url=webhook_url,
+                    file_name=metadata.get("file_name") or file_id,
+                )
+            )
+
+            response = self._build_success_response(
+                file_id=file_id,
+                metadata=record.get("file_metadata", metadata),
+                ocr_result=ocr_result,
+                record=record,
+                project_id=project_id,
+            )
+            logger.info(
+                f"Project file upload accepted: {file.filename} project={project_id}"
+            )
+            return 200, response
+
+        except Exception as e:
+            logger.error(
+                f"Project file upload failed: {file.filename} - {str(e)}",
+                exc_info=True,
+            )
+            return 500, str(e)
+
+        finally:
+            self._safe_remove_temp_file(temp_path)
+
+    async def delete_project_file(
+        self,
+        project_id: str,
+        file_id: str,
+        user_id: str,
+    ) -> tuple[int, str | None]:
+        """Remove a project-scoped file from storage, Mongo, Milvus, and the project record."""
+        from app.core.dependencies import get_project_service
+
+        project_service = get_project_service()
+        await project_service.get_project(project_id, user_id)
+
+        file_record = await self.history.get_file_by_id(file_id)
+        if not file_record:
+            return 404, "File not found"
+        if file_record.get("project_id") != project_id:
+            return 404, "File not found"
+        if file_record.get("scope") != "project":
+            return 400, "File is not scoped to a project"
+        if file_record.get("user_id") != user_id:
+            return 403, "Access denied"
+
+        # No need to delete GCS file
+        # gcs_path = file_record.get("file_metadata", {}).get("gcs_path")
+        # if gcs_path:
+        #     try:
+        #         self.storage.delete_file(gcs_path)
+        #     except Exception as exc:
+        #         logger.warning(
+        #             f"Could not archive GCS file {gcs_path} for project={project_id}: {exc}"
+        #         )
+
+        try:
+            await asyncio.to_thread(
+                self.db.delete_vectors_by_filter,
+                f'metadata["file_id"] == "{file_id}"',
+                self.vector_db_collection,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Could not delete Milvus vectors for project file {file_id}: {exc}"
+            )
+
+        await self.history.delete_file_upload(file_id)
+        await project_service.remove_file_id(project_id, file_id)
+        await project_service.increment_stat(project_id, "docs", -1)
+
+        logger.info(
+            f"Deleted project file {file_id} from project {project_id} for user {user_id}"
+        )
+        return 204, None
+
+    async def _finalize_project_file_ingestion(
+        self,
+        *,
+        file_id: str,
+        project_id: str,
+        user_id: str,
+        ocr_result: str,
+        record: dict,
+        webhook_url: str | None,
+        file_name: str,
+    ) -> None:
+        from app.core.dependencies import get_project_service
+
+        project_service = get_project_service()
+        hook = webhook_url or ""
+
+        try:
+            text = (ocr_result or "").strip()
+            if not text:
+                await self.history.update_file_metadata_fields(
+                    file_id,
+                    {
+                        "file_metadata.milvus_file_index.enabled": False,
+                        "file_metadata.milvus_file_index.reason": "empty_ocr",
+                    },
+                )
+                await self.history.update_file_status(file_id, "completed")
+                await send_project_file_progress_webhook(
+                    hook,
+                    project_id=project_id,
+                    file_id=file_id,
+                    stage="ingestion_skipped",
+                    progress_percent=100,
+                    status="completed",
+                    extra={"reason": "empty_ocr"},
+                )
+                return
+
+            chunks = self._chunk_file_content(text)
+            if not chunks:
+                await self.history.update_file_status(file_id, "completed")
+                await send_project_file_progress_webhook(
+                    hook,
+                    project_id=project_id,
+                    file_id=file_id,
+                    stage="ingestion_skipped",
+                    progress_percent=100,
+                    status="completed",
+                    extra={"reason": "no_chunks"},
+                )
+                return
+
+            embeddings = await self.embedding_manager.aembed_batch(chunks)
+            await send_project_file_progress_webhook(
+                hook,
+                project_id=project_id,
+                file_id=file_id,
+                stage="embedding_complete",
+                progress_percent=50,
+                status="processing",
+                extra={"chunk_count": len(chunks)},
+            )
+
+            documents: list[dict] = []
+            for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
+                doc_id = f"{file_id}_{idx}"
+                meta = {
+                    "user_id": user_id,
+                    "file_id": file_id,
+                    "file_name": file_name,
+                    "chunk_index": idx,
+                    "project_id": project_id,
+                }
+                sid = record.get("session_id")
+                if sid:
+                    meta["session_id"] = sid
+                documents.append(
+                    {
+                        "id": doc_id,
+                        "text": chunk_text,
+                        "embedding": embedding,
+                        "metadata": meta,
+                    }
+                )
+
+            await asyncio.to_thread(
+                self.db._upsert_vectors,
+                documents,
+                self.vector_db_collection,
+            )
+            chunk_count = len(documents)
+            token_count = count_tokens(ocr_result)
+            await self.history.update_file_metadata_fields(
+                file_id,
+                {
+                    "file_metadata.ocr_token_count": token_count,
+                    "file_metadata.milvus_file_index.enabled": True,
+                    "file_metadata.milvus_file_index.collection": self.vector_db_collection,
+                    "file_metadata.milvus_file_index.embedding_model": settings.SILICONFLOW_EMBEDDING_MODEL,
+                    "file_metadata.milvus_file_index.chunk_count": chunk_count,
+                },
+            )
+            await self.history.update_file_status(file_id, "completed")
+            await send_project_file_progress_webhook(
+                hook,
+                project_id=project_id,
+                file_id=file_id,
+                stage="ingestion_complete",
+                progress_percent=100,
+                status="completed",
+                extra={"chunk_count": chunk_count},
+            )
+            await project_service.increment_stat(project_id, "docs", 1)
+
+        except Exception as exc:
+            logger.error(
+                f"Project file ingestion failed file_id={file_id}: {exc}",
+                exc_info=True,
+            )
+            try:
+                await self.history.update_file_status(file_id, "failed")
+            except Exception:
+                pass
+            await send_project_file_progress_webhook(
+                hook,
+                project_id=project_id,
+                file_id=file_id,
+                stage="failed",
+                progress_percent=100,
+                status="failed",
+                extra={"error": str(exc)},
+            )
+
     async def _upsert_to_vector_db(
         self,
         content: str,
@@ -135,8 +430,9 @@ class FileManager:
         file_name: str,
         session_id: str | None = None,
         message_id: str | None = None,
+        project_id: str | None = None,
     ) -> int:
-        """Chunk content and upsert oversized file context to Milvus."""
+        """Chunk content and upsert file context to Milvus (``project_files`` collection)."""
         if not content:
             logger.warning(
                 f"Empty OCR result for file_id: {file_id}, skipping ingestion"
@@ -163,6 +459,8 @@ class FileManager:
                 metadata["session_id"] = session_id
             if message_id:
                 metadata["message_id"] = message_id
+            if project_id:
+                metadata["project_id"] = project_id
 
             documents.append(
                 {
@@ -267,6 +565,8 @@ class FileManager:
                 file_id=file_id,
                 file_name=record.get("file_metadata", {}).get("file_name", file_id),
                 message_id=record.get("message_id"),
+                session_id=record.get("session_id"),
+                project_id=record.get("project_id"),
             )
             return await self.history.update_file_metadata_fields(
                 file_id,
@@ -304,7 +604,5 @@ class FileManager:
             chunk_overlap=1000,
         )
         return [
-            chunk.strip()
-            for chunk in splitter.split_text(content)
-            if chunk.strip()
+            chunk.strip() for chunk in splitter.split_text(content) if chunk.strip()
         ]

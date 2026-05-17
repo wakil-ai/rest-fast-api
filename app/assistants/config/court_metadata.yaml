@@ -1,4 +1,4 @@
-assistants:
+agents:
   administrative_court:
     court_names_uz:
       - "Андижон туманлараро маъмурий суди"

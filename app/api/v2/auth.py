@@ -9,7 +9,6 @@ from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.dependencies import get_chat_history_service
-from app.core.exceptions import UserAlreadyExistsException
 from app.core.logger import logger
 from app.models.auth import DTUserCreateRequest, DTUserCreateResponse, TelegramAuth
 from app.security.dependencies import verify_dt_api_key
@@ -52,7 +51,7 @@ def _is_allowed_frontend_redirect_uri(frontend_redirect_uri: str | None) -> bool
     if hostname == "wakil.ai" or hostname.endswith(".wakil.ai"):
         return True
 
-    if settings.DEVELOPMENT_MODE:
+    if settings.DEBUG:
         allowed_origins.update(
             {
                 "http://localhost:3000",

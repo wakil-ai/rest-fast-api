@@ -1,19 +1,23 @@
-from app.assistants.administrative_court import AdministrativeCourtAssistant
-from app.assistants.base import BaseAssistant
-from app.assistants.civil_court import CivilCourtAssistant
-from app.assistants.contract_analyzer import ContractAnalyzerAssistant
-from app.assistants.criminal_court import CriminalCourtAssistant
-from app.assistants.economic_court import EconomicCourtAssistant
-from app.assistants.main import MainAssistant
-from app.assistants.tax import TaxAssistant
+from app.assistants.base import BaseAgent
+from app.assistants.contract_analyzer import ContractAnalyzerAgent
+from app.assistants.court import (
+    CourtAgent,
+    AdministrativeCourtAgent,
+    CivilCourtAgent,
+    CriminalCourtAgent,
+    EconomicCourtAgent,
+)
+from app.assistants.main import MainAgent
+from app.assistants.tax import TaxAgent
 
 __all__ = [
-    "MainAssistant",
-    "AdministrativeCourtAssistant",
-    "TaxAssistant",
-    "ContractAnalyzerAssistant",
-    "CriminalCourtAssistant",
-    "BaseAssistant",
-    "EconomicCourtAssistant",
-    "CivilCourtAssistant",
+    "MainAgent",
+    "CourtAgent",
+    "AdministrativeCourtAgent",
+    "TaxAgent",
+    "ContractAnalyzerAgent",
+    "CriminalCourtAgent",
+    "BaseAgent",
+    "EconomicCourtAgent",
+    "CivilCourtAgent",
 ]

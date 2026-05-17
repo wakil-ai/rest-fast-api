@@ -369,26 +369,54 @@ class MilvusHandler(VectorDBHandler):
         return index_params
 
     def _parse_results(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        # Format results
         formatted_results = []
-        for hit in results[0]:  # results[0] contains the merged and reranked hits
-            metadata = hit.data["entity"]["metadata"]
-            text = hit.data["entity"]["text"]
-            if "hierarchy_path" in hit.data["entity"]:
-                hierarchy_path = hit.data["entity"]["hierarchy_path"]
-            else:
-                hierarchy_path = None
+        for hit in results[0]:
+            entity = hit.get("entity") or {}
+            metadata = dict(entity.get("metadata") or {})
+            text = entity.get("text", "")
+            hierarchy_path = entity.get("hierarchy_path")
             metadata["text"] = text
             formatted_results.append(
                 {
                     "id": hit.id,
                     "score": hit.score,
                     "metadata": metadata,
-                    "hierarchy_path": hierarchy_path if hierarchy_path else None,
+                    "hierarchy_path": hierarchy_path,
                 }
             )
 
         return formatted_results
+
+    def delete_vectors_by_filter(
+        self,
+        filter_expr: str,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> int:
+        """Delete vector rows matching a Milvus boolean filter expression."""
+        if not filter_expr:
+            return 0
+
+        try:
+            result = self.client.delete(
+                collection_name=collection_name,
+                filter=filter_expr,
+            )
+        except Exception as exc:
+            logger.error(
+                f"Error deleting vectors from {collection_name}: {exc}",
+                exc_info=True,
+            )
+            raise
+
+        deleted_count = 0
+        if isinstance(result, dict):
+            deleted_count = int(result.get("deleted_count") or 0)
+
+        logger.info(
+            f"Deleted {deleted_count} vectors from {collection_name} "
+            f"with filter {filter_expr!r}"
+        )
+        return deleted_count
 
     def delete_collection(
         self, collection_name: str = settings.MILVUS_MAIN_NAME
