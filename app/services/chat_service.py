@@ -32,6 +32,7 @@ from app.models.chat import (
     ChatResponse,
     ModelInfoResponse,
 )
+from app.models.intent_types import LegalIntent
 from app.utils.streaming import (
     format_streaming_response,
     get_streaming_headers,
@@ -240,14 +241,44 @@ class ChatService:
             meta["used_web_search"] = True
         if attachments := state.get("attachments"):
             meta["attachments"] = attachments
+        if intent := state.get("classified_legal_intent"):
+            meta["classified_legal_intent"] = intent
         return meta
 
     @staticmethod
-    def should_attach_final_answer_docx(assistant: str | None) -> bool:
-        return (
+    def merge_message_attachments(
+        *attachment_lists: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+        for lst in attachment_lists:
+            if not lst:
+                continue
+            for att in lst:
+                if not isinstance(att, dict):
+                    continue
+                url = str(att.get("url") or "").strip()
+                if url:
+                    if url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+                merged.append(att)
+        return merged
+
+    @staticmethod
+    def should_attach_final_answer_docx(
+        assistant: str | None,
+        *,
+        classified_legal_intent: str | None = None,
+    ) -> bool:
+        if (
             AssistantConfig.validate_assistant_or_default(assistant)
-            == "contract_analyzer"
-        )
+            != "contract_analyzer"
+        ):
+            return False
+        if classified_legal_intent == LegalIntent.CONTRACT_RISK_ANALYSIS.value:
+            return False
+        return True
 
     async def upload_final_answer_docx(
         self,
@@ -256,9 +287,13 @@ class ChatService:
         user_id: str,
         answer: str,
         existing_attachments: list[dict[str, Any]] | None = None,
+        classified_legal_intent: str | None = None,
     ) -> list[dict[str, Any]]:
         attachments = list(existing_attachments or [])
-        if not self.should_attach_final_answer_docx(assistant):
+        if not self.should_attach_final_answer_docx(
+            assistant,
+            classified_legal_intent=classified_legal_intent,
+        ):
             return attachments
 
         body = str(answer or "").strip()
@@ -359,17 +394,24 @@ class ChatService:
                 file_context=file_context,
             )
             last_state = await service.prepare_final_state(payload)
+            state_attachments = (
+                list(last_state.get("attachments") or [])
+                if isinstance(last_state.get("attachments"), list)
+                else []
+            )
             prev_attachment_urls: frozenset[str] = frozenset()
-            raw_atts = last_state.get("attachments")
-            if isinstance(raw_atts, list) and raw_atts:
+            if state_attachments:
                 urls = frozenset(
                     str((a or {}).get("url") or "").strip()
-                    for a in raw_atts
+                    for a in state_attachments
                     if isinstance(a, dict) and str((a or {}).get("url") or "").strip()
                 )
-                if urls and urls != prev_attachment_urls:
+                if urls:
                     prev_attachment_urls = urls
-                    yield {"type": "attachments", "attachments": list(raw_atts)}
+                    yield {
+                        "type": "attachments",
+                        "attachments": list(state_attachments),
+                    }
 
             answer_chunks: list[str] = []
             final_generation_meta: dict[str, Any] = {}
@@ -399,7 +441,16 @@ class ChatService:
                 assistant=assistant,
                 orchestration_result=result_wrapped,
             )
-            generation_meta.update(final_generation_meta)
+            stream_meta = {
+                k: v
+                for k, v in final_generation_meta.items()
+                if k != "attachments"
+            }
+            generation_meta.update(stream_meta)
+            generation_meta["attachments"] = self.merge_message_attachments(
+                state_attachments,
+                generation_meta.get("attachments"),
+            )
         except Exception as error:
             detail = _orchestration_exception_detail(error)
             logger.error(
@@ -419,6 +470,10 @@ class ChatService:
             user_id=user_id,
             answer=answer_out,
             existing_attachments=generation_meta.get("attachments"),
+            classified_legal_intent=str(
+                last_state.get("classified_legal_intent") or ""
+            )
+            or None,
         )
         if attachments:
             generation_meta["attachments"] = attachments
@@ -426,8 +481,8 @@ class ChatService:
                 attachment
                 for attachment in attachments
                 if isinstance(attachment, dict)
-                and str(attachment.get("url") or "").strip()
-                not in prev_attachment_urls
+                and (url := str(attachment.get("url") or "").strip())
+                and url not in prev_attachment_urls
             ]
             if new_attachments:
                 yield {"type": "attachments", "attachments": new_attachments}
@@ -599,6 +654,7 @@ class ChatService:
                 user_id=request.user_id,
                 answer=answer_out,
                 existing_attachments=generation_meta.get("attachments"),
+                classified_legal_intent=generation_meta.get("classified_legal_intent"),
             )
             if attachments:
                 generation_meta["attachments"] = attachments

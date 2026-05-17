@@ -169,7 +169,6 @@ class LangChain(LLM):
         meta["workflow"] = f"langgraph_final_gemini_{canonical}"
         meta["langgraph_assistant"] = canonical
         meta["langgraph_thread_id"] = thread_id
-        meta["attachments"] = None
         if user_id_for_logs:
             meta["lc_user_ref"] = user_id_for_logs
         return answer or "(empty model response)", meta
@@ -202,7 +201,6 @@ class LangChain(LLM):
             "workflow": f"langgraph_final_gemini_{canonical}_stream",
             "langgraph_assistant": canonical,
             "langgraph_thread_id": thread_id,
-            "attachments": None,
         }
 
         user_text = query.strip()
