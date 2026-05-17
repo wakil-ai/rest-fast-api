@@ -8,7 +8,8 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.dependencies import get_orchestration_service, get_prompt_registry
+from app.core.dependencies import get_orchestration_service
+from app.orchestration.prompts import abuild_criminal_system_prompt
 from app.orchestration.agents.criminal_retrieval_langgraph import arun_criminal_retrieval
 from app.orchestration.text import message_content_to_plain_str
 
@@ -35,17 +36,14 @@ class CriminalCaseGraphRetriever:
             return pool.submit(_runner).result(timeout=600.0)
 
     async def aanswer_with_retrieval(self, query: str) -> str:
-        """Run retrieval (three cases) + ``criminal_court`` system prompt + generation."""
-        cases = await self.abuild_context(query)
-        registry = get_prompt_registry()
-        template = registry.get_assistant_prompt("criminal_court")
-        system = template.format(
+        """Run MODE routing, case retrieval, composed v2 system prompt, and generation."""
+        system, _modes = await abuild_criminal_system_prompt(
+            query,
             context=(
                 "Three similar cases are listed under RETRIEVED SIMILAR CRIMINAL CASES above. "
                 "Use `search_criminal_case_graph` / `search_legal_corpus` if you need more."
             ),
             chat_history="Use `get_chat_history` when multi-turn context is required.",
-            retrieved_cases=cases,
         )
         from app.core.langfuse_tracing import LlmRunName, traced_ainvoke
 

@@ -379,7 +379,7 @@ async def init_dt_subscription(
             total_credits=quote["total_credits"],
         )
     except SubscriptionEligibilityError as e:
-        logger.warning("[DTSubscription] Eligibility check failed: %s", e.code)
+        logger.warning(f"[DTSubscription] Eligibility check failed: {e.code}")
         raise HTTPException(status_code=409, detail=e.to_detail())
     except ValueError as e:
         logger.warning(f"[DTSubscription] Invalid request: {e}")

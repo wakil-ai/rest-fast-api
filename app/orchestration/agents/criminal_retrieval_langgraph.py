@@ -129,7 +129,7 @@ async def node_plan_filters(state: CriminalRetrievalState) -> dict[str, Any]:
     )
     raw = message_content_to_plain_str(getattr(response, "content", response))
     filters = parse_metadata_filter_json(raw)
-    logger.info("Criminal retrieval metadata filters: %s", filters)
+    logger.info(f"Criminal retrieval metadata filters: {filters}")
     return {"filters_raw": raw, "filters": filters}
 
 
@@ -387,8 +387,5 @@ def parse_metadata_filter_json(raw: str) -> dict:
                 return obj
         except json.JSONDecodeError:
             continue
-    logger.warning(
-        "Could not parse metadata filter JSON from LLM; using empty filter. Raw (truncated): %s",
-        raw[:500] if raw else "",
-    )
+    logger.warning(f"Could not parse metadata filter JSON from LLM; using empty filter. Raw (truncated): {raw[:500]}" if raw else "")
     return {}

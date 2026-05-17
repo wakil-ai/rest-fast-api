@@ -267,9 +267,7 @@ async def load_langgraph_agent_thread_messages(thread_id: str) -> list[BaseMessa
         tup = await aget({"configurable": {"thread_id": thread_id}})
     except Exception as exc:
         logger.warning(
-            "[orchestration] Failed to read LangGraph thread %r: %s",
-            thread_id,
-            exc,
+            f"[orchestration] Failed to read LangGraph thread {thread_id}: {exc}",
             exc_info=True,
         )
         return []
@@ -288,8 +286,7 @@ async def load_langgraph_agent_thread_messages(thread_id: str) -> list[BaseMessa
                 out.extend(messages_from_dict([m]))
             except Exception:
                 logger.debug(
-                    "[orchestration] Skip one non-LC message dict from thread %r",
-                    thread_id,
+                    f"[orchestration] Skip one non-LC message dict from thread {thread_id}",
                     exc_info=True,
                 )
     return out
@@ -423,7 +420,7 @@ async def _lite_llm_json_object(system: str, user: str) -> dict[str, Any]:
         )
         raw = message_content_to_plain_str(getattr(msg, "content", None))
     except Exception as e:
-        logger.warning(f"[retrieval_chain] Lite LLM JSON call failed: {e}", exc_info=True)
+        logger.warning(f"[context_evaluation_llm] Lite LLM JSON call failed: {e}", exc_info=True)
         return {}
     if not raw:
         return {}
@@ -431,7 +428,7 @@ async def _lite_llm_json_object(system: str, user: str) -> dict[str, Any]:
     try:
         return json.loads(payload.replace(": None", ": null"))
     except json.JSONDecodeError:
-        logger.warning(f"[retrieval_chain] Invalid JSON from lite model: {raw[:300]}...")
+        logger.warning(f"[context_evaluation_llm] Invalid JSON from lite model: {raw[:300]}...")
         return {}
 
 

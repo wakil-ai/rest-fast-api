@@ -331,12 +331,7 @@ class BasePaymentService:
                     "active_daily_pass_end_ms": active_end_ms,
                     "apply_strategy": "extend_existing_daily_pass",
                 }
-                logger.warning(
-                    "[%s] Paid daily pass reapplied for user %s after eligibility conflict; extending active pass until %s",
-                    self.provider,
-                    user_id,
-                    active_end_ms,
-                )
+                logger.warning(f"[{self.provider}] Paid daily pass reapplied for user {user_id} after eligibility conflict; extending active pass until {active_end_ms}")
 
         await self.subscription_storage.upsert_subscription(
             user_id=user_id,

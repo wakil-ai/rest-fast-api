@@ -128,6 +128,7 @@ async def rewrite_query(
 
 async def criminal_case_retrieval_subgraph(state: RetrievalRewriteState) -> dict:
     """Run Neo4j + Mongo criminal retrieval LangGraph; output feeds criminal-court RAG."""
+    from app.core.dependencies import get_criminal_mode_classifier
     from app.orchestration.agents.criminal_retrieval_langgraph import (
         build_criminal_retrieval_graph,
     )
@@ -135,16 +136,32 @@ async def criminal_case_retrieval_subgraph(state: RetrievalRewriteState) -> dict
     app = build_criminal_retrieval_graph()
     q = (state.get("rewritten_query") or state.get("query") or "").strip()
     if not q:
-        return {"criminal_case_context": ""}
+        return {"criminal_case_context": "", "criminal_modes": [1]}
+
+    user_id = str(state.get("user_id") or "") or None
+    session_id = str(state.get("session_id") or "") or None
+
+    classifier = get_criminal_mode_classifier()
+    decision = await classifier.classify(
+        q,
+        chat_history=history_text_from_state(state),
+        file_context=(state.get("file_context") or ""),
+        user_id=user_id,
+        session_id=session_id,
+    )
+
     result = await app.ainvoke(
         {"question": q},
         langchain_invoke_config(
             LlmRunName.CRIMINAL_CASE_RETRIEVAL,
-            user_id=str(state.get("user_id") or "") or None,
-            session_id=str(state.get("session_id") or "") or None,
+            user_id=user_id,
+            session_id=session_id,
         ),
     )
-    return {"criminal_case_context": str(result.get("context_markdown") or "")}
+    return {
+        "criminal_case_context": str(result.get("context_markdown") or ""),
+        "criminal_modes": list(decision.modes),
+    }
 
 
 async def retrieve_documents(
@@ -278,13 +295,34 @@ def _resolve_final_system_prompt(
     runtime: OrchestrationService,
     assistant: str,
 ) -> str:
-    """Inject Milvus/LexUZ/Neo4j retrieval into ``{context}`` (and ``{retrieved_cases}`` for criminal court)."""
-    tpl = _get_final_prompt_template(state, runtime, assistant)
+    """Inject retrieval into system prompt; criminal court uses MODE-composed v2 parts."""
     retrieval_context = (state.get("retrieval_context") or "").strip()
     criminal_cases = (state.get("criminal_case_context") or "").strip()
+    context_value = retrieval_context or "[NO RETRIEVED LEGAL CONTEXT]"
 
+    if assistant == "criminal_court":
+        from app.orchestration.prompts import (
+            DEFAULT_MODES,
+            get_criminal_prompt_composer,
+        )
+
+        modes = state.get("criminal_modes") or list(DEFAULT_MODES)
+        composer = get_criminal_prompt_composer()
+        composer.log_composition(
+            list(modes),
+            query_preview=(state.get("query") or "")[:120],
+        )
+        return composer.format_prompt(
+            list(modes),
+            retrieved_cases=criminal_cases
+            or "(No criminal graph matches for this query.)",
+            context=context_value,
+            chat_history=_FINAL_CHAT_HISTORY_HINT,
+        )
+
+    tpl = _get_final_prompt_template(state, runtime, assistant)
     format_kwargs: dict[str, str] = {
-        "context": retrieval_context or "[NO RETRIEVED LEGAL CONTEXT]",
+        "context": context_value,
         "chat_history": _FINAL_CHAT_HISTORY_HINT,
     }
     input_vars = getattr(tpl, "input_variables", None) or []

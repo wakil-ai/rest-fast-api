@@ -17,6 +17,11 @@ from app.core.dependencies import (
     get_milvus_query_agent,
     get_prompt_registry,
 )
+from app.orchestration.prompts import (
+    DEFAULT_MODES,
+    abuild_criminal_system_prompt,
+    get_criminal_prompt_composer,
+)
 from app.core.logger import logger
 from app.utils.text_cleaning import clean_pdf_html_text
 
@@ -153,11 +158,7 @@ class AdministrativeCourtAgent(BaseAgent):
             tag = self.DEFAULT_COURT_ROUTE_TAG
         prompt_key = self.ADMINISTRATIVE_ROUTE_TO_PROMPT.get(tag)
         if not prompt_key:
-            logger.warning(
-                "[AdministrativeCourtAgent] Unknown court_route_tag=%s → %s",
-                court_route_tag,
-                self.DEFAULT_COURT_ROUTE_TAG,
-            )
+            logger.warning(f"[AdministrativeCourtAgent] Unknown court_route_tag={court_route_tag} → {self.DEFAULT_COURT_ROUTE_TAG}")
             prompt_key = self.ADMINISTRATIVE_ROUTE_TO_PROMPT[
                 self.DEFAULT_COURT_ROUTE_TAG
             ]
@@ -181,11 +182,7 @@ class AdministrativeCourtAgent(BaseAgent):
                 if (court_route_tag or "").startswith("administrative_tax_")
                 else "general"
             )
-            logger.info(
-                "[AdministrativeCourtAgent] court_route_tag=%s → domain=%s",
-                court_route_tag,
-                domain_type,
-            )
+            logger.info(f"[AdministrativeCourtAgent] court_route_tag={court_route_tag} → domain={domain_type}")
 
             milvus_filter = await self.milvus_agent.generate_filter(
                 query,
@@ -570,24 +567,53 @@ class CriminalCourtAgent(BaseAgent):
         )
 
     def build_prompt(self, state: AgentState) -> None:
-        template = self.prompt_registry.get_assistant_prompt("criminal_court")
-        retriever = get_criminal_case_graph_retriever()
-        try:
-            retrieved_cases = retriever.build_context(state.request.query)
-        except Exception as exc:
-            logger.warning("Criminal court pre-retrieval failed: %s", exc, exc_info=True)
-            retrieved_cases = (
-                "(Pre-loaded case retrieval failed; use the `search_criminal_case_graph` tool.)"
-            )
+        """Sync fallback: core-only prompt when async path is unavailable."""
+        composer = get_criminal_prompt_composer()
         context_section = self._compose_context_section(state)
         chat_history_hint = (
             "Use the `get_chat_history` tool to access recent conversation history."
         )
-        state.system_prompt = template.format(
+        state.system_prompt = composer.format_prompt(
+            list(DEFAULT_MODES),
+            retrieved_cases="(Use the `search_criminal_case_graph` tool for case retrieval.)",
             context=context_section,
             chat_history=chat_history_hint,
-            retrieved_cases=retrieved_cases,
         )
+
+    async def prepare_state(self, request: AgentRequestContext) -> AgentState:
+        state = AgentState(request=request, resolved_assistant=self.assistant_name)
+        state.file_context = await self._preload_file_context(request)
+        context_section = self._compose_context_section(state)
+        chat_history_hint = (
+            "Use the `get_chat_history` tool to access recent conversation history."
+        )
+        chat_for_classify = ""
+        if request.session_id:
+            try:
+                chat_for_classify = await self._get_session_history_text(
+                    request.session_id
+                )
+            except Exception as exc:
+                logger.warning(f"Criminal court chat history for mode classify failed: {exc}")
+        system, modes = await abuild_criminal_system_prompt(
+            request.query,
+            context=context_section,
+            chat_history=chat_history_hint,
+            chat_history_for_classify=chat_for_classify,
+            file_context=state.file_context or "",
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+        state.system_prompt = system
+        state.metadata = {**(state.metadata or {}), "criminal_modes": list(modes)}
+        project_instructions = await self._load_project_instructions(request)
+        if project_instructions:
+            state.system_prompt = (
+                f"{state.system_prompt.rstrip()}\n\n"
+                "## Project-specific instructions (user-defined)\n"
+                f"{project_instructions}"
+            )
+        return state
 
     def _context_guidance_text(self) -> str:
         return (
@@ -609,7 +635,7 @@ class CriminalCourtAgent(BaseAgent):
             try:
                 return await asyncio.to_thread(retriever.build_context, query)
             except Exception as exc:
-                logger.warning("search_criminal_case_graph failed: %s", exc, exc_info=True)
+                logger.warning(f"search_criminal_case_graph failed: {exc}", exc_info=True)
                 return (
                     "Criminal case graph search failed. Verify Neo4j/Mongo configuration, "
                     "or continue using LexUZ search and general reasoning where appropriate."

@@ -30,6 +30,7 @@ class LlmRunName:
     ORCHESTRATION = "orchestration"
     INTENT_RECOGNITION = "intent recognition"
     COURT_ROUTING = "court routing"
+    CRIMINAL_MODE_ROUTING = "criminal mode routing"
     QUERY_REWRITE = "query rewrite"
     MILVUS_FILTER = "milvus filter"
     CYPHER_FILTER_PLANNING = "cypher filter planning"
