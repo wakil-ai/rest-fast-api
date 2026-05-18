@@ -33,6 +33,32 @@ logger = logging.getLogger(__name__)
 
 CRIMINAL_RETRIEVAL_TOP_CASES = 3
 
+_SUPPORTED_METADATA_OPERATORS = frozenset(
+    {
+        "$eq",
+        "$ne",
+        "$lt",
+        "$lte",
+        "$gt",
+        "$gte",
+        "$in",
+        "$nin",
+        "$between",
+        "$like",
+        "$ilike",
+    }
+)
+_ALLOWED_METADATA_FIELDS = frozenset(
+    {
+        "db_name",
+        "claim_document_type",
+        "instance",
+        "instance_type",
+        "judge",
+        "hearing_year",
+    }
+)
+
 
 class CriminalRetrievalState(TypedDict, total=False):
     question: str
@@ -140,9 +166,22 @@ async def node_retrieve_vector_filtered(state: CriminalRetrievalState) -> dict[s
     def _run() -> list[Document]:
         store = _vector_only_store()
         try:
-            return store.similarity_search(
-                question, k=CRIMINAL_RETRIEVAL_TOP_CASES, filter=filters or None
-            )
+            try:
+                return store.similarity_search(
+                    question,
+                    k=CRIMINAL_RETRIEVAL_TOP_CASES,
+                    filter=filters or None,
+                )
+            except ValueError as error:
+                if not filters:
+                    raise
+                logger.warning(
+                    "Criminal retrieval filtered search failed; retrying without "
+                    f"metadata filter. filters={filters!r} error={error}",
+                )
+                return store.similarity_search(
+                    question, k=CRIMINAL_RETRIEVAL_TOP_CASES, filter=None
+                )
         finally:
             _close_store(store)
 
@@ -373,6 +412,85 @@ def _first_balanced_object(text: str) -> str | None:
     return None
 
 
+def _is_unknown_metadata_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() == "unknown"
+    if isinstance(value, list):
+        return not value or all(_is_unknown_metadata_value(item) for item in value)
+    return False
+
+
+def _normalize_field_operator_value(value: Any) -> Any | None:
+    """Normalize one field's filter value; return None to drop the field."""
+    if _is_unknown_metadata_value(value):
+        return None
+    if not isinstance(value, dict):
+        return value
+
+    operator_keys = [k for k in value if isinstance(k, str) and k.startswith("$")]
+    if not operator_keys:
+        return value
+
+    if len(value) == 1:
+        operator, operand = next(iter(value.items()))
+        if operator not in _SUPPORTED_METADATA_OPERATORS:
+            return None
+        if _is_unknown_metadata_value(operand):
+            return None
+        if operator in {"$in", "$nin"} and isinstance(operand, list):
+            cleaned = [item for item in operand if not _is_unknown_metadata_value(item)]
+            if not cleaned:
+                return None
+            if cleaned != operand:
+                return {operator: cleaned}
+        return value
+
+    range_ops = {k: v for k, v in value.items() if k.startswith("$")}
+    low = range_ops.get("$gte", range_ops.get("$gt"))
+    high = range_ops.get("$lte", range_ops.get("$lt"))
+    if low is not None and high is not None:
+        return {"$between": [low, high]}
+
+    logger.warning(
+        "Dropping metadata field with unsupported operator combination: %s",
+        value,
+    )
+    return None
+
+
+def sanitize_metadata_filter(filters: dict[str, Any]) -> dict[str, Any]:
+    """Make LLM filters LangChain-safe: drop unknowns, fix ranges, ignore bad fields."""
+    if not filters:
+        return {}
+
+    if len(filters) == 1:
+        key, value = next(iter(filters.items()))
+        if key in ("$and", "$or") and isinstance(value, list):
+            cleaned_children = [
+                child
+                for child in (sanitize_metadata_filter(item) for item in value)
+                if child
+            ]
+            if not cleaned_children:
+                return {}
+            if len(cleaned_children) == 1:
+                return cleaned_children[0]
+            return {key: cleaned_children}
+
+    sanitized: dict[str, Any] = {}
+    for field, value in filters.items():
+        if field.startswith("$"):
+            logger.warning("Ignoring unsupported top-level metadata operator: %s", field)
+            continue
+        if field not in _ALLOWED_METADATA_FIELDS:
+            logger.warning("Ignoring unknown metadata field: %s", field)
+            continue
+        normalized = _normalize_field_operator_value(value)
+        if normalized is not None:
+            sanitized[field] = normalized
+    return sanitized
+
+
 def parse_metadata_filter_json(raw: str) -> dict:
     """Parse LLM output into a metadata dict; tolerate fences, chatter, and empty replies."""
     trimmed = _strip_markdown_fence(raw)
@@ -384,7 +502,7 @@ def parse_metadata_filter_json(raw: str) -> dict:
         try:
             obj = json.loads(candidate)
             if isinstance(obj, dict):
-                return obj
+                return sanitize_metadata_filter(obj)
         except json.JSONDecodeError:
             continue
     logger.warning(f"Could not parse metadata filter JSON from LLM; using empty filter. Raw (truncated): {raw[:500]}" if raw else "")
