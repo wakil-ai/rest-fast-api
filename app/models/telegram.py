@@ -11,9 +11,6 @@ class TelegramChatUpsert(BaseModel):
 
 
 class TelegramChatsSaveRequest(BaseModel):
-    super_secret_admin_key: str = Field(
-        ..., description="Admin key required to save telegram chat ids"
-    )
     chat: TelegramChatUpsert | None = Field(
         default=None, description="Single chat record to upsert"
     )

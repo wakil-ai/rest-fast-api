@@ -33,6 +33,7 @@ from app.api.v2 import (
     chat,
     memory,
     payment,
+    promo_codes,
     referral,
     speech_to_text,
 )
@@ -127,6 +128,7 @@ def create_app() -> FastAPI:
         dependencies=[Depends(verify_api_key_or_dt_key)],
     )
     app.include_router(admin.router, prefix=settings.API_PREFIX)
+    app.include_router(promo_codes.router, prefix=settings.API_PREFIX)
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
     app.include_router(payment.router, prefix=settings.API_PREFIX)

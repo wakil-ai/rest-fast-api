@@ -5,6 +5,7 @@ Use this index to navigate the core documentation for the WakilAI API.
 ## 📌 API Documentation
 
 - **API reference (all endpoints)**: [api-reference.md](api-reference.md)
+- **v2 route changes (frontend migration)**: [updates-v2.md](updates-v2.md)
 - **Development mode responses**: [development-mode.md](development-mode.md)
 - **DT team integration flow**: [dt-team-integration.md](dt-team-integration.md)
 

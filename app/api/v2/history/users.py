@@ -3,13 +3,19 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.core.config import settings
-from app.core.dependencies import get_chat_history_service, get_redis_service
+from app.core.dependencies import (
+    get_chat_history_service,
+    get_rate_limit_service,
+    get_redis_service,
+)
+from app.core.logger import logger
 from app.models.chat_history import (
     UserCreateRequest,
     UserCreateResponse,
     UserPhoneUpdateRequest,
     UserUpdateRequest,
 )
+from app.models.rate_limit import RateLimitResponse
 from app.security import verify_super_admin_key
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
@@ -17,6 +23,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 chat_history_service = get_chat_history_service()
 redis_service = get_redis_service()
+rate_limit_service = get_rate_limit_service()
 
 
 def create_response(data: dict, message: str) -> dict:
@@ -47,6 +54,42 @@ async def create_or_get_user(request: UserCreateRequest, response: Response):
     )
     response.status_code = status.HTTP_201_CREATED
     return create_response(user, "User created successfully")
+
+
+@router.get(
+    "/rate-limit/{user_id}",
+    response_model=RateLimitResponse,
+    summary="Get user's remaining credits",
+)
+async def get_user_rate_limit(user_id: str):
+    """
+    Get rate limit information for a specific user.
+
+    Parameters:
+    - user_id: User ID to check
+
+    Returns:
+    - remaining_credits: Number of credits remaining today
+    - daily_credit_limit: Total daily credit limit (100)
+    - credit_costs: Credit cost for each assistant type
+    """
+    try:
+        status = await rate_limit_service.get_credit_status(user_id)
+        return RateLimitResponse(
+            user_id=user_id,
+            remaining_credits=int(status["remaining_credits"]),
+            daily_credit_limit=int(status["effective_daily_credit_limit"]),
+            effective_daily_credit_limit=int(status["effective_daily_credit_limit"]),
+            today_credits_used=int(status["today_credits_used"]),
+            uses_combined_credit_pool=bool(status["uses_combined_credit_pool"]),
+        )
+    except Exception as e:
+        logger.error(
+            f"[UsersAPI] Error getting rate limit for user {user_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve rate limit information"
+        )
 
 
 @router.get("/{user_id}", response_model=UserCreateResponse)
