@@ -237,15 +237,10 @@ class Settings(BaseSettings):
     LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
     LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
 
-    # Telegram OAuth 2.0 (OpenID Connect)
-    # Client ID is the bot ID issued by @BotFather; Client Secret is also issued by BotFather
-    # via the Web Login section. Allowed redirect URIs must be pre-registered there too.
-    TELEGRAM_CLIENT_ID: str | None = None
-    TELEGRAM_CLIENT_SECRET: str | None = None
-    TELEGRAM_REDIRECT_URI: str | None = None
-    # Bot token kept for outgoing Bot API calls (notifications, messages); no longer used for login.
-    TELEGRAM_BOT_TOKEN: str | None = None
-    TELEGRAM_BOT_LOGIN: str | None = None
+    # Auth (For Telegram Login)
+    TELEGRAM_BOT_TOKEN: str = None
+    TELEGRAM_BOT_LOGIN: str = None
+    TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3  # 3 day in seconds
 
     # Web Scraping
     TAVILY_API_KEY: str | None = None

@@ -1,108 +1,61 @@
+import hashlib
+import hmac
 import time
-from typing import Any
 
-import httpx
-from authlib.jose import JsonWebKey, JsonWebToken, KeySet
-from authlib.jose.errors import JoseError
-
-TELEGRAM_ISSUER = "https://oauth.telegram.org"
-TELEGRAM_AUTH_URL = f"{TELEGRAM_ISSUER}/auth"
-TELEGRAM_TOKEN_URL = f"{TELEGRAM_ISSUER}/token"
-TELEGRAM_JWKS_URL = f"{TELEGRAM_ISSUER}/.well-known/jwks.json"
-
-# Signing algorithms advertised by Telegram's OIDC discovery document.
-TELEGRAM_ID_TOKEN_ALGS = ["RS256", "ES256", "EdDSA", "ES256K"]
-
-_KEY_SET_CACHE: KeySet | None = None
-_KEY_SET_CACHE_AT: float = 0.0
-_KEY_SET_CACHE_TTL_SECONDS = 3600
+from app.models.auth import TelegramAuth, TelegramDataError, TelegramDataIsOutdated
 
 
-async def _get_telegram_key_set() -> KeySet:
-    global _KEY_SET_CACHE, _KEY_SET_CACHE_AT
-
-    now = time.time()
-    cached = _KEY_SET_CACHE
-    if cached is not None and (now - _KEY_SET_CACHE_AT) < _KEY_SET_CACHE_TTL_SECONDS:
-        return cached
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(TELEGRAM_JWKS_URL, timeout=10.0)
-        response.raise_for_status()
-        key_set = JsonWebKey.import_key_set(response.json())
-
-    _KEY_SET_CACHE = key_set
-    _KEY_SET_CACHE_AT = now
-    return key_set
-
-
-async def verify_telegram_id_token(id_token: str, client_id: str) -> dict[str, Any]:
+def validate_telegram_data(telegram_bot_token: str, data: TelegramAuth) -> dict:
     """
-    Verify a Telegram OpenID Connect ID token (JWT).
+    Validate Telegram authentication data according to official documentation.
+    Official telegram doc: https://core.telegram.org/widgets/login
 
-    Validates signature against Telegram's JWKS, plus issuer, audience, and expiry.
-    Returns the validated claims on success; raises ValueError otherwise.
+    Returns validated user data if successful.
+    Raises exception if validation fails.
     """
-    if not id_token:
-        raise ValueError("Missing id_token")
-    if not client_id:
-        raise ValueError("Missing client_id for audience check")
+    data_dict = data.model_dump()
 
-    key_set = await _get_telegram_key_set()
-    jwt = JsonWebToken(TELEGRAM_ID_TOKEN_ALGS)
+    # Filter out None values before processing
+    filtered_data = {k: v for k, v in data_dict.items() if v is not None}
 
-    try:
-        claims = jwt.decode(
-            id_token,
-            key_set,
-            claims_options={
-                "iss": {"essential": True, "value": TELEGRAM_ISSUER},
-                "aud": {"essential": True, "value": str(client_id)},
-                "exp": {"essential": True},
-                "sub": {"essential": True},
-            },
-        )
-        claims.validate()
-    except JoseError as exc:
-        raise ValueError(f"Invalid Telegram ID token: {exc}") from exc
+    received_hash = filtered_data.pop("hash", None)
 
-    return dict(claims)
+    auth_date = filtered_data.get("auth_date")
+
+    # Check if session is expired (configurable timeout)
+    if _verify_telegram_session_outdate(auth_date):
+        raise TelegramDataIsOutdated("Telegram authentication session is expired.")
+
+    # Validate data integrity using HMAC-SHA256
+    generated_hash = _generate_hash(filtered_data, telegram_bot_token)
+
+    if generated_hash != received_hash:
+        raise TelegramDataError("Request data is incorrect")
+
+    return filtered_data
 
 
-async def exchange_telegram_oauth_code(
-    *,
-    code: str,
-    code_verifier: str,
-    redirect_uri: str,
-    client_id: str,
-    client_secret: str,
-) -> dict[str, Any]:
-    """
-    Exchange an authorization code for tokens at Telegram's token endpoint.
+def _verify_telegram_session_outdate(auth_date: str) -> bool:
+    """Check if Telegram auth session is expired (24 hours)"""
+    one_day_in_seconds = 86400
+    unix_time_now = int(time.time())
+    unix_time_auth_date = int(auth_date)
+    timedelta = unix_time_now - unix_time_auth_date
 
-    Uses client_secret_basic authentication (per Telegram's discovery document).
-    """
-    if not client_id or not client_secret:
-        raise ValueError("Telegram OAuth credentials are not configured")
+    return timedelta > one_day_in_seconds
 
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": redirect_uri,
-        "code_verifier": code_verifier,
-        "client_id": client_id,
-    }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            TELEGRAM_TOKEN_URL,
-            data=data,
-            auth=(client_id, client_secret),
-            headers={"Accept": "application/json"},
-            timeout=20.0,
-        )
-        if response.status_code != 200:
-            raise ValueError(
-                f"Telegram token exchange failed ({response.status_code}): {response.text}"
-            )
-        return response.json()
+def _generate_hash(data: dict, token: str) -> str:
+    """Generate HMAC-SHA256 hash for Telegram data validation"""
+    request_data_alph_sorted = sorted(data.items(), key=lambda v: v[0])
+
+    data_check_string = "\n".join(
+        f"{key}={value}" for key, value in request_data_alph_sorted
+    )
+
+    secret_key = hashlib.sha256(token.encode()).digest()
+    generated_hash = hmac.new(
+        key=secret_key, msg=data_check_string.encode(), digestmod=hashlib.sha256
+    ).hexdigest()
+
+    return generated_hash

@@ -31,8 +31,7 @@ from app.services.subscription_storage import SubscriptionStorage
 
 __all__ = [
     # Auth
-    "exchange_telegram_oauth_code",
-    "verify_telegram_id_token",
+    "validate_telegram_data",
     # Services
     "Bitrix24Service",
     "ChatHistoryService",
