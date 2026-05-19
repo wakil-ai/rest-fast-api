@@ -150,7 +150,7 @@ class Settings(BaseSettings):
 
     # Default models
     DEFAULT_CHAT_MODEL: str = "gemini-3.1-pro-preview"  # Default model for chat completions
-    DEFAULT_LITE_MODEL: str = "gemini-2.5-flash-lite"  # Default model for routing/intent classification
+    DEFAULT_LITE_MODEL: str = "gpt-4.1-mini"  # Routing, intent, Milvus filters, query rewrite
 
     # Fallback model for chat completions
     GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI fallback model for chat completions

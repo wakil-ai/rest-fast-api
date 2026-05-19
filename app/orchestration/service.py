@@ -5,7 +5,9 @@ from enum import Enum
 from typing import Any
 
 from langchain_core.messages import AIMessage
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
@@ -64,7 +66,7 @@ class OrchestrationService:
         return self._store
 
     @property
-    def lite_llm(self) -> ChatGoogleGenerativeAI:
+    def lite_llm(self) -> BaseChatModel:
         if self._lite_llm is None:
             self._lite_llm = self._build_llm(settings.DEFAULT_LITE_MODEL, Purpose.LITE)
         return self._lite_llm
@@ -191,14 +193,22 @@ class OrchestrationService:
         async for item in nodes.stream_final_answer(state, self):
             yield item
 
-    def _build_llm(self, model_name: str, purpose: Purpose) -> ChatGoogleGenerativeAI:
+    @staticmethod
+    def _is_gemini_model_name(model_name: str) -> bool:
+        name = (model_name or "").strip().lower()
+        return name.startswith("gemini") or name.startswith("models/gemini")
+
+    def _build_llm(self, model_name: str, purpose: Purpose) -> BaseChatModel:
+        if purpose == Purpose.LITE and not self._is_gemini_model_name(model_name):
+            return self._build_openai_lite_llm(model_name)
+
         if not settings.GEMINI_API_KEY:
             raise RuntimeError(
-                "GEMINI_API_KEY is required for orchestration LLM calls."
+                "GEMINI_API_KEY is required for orchestration Gemini LLM calls."
             )
 
-        model_name = resolve_gemini_model_name(model_name)
-        logger.info(f"Gemini/Google Generative AI model: {model_name} for {purpose}")
+        resolved = resolve_gemini_model_name(model_name)
+        logger.info(f"Gemini/Google Generative AI model: {resolved} for {purpose}")
 
         additional_kwargs: dict[str, Any] = {}
         if purpose == Purpose.GENERATION:
@@ -211,15 +221,34 @@ class OrchestrationService:
             }
         elif purpose == Purpose.LITE:
             additional_kwargs = {
-                "max_output_tokens": 512,  # less tokens for rewrite
-                "temperature": 0.0,  # deterministic as possible
+                "max_output_tokens": 512,
+                "temperature": 0.0,
                 "streaming": False,
             }
 
         return ChatGoogleGenerativeAI(
-            model=model_name,
+            model=resolved,
             google_api_key=settings.GEMINI_API_KEY,
             **additional_kwargs,
+        )
+
+    def _build_openai_lite_llm(self, model_name: str) -> ChatOpenAI:
+        if not settings.OPENAI_API_KEY:
+            raise RuntimeError(
+                "OPENAI_API_KEY is required when DEFAULT_LITE_MODEL is an OpenAI model."
+            )
+        model = (model_name or "gpt-4.1-mini").strip()
+        logger.info(f"OpenAI lite model: {model}")
+        token_param = (
+            "max_completion_tokens"
+            if model.startswith("o1") or model.startswith("gpt-5")
+            else "max_tokens"
+        )
+        return ChatOpenAI(
+            model=model,
+            api_key=settings.OPENAI_API_KEY,
+            temperature=0.0,
+            **{token_param: 512},
         )
 
     def _build_checkpointer(self) -> Any:
