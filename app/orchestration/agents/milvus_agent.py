@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +8,7 @@ from app.core.logger import logger
 from app.core.langfuse_tracing import LlmRunName
 from app.orchestration.llms import ainvoke_lite_classification_chat
 from app.orchestration.prompts import PromptRegistry
+from app.utils.milvus_expr import normalize_milvus_filter_llm_output
 
 
 class MilvusQueryAgent:
@@ -73,17 +73,7 @@ class MilvusQueryAgent:
 
     @staticmethod
     def _normalize_filter(response: str) -> str:
-        text = (response or "").strip()
-        if not text:
-            return ""
-
-        fence = re.fullmatch(r"```(?:\w+)?\s*(.*?)\s*```", text, flags=re.S)
-        if fence:
-            text = fence.group(1).strip()
-
-        text = re.sub(r"^(filter|expr|expression)\s*:\s*", "", text, flags=re.I)
-        text = text.strip().strip("`").strip()
-        return text
+        return normalize_milvus_filter_llm_output(response)
 
     async def generate_filter(
         self,

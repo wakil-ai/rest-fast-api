@@ -16,6 +16,7 @@ from app.core.langfuse_tracing import (
     langchain_invoke_config,
     traced_ainvoke,
 )
+from app.orchestration.utils import current_date_context_block
 from app.orchestration.retrieval import (
     resolve_assistant,
     retrieve_for_assistant,
@@ -312,13 +313,14 @@ def _resolve_final_system_prompt(
             list(modes),
             query_preview=(state.get("query") or "")[:120],
         )
-        return composer.format_prompt(
+        body = composer.format_prompt(
             list(modes),
             retrieved_cases=criminal_cases
             or "(No criminal graph matches for this query.)",
             context=context_value,
             chat_history=_FINAL_CHAT_HISTORY_HINT,
         )
+        return f"{current_date_context_block()}\n{body}"
 
     tpl = _get_final_prompt_template(state, runtime, assistant)
     format_kwargs: dict[str, str] = {
@@ -330,7 +332,8 @@ def _resolve_final_system_prompt(
         format_kwargs["retrieved_cases"] = (
             criminal_cases or "(No criminal graph matches for this query.)"
         )
-    return tpl.format(**format_kwargs)
+    body = tpl.format(**format_kwargs)
+    return f"{current_date_context_block()}\n{body}"
 
 
 def _uploaded_file_context_only(state: RetrievalRewriteState) -> str:

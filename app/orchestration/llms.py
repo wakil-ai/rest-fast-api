@@ -15,6 +15,7 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.assistants import AssistantConfig
@@ -32,7 +33,7 @@ from app.orchestration.text import message_content_to_plain_str
 
 
 async def ainvoke_lite_classification_chat(
-    llm: ChatGoogleGenerativeAI,
+    llm: BaseChatModel,
     *,
     system_prompt: str,
     user_prompt: str,

@@ -63,15 +63,21 @@ These JSON keys map directly to Neo4j property names on ``Case`` nodes. Using an
 - **instance** — instance code as string: ``"1"``, ``"2"``, ``"3"``, ``"4"``.
 - **instance_type** — instance type text if present in the query.
 - **judge** — judge name substring match; prefer **$ilike** for partial names.
-- **hearing_year** — integer year with **$eq** (or range operators if clearly asked).
 
 Do **not** output filters for:
 
+- **Dates or years** (``hearing_year``, ``hearing_date``, “2020–2024”, “recent cases”, “last year”) — do **not** use ``$gte``, ``$lte``, ``$between``, or ``$eq`` on any date/time field; vector search handles temporal relevance. Return ``{{}}``.
 - Crime **topic** / claim type (e.g. Фирибгарлик, Ўғрилик) — there is no ``claim_topic`` property; vector search covers that.
 - **Article numbers** (JK 169, modda 97, etc.) — ``Case`` uses list fields not supported by this metadata filter; vector search covers that.
 - Damages or punishments as standalone keys — not scalar ``Case`` fields for this API.
 
-If the user only asks about a crime type or article and gives no court, instance, document type, judge, or year, return an empty filter:
+If the user only asks about a crime type, article, or time period and gives no court, instance, document type, or judge, return an empty filter:
+
+```json
+{{}}
+```
+
+Example — user asks for “2020–2024 yillardagi jinoyat ishlar” with no court named:
 
 ```json
 {{}}
@@ -491,5 +497,5 @@ Cassation cases under article 97
 - No reasoning.
 - No Cypher.
 - No extra keys.
-- Use only the allowed **Case** property keys: ``db_name``, ``claim_document_type``, ``instance``, ``instance_type``, ``judge``, ``hearing_year``.
+- Use only the allowed **Case** property keys: ``db_name``, ``claim_document_type``, ``instance``, ``instance_type``, ``judge``. Never use ``hearing_year``, ``hearing_date``, or any date/time field.
 - The root output must always be a valid LangChain metadata filter object (use ``{{}}`` when nothing above applies).

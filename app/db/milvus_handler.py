@@ -13,6 +13,11 @@ from pymilvus import (
 from app.core.config import settings
 from app.core.logger import logger
 from app.db.vector_db_handler import VectorDBHandler
+from app.utils.milvus_expr import (
+    MILVUS_VARCHAR_TEXT_MAX,
+    normalize_milvus_expr,
+    truncate_milvus_varchar,
+)
 from app.utils.text_cleaning import extract_integers
 
 
@@ -122,7 +127,12 @@ class MilvusHandler(VectorDBHandler):
                 continue
 
             # Get hierarchy path from metadata
-            hierarchy_path = doc.get("metadata", {}).get("hierarchy_path", "")
+            hierarchy_path = doc.get("metadata", {}).get("hierarchy_path", "") or ""
+
+            text = truncate_milvus_varchar(text, field="text")
+            hierarchy_path = truncate_milvus_varchar(
+                str(hierarchy_path), field="hierarchy_path"
+            )
 
             entry = {
                 "id": doc["id"],
@@ -150,9 +160,10 @@ class MilvusHandler(VectorDBHandler):
         """
         Perform direct search using filter
         """
+        filter_expr = normalize_milvus_expr(filter if isinstance(filter, str) else None)
         results = self.client.query(
             collection_name=collection_name,
-            filter=filter,
+            filter=filter_expr,
             output_fields=["text", "metadata"],
         )
 
@@ -177,8 +188,10 @@ class MilvusHandler(VectorDBHandler):
         """
         Perform hybrid search using both dense vectors and BM25 sparse vectors
         """
+        filter_expr = normalize_milvus_expr(expr)
         logger.debug(
-            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}, filter: {expr}, query: {text_query}"
+            f"TOP_K: {top_k}, ALPHA: {alpha} with collection: {collection_name}, "
+            f"filter: {filter_expr}, query: {text_query}"
         )
 
         # Create search requests for both dense and sparse vectors
@@ -187,7 +200,7 @@ class MilvusHandler(VectorDBHandler):
             anns_field="text_dense",
             param={"metric_type": "COSINE"},
             limit=top_k,
-            expr=expr,
+            expr=filter_expr,
         )
 
         sparse_search = AnnSearchRequest(
@@ -195,7 +208,7 @@ class MilvusHandler(VectorDBHandler):
             anns_field="text_sparse",
             param={"drop_ratio_search": 0.2},
             limit=top_k,
-            expr=expr,
+            expr=filter_expr,
         )
 
         # Perform hybrid search with weighted ranking - pass weights as separate arguments
@@ -297,13 +310,13 @@ class MilvusHandler(VectorDBHandler):
         schema.add_field(
             field_name="text",
             datatype=DataType.VARCHAR,
-            max_length=65535,
+            max_length=MILVUS_VARCHAR_TEXT_MAX,
             enable_analyzer=True,
         )
         schema.add_field(
             field_name="hierarchy_path",
             datatype=DataType.VARCHAR,
-            max_length=65535,
+            max_length=MILVUS_VARCHAR_TEXT_MAX,
             enable_analyzer=True,
             default_value="None in hierarchy_path",
         )
