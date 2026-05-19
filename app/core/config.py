@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: list[str] = [
         "https://chat.wakil.ai",
         "https://dev-chat.wakil.ai",
+        "http://wakil.ai",
     ]  # CORS allowed origins
 
     # Memory Service API Key

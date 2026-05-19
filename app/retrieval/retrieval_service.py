@@ -209,7 +209,7 @@ class RetrievalService:
             top_k=config.top_k,
             alpha=config.alpha,
             collection_name=config.collection_name,
-            expr=config.filter or "",
+            expr=config.filter,
         )
 
     # Helpers

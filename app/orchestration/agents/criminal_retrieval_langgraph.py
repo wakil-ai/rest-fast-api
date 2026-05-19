@@ -55,7 +55,6 @@ _ALLOWED_METADATA_FIELDS = frozenset(
         "instance",
         "instance_type",
         "judge",
-        "hearing_year",
     }
 )
 
@@ -172,12 +171,13 @@ async def node_retrieve_vector_filtered(state: CriminalRetrievalState) -> dict[s
                     k=CRIMINAL_RETRIEVAL_TOP_CASES,
                     filter=filters or None,
                 )
-            except ValueError as error:
+            except Exception as error:
                 if not filters:
                     raise
                 logger.warning(
                     "Criminal retrieval filtered search failed; retrying without "
                     f"metadata filter. filters={filters!r} error={error}",
+                    exc_info=True,
                 )
                 return store.similarity_search(
                     question, k=CRIMINAL_RETRIEVAL_TOP_CASES, filter=None
@@ -477,10 +477,15 @@ def sanitize_metadata_filter(filters: dict[str, Any]) -> dict[str, Any]:
                 return cleaned_children[0]
             return {key: cleaned_children}
 
+    _DISALLOWED_FIELDS = frozenset({"hearing_year", "hearing_date"})
+
     sanitized: dict[str, Any] = {}
     for field, value in filters.items():
         if field.startswith("$"):
             logger.warning("Ignoring unsupported top-level metadata operator: %s", field)
+            continue
+        if field in _DISALLOWED_FIELDS:
+            logger.warning("Ignoring disallowed date/time metadata field: %s", field)
             continue
         if field not in _ALLOWED_METADATA_FIELDS:
             logger.warning("Ignoring unknown metadata field: %s", field)

@@ -120,14 +120,56 @@ class DBManager:
         collection_name: str = settings.MILVUS_MAIN_NAME,
         expr: str = None,
     ) -> list[dict[str, Any]]:
-        """Hybrid search (dense + sparse)."""
-        return self.vector_handler.query_hybrid(
+        """
+        Hybrid search (dense + sparse).
+
+        When a filter is provided: run hybrid with that filter first; on any error
+        or empty hits, fall back to dense vector search with no filter.
+        """
+        from app.utils.milvus_expr import normalize_milvus_expr
+
+        filter_expr = normalize_milvus_expr(expr)
+        if not filter_expr:
+            return self.vector_handler.query_hybrid(
+                dense_vector,
+                text_query,
+                top_k,
+                alpha,
+                collection_name=collection_name,
+                expr=None,
+            )
+
+        try:
+            results = self.vector_handler.query_hybrid(
+                dense_vector,
+                text_query,
+                top_k,
+                alpha,
+                collection_name=collection_name,
+                expr=filter_expr,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Hybrid search with filter failed; falling back to dense search without filter. collection={collection_name} filter={filter_expr} error={exc}"
+            )
+            return self.search_dense(
+                dense_vector,
+                top_k,
+                collection_name=collection_name,
+                expr=None,
+            )
+
+        if results:
+            return results
+
+        logger.warning(
+            f"Hybrid search with filter returned no results; falling back to dense search without filter. collection={collection_name} filter={filter_expr}"
+        )
+        return self.search_dense(
             dense_vector,
-            text_query,
             top_k,
-            alpha,
             collection_name=collection_name,
-            expr=expr,
+            expr=None,
         )
 
     def search_specific(

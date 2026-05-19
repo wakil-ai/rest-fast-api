@@ -16,6 +16,7 @@ from app.core.dependencies import (
     get_storage_service,
 )
 from app.core.logger import logger
+from app.utils.milvus_expr import split_text_for_milvus_varchar
 from app.models.chat_history import FileUploadResponse
 from app.utils.progress_webhook import send_project_file_progress_webhook
 from app.utils.tokens import count_tokens
@@ -603,6 +604,10 @@ class FileManager:
             chunk_size=3000,
             chunk_overlap=1000,
         )
-        return [
+        chunks = [
             chunk.strip() for chunk in splitter.split_text(content) if chunk.strip()
         ]
+        sized: list[str] = []
+        for chunk in chunks:
+            sized.extend(split_text_for_milvus_varchar(chunk))
+        return sized

@@ -215,7 +215,7 @@ class AdministrativeCourtAgent(BaseAgent):
             text_query=query,
             top_k=config.top_k,
             collection_name=config.collection_name,
-            expr=config.filter or "",
+            expr=config.filter,
         )
 
         file_ids: set[str] = set()
