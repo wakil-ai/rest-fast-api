@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import warnings
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -822,3 +823,26 @@ def get_chat_agent(assistant_name: str | None) -> BaseAgent:
 
 _AGENT_REGISTRY: dict[str, type[Any]] | None = None
 _CHAT_AGENT_CACHE: dict[str, Any] = {}
+DEFAULT_APP_TIMEZONE = "Asia/Tashkent"
+
+def current_date_context_block(*, timezone: str = DEFAULT_APP_TIMEZONE) -> str:
+    """
+    Short system block so the final LLM knows today's calendar date and year.
+
+    Injected into every final-answer system prompt (all assistants).
+    """
+    try:
+        tz = ZoneInfo(timezone)
+    except Exception:
+        tz = ZoneInfo("UTC")
+        timezone = "UTC"
+
+    now = datetime.now(tz)
+    return (
+        "## Current date (system)\n"
+        f"- Today: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')})\n"
+        f"- Calendar year: {now.year}\n"
+        f"- Timezone: {timezone}\n"
+        "Use this date and year for limitation periods, filing deadlines, "
+        "\"today\", \"this year\", \"recent\", and any time-relative legal analysis.\n"
+    )
