@@ -1,19 +1,15 @@
 from functools import lru_cache
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.chains import (
-        ChatChain,
-        CourtClassifier,
-        IntentClassifier,
-        MilvusQueryAgent,
-        PromptRegistry,
-    )
+    from app.orchestration.prompts import PromptRegistry
+    from app.orchestration.agents.court_routing import CourtClassifier
+    from app.orchestration.agents.criminal_mode_routing import CriminalModeClassifier
+    from app.orchestration.agents.intent_recognition import IntentClassifier
+    from app.orchestration.agents.milvus_agent import MilvusQueryAgent
     from app.db import DBManager, MilvusHandler, MongoHandler, PineconeHandler
-    from app.llms import LLM
-    from app.orchestration import AgenticRAGFlow
-    from app.orchestration.agents import Agents
-    from app.orchestration.crews import Crews
+    from app.orchestration.providers import LLM
+    from app.orchestration.service import OrchestrationService
     from app.retrieval import (
         EmbeddingManager,
         RetrievalService,
@@ -23,17 +19,20 @@ if TYPE_CHECKING:
         ChatHistoryService,
         ChatMemoryService,
         ChatService,
+        Bitrix24Service,
         ClickService,
         FileManager,
         OCRService,
+        ProjectService,
         PromoCodeService,
         RateLimitService,
-        ReferralService,
         RedisService,
+        ReferralService,
         StorageService,
         SubscriptionStorage,
         TransactionService,
     )
+    from app.services.criminal_case_graph_retrieval import CriminalCaseGraphRetriever
 
 
 # DB
@@ -90,43 +89,57 @@ def get_retrieval_service() -> "RetrievalService":
 # Chains
 @lru_cache
 def get_prompt_registry() -> "PromptRegistry":
-    from app.chains import PromptRegistry
+    from app.orchestration.prompts import PromptRegistry
 
     return PromptRegistry()
 
 
 @lru_cache
 def get_intent_classifier() -> "IntentClassifier":
-    from app.chains import IntentClassifier
+    from app.orchestration.agents.intent_recognition import IntentClassifier
 
     return IntentClassifier()
 
 
 @lru_cache
 def get_court_classifier() -> "CourtClassifier":
-    from app.chains import CourtClassifier
+    from app.orchestration.agents.court_routing import CourtClassifier
 
     return CourtClassifier()
 
 
 @lru_cache
 def get_milvus_query_agent() -> "MilvusQueryAgent":
-    from app.chains import MilvusQueryAgent
+    from app.orchestration.agents.milvus_agent import MilvusQueryAgent
 
     return MilvusQueryAgent()
 
 
 @lru_cache
-def get_chat_chain() -> "ChatChain":
-    from app.chains import ChatChain
+def get_criminal_case_graph_retriever() -> "CriminalCaseGraphRetriever":
+    from app.services.criminal_case_graph_retrieval import CriminalCaseGraphRetriever
 
-    return ChatChain()
+    return CriminalCaseGraphRetriever()
+
+
+@lru_cache
+def get_criminal_mode_classifier() -> "CriminalModeClassifier":
+    from app.orchestration.agents.criminal_mode_routing import CriminalModeClassifier
+
+    return CriminalModeClassifier()
+
+
+@lru_cache
+def get_orchestration_service() -> "OrchestrationService":
+    from app.orchestration.service import OrchestrationService
+
+    return OrchestrationService()
 
 
 @lru_cache
 def get_fallback_llm() -> "LLM":
     from app.core.config import settings
-    from app.llms import ChatGPT, Claude, Gemini, Novita
+    from app.orchestration.providers import ChatGPT, Claude, Gemini, Novita
 
     model_name = settings.DEFAULT_CHAT_MODEL
     mapping = {
@@ -144,60 +157,6 @@ def get_fallback_llm() -> "LLM":
     return ChatGPT(model_name=settings.GPT_COMPLETION_MODEL)
 
 
-@lru_cache
-def get_classifier_llm() -> "LLM":
-    """Return a model optimized for lightweight classification tasks."""
-    from app.core.config import settings
-    from app.llms import ChatGPT, Claude, Gemini, Novita
-
-    model_name = settings.CLASSIFIER_MODEL or settings.DEFAULT_CHAT_MODEL
-    mapping = {
-        "gemma-": Novita,
-        "gpt-oss-": Novita,
-        "gpt-": ChatGPT,
-        "claude-": Claude,
-        "gemini-": Gemini,
-    }
-
-    for prefix, cls in mapping.items():
-        if model_name.startswith(prefix):
-            return cls(model_name=model_name)
-
-    return ChatGPT(model_name=settings.GPT_COMPLETION_MODEL)
-
-
-@lru_cache
-def get_agents() -> "Agents":
-    from app.orchestration.agents import Agents
-
-    return Agents()
-
-
-@lru_cache
-def get_crews() -> "Crews":
-    from app.orchestration.crews import Crews
-
-    return Crews()
-
-
-@lru_cache
-def get_agentic_rag_flow() -> "AgenticRAGFlow":
-    from app.orchestration import AgenticRAGFlow
-
-    return AgenticRAGFlow()
-
-
-@lru_cache
-def get_agentic_rag_flow_streaming(
-    progress_callback: Callable[..., object],
-) -> "AgenticRAGFlow":
-    from app.orchestration import AgenticRAGFlow
-
-    return AgenticRAGFlow(
-        enable_progress_stream=True, progress_callback=progress_callback
-    )
-
-
 # Services
 @lru_cache
 def get_redis_service() -> "RedisService":
@@ -211,6 +170,13 @@ def get_chat_history_service() -> "ChatHistoryService":
     from app.services import ChatHistoryService
 
     return ChatHistoryService()
+
+
+@lru_cache
+def get_bitrix24_service() -> "Bitrix24Service":
+    from app.services import Bitrix24Service
+
+    return Bitrix24Service()
 
 
 @lru_cache
@@ -246,6 +212,13 @@ def get_file_manager() -> "FileManager":
     from app.services import FileManager
 
     return FileManager()
+
+
+@lru_cache
+def get_project_service() -> "ProjectService":
+    from app.services.project_service import ProjectService
+
+    return ProjectService()
 
 
 @lru_cache

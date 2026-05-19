@@ -51,10 +51,16 @@ class DBManager:
 
     # MongoDB operations - asynchronous
     async def find_documents(
-        self, collection_name: str, query: dict[str, Any], limit: int = 50, skip: int = 0
+        self,
+        collection_name: str,
+        query: dict[str, Any],
+        limit: int = 50,
+        skip: int = 0,
     ) -> list[dict[str, Any]]:
         """Find documents in MongoDB based on query."""
-        return await self.mongo_handler.find_documents(collection_name, query, limit, skip)
+        return await self.mongo_handler.find_documents(
+            collection_name, query, limit, skip
+        )
 
     async def insert_documents(
         self, collection_name: str, documents: list[dict[str, Any]]
@@ -114,14 +120,56 @@ class DBManager:
         collection_name: str = settings.MILVUS_MAIN_NAME,
         expr: str = None,
     ) -> list[dict[str, Any]]:
-        """Hybrid search (dense + sparse)."""
-        return self.vector_handler.query_hybrid(
+        """
+        Hybrid search (dense + sparse).
+
+        When a filter is provided: run hybrid with that filter first; on any error
+        or empty hits, fall back to dense vector search with no filter.
+        """
+        from app.utils.milvus_expr import normalize_milvus_expr
+
+        filter_expr = normalize_milvus_expr(expr)
+        if not filter_expr:
+            return self.vector_handler.query_hybrid(
+                dense_vector,
+                text_query,
+                top_k,
+                alpha,
+                collection_name=collection_name,
+                expr=None,
+            )
+
+        try:
+            results = self.vector_handler.query_hybrid(
+                dense_vector,
+                text_query,
+                top_k,
+                alpha,
+                collection_name=collection_name,
+                expr=filter_expr,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Hybrid search with filter failed; falling back to dense search without filter. collection={collection_name} filter={filter_expr} error={exc}"
+            )
+            return self.search_dense(
+                dense_vector,
+                top_k,
+                collection_name=collection_name,
+                expr=None,
+            )
+
+        if results:
+            return results
+
+        logger.warning(
+            f"Hybrid search with filter returned no results; falling back to dense search without filter. collection={collection_name} filter={filter_expr}"
+        )
+        return self.search_dense(
             dense_vector,
-            text_query,
             top_k,
-            alpha,
             collection_name=collection_name,
-            expr=expr,
+            expr=None,
         )
 
     def search_specific(
@@ -151,6 +199,25 @@ class DBManager:
             collection_name=collection_name,
             partition_name=partition_name,
         )
+
+    def delete_vectors_by_filter(
+        self,
+        filter_expr: str,
+        collection_name: str = settings.MILVUS_MAIN_NAME,
+    ) -> int:
+        """Delete vector rows matching a Milvus boolean filter expression."""
+        if settings.VECTOR_DB_TYPE != "milvus":
+            return 0
+
+        delete_fn = getattr(self.vector_handler, "delete_vectors_by_filter", None)
+        if delete_fn is None:
+            logger.warning(
+                f"Vector handler does not support delete_vectors_by_filter "
+                f"for collection {collection_name}"
+            )
+            return 0
+
+        return delete_fn(filter_expr, collection_name=collection_name)
 
     def close_all_connections(self):
         """Close all database connections."""

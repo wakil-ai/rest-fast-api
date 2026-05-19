@@ -153,13 +153,19 @@ class OCRService:
             if temp_dir is not None:
                 temp_dir.cleanup()
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10), reraise=True
+    )
     async def _process_file_with_datalab(self, file: Path | str) -> str:
         file_path, temp_dir = await self._prepare_file_for_processing(file)
         try:
-            result = await self.client.convert(file_path=file_path, options=self.options)
+            result = await self.client.convert(
+                file_path=file_path, options=self.options
+            )
             if not result.success:
-                raise ValueError(f"[OCR Service] Datalab conversion failed: {result.error}")
+                raise ValueError(
+                    f"[OCR Service] Datalab conversion failed: {result.error}"
+                )
             if not result.markdown or len(result.markdown.strip()) < 50:
                 raise ValueError("[OCR Service] Datalab returned insufficient content")
             return result.markdown
@@ -167,13 +173,19 @@ class OCRService:
             if temp_dir is not None:
                 temp_dir.cleanup()
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10), reraise=True
+    )
     async def _process_url_with_datalab(self, url: str) -> str:
         result = await self.client.convert(file_url=url, options=self.options)
         if not result.success:
-            raise ValueError(f"[OCR Service] Datalab URL conversion failed: {result.error}")
+            raise ValueError(
+                f"[OCR Service] Datalab URL conversion failed: {result.error}"
+            )
         if not result.markdown or len(result.markdown.strip()) < 50:
-            raise ValueError("[OCR Service] Datalab returned insufficient content for URL")
+            raise ValueError(
+                "[OCR Service] Datalab returned insufficient content for URL"
+            )
         return result.markdown
 
     async def process_file(self, file: Path | str) -> str:

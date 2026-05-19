@@ -4,9 +4,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.chains.general_langchain_agent import delete_general_agent_thread
+from app.orchestration.utils import delete_agent_thread
 from app.core.config import settings
-from app.core.dependencies import get_db_manager
+from app.core.dependencies import get_bitrix24_service, get_db_manager
 from app.core.exceptions import (
     InvalidInputError,
     MessageNotFoundError,
@@ -30,7 +30,9 @@ class ChatHistoryService:
         self.sessions_collection = settings.SESSIONS_COLLECTION
         self.messages_collection = settings.MESSAGES_COLLECTION
         self.files_collection = settings.FILES_COLLECTION
+        self.projects_collection = settings.PROJECTS_COLLECTION
         self.token_counting_collection = settings.TOKEN_COUNTING_COLLECTION
+        self.bitrix24_service = get_bitrix24_service()
 
         # Create collections and indexes asynchronously on first use
         asyncio.create_task(self._init_collections())
@@ -42,6 +44,7 @@ class ChatHistoryService:
             self.sessions_collection,
             self.messages_collection,
             self.files_collection,
+            self.projects_collection,
             self.token_counting_collection,
         ]:
             await self.db_manager.create_collection(collection)
@@ -69,6 +72,17 @@ class ChatHistoryService:
             await self.db_manager.mongo_handler.db[self.files_collection].create_index(
                 [("user_id", 1)]
             )
+            await self.db_manager.mongo_handler.db[self.files_collection].create_index(
+                [("project_id", 1), ("scope", 1)]
+            )
+
+            await self.db_manager.mongo_handler.db[
+                self.projects_collection
+            ].create_index([("owner_id", 1), ("updated_at", -1)])
+
+            await self.db_manager.mongo_handler.db[
+                self.sessions_collection
+            ].create_index([("project_id", 1), ("updated_at", -1)])
 
             # Token counts - query by session/user
             await self.db_manager.mongo_handler.db[
@@ -202,11 +216,37 @@ class ChatHistoryService:
             if not files:
                 raise InvalidInputError(f"File {file_id} not found")
             if files[0].get("user_id") != user_id:
-                raise InvalidInputError(
-                    f"File {file_id} does not belong to this user"
-                )
+                raise InvalidInputError(f"File {file_id} does not belong to this user")
 
     # Users Management
+    async def _create_bitrix_lead_if_needed(self, user: dict) -> dict:
+        """Create one Bitrix24 lead for a user with a phone number."""
+        if not user or user.get("bitrix24_lead_id"):
+            return user
+
+        lead_id = await self.bitrix24_service.create_lead_for_user(user)
+        if lead_id is None:
+            return user
+
+        lead_update = {
+            "bitrix24_lead_id": str(lead_id),
+            "bitrix24_lead_created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        }
+        try:
+            await self.db_manager.update_documents(
+                self.users_collection,
+                {"_id": user["_id"]},
+                {"$set": lead_update},
+            )
+            user.update(lead_update)
+        except Exception as exc:
+            logger.error(
+                f"Failed to store Bitrix24 lead ID for user {user.get('_id')}: {exc}",
+                exc_info=True,
+            )
+        return user
+
     async def create_user(
         self,
         user_id: str,
@@ -251,6 +291,7 @@ class ChatHistoryService:
             user = clean_for_mongodb(user)
             await self.db_manager.insert_documents(self.users_collection, [user])
             logger.info(f"Created new user with user_id: {user_id}")
+            await self._create_bitrix_lead_if_needed(user)
             return user
         except Exception as e:
             # Handle race condition: another request may have inserted the user
@@ -324,7 +365,10 @@ class ChatHistoryService:
             {"$set": update_fields},
         )
 
-        return await self.get_user(user_id)
+        user = await self.get_user(user_id)
+        if user:
+            await self._create_bitrix_lead_if_needed(user)
+        return user
 
     async def block_user(self, user_id: str, reason: str | None = None) -> dict | None:
         """Block a user so they cannot log in until unblocked.
@@ -394,6 +438,7 @@ class ChatHistoryService:
         user_id: str,
         title: str | None = None,
         tags: list[str] | None = None,
+        project_id: str | None = None,
     ) -> dict:
         """Create or retrieve an existing session. Uses session_id as _id."""
 
@@ -407,6 +452,7 @@ class ChatHistoryService:
             "_id": session_id,
             "user_id": user_id,
             "session_id": session_id,  # Ensure session_id field is set to match _id
+            "project_id": project_id,
             "title": title or "New Chat",
             "tags": tags or [],
             "status": SessionStatus.draft.value,
@@ -422,15 +468,63 @@ class ChatHistoryService:
         except Exception as e:
             raise InvalidInputError(f"Failed to create session: {str(e)}")
 
-    async def get_sessions(self, user_id: str, limit: int = 50, skip: int = 0) -> list[dict]:
-        """Retrieve sessions for a user."""
+    async def get_sessions(
+        self, user_id: str, limit: int = 50, skip: int = 0
+    ) -> list[dict]:
+        """Retrieve active non-project sessions for a user."""
         await self._ensure_user_exists(user_id)
-        
+
         sessions = await self.db_manager.find_documents(
-            self.sessions_collection, {"user_id": user_id, "status": SessionStatus.active.value}, limit=limit, skip=skip
+            self.sessions_collection,
+            {
+                "user_id": user_id,
+                "status": SessionStatus.active.value,
+                "$or": [
+                    {"project_id": {"$exists": False}},
+                    {"project_id": None},
+                ],
+            },
+            limit=limit,
+            skip=skip,
         )
-    
+
         return sessions
+
+    async def get_sessions_by_project(
+        self, project_id: str, limit: int = 50, skip: int = 0
+    ) -> list[dict]:
+        """Active project sessions that have at least one persisted message."""
+        if not project_id or not project_id.strip():
+            raise InvalidInputError("Project ID cannot be empty")
+
+        collection = self.db_manager.mongo_handler.db[self.sessions_collection]
+        pipeline: list[dict[str, Any]] = [
+            {
+                "$match": {
+                    "project_id": project_id,
+                    "status": SessionStatus.active.value,
+                }
+            },
+            {
+                "$lookup": {
+                    "from": self.messages_collection,
+                    "let": {"session_id": "$_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$session_id", "$$session_id"]}}},
+                        {"$limit": 1},
+                        {"$project": {"_id": 1}},
+                    ],
+                    "as": "linked_messages",
+                }
+            },
+            {"$match": {"linked_messages.0": {"$exists": True}}},
+            {"$project": {"linked_messages": 0}},
+            {"$sort": {"updated_at": -1}},
+            {"$skip": skip},
+            {"$limit": limit},
+        ]
+        cursor = collection.aggregate(pipeline)
+        return await cursor.to_list(length=limit)
 
     async def get_session(self, session_id: str) -> dict | None:
         """Get session by session_id."""
@@ -441,6 +535,20 @@ class ChatHistoryService:
             self.sessions_collection, {"_id": session_id}
         )
         return sessions[0] if sessions else None
+
+    async def attach_session_to_project(self, session_id: str, project_id: str) -> dict:
+        """Set ``project_id`` on a session (e.g. first chat message in a project)."""
+        await self._ensure_session_exists(session_id)
+        if not project_id or not project_id.strip():
+            raise InvalidInputError("Project ID cannot be empty")
+        now = datetime.now(timezone.utc)
+        await self.db_manager.update_documents(
+            self.sessions_collection,
+            {"_id": session_id},
+            {"$set": {"project_id": project_id, "updated_at": now}},
+        )
+        session = await self.get_session(session_id)
+        return session or {}
 
     async def edit_session(
         self, session_id: str, title: str | None = None, tags: list[str] | None = None
@@ -495,9 +603,7 @@ class ChatHistoryService:
         logger.info(f"Deleted session with session_id: {session_id} and its messages")
 
         if user_id:
-            await delete_general_agent_thread(
-                user_id=str(user_id), session_id=session_id
-            )
+            await delete_agent_thread(user_id=str(user_id), session_id=session_id)
 
     # Messages Management
     async def add_message(
@@ -742,7 +848,11 @@ class ChatHistoryService:
             },
         )
         logger.info(f"Submitted feedback for message_id: {message_id}")
-        return {"message_id": message_id, "feedback_type": feedback_type, "feedback_content": feedback_content}
+        return {
+            "message_id": message_id,
+            "feedback_type": feedback_type,
+            "feedback_content": feedback_content,
+        }
 
     async def get_feedback(self, message_id: str) -> dict | None:
         """Retrieve feedback from the message document."""
@@ -784,6 +894,9 @@ class ChatHistoryService:
         status: str,
         scope: str,
         message_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        webhook_url: str | None = None,
     ) -> dict:
         """Add a file upload record. Uses file_id as _id."""
 
@@ -795,8 +908,10 @@ class ChatHistoryService:
             raise InvalidInputError("File URL cannot be empty")
         if not file_metadata or not isinstance(file_metadata, dict):
             raise InvalidInputError("File metadata must be a valid dictionary")
-        if scope not in ["message"]:
-            raise InvalidInputError("Scope must be 'message'")
+        if scope not in ["message", "project"]:
+            raise InvalidInputError("Scope must be 'message' or 'project'")
+        if scope == "project" and not project_id:
+            raise InvalidInputError("project_id is required for project-scoped files")
         if scope == "message" and not message_id:
             message_id = None  # Allow message_id to be None initially
 
@@ -809,7 +924,7 @@ class ChatHistoryService:
             logger.info(f"File with file_id {file_id} already exists.")
             return existing_file[0]
 
-        file_record = {
+        file_record: dict[str, Any] = {
             "_id": file_id,
             "file_id": file_id,
             "user_id": user_id,
@@ -822,6 +937,12 @@ class ChatHistoryService:
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
         }
+        if project_id:
+            file_record["project_id"] = project_id
+        if session_id:
+            file_record["session_id"] = session_id
+        if webhook_url:
+            file_record["webhook_url"] = webhook_url
 
         try:
             await self.db_manager.insert_documents(self.files_collection, [file_record])
@@ -914,6 +1035,41 @@ class ChatHistoryService:
         )
         return files[0] if files else None
 
+    async def get_file_by_content_hash_for_project(
+        self, content_hash: str, user_id: str, project_id: str
+    ) -> dict | None:
+        """Same as get_file_by_content_hash but isolated per project."""
+        if not project_id or not project_id.strip():
+            raise InvalidInputError("Project ID cannot be empty")
+        if not content_hash or not content_hash.strip():
+            raise InvalidInputError("Content hash cannot be empty")
+        if not user_id or not user_id.strip():
+            raise InvalidInputError("User ID cannot be empty")
+
+        files = await self.db_manager.find_documents(
+            self.files_collection,
+            {
+                "file_metadata.file_content_hash": content_hash,
+                "user_id": user_id,
+                "project_id": project_id,
+                "scope": "project",
+            },
+            limit=1,
+        )
+        return files[0] if files else None
+
+    async def get_files_by_project(
+        self, project_id: str, limit: int = 100
+    ) -> list[dict]:
+        """Project-scoped uploads (Mongo)."""
+        if not project_id or not project_id.strip():
+            raise InvalidInputError("Project ID cannot be empty")
+        return await self.db_manager.find_documents(
+            self.files_collection,
+            {"project_id": project_id, "scope": "project"},
+            limit=limit,
+        )
+
     async def update_file_status(
         self, file_id: str, status: str, ocr_result: str | None = None
     ) -> dict:
@@ -974,7 +1130,12 @@ class ChatHistoryService:
         updated_count = await self.db_manager.update_documents(
             self.files_collection,
             {"_id": file_id},
-            {"$set": {"message_id": message_id, "updated_at": datetime.now(timezone.utc)}},
+            {
+                "$set": {
+                    "message_id": message_id,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
         )
 
         if updated_count == 0:

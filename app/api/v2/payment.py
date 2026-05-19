@@ -1,36 +1,41 @@
 """Payme payment API endpoints"""
 
 import time
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.dependencies import (
     get_click_service,
-    get_transaction_service,
     get_subscription_storage,
+    get_transaction_service,
 )
 from app.core.logger import logger
-
 from app.models.payment import (
-    SubscriptionCatalogResponse,
-    SubscriptionPlan,
-    UserSubscriptionResponse,
-    PaymeInitRequest,
-    PaymeInitResponse,
-    PaymeError,
-    PaymeMethod,
-    PaymentLinkRequest,
-    PaymentLinkResponse,
-    TransactionError,
     ClickInitRequest,
     ClickInitResponse,
     DTInitRequest,
     DTSubscriptionApplyResponse,
+    PaymeError,
+    PaymeInitRequest,
+    PaymeInitResponse,
+    PaymeMethod,
+    PaymentLinkRequest,
+    PaymentLinkResponse,
+    SubscriptionCatalogResponse,
     SubscriptionEligibilityError,
+    SubscriptionPlan,
+    TransactionError,
+    UserSubscriptionResponse,
 )
-
-from app.security import verify_api_key, verify_payme_authorization, verify_dt_api_key, verify_dt_user_web_client, verify_api_key_or_dt_key
+from app.security import (
+    verify_api_key,
+    verify_api_key_or_dt_key,
+    verify_dt_api_key,
+    verify_dt_user_web_client,
+    verify_payme_authorization,
+)
 from app.services import ClickService, TransactionService
 from app.services.subscription_storage import SubscriptionStorage
 
@@ -274,7 +279,11 @@ async def click_complete(
 
 
 # MARK: Subscriptions
-@router.get("/payme/subscriptions/catalog", response_model=SubscriptionCatalogResponse, dependencies=[Depends(verify_api_key_or_dt_key)])
+@router.get(
+    "/payme/subscriptions/catalog",
+    response_model=SubscriptionCatalogResponse,
+    dependencies=[Depends(verify_api_key_or_dt_key)],
+)
 async def get_subscription_catalog(
     transaction_service: TransactionService = Depends(get_transaction_service),
 ):
@@ -296,7 +305,11 @@ async def get_user_subscription(
 
 
 # MARK: DT Team Subscriptions
-@router.post("/dt/init", response_model=DTSubscriptionApplyResponse, dependencies=[Depends(verify_dt_api_key)])
+@router.post(
+    "/dt/init",
+    response_model=DTSubscriptionApplyResponse,
+    dependencies=[Depends(verify_dt_api_key)],
+)
 async def init_dt_subscription(
     request: DTInitRequest,
     transaction_service: TransactionService = Depends(get_transaction_service),
@@ -304,29 +317,29 @@ async def init_dt_subscription(
 ):
     """
     Apply a subscription directly for a DT team user.
-    
+
     This endpoint allows DT team to directly apply a subscription tier
     to one of their users (birdarcha client). Payment is handled on DT side,
     so this just writes the subscription to the database.
-    
+
     Requires:
     - DT API key (x-dt-team-api-key header)
     - user_id must belong to DT client (web_client='birdarcha')
-    
+
     Args:
         request: Subscription request with subscription_tier and subscription_period
-    
+
     Returns:
         DTSubscriptionApplyResponse with success status and subscription info
     """
     try:
         # Verify user belongs to DT client
         await verify_dt_user_web_client(request.user_id)
-        
+
         # Validate subscription tier and period
         if not request.subscription_tier or not request.subscription_period:
             raise ValueError("subscription_tier and subscription_period are required")
-        
+
         # Get subscription quote (validates tier and period)
         quote = transaction_service._get_subscription_quote(
             request.subscription_tier,
@@ -348,13 +361,13 @@ async def init_dt_subscription(
             now_ms=now_ms,
             provider=settings.DT_WEB_CLIENT_NAME,
         )
-        
+
         logger.info(
             f"[DTSubscription] Applied subscription for DT user {request.user_id}, "
             f"tier={request.subscription_tier}, period={request.subscription_period}, "
             f"start={subscription_doc.get('start_ms')}, end={subscription_doc.get('end_ms')}"
         )
-        
+
         return DTSubscriptionApplyResponse(
             success=True,
             user_id=request.user_id,
@@ -366,7 +379,7 @@ async def init_dt_subscription(
             total_credits=quote["total_credits"],
         )
     except SubscriptionEligibilityError as e:
-        logger.warning("[DTSubscription] Eligibility check failed: %s", e.code)
+        logger.warning(f"[DTSubscription] Eligibility check failed: {e.code}")
         raise HTTPException(status_code=409, detail=e.to_detail())
     except ValueError as e:
         logger.warning(f"[DTSubscription] Invalid request: {e}")

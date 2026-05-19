@@ -55,7 +55,7 @@ class BasePaymentService:
             },
         }
 
-        if settings.DEVELOPMENT_MODE:
+        if settings.DEBUG:
             self._subscription_catalog["test"] = {
                 "daily_credits": 70,
                 "monthly": {
@@ -182,9 +182,7 @@ class BasePaymentService:
                 ],
                 "today_credits_used": credit_status["today_credits_used"],
                 "today_remaining_credits": credit_status["remaining_credits"],
-                "uses_combined_credit_pool": credit_status[
-                    "uses_combined_credit_pool"
-                ],
+                "uses_combined_credit_pool": credit_status["uses_combined_credit_pool"],
             }
 
         end_ms = int(sub.get("end_ms") or 0)
@@ -270,7 +268,9 @@ class BasePaymentService:
                 active_daily_pass_end_ms=int(active_daily_pass.get("end_ms") or 0),
             )
 
-        active_subscription = await self._get_active_subscription(user_id, current_time_ms)
+        active_subscription = await self._get_active_subscription(
+            user_id, current_time_ms
+        )
         if active_subscription is None:
             return
 
@@ -331,12 +331,7 @@ class BasePaymentService:
                     "active_daily_pass_end_ms": active_end_ms,
                     "apply_strategy": "extend_existing_daily_pass",
                 }
-                logger.warning(
-                    "[%s] Paid daily pass reapplied for user %s after eligibility conflict; extending active pass until %s",
-                    self.provider,
-                    user_id,
-                    active_end_ms,
-                )
+                logger.warning(f"[{self.provider}] Paid daily pass reapplied for user {user_id} after eligibility conflict; extending active pass until {active_end_ms}")
 
         await self.subscription_storage.upsert_subscription(
             user_id=user_id,

@@ -1,6 +1,7 @@
 from urllib.parse import urljoin
 
 import requests
+from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -20,15 +21,15 @@ class BaseEmbedding:
 
     def embed_query(self, query: str) -> list[float]:
         """Generate embedding for a query with instruction."""
-        raise NotImplementedError
+        raise NotImplementedError("BaseEmbedding.embed_query is abstract.")
 
     def embed_doc(self, text: str) -> list[float]:
         """Generate embedding for a document without instruction."""
-        raise NotImplementedError
+        raise NotImplementedError("BaseEmbedding.embed_doc is abstract.")
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a batch of texts, with optional instruction for queries."""
-        raise NotImplementedError
+        raise NotImplementedError("BaseEmbedding.embed_batch is abstract.")
 
 
 # VLLM Implementation
@@ -224,7 +225,9 @@ class SiliconFlowEmbedding(BaseEmbedding):
     def embed_query(self, query: str) -> list[float]:
         return self.embed_doc(get_instruction(query))
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True
+    )
     def embed_doc(self, text: str) -> list[float]:
         payload = {"model": self.model_name, "input": text, "encoding_format": "float"}
         try:
@@ -237,7 +240,9 @@ class SiliconFlowEmbedding(BaseEmbedding):
             logger.warning(f"SiliconFlow embedding attempt failed: {e}")
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True
+    )
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
@@ -251,6 +256,19 @@ class SiliconFlowEmbedding(BaseEmbedding):
         except requests.RequestException as e:
             logger.warning(f"SiliconFlow batch embedding attempt failed: {e}")
             raise
+
+
+class SiliconFlowLangChainEmbeddings(Embeddings):
+    """LangChain `Embeddings` adapter for vector stores (e.g. Neo4jVector)."""
+
+    def __init__(self) -> None:
+        self._impl = SiliconFlowEmbedding()
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return self._impl.embed_batch(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._impl.embed_query(text)
 
 
 class EmbeddingManager:

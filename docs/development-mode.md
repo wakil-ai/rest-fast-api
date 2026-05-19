@@ -123,7 +123,7 @@ The feature is implemented across several layers:
 1. **Config** ([app/core/config.py](app/core/config.py)): `DEVELOPMENT_MODE` flag
 2. **Models** ([app/models/chat.py](app/models/chat.py)): Extended `ChatResponse` with optional debug fields
 3. **Retrieval** ([app/retrieval/retrieval_service.py](app/retrieval/retrieval_service.py)): Returns raw document metadata when requested
-4. **Chain** ([app/chains/chat_chain.py](app/chains/chat_chain.py)): Collects and returns debug data
+4. **Assistant Agents** ([app/agents/base.py](../app/agents/base.py)): Own chat-turn context, retrieval, and generation flow
 5. **API** ([app/api/chat.py](app/api/chat.py)): Includes debug data in responses
 
 ## Example Usage

@@ -1,54 +1,73 @@
+# Web
 fastapi==0.115.12
+uvicorn[standard]==0.34.2
 pydantic==2.12.3
 pydantic-settings==2.11.0
-langchain==0.3.0
-langchain-openai==0.3.17
-langchain-core==0.3.63
-langchain-docling==1.1.0
-pinecone[async]==6.0.2
-openai>=1.90,<2.0.0
-anthropic>=0.39.0
-tqdm==4.65.0
-python-dotenv==1.1.1
-httptools==0.6.4
-httpx==0.28.1
-html2text==2025.4.15
-pymongo==4.12.0
-cryptography==45.0.3
-pymilvus==2.5.11
-pymilvus.model==0.3.2
-loguru==0.7.3
-requests==2.32.5
-google-cloud-speech>=2.26.0
-google-cloud-storage>=2.10.0
-pydub==0.25.1
-azure-cognitiveservices-speech==1.38.0
-qdrant-client==1.15.1
-mem0ai==0.1.118
-uvicorn[standard]==0.34.2
-protobuf>=5.29.0,<6.0.0
 python-multipart==0.0.20
-crewai==1.2.0
-crewai-tools==1.2.0
-tavily-python==0.7.12
-litellm==1.74.9
-anthropic==0.75.0
-datalab-python-sdk==0.2.0
+starlette==0.46.2
 Authlib==1.5.0
 itsdangerous==2.2.0
-pytest==8.3.4
-pytest-asyncio==0.25.0
-pytest-mock==3.14.0
-pytest-cov==6.0.0
-httpx==0.28.1
-markdown==3.10.1
-google-genai==1.61.0
-redis==7.1.0
+
+# LangChain / LangGraph
+langchain==1.2.18
+langchain-core==1.3.3
+langchain-openai==1.0.3
+langchain-anthropic>=1.3.0,<2
+langchain-community==0.4.1
+# Pin 0.9+ explicitly: 0.8.x requires langgraph<1.1.0; 0.6.x requires neo4j<6
+langchain-neo4j==0.9.0
+langchain-text-splitters==1.1.2
+langchain-google-genai==4.2.2
+langchain-docling==2.0.0
+langgraph==1.1.10
+langgraph-checkpoint-redis==0.4.1
+# LangGraph MongoDBStore (``from langgraph.store.mongodb import MongoDBStore``) — not bundled; needs:
+langchain-mongodb==0.11.0
+pymongo-search-utils==0.3.0
+# Optional: Mongo checkpoints instead of Redis — only if you switch off ``langgraph-checkpoint-redis``:
+# langgraph-checkpoint-mongodb>=0.4.0
+
+# Observability
+langfuse>=4.0,<5
+
+# LLM providers
+openai>=1.90,<2.0.0
+anthropic==0.100.0
+google-genai==1.75.0
+tavily-python==0.7.12
+
+# Data stores
+neo4j==6.1.0
+pymongo==4.12.0
 motor==3.7.1
-uuid6==2025.0.1
+redis==7.1.0
+pymilvus==2.5.11
+pymilvus.model==0.3.2
+pinecone==6.0.2
+mem0ai==0.1.118
+
+# Google / Azure speech and storage
+google-cloud-speech>=2.26.0
+google-cloud-storage>=2.10.0
+azure-cognitiveservices-speech==1.38.0
+pydub==0.25.1
+
+# OCR / documents
+datalab-python-sdk==0.2.0
 python-docx==1.2.0
-tenacity==8.5.0
-langgraph
-langchain-google-genai
-langchain-community
-langgraph-checkpoint-redis
+markdown==3.10.1
+html2text==2025.4.15
+
+# HTTP / utils
+httpx==0.28.1
+httptools==0.6.4
+requests==2.32.5
+python-dotenv==1.1.1
+loguru==0.7.3
+tqdm==4.65.0
+# neo4j-graphrag (via langchain-neo4j 0.9) needs >=9.1.2; google-genai needs <9.2.0
+tenacity==9.1.2
+uuid6==2025.0.1
+cryptography==45.0.3
+protobuf>=5.29.0,<6.0.0
+grpcio>=1.49.1,<=1.67.1
