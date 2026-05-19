@@ -1,7 +1,4 @@
-from app.services.auth_service import (
-    exchange_telegram_oauth_code,
-    verify_telegram_id_token,
-)
+from app.services.auth_service import validate_telegram_data
 from app.services.chat_history_service import ChatHistoryService
 from app.services.chat_service import ChatService
 from app.services.file_management import FileManager
@@ -29,8 +26,7 @@ from app.services.subscription_storage import SubscriptionStorage
 
 __all__ = [
     # Auth
-    "exchange_telegram_oauth_code",
-    "verify_telegram_id_token",
+    "validate_telegram_data",
     # Services
     "ChatHistoryService",
     "ChatService",
