@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.orchestration.prompts import PromptRegistry
     from app.orchestration.agents.court_routing import CourtClassifier
+    from app.orchestration.agents.criminal_mode_routing import CriminalModeClassifier
     from app.orchestration.agents.intent_recognition import IntentClassifier
     from app.orchestration.agents.milvus_agent import MilvusQueryAgent
     from app.db import DBManager, MilvusHandler, MongoHandler, PineconeHandler
@@ -119,6 +120,13 @@ def get_criminal_case_graph_retriever() -> "CriminalCaseGraphRetriever":
     from app.services.criminal_case_graph_retrieval import CriminalCaseGraphRetriever
 
     return CriminalCaseGraphRetriever()
+
+
+@lru_cache
+def get_criminal_mode_classifier() -> "CriminalModeClassifier":
+    from app.orchestration.agents.criminal_mode_routing import CriminalModeClassifier
+
+    return CriminalModeClassifier()
 
 
 @lru_cache

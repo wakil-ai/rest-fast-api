@@ -337,11 +337,8 @@ class BaseAgent:
             if not config.filter:
                 raise
             logger.warning(
-                "[%s] Filtered Milvus search failed; retrying without filter. "
-                "collection=%s filter=%r",
-                self.__class__.__name__,
-                config.collection_name,
-                config.filter,
+                f"Filtered Milvus search failed; retrying without filter. "
+                f"collection={config.collection_name} filter={config.filter}",
                 exc_info=True,
             )
             fallback_config = RetrievalConfig(

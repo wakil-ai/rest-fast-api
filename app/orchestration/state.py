@@ -46,6 +46,8 @@ class RetrievalRewriteState(TypedDict, total=False):
     retrieval_context: str
     #: Neo4j + Mongo pack from ``criminal_retrieval_langgraph`` (criminal court only).
     criminal_case_context: str
+    #: MODE indices (0–8) for ``CriminalPromptComposer`` (criminal court only).
+    criminal_modes: list[int]
     answer_prompt_template: Any
     attachments: list[dict[str, Any]]
     classified_legal_intent: str
