@@ -150,3 +150,67 @@ class UserAlreadyExistsException(ChatHistoryException):
             detail=f"User with external ID '{external_id}' already exists.",
             status_code=status.HTTP_400_BAD_REQUEST,
         )
+
+
+# OTP / Twilio Verify Exceptions
+class OTPException(ChatException):
+    """Base exception for OTP-related errors."""
+
+    def __init__(self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST):
+        super().__init__(detail=detail, status_code=status_code)
+
+
+class InvalidPhoneFormatException(OTPException):
+    """Raised when the supplied phone number is not valid E.164."""
+
+    def __init__(self, phone: str):
+        super().__init__(
+            detail=(
+                f"Invalid phone number format: '{phone}'. "
+                "Expected E.164 (e.g. +998901234567)."
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class OTPSendFailedException(OTPException):
+    """Raised when Twilio rejects or fails to send the verification."""
+
+    def __init__(self, detail: str = "Failed to send OTP. Please try again later."):
+        super().__init__(
+            detail=detail, status_code=status.HTTP_502_BAD_GATEWAY
+        )
+
+
+class OTPVerificationFailedException(OTPException):
+    """Raised when the submitted OTP code is invalid, expired, or otherwise not approved."""
+
+    def __init__(self, twilio_status: str | None = None):
+        detail = "Invalid or expired OTP code."
+        if twilio_status and twilio_status != "pending":
+            detail = f"OTP verification {twilio_status}."
+        super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
+
+
+class OTPRateLimitExceededException(OTPException):
+    """Raised when a phone exceeds the per-window send or verify cap."""
+
+    def __init__(self, retry_after_seconds: int):
+        super().__init__(
+            detail=(
+                "Too many OTP requests for this phone number. "
+                f"Try again in {retry_after_seconds} seconds."
+            ),
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+        self.retry_after_seconds = retry_after_seconds
+
+
+class OTPServiceNotConfiguredException(OTPException):
+    """Raised when Twilio credentials are missing at runtime."""
+
+    def __init__(self):
+        super().__init__(
+            detail="OTP service is not configured.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
