@@ -12,7 +12,7 @@ For feature-specific flows, see the docs index in [docs/README.md](README.md).
 
 - **Default API key**: sent via the header configured as `API_KEY_NAME` (default: `x-api-key`).
 - **DT team API key**: sent via `DT_API_KEY_NAME` (default: `x-dt-team-api-key`).
-- **Admin-only key**: some endpoints require `super_secret_admin_key` in the JSON body.
+- **Super admin key**: header `x-super-admin-key` for sensitive ops (user create/block, Telegram admin). See [updates-v2.md](updates-v2.md) for recent route moves.
 - **Docs protection**: `/docs`, `/redoc`, `/swagger-ui.html`, and `/openapi.json` require HTTP Basic Auth (`DOCS_USER` / `DOCS_PASSWORD`).
 
 **Public endpoints (no API key required):**
@@ -68,6 +68,7 @@ Base path: `/api/v2/history`
 | PATCH | `/api/v2/history/users/change/info/{user_id}` | Update a single user field |
 | PATCH | `/api/v2/history/users/block/{user_id}` | Block a user (super admin key) |
 | PATCH | `/api/v2/history/users/unblock/{user_id}` | Unblock a user (super admin key) |
+| GET | `/api/v2/history/users/rate-limit/{user_id}` | Get user credit / rate-limit status |
 
 ### Sessions
 
@@ -136,22 +137,30 @@ Base path: `/api/v2/speech-to-text`
 | POST | `/api/v2/speech-to-text/transcribe` | Transcribe audio file |
 | WS | `/api/v2/speech-to-text/ws/transcribe` | Streaming WebSocket transcription |
 
-## Admin (v2)
+## Promo codes (v2)
 
-Base path: `/api/v2/admin`
+Base path: `/api/v2/promo-codes`
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/v2/admin/rate-limit/{user_id}` | Get user credit status |
-| POST | `/api/v2/admin/promo-codes` | Create promo code (admin key + body secret) |
-| GET | `/api/v2/admin/promo-codes/{code}` | Get promo code |
-| PATCH | `/api/v2/admin/promo-codes/{code}/activate` | Activate promo code |
-| PATCH | `/api/v2/admin/promo-codes/{code}/deactivate` | Deactivate promo code |
-| POST | `/api/v2/admin/promo-codes/assign` | Assign promo code to user |
-| DELETE | `/api/v2/admin/promo-codes/assign/{user_id}` | Remove promo code from user |
-| GET | `/api/v2/admin/promo-codes/users/{user_id}` | Get user's promo code assignment |
-| POST | `/api/v2/admin/telegram/save/chats` | Upsert Telegram chat IDs (admin key + body secret) |
-| GET | `/api/v2/admin/telegram/chats` | List Telegram chats (admin key + query secret) |
+| POST | `/api/v2/promo-codes` | Create promo code (`admin` header) |
+| GET | `/api/v2/promo-codes/{code}` | Get promo code (`admin` header) |
+| PATCH | `/api/v2/promo-codes/{code}/activate` | Activate promo code (`admin` header) |
+| PATCH | `/api/v2/promo-codes/{code}/deactivate` | Deactivate promo code (`admin` header) |
+| POST | `/api/v2/promo-codes/assign` | Assign promo code to user |
+| DELETE | `/api/v2/promo-codes/assign/{user_id}` | Remove promo code from user |
+| GET | `/api/v2/promo-codes/users/{user_id}` | Get user's promo code assignment |
+
+Assign / user lookup endpoints accept `admin` or `x-dt-team-api-key`. See [updates-v2.md](updates-v2.md).
+
+## Admin (v2)
+
+Base path: `/api/v2/admin` — requires `x-super-admin-key` (internal ops).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/v2/admin/telegram/save/chats` | Upsert Telegram chat IDs |
+| GET | `/api/v2/admin/telegram/chats` | List Telegram chats |
 
 ## Payments & Subscriptions (v2)
 
