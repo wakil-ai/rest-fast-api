@@ -59,18 +59,22 @@ For the **complete, up-to-date** endpoint list (REST + WebSocket), see
 - Health: `GET /`, `GET /health`
 - Auth: `/api/v2/auth/*` (Google, Telegram, DT)
 - Chat: `/api/v2/chat/ask`, `/api/v2/chat/agent/stream`
-- Chat history: `/api/v2/history/*` (users, sessions, messages, files, feedback)
+- Chat history: `/api/v2/history/*` (users, sessions, messages, files, feedback, **projects**)
 - Memory: `/api/v2/memory/*`
 - Speech-to-text: `/api/v2/speech-to-text/*` (REST + WS)
-- Admin: `/api/v2/admin/*` (rate limits, promo codes, Telegram chats)
+- Promo codes: `/api/v2/promo-codes/*`
+- Admin: `/api/v2/admin/*` (Telegram chats; `x-super-admin-key`)
+- Credits: `GET /api/v2/history/users/rate-limit/{user_id}`
 - Payments: `/api/v2/transaction/*`
 - Referrals: `/api/v2/referrals/*`
 - v3 Chat: `/api/v3/chat/ask`
 - Docs (protected): `/docs`, `/redoc`, `/openapi.json`
 
 ## 📖 Documentation
+- [Changelog (v3.0.0)](CHANGELOG.md)
 - [Documentation index](docs/README.md)
 - [API reference (all endpoints)](docs/api-reference.md)
+- [v3 release notes](docs/updates-v3.md)
 - [Database architecture](docs/database-architecture.md)
 - [Infrastructure overview](docs/infrastructure.md)
 

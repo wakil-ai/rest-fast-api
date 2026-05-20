@@ -116,6 +116,28 @@ Base path: `/api/v2/history`
 | --- | --- | --- |
 | GET | `/api/v2/share/{share_id}` | Fetch shared message by ID |
 
+### Projects (legal workspaces)
+
+Base path: `/api/v2/history/projects` — project-scoped documents, sessions, and RAG. See [file-management.md](file-management.md).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/v2/history/projects/user/{user_id}` | List user projects (`status`, `limit`, `skip` query params) |
+| POST | `/api/v2/history/projects` | Create project |
+| GET | `/api/v2/history/projects/{project_id}` | Get project (`owner_id` query param) |
+| PATCH | `/api/v2/history/projects/{project_id}` | Update project |
+| GET | `/api/v2/history/projects/{project_id}/instructions` | Get project instructions (`user_id` query) |
+| POST | `/api/v2/history/projects/{project_id}/instructions` | Create project instructions |
+| PUT | `/api/v2/history/projects/{project_id}/instructions` | Update project instructions |
+| POST | `/api/v2/history/projects/{project_id}/sessions` | Create session in project |
+| GET | `/api/v2/history/projects/{project_id}/sessions` | List project sessions (`user_id`, pagination) |
+| POST | `/api/v2/history/projects/{project_id}/files` | Upload file to project (multipart) |
+| GET | `/api/v2/history/projects/{project_id}/files` | List project files (`user_id` query) |
+| DELETE | `/api/v2/history/projects/{project_id}/files/{file_id}` | Delete project file (`user_id` query) |
+| POST | `/api/v2/history/projects/{project_id}/search` | Hybrid search project file vectors |
+
+Chat: pass optional `project_id` on `POST /api/v2/chat/ask` or `POST /api/v3/chat/ask` to scope retrieval and agent context to that project.
+
 ## Memory (v2)
 
 Base path: `/api/v2/memory`

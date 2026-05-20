@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # App settings
     APP_NAME: str = "WakilAI Chatbot"
     API_PREFIX: str = "/api/v2"
-    VERSION: str = "5.0.0"
+    VERSION: str = "3.0.0"
     DEBUG: bool = False
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Reserved for future OpenTelemetry wiring
