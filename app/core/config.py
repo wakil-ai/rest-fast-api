@@ -191,6 +191,7 @@ class Settings(BaseSettings):
     FILE_CONTENT_TOKEN_LIMIT: int = (
         50_000  # Max uploaded file context tokens for LLM prompts
     )
+    FILE_INGESTION_BATCH_SIZE: int = 10
     #: Cap for combined assistant + upload context passed to the final answer LLM.
     RETRIEVAL_CONTEXT_TOKEN_LIMIT: int = 300_000
     EMBEDDING_QUERY_TOKEN_LIMIT: int = 10_000  # Max query tokens sent to embedding APIs

@@ -342,7 +342,17 @@ class FileManager:
                 )
                 return
 
-            embeddings = await self.embedding_manager.aembed_batch(chunks)
+            metadata_extra = {"project_id": project_id}
+            sid = record.get("session_id")
+            if sid:
+                metadata_extra["session_id"] = sid
+            chunk_count = await self._upsert_chunk_batches(
+                chunks=chunks,
+                user_id=user_id,
+                file_id=file_id,
+                file_name=file_name,
+                metadata_extra=metadata_extra,
+            )
             await send_project_file_progress_webhook(
                 hook,
                 project_id=project_id,
@@ -350,37 +360,8 @@ class FileManager:
                 stage="embedding_complete",
                 progress_percent=50,
                 status="processing",
-                extra={"chunk_count": len(chunks)},
+                extra={"chunk_count": chunk_count},
             )
-
-            documents: list[dict] = []
-            for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
-                doc_id = f"{file_id}_{idx}"
-                meta = {
-                    "user_id": user_id,
-                    "file_id": file_id,
-                    "file_name": file_name,
-                    "chunk_index": idx,
-                    "project_id": project_id,
-                }
-                sid = record.get("session_id")
-                if sid:
-                    meta["session_id"] = sid
-                documents.append(
-                    {
-                        "id": doc_id,
-                        "text": chunk_text,
-                        "embedding": embedding,
-                        "metadata": meta,
-                    }
-                )
-
-            await asyncio.to_thread(
-                self.db._upsert_vectors,
-                documents,
-                self.vector_db_collection,
-            )
-            chunk_count = len(documents)
             token_count = count_tokens(ocr_result)
             await self.history.update_file_metadata_fields(
                 file_id,
@@ -445,46 +426,78 @@ class FileManager:
         if not chunks:
             return 0
 
-        embeddings = await self.embedding_manager.aembed_batch(chunks)
-
-        documents = []
-        for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
-            doc_id = f"{file_id}_{idx}"
-            metadata = {
-                "user_id": user_id,
-                "file_id": file_id,
-                "file_name": file_name,
-                "chunk_index": idx,
-            }
-            if session_id:
-                metadata["session_id"] = session_id
-            if message_id:
-                metadata["message_id"] = message_id
-            if project_id:
-                metadata["project_id"] = project_id
-
-            documents.append(
-                {
-                    "id": doc_id,
-                    "text": chunk_text,
-                    "embedding": embedding,
-                    "metadata": metadata,
-                }
-            )
+        metadata_extra = {}
+        if session_id:
+            metadata_extra["session_id"] = session_id
+        if message_id:
+            metadata_extra["message_id"] = message_id
+        if project_id:
+            metadata_extra["project_id"] = project_id
 
         try:
+            chunk_count = await self._upsert_chunk_batches(
+                chunks=chunks,
+                user_id=user_id,
+                file_id=file_id,
+                file_name=file_name,
+                metadata_extra=metadata_extra,
+            )
+            logger.info(
+                f"Successfully ingested {chunk_count} chunks for file_id: {file_id}"
+            )
+            return chunk_count
+        except Exception as e:
+            logger.error(f"Failed to ingest file into Vector DB: {str(e)}")
+            raise
+
+    async def _upsert_chunk_batches(
+        self,
+        *,
+        chunks: list[str],
+        user_id: str,
+        file_id: str,
+        file_name: str,
+        metadata_extra: dict,
+    ) -> int:
+        batch_size = max(1, settings.FILE_INGESTION_BATCH_SIZE)
+        total = 0
+
+        for start in range(0, len(chunks), batch_size):
+            chunk_batch = chunks[start : start + batch_size]
+            embeddings = await self.embedding_manager.aembed_batch(chunk_batch)
+            documents: list[dict] = []
+
+            for offset, (chunk_text, embedding) in enumerate(
+                zip(chunk_batch, embeddings)
+            ):
+                chunk_index = start + offset
+                metadata = {
+                    "user_id": user_id,
+                    "file_id": file_id,
+                    "file_name": file_name,
+                    "chunk_index": chunk_index,
+                    **metadata_extra,
+                }
+                documents.append(
+                    {
+                        "id": f"{file_id}_{chunk_index}",
+                        "text": chunk_text,
+                        "embedding": embedding,
+                        "metadata": metadata,
+                    }
+                )
+
+            if not documents:
+                continue
+
             await asyncio.to_thread(
                 self.db._upsert_vectors,
                 documents,
                 self.vector_db_collection,
             )
-            logger.info(
-                f"Successfully ingested {len(documents)} chunks for file_id: {file_id}"
-            )
-            return len(documents)
-        except Exception as e:
-            logger.error(f"Failed to ingest file into Vector DB: {str(e)}")
-            raise
+            total += len(documents)
+
+        return total
 
     def _create_temp_file(self, content: bytes, original_filename: str) -> str:
         """Create temporary file and return its path"""
