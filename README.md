@@ -71,12 +71,18 @@ For the **complete, up-to-date** endpoint list (REST + WebSocket), see
 - Docs (protected): `/docs`, `/redoc`, `/openapi.json`
 
 ## 📖 Documentation
-- [Changelog (v3.0.0)](CHANGELOG.md)
-- [Documentation index](docs/README.md)
+
+- **[Developer onboarding](docs/onboarding.md)** — local setup, architecture, first tasks
+- **[Documentation index](docs/README.md)** — full index of all docs
+- [Tutorial: First chat](docs/tutorial-first-chat.md)
+- [Tutorial: SSE streaming](docs/tutorial-streaming.md)
+- [Tutorial: File upload + chat](docs/tutorial-file-upload.md)
+- [How-to: Deploy to production](docs/howto-deploy-production.md)
+- [How-to: Switch LLM provider](docs/howto-switch-llm-provider.md)
+- [Explanation: Orchestration pipeline](docs/explanation-orchestration.md)
+- [Reference: Environment variables](docs/reference-environment-variables.md)
 - [API reference (all endpoints)](docs/api-reference.md)
-- [v3 release notes](docs/updates-v3.md)
-- [Database architecture](docs/database-architecture.md)
-- [Infrastructure overview](docs/infrastructure.md)
+- [Changelog (v3.0.0)](CHANGELOG.md)
 
 ## 🚀 Getting Started
 
@@ -292,21 +298,23 @@ If you already have MongoDB and Milvus running:
 ### API Usage
 
 #### Authentication
-All API endpoints (except health check and docs) require an API key:
+
+All API endpoints (except health check and docs) require an API key. The header name is configured via `API_KEY_NAME` (default: `admin`):
 
 ```bash
-curl -H "x-api-key: your-api-key" http://localhost:8080/api/chat/ask
+curl -H "admin: your-api-key" http://localhost:8080/health
 ```
 
 #### Example Chat Request
+
 ```bash
-curl -X POST "http://localhost:8080/api/chat/ask" \
+curl -X POST "http://localhost:8080/api/v3/chat/ask" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: your-api-key" \
+  -H "admin: your-api-key" \
   -d '{
     "query": "What are the marriage laws in Uzbekistan?",
     "user_id": "user123",
-    "session_id": "session456", 
+    "session_id": "session456",
     "stream": false
   }'
 ```
