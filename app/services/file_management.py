@@ -40,30 +40,29 @@ class FileManager:
         Process file upload for a message: validate → OCR → store → save metadata
         Returns: (status_code, response_or_error_message)
         """
-        content = await file.read()
-        content_hash = self._build_file_content_hash(content)
-
-        existing_by_content = await self.history.get_file_by_content_hash(
-            content_hash=content_hash,
-            user_id=user_id,
+        temp_path, content_hash, file_size = await self._spool_upload_to_temp(
+            file, file.filename or "upload"
         )
-        if existing_by_content:
-            existing_file_id = existing_by_content["_id"]
-            logger.info(
-                f"Reusing existing file by content hash for file_id: {existing_file_id}"
-            )
-            response = self._build_success_response(
-                file_id=existing_file_id,
-                metadata=existing_by_content.get("file_metadata", {}),
-                ocr_result=existing_by_content.get("ocr_result", ""),
-                record=existing_by_content,
-                project_id=None,
-            )
-            return 200, response
-
-        temp_path = self._create_temp_file(content, file.filename)
 
         try:
+            existing_by_content = await self.history.get_file_by_content_hash(
+                content_hash=content_hash,
+                user_id=user_id,
+            )
+            if existing_by_content:
+                existing_file_id = existing_by_content["_id"]
+                logger.info(
+                    f"Reusing existing file by content hash for file_id: {existing_file_id}"
+                )
+                response = self._build_success_response(
+                    file_id=existing_file_id,
+                    metadata=existing_by_content.get("file_metadata", {}),
+                    ocr_result=existing_by_content.get("ocr_result", ""),
+                    record=existing_by_content,
+                    project_id=None,
+                )
+                return 200, response
+
             ocr_result = await self.ocr.process_file(temp_path)
             file_id = self._build_deterministic_file_id(ocr_result)
 
@@ -82,15 +81,17 @@ class FileManager:
                 return 200, response
 
             gcs_path = self.storage.generate_message_file_path(
-                user_id, file_id, file.filename
+                user_id, file_id, file.filename or "upload"
             )
-            file_url = self.storage.upload_file(
-                data=content,
+            file_url = self.storage.upload_file_from_path(
+                file_path=temp_path,
                 destination_path=gcs_path,
                 content_type=file.content_type or "application/octet-stream",
             )
 
-            metadata = self._create_file_metadata(file, content, gcs_path, content_hash)
+            metadata = self._create_file_metadata(
+                file, file_size, gcs_path, content_hash
+            )
 
             record = await self.history.add_file_upload(
                 user_id=user_id,
@@ -146,39 +147,42 @@ class FileManager:
         project_service = get_project_service()
         await project_service.get_project(project_id, user_id)
 
-        content = await file.read()
-        content_hash = self._build_file_content_hash(content)
-
-        existing_by_content = await self.history.get_file_by_content_hash_for_project(
-            content_hash=content_hash,
-            user_id=user_id,
-            project_id=project_id,
+        temp_path, content_hash, file_size = await self._spool_upload_to_temp(
+            file, file.filename or "upload"
         )
-        if existing_by_content:
-            fid = existing_by_content["_id"]
-            response = self._build_success_response(
-                file_id=fid,
-                metadata=existing_by_content.get("file_metadata", {}),
-                ocr_result=existing_by_content.get("ocr_result", ""),
-                record=existing_by_content,
-                project_id=project_id,
-            )
-            return 200, response
-
-        temp_path = self._create_temp_file(content, file.filename or "upload")
 
         try:
+            existing_by_content = (
+                await self.history.get_file_by_content_hash_for_project(
+                    content_hash=content_hash,
+                    user_id=user_id,
+                    project_id=project_id,
+                )
+            )
+            if existing_by_content:
+                fid = existing_by_content["_id"]
+                response = self._build_success_response(
+                    file_id=fid,
+                    metadata=existing_by_content.get("file_metadata", {}),
+                    ocr_result=existing_by_content.get("ocr_result", ""),
+                    record=existing_by_content,
+                    project_id=project_id,
+                )
+                return 200, response
+
             ocr_result = await self.ocr.process_file(temp_path)
             file_id = self._build_deterministic_file_id(ocr_result)
             gcs_path = self.storage.generate_project_file_path(
                 project_id, file_id, file.filename or "upload"
             )
-            file_url = self.storage.upload_file(
-                data=content,
+            file_url = self.storage.upload_file_from_path(
+                file_path=temp_path,
                 destination_path=gcs_path,
                 content_type=file.content_type or "application/octet-stream",
             )
-            metadata = self._create_file_metadata(file, content, gcs_path, content_hash)
+            metadata = self._create_file_metadata(
+                file, file_size, gcs_path, content_hash
+            )
 
             record = await self.history.add_file_upload(
                 user_id=user_id,
@@ -486,12 +490,35 @@ class FileManager:
             logger.error(f"Failed to ingest file into Vector DB: {str(e)}")
             raise
 
-    def _create_temp_file(self, content: bytes, original_filename: str) -> str:
-        """Create temporary file and return its path"""
-        suffix = f"_{original_filename}"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            return tmp.name
+    async def _spool_upload_to_temp(
+        self, file: UploadFile, original_filename: str
+    ) -> tuple[str, str, int]:
+        """Stream an upload to disk while hashing and counting bytes."""
+        digest = hashlib.sha256()
+        file_size = 0
+        temp_path = ""
+
+        try:
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=self._build_temp_suffix(original_filename)
+            ) as tmp:
+                temp_path = tmp.name
+                while chunk := await file.read(1024 * 1024):
+                    digest.update(chunk)
+                    file_size += len(chunk)
+                    tmp.write(chunk)
+        except Exception:
+            self._safe_remove_temp_file(temp_path)
+            raise
+
+        return temp_path, digest.hexdigest(), file_size
+
+    @staticmethod
+    def _build_temp_suffix(original_filename: str) -> str:
+        """Build a safe temporary-file suffix from an upload filename."""
+        safe_filename = os.path.basename(original_filename or "upload")
+        safe_filename = safe_filename.replace("/", "_").replace("\\", "_")
+        return f"_{safe_filename}"
 
     def _build_success_response(
         self,
@@ -518,18 +545,14 @@ class FileManager:
         return f"file-{uuid7()}"
 
     @staticmethod
-    def _build_file_content_hash(content: bytes) -> str:
-        return hashlib.sha256(content).hexdigest()
-
-    @staticmethod
     def _create_file_metadata(
-        file: UploadFile, content: bytes, gcs_path: str, content_hash: str
+        file: UploadFile, file_size: int, gcs_path: str, content_hash: str
     ) -> dict:
         """Build clean metadata dictionary"""
         return {
             "file_name": file.filename,
             "file_type": file.content_type or "application/octet-stream",
-            "file_size": len(content),
+            "file_size": file_size,
             "gcs_path": gcs_path,
             "file_content_hash": content_hash,
         }
