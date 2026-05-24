@@ -32,6 +32,7 @@ from app.api.v2 import (
     auth,
     chat,
     memory,
+    otp,
     payment,
     promo_codes,
     referral,
@@ -131,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(promo_codes.router, prefix=settings.API_PREFIX)
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
+    app.include_router(otp.router, prefix=settings.API_PREFIX)
     app.include_router(payment.router, prefix=settings.API_PREFIX)
     app.include_router(referral.router, prefix=settings.API_PREFIX)
     app.include_router(share_router, prefix=settings.API_PREFIX, tags=["Public"])

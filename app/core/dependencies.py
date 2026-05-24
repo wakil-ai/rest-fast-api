@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         ClickService,
         FileManager,
         OCRService,
+        OTPService,
         ProjectService,
         PromoCodeService,
         RateLimitService,
@@ -261,3 +262,10 @@ def get_subscription_storage() -> "SubscriptionStorage":
     from app.services import SubscriptionStorage
 
     return SubscriptionStorage()
+
+
+@lru_cache
+def get_otp_service() -> "OTPService":
+    from app.services import OTPService
+
+    return OTPService()

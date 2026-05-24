@@ -2,7 +2,7 @@ import os
 from enum import Enum
 
 from dotenv import load_dotenv
-from google.genai._interactions.types.interaction import AgentConfig
+# from google.genai._interactions.types.interaction import AgentConfig
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
@@ -246,7 +246,8 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str | None = None
 
     # Credit System Configuration
-    DAILY_CREDITS_LIMIT: int = 100  # Total daily credits per user
+    DAILY_CREDITS_LIMIT: int = 40  # Total daily credits per user
+    SIGNUP_DAY_CREDITS_LIMIT: int = 100  # Credits granted on the user's registration day
     CREDIT_COST_MAIN_ASSISTANT: int = 10  # Credits for main assistant (umumiy)
     CREDIT_COST_SOLIQ_ASSISTANT: int = 20  # Credits for tax specialized assistant
     CREDIT_COST_SUD_ASSISTANT: int = 25  # Credits for sud specialized assistant
@@ -297,6 +298,18 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str | None = None
     GOOGLE_REDIRECT_URI: str | None = None
     AUTH_SECRET_KEY: str = "secret-key-change-me"
+
+    # Twilio Verify (OTP)
+    TWILIO_ACCOUNT_SID: str | None = None
+    TWILIO_AUTH_TOKEN: str | None = None
+    TWILIO_VERIFY_SERVICE_SID: str | None = None
+    #: Max OTP send requests per phone within the window.
+    OTP_SEND_LIMIT_PER_PHONE: int = 3
+    OTP_SEND_WINDOW_SECONDS: int = 3600
+    #: Max OTP verify attempts per phone within the window.
+    #: Complements Twilio's per-code 5-attempt cap.
+    OTP_VERIFY_LIMIT_PER_PHONE: int = 10
+    OTP_VERIFY_WINDOW_SECONDS: int = 3600
 
     GEMINI_API_KEY: str | None = None
     GEMINI_LANGCHAIN_THINKING_LEVEL: str = "high"

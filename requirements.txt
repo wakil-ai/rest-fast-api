@@ -58,6 +58,9 @@ python-docx==1.2.0
 markdown==3.10.1
 html2text==2025.4.15
 
+# OTP / SMS
+twilio>=9.0.0,<10
+
 # HTTP / utils
 httpx==0.28.1
 httptools==0.6.4

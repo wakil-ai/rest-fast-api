@@ -39,6 +39,21 @@ class RateLimitService:
         user_limit = await collection.find_one({"user_id": user_id, "date": today})
         return int(user_limit.get("credits_used", 0)) if user_limit else 0
 
+    def _default_daily_limit_for(self, user: dict | None) -> int:
+        """Default daily limit, granting the signup-day bonus if registered today (UTC)."""
+        if isinstance(user, dict):
+            created_at = user.get("created_at")
+            if isinstance(created_at, datetime):
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                if created_at.strftime("%Y-%m-%d") == self._get_today_date():
+                    return settings.SIGNUP_DAY_CREDITS_LIMIT
+        return settings.DAILY_CREDITS_LIMIT
+
+    async def _fetch_user(self, user_id: str) -> dict | None:
+        users = self.mongo_handler.db[settings.USERS_COLLECTION]
+        return await users.find_one({"_id": user_id})
+
     async def _get_active_subscription_daily_limit(self, user_id: str) -> int | None:
         """Return subscription daily credits if active, else None."""
 
@@ -108,7 +123,7 @@ class RateLimitService:
             daily_limit = (
                 subscription_daily
                 if subscription_daily is not None
-                else settings.DAILY_CREDITS_LIMIT
+                else self._default_daily_limit_for(user)
             )
             daily_limit += daily_pass_bonus
 
@@ -205,7 +220,7 @@ class RateLimitService:
             daily_limit = (
                 subscription_daily
                 if subscription_daily is not None
-                else settings.DAILY_CREDITS_LIMIT
+                else self._default_daily_limit_for(await self._fetch_user(user_id))
             )
             daily_limit += daily_pass_bonus
             if has_promo:
@@ -270,7 +285,7 @@ class RateLimitService:
         daily_limit = (
             subscription_daily
             if subscription_daily is not None
-            else settings.DAILY_CREDITS_LIMIT
+            else self._default_daily_limit_for(await self._fetch_user(user_id))
         )
         daily_limit += daily_pass_bonus
 
