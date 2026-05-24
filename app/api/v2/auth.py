@@ -385,7 +385,7 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
         internal_user_id = generate_short_id(prefix="user-", type="uuid7")
 
         # Create user with internal user id and external_id
-        await chat_history_service.create_user(
+        created_user = await chat_history_service.create_user(
             user_id=internal_user_id,
             username=request.username,  # email or username
             first_name=request.first_name,
@@ -395,7 +395,9 @@ async def auth_createa_dt_user(request: DTUserCreateRequest):
             web_client=settings.DT_WEB_CLIENT_NAME,
         )
 
-        return DTUserCreateResponse(success=True, user_id=internal_user_id)
+        # Return the actual user_id from the created/existing user
+        # In case of race condition, this might differ from internal_user_id
+        return DTUserCreateResponse(success=True, user_id=created_user.get("user_id"))
 
     except HTTPException:
         raise

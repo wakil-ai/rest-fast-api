@@ -91,6 +91,11 @@ class ChatHistoryService:
             await self.db_manager.mongo_handler.db[
                 self.token_counting_collection
             ].create_index([("user_id", 1), ("created_at", -1)])
+
+            # Users - unique index on external_id (sparse to allow null values)
+            await self.db_manager.mongo_handler.db[self.users_collection].create_index(
+                [("external_id", 1)], unique=True, sparse=True
+            )
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
 
@@ -296,14 +301,27 @@ class ChatHistoryService:
         except Exception as e:
             # Handle race condition: another request may have inserted the user
             if "E11000" in str(e) or "duplicate key" in str(e).lower():
-                logger.info(
-                    f"User {user_id} was created by a concurrent request, returning existing user."
-                )
+                # Check if duplicate is on _id (user already exists with same internal ID)
                 existing = await self.db_manager.find_documents(
                     self.users_collection, {"_id": user_id}
                 )
                 if existing:
+                    logger.info(
+                        f"User {user_id} was created by a concurrent request, returning existing user."
+                    )
                     return existing[0]
+                
+                # Check if duplicate is on external_id (another user with same external_id)
+                if external_id:
+                    existing_by_external = await self.db_manager.find_documents(
+                        self.users_collection, {"external_id": external_id}
+                    )
+                    if existing_by_external:
+                        logger.info(
+                            f"User with external_id {external_id} already exists, returning existing user."
+                        )
+                        return existing_by_external[0]
+            
             raise ValueError(f"Failed to create user: {str(e)}")
 
     async def get_user(self, user_id: str) -> dict | None:
