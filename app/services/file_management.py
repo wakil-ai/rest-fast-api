@@ -410,6 +410,17 @@ class FileManager:
                 exc_info=True,
             )
             try:
+                await asyncio.to_thread(
+                    self.db.delete_vectors_by_filter,
+                    f'metadata["file_id"] == "{file_id}"',
+                    self.vector_db_collection,
+                )
+            except Exception as cleanup_exc:
+                logger.warning(
+                    f"Could not delete Milvus vectors for project file {file_id}: {cleanup_exc}",
+                    exc_info=True,
+                )
+            try:
                 await self.history.update_file_status(file_id, "failed")
             except Exception:
                 pass
@@ -482,8 +493,19 @@ class FileManager:
                 f"Successfully ingested {len(documents)} chunks for file_id: {file_id}"
             )
             return len(documents)
-        except Exception as e:
-            logger.error(f"Failed to ingest file into Vector DB: {str(e)}")
+        except Exception as exc:
+            logger.error(f"Failed to ingest file into Vector DB: {str(exc)}")
+            try:
+                await asyncio.to_thread(
+                    self.db.delete_vectors_by_filter,
+                    f'metadata["file_id"] == "{file_id}"',
+                    self.vector_db_collection,
+                )
+            except Exception as cleanup_exc:
+                logger.warning(
+                    f"Could not delete Milvus vectors for file {file_id}: {cleanup_exc}",
+                    exc_info=True,
+                )
             raise
 
     def _create_temp_file(self, content: bytes, original_filename: str) -> str:
