@@ -377,6 +377,7 @@ async def init_dt_subscription(
             start_ms=subscription_doc["start_ms"],
             end_ms=subscription_doc["end_ms"],
             total_credits=quote["total_credits"],
+            credits_remaining=subscription_doc["credits_remaining"],
         )
     except SubscriptionEligibilityError as e:
         logger.warning(f"[DTSubscription] Eligibility check failed: {e.code}")
