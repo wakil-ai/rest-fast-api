@@ -258,6 +258,13 @@ def get_click_service() -> "ClickService":
 
 
 @lru_cache
+def get_uzum_service() -> "UzumService":
+    from app.services import UzumService
+
+    return UzumService()
+
+
+@lru_cache
 def get_subscription_storage() -> "SubscriptionStorage":
     from app.services import SubscriptionStorage
 

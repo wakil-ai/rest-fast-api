@@ -359,6 +359,83 @@ class ClickCompleteResponse(BaseModel):
     error_note: str
 
 
+# Uzum Merchant API Models
+class UzumResponseStatus:
+    OK = "OK"
+    FAILED = "FAILED"
+    CREATED = "CREATED"
+    CONFIRMED = "CONFIRMED"
+    REVERSED = "REVERSED"
+
+
+class UzumTransactionState:
+    """Internal representation of Uzum transaction states."""
+
+    CREATED = "CREATED"
+    CONFIRMED = "CONFIRMED"
+    REVERSED = "REVERSED"
+
+
+class UzumError:
+    """Error codes per Uzum Merchant API spec (string, not int)."""
+
+    ACCESS_DENIED = "10001"
+    JSON_PARSING_ERROR = "10002"
+    INVALID_OPERATION = "10003"
+    MISSING_REQUIRED_PARAMETERS = "10005"
+    INVALID_SERVICE_ID = "10006"
+    ADDITIONAL_PAYMENT_ATTRIBUTE_NOT_FOUND = "10007"
+    PAYMENT_ALREADY_MADE = "10008"
+    PAYMENT_CANCELLED = "10009"
+    DATA_VERIFICATION_ERROR = "99999"
+
+
+class UzumServiceError(Exception):
+    """Raised inside UzumService to signal a 400 response with a specific error code."""
+
+    def __init__(self, error_code: str, *, http_status: int = 400):
+        self.error_code = error_code
+        self.http_status = http_status
+        super().__init__(error_code)
+
+
+class UzumCheckRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    params: dict
+
+
+class UzumCreateRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    transId: str
+    params: dict
+    amount: int  # in tiyin
+
+
+class UzumConfirmRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    transId: str
+    paymentSource: str | None = None
+    tariff: str | None = None
+    processingReferenceNumber: str | None = None
+    phone: str | None = None
+    cardType: int | None = None
+
+
+class UzumReverseRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    transId: str
+
+
+class UzumStatusRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    transId: str
+
+
 # DT Team Subscription Models
 class DTSubscriptionApplyResponse(BaseModel):
     """Response for DT team subscription application"""

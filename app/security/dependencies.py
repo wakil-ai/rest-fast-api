@@ -214,3 +214,30 @@ def verify_payme_authorization(authorization: str | None) -> bool:
 
     except Exception:
         return False
+
+
+def verify_uzum_authorization(authorization: str | None) -> bool:
+    """Verify Uzum Merchant API Basic Auth header.
+
+    Uzum sends `Authorization: Basic base64(username:password)` on every webhook.
+    Username/password are the values WE configure on our side and share with Uzum.
+    """
+    if not authorization:
+        return False
+
+    if not settings.UZUM_USERNAME or not settings.UZUM_PASSWORD:
+        return False
+
+    try:
+        auth_type, credentials = authorization.split(" ", 1)
+        if auth_type.lower() != "basic":
+            return False
+
+        decoded = base64.b64decode(credentials).decode("utf-8")
+        username, password = decoded.split(":", 1)
+
+        username_ok = secrets.compare_digest(username, settings.UZUM_USERNAME)
+        password_ok = secrets.compare_digest(password, settings.UZUM_PASSWORD)
+        return username_ok and password_ok
+    except Exception:
+        return False
