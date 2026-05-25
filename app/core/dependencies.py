@@ -223,6 +223,13 @@ def get_project_service() -> "ProjectService":
 
 
 @lru_cache
+def get_project_member_service() -> "ProjectMemberService":
+    from app.services.project_member_service import ProjectMemberService
+
+    return ProjectMemberService()
+
+
+@lru_cache
 def get_rate_limit_service() -> "RateLimitService":
     from app.services import RateLimitService
 

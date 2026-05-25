@@ -122,10 +122,10 @@ Base path: `/api/v2/history/projects` — project-scoped documents, sessions, an
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/v2/history/projects/user/{user_id}` | List user projects (`status`, `limit`, `skip` query params) |
+| GET | `/api/v2/history/projects/user/{user_id}` | List owned and shared projects (`membership_role`, `status`, `limit`, `skip`) |
 | POST | `/api/v2/history/projects` | Create project |
-| GET | `/api/v2/history/projects/{project_id}` | Get project (`owner_id` query param) |
-| PATCH | `/api/v2/history/projects/{project_id}` | Update project |
+| GET | `/api/v2/history/projects/{project_id}` | Get project (`owner_id` query = caller user id) |
+| PATCH | `/api/v2/history/projects/{project_id}` | Update project (**owner only**) |
 | GET | `/api/v2/history/projects/{project_id}/instructions` | Get project instructions (`user_id` query) |
 | POST | `/api/v2/history/projects/{project_id}/instructions` | Create project instructions |
 | PUT | `/api/v2/history/projects/{project_id}/instructions` | Update project instructions |
@@ -134,7 +134,25 @@ Base path: `/api/v2/history/projects` — project-scoped documents, sessions, an
 | POST | `/api/v2/history/projects/{project_id}/files` | Upload file to project (multipart) |
 | GET | `/api/v2/history/projects/{project_id}/files` | List project files (`user_id` query) |
 | DELETE | `/api/v2/history/projects/{project_id}/files/{file_id}` | Delete project file (`user_id` query) |
-| POST | `/api/v2/history/projects/{project_id}/search` | Hybrid search project file vectors |
+| POST | `/api/v2/history/projects/{project_id}/search` | Hybrid search all project file vectors (`user_id` must have access) |
+
+### Project collaboration (invites & members)
+
+**Frontend integration guide:** [frontend-project-collaboration.md](frontend-project-collaboration.md) (flows, types, `invite_id` vs `id`, URL building, checklist).
+
+Base path: `/api/v2/history/projects` — owner manages invites/members; members get full project access except PATCH project and member admin.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/v2/history/projects/invites/{invite_id}` | Preview invite (`user_id` query) |
+| POST | `/api/v2/history/projects/invites/{invite_id}/accept` | Accept invite (`user_id` in body) |
+| GET | `/api/v2/history/projects/{project_id}/members` | List owner and members (`user_id` query) |
+| DELETE | `/api/v2/history/projects/{project_id}/members/{member_user_id}` | Remove member (**owner only**, `user_id` query) |
+| POST | `/api/v2/history/projects/{project_id}/invites?user_id=` | Create invite link (**owner only** — pass logged-in owner’s id as query param, not `project.owner_id` from a member’s UI) |
+| GET | `/api/v2/history/projects/{project_id}/invites` | List pending invites (**owner only**, `user_id` query) |
+| DELETE | `/api/v2/history/projects/{project_id}/invites/{invite_id}` | Revoke invite (**owner only**, `user_id` query) |
+
+Invite links use token id `pinv-...`; frontend opens `projects/join/{invite_id}` and calls the accept endpoint. Each invite is single-use. Collaborators use their own credits for chat.
 
 Chat: pass optional `project_id` on `POST /api/v2/chat/ask` or `POST /api/v3/chat/ask` to scope retrieval and agent context to that project.
 

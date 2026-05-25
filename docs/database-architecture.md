@@ -25,6 +25,8 @@ The table below lists the **default** collection names used by the API.
 | Telegram chats | `telegram_chats` | `TELEGRAM_CHATS_COLLECTION` |
 | Referral sources | `referral_sources` | `REFERRAL_SOURCES_COLLECTION` |
 | Projects | `projects` | `PROJECTS_COLLECTION` |
+| Project members | `project_members` | `PROJECT_MEMBERS_COLLECTION` |
+| Project invites | `project_invites` | `PROJECT_INVITES_COLLECTION` |
 
 ---
 
@@ -350,14 +352,54 @@ Reserved for token usage snapshots. Current implementation stores token usage in
 `messages.metadata.token_usage`.
 
 ### 15. **projects** Collection (default: `projects`)
-Project workspaces used by the document pipeline.
+Legal project workspaces (documents, sessions, RAG). Single **owner** per project (`owner_id`).
 
 **Schema:**
 ```javascript
 {
-  "_id": String,
+  "_id": String,              // proj-...
+  "owner_id": String,
+  "title": String,
+  "files": [String],
+  "status": String,           // active | archived | closed
+  "stats": { "docs": Number, "chats": Number, "reminders": Number },
+  "settings": Object,
+  "created_at": DateTime,
+  "updated_at": DateTime
+}
+```
+
+### 16. **project_members** Collection (default: `project_members`)
+Non-owner collaborators. Owner is not stored here (see `projects.owner_id`).
+
+**Schema:**
+```javascript
+{
+  "_id": String,              // pmem-...
+  "project_id": String,
   "user_id": String,
-  "name": String,
+  "role": "member",
+  "joined_at": DateTime,
+  "invited_by": String,
+  "invite_id": String         // optional pinv-... audit
+}
+```
+
+**Indexes:** unique `(project_id, user_id)`; `(user_id, joined_at)`.
+
+### 17. **project_invites** Collection (default: `project_invites`)
+Single-use invitation links (`pinv-...`). Default TTL: `PROJECT_INVITE_TTL_HOURS` (168h).
+
+**Schema:**
+```javascript
+{
+  "_id": String,              // pinv-... (token in join URL)
+  "project_id": String,
+  "created_by": String,
+  "status": String,           // pending | accepted | revoked | expired
+  "expires_at": DateTime,
+  "accepted_by": String,
+  "accepted_at": DateTime,
   "created_at": DateTime
 }
 ```
@@ -594,6 +636,9 @@ SESSIONS_COLLECTION=sessions
 MESSAGES_COLLECTION=messages
 FILES_COLLECTION=files
 PROJECTS_COLLECTION=projects
+PROJECT_MEMBERS_COLLECTION=project_members
+PROJECT_INVITES_COLLECTION=project_invites
+PROJECT_INVITE_TTL_HOURS=168
 PROMO_CODE_COLLECTION=promos
 USER_PROMO_CODE_COLLECTION=user-promos
 RATE_LIMIT_COLLECTION=creditusage

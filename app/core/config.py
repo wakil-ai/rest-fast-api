@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     MESSAGES_COLLECTION: str = "messages"
     FILES_COLLECTION: str = "files"
     PROJECTS_COLLECTION: str = "projects"
+    PROJECT_MEMBERS_COLLECTION: str = "project_members"
+    PROJECT_INVITES_COLLECTION: str = "project_invites"
+    PROJECT_INVITE_TTL_HOURS: int = 168
     PROMO_CODE_COLLECTION: str = "promos"
     USER_PROMO_CODE_COLLECTION: str = "user-promos"
     TRANSACTION_COLLECTION: str = "transactions"

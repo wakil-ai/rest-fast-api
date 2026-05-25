@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -54,6 +54,10 @@ class ProjectResponse(BaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+    membership_role: Literal["owner", "member"] | None = Field(
+        default=None,
+        description="Caller's role on this project when listing or fetching",
+    )
 
     model_config = {"populate_by_name": True}
 
