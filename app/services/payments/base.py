@@ -23,48 +23,55 @@ class BasePaymentService:
         self.rate_limit_service = get_rate_limit_service()
         self._invoice_indexes_ready = False
 
+        # Paid tiers grant a pool of `total_credits` valid until `end_ms`.
+        # `daily_credits` only applies to the legacy `daily` daily-pass tier
+        # (still per-day capped); standard/pro have no per-day cap.
         self._subscription_catalog = {
             "daily": {
-                "daily_credits": 300,
                 "daily": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_DAILY_PRICE_SUM,
                     "days": 1,
+                    "daily_credits": 300,
+                    "total_credits": 300,
                 },
             },
             "standard": {
-                "daily_credits": 200,
                 "monthly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM,
                     "days": 30,
+                    "total_credits": 6000,
                 },
                 "yearly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM,
                     "days": 360,
+                    "total_credits": 72000,
                 },
             },
             "pro": {
-                "daily_credits": 400,
                 "monthly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM,
                     "days": 30,
+                    "total_credits": 12000,
                 },
                 "yearly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM,
                     "days": 360,
+                    "total_credits": 144000,
                 },
             },
         }
 
         if settings.DEBUG:
             self._subscription_catalog["test"] = {
-                "daily_credits": 70,
                 "monthly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_TEST_MONTHLY_PRICE_SUM,
                     "days": 30,
+                    "total_credits": 2100,
                 },
                 "yearly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM,
                     "days": 360,
+                    "total_credits": 25200,
                 },
             }
 
@@ -114,22 +121,23 @@ class BasePaymentService:
         if not period_cfg:
             raise ValueError("Invalid subscription period")
 
-        daily = int(tier_cfg["daily_credits"])
         days = int(period_cfg["days"])
         price_sum = int(period_cfg["price_sum"])
+        total_credits = int(period_cfg["total_credits"])
+        # Daily cap only applies to the legacy daily-pass tier; 0 means "no per-day cap".
+        daily_credits = int(period_cfg.get("daily_credits") or 0)
         return {
             "tier": tier,
             "period": period,
-            "daily_credits": daily,
+            "daily_credits": daily_credits,
             "days": days,
-            "total_credits": daily * days,
+            "total_credits": total_credits,
             "amount_sum": price_sum,
         }
 
     def get_subscription_catalog(self) -> list[dict]:
         plans: list[dict] = []
         for tier, cfg in self._subscription_catalog.items():
-            daily = int(cfg.get("daily_credits") or 0)
             for period in ("daily", "monthly", "yearly"):
                 if period not in cfg:
                     continue
@@ -139,7 +147,7 @@ class BasePaymentService:
                         "tier": quote["tier"],
                         "period": quote["period"],
                         "amount_sum": quote["amount_sum"],
-                        "daily_credits": daily,
+                        "daily_credits": quote["daily_credits"],
                         "total_credits": quote["total_credits"],
                         "days": quote["days"],
                     }
@@ -186,8 +194,16 @@ class BasePaymentService:
             }
 
         end_ms = int(sub.get("end_ms") or 0)
-        active = bool(end_ms > now_ms and (sub.get("daily_credits") or 0) > 0)
         sub_daily = int(sub.get("daily_credits") or 0)
+        total_credits = int(sub.get("total_credits") or 0)
+        credits_remaining = int(sub.get("credits_remaining") or 0)
+        is_pool_tier = sub.get("tier") in {"standard", "pro", "test"}
+
+        if is_pool_tier:
+            active = bool(end_ms > now_ms and credits_remaining > 0)
+        else:
+            active = bool(end_ms > now_ms and sub_daily > 0)
+
         combined_daily = (sub_daily if active else 0) + (
             (daily_pass_daily or 0) if daily_pass_active else 0
         )
@@ -197,7 +213,9 @@ class BasePaymentService:
             "active": active,
             "tier": sub.get("tier"),
             "period": sub.get("period"),
-            "daily_credits": sub.get("daily_credits"),
+            "daily_credits": sub_daily,
+            "total_credits": total_credits,
+            "credits_remaining": credits_remaining,
             "start_ms": sub.get("start_ms"),
             "end_ms": sub.get("end_ms"),
             "daily_pass_active": daily_pass_active,

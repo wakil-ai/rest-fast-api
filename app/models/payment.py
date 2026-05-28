@@ -283,7 +283,9 @@ class UserSubscriptionResponse(BaseModel):
     active: bool
     tier: str | None = None
     period: str | None = None
-    daily_credits: int | None = None
+    daily_credits: int | None = None  # Legacy field; 0 for pool-based tiers.
+    total_credits: int | None = None  # Purchased pool for paid tiers.
+    credits_remaining: int | None = None  # Remaining pool for paid tiers.
     start_ms: int | None = None
     end_ms: int | None = None
 
@@ -444,10 +446,11 @@ class DTSubscriptionApplyResponse(BaseModel):
     user_id: str
     tier: str
     period: str
-    daily_credits: int
+    daily_credits: int  # 0 for pool-based tiers (standard/pro).
     start_ms: int
     end_ms: int
     total_credits: int
+    credits_remaining: int
 
 
 class DTInitRequest(BaseModel):
