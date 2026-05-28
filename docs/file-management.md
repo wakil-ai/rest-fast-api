@@ -2,6 +2,8 @@
 
 ## 1. Overview
 This document outlines the architecture for the Document Processing Pipeline. **All operations are scoped within a Project.**
+
+For **sharing projects with other users** (invite links, members, UI permissions), see [frontend-project-collaboration.md](frontend-project-collaboration.md).
 The workflow follows this lifecycle:
 1.  **Project Creation**: User creates a workspace/project to hold related documents.
 2.  **File Ingestion**: Secure upload of files to a specific Project.

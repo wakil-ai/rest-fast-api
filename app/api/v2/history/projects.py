@@ -30,7 +30,7 @@ project_service = get_project_service()
 file_manager = get_file_manager()
 
 
-def _project_to_response(doc: dict) -> ProjectResponse:
+def _project_to_response(doc: dict, membership_role: str | None = None) -> ProjectResponse:
     d = serialize_mongo_id(doc)
     if "stats" not in d or not isinstance(d.get("stats"), dict):
         d["stats"] = {"docs": 0, "chats": 0, "reminders": 0}
@@ -40,6 +40,10 @@ def _project_to_response(doc: dict) -> ProjectResponse:
         d["files"] = []
     if "metadata" not in d:
         d["metadata"] = {}
+    if membership_role is None:
+        membership_role = doc.get("membership_role")
+    if membership_role is not None:
+        d["membership_role"] = membership_role
     return ProjectResponse.model_validate(d)
 
 
@@ -68,7 +72,8 @@ async def create_project(request: ProjectCreateRequest):
 @handle_service_error
 async def get_project(project_id: str, owner_id: str):
     doc = await project_service.get_project(project_id, owner_id)
-    return _project_to_response(doc)
+    role = await project_service.get_membership_role(project_id, owner_id)
+    return _project_to_response(doc, membership_role=role)
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
@@ -199,10 +204,7 @@ async def search_project_knowledge(project_id: str, body: ProjectFileSearchQuery
     embedding_manager = get_embedding_manager()
     db = get_db_manager()
     embedding = await embedding_manager.aembed_query(body.q)
-    expr = (
-        f'metadata["project_id"] == "{project_id}" '
-        f'and metadata["user_id"] == "{body.user_id}"'
-    )
+    expr = f'metadata["project_id"] == "{project_id}"'
     docs = await asyncio.to_thread(
         db.search_hybrid,
         embedding,

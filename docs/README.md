@@ -23,6 +23,7 @@ Use this index to navigate the core documentation for the WakilAI API.
 
 ## 🎯 Feature Guides
 
+- **Project collaboration (frontend)**: [frontend-project-collaboration.md](frontend-project-collaboration.md) — invite links, members, permissions, field names, URL building
 - **Promo codes**: [promo-codes.md](promo-codes.md)
 - **Rate limiting & credits**: [rate-limiting.md](rate-limiting.md)
 - **Referral tracking**: [referral-tracking.md](referral-tracking.md)

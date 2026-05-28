@@ -261,8 +261,6 @@ class FileManager:
             return 404, "File not found"
         if file_record.get("scope") != "project":
             return 400, "File is not scoped to a project"
-        if file_record.get("user_id") != user_id:
-            return 403, "Access denied"
 
         # No need to delete GCS file
         # gcs_path = file_record.get("file_metadata", {}).get("gcs_path")
