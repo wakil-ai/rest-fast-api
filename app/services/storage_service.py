@@ -70,30 +70,48 @@ class StorageService:
             blob.upload_from_string(data, content_type=content_type)
 
             logger.info(f"[StorageService] Uploaded file to: {destination_path}")
-
-            # Return signed URL (recommended for security) or public URL
-            if return_signed_url:
-                # Generate a temporary signed URL for private access
-                signed_url = blob.generate_signed_url(
-                    version="v4",
-                    expiration=timedelta(minutes=expiration_minutes),
-                    method="GET",
-                )
-                logger.info(
-                    f"[StorageService] Generated signed URL (expires in {expiration_minutes} minutes)"
-                )
-                return signed_url
-            else:
-                # Return public URL (use only for truly public files like logos)
-                # Note: Files are NOT made public automatically. You need to set bucket/object permissions.
-                public_url = blob.public_url
-                logger.warning(
-                    "[StorageService] Returning public URL. Ensure proper permissions are set."
-                )
-                return public_url
+            return self._build_access_url(blob, return_signed_url, expiration_minutes)
         except Exception as e:
             logger.error(f"[StorageService] Failed to upload file: {str(e)}")
             raise
+
+    def upload_file_from_path(
+        self,
+        file_path: str,
+        destination_path: str,
+        content_type: str = "application/octet-stream",
+        return_signed_url: bool = True,
+        expiration_minutes: int = 60,
+    ) -> str:
+        """Upload a local file to Google Cloud Storage without loading it into memory."""
+        try:
+            blob = self.bucket.blob(destination_path)
+            blob.upload_from_filename(file_path, content_type=content_type)
+
+            logger.info(f"[StorageService] Uploaded file to: {destination_path}")
+            return self._build_access_url(blob, return_signed_url, expiration_minutes)
+        except Exception as e:
+            logger.error(f"[StorageService] Failed to upload file: {str(e)}")
+            raise
+
+    @staticmethod
+    def _build_access_url(blob, return_signed_url: bool, expiration_minutes: int) -> str:
+        """Return either a signed URL or public URL for an uploaded blob."""
+        if return_signed_url:
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=timedelta(minutes=expiration_minutes),
+                method="GET",
+            )
+            logger.info(
+                f"[StorageService] Generated signed URL (expires in {expiration_minutes} minutes)"
+            )
+            return signed_url
+
+        logger.warning(
+            "[StorageService] Returning public URL. Ensure proper permissions are set."
+        )
+        return blob.public_url
 
     def get_signed_url(
         self,
