@@ -158,6 +158,12 @@ class Settings(BaseSettings):
     # Fallback model for chat completions
     GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI fallback model for chat completions
 
+    # Gemini explicit context caching
+    GEMINI_EXPLICIT_CACHE_ENABLED: bool = False
+    GEMINI_EXPLICIT_CACHE_TTL: str = "3600s"
+    GEMINI_EXPLICIT_CACHE_MIN_TOKENS: int = 4096
+    GEMINI_EXPLICIT_CACHE_MAX_LOCAL_ENTRIES: int = 256
+
     # Anthropic Claude
     ANTHROPIC_API_KEY: str | None = None
 
