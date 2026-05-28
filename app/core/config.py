@@ -284,6 +284,12 @@ class Settings(BaseSettings):
     CLICK_INVOICES_COLLECTION: str = "click_invoices"
     CLICK_TRANSACTIONS_COLLECTION: str = "click_transactions"
 
+    # Uzum Merchant API Configuration (webhooks: /check /create /confirm /reverse /status)
+    UZUM_USERNAME: str | None = None  # Basic Auth username Uzum will send
+    UZUM_PASSWORD: str | None = None  # Basic Auth password Uzum will send
+    UZUM_SERVICE_ID: int | None = None  # Single service id assigned to wakil.ai in Uzum catalog
+    UZUM_TRANSACTIONS_COLLECTION: str = "uzum_transactions"
+
     # Payme Subscriptions
     # Daily: pay-per-day plan (300 credits/day)
     PAYME_SUBSCRIPTION_DAILY_PRICE_SUM: int = 15_000
