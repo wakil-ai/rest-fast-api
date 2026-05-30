@@ -112,6 +112,7 @@ class Settings(BaseSettings):
     TOKEN_COUNTING_COLLECTION: str = "token_counts"
     TELEGRAM_CHATS_COLLECTION: str = "telegram_chats"
     REFERRAL_SOURCES_COLLECTION: str = "referral_sources"
+    FINGERPRINTS_COLLECTION: str = "fingerprints"
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
