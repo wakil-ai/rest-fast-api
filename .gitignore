@@ -17,3 +17,5 @@ docker/
 
 .vscode/
 *.txt
+
+pentagi/
