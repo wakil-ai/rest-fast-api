@@ -3,6 +3,10 @@ import time
 from datetime import datetime, timezone
 
 from app.core.config import settings
+from app.core.subscription_tiers import (
+    daily_pass_rank,
+    is_daily_pass_quote,
+)
 from app.core.dependencies import (
     get_mongo_handler,
     get_rate_limit_service,
@@ -24,18 +28,24 @@ class BasePaymentService:
         self._invoice_indexes_ready = False
 
         # Paid tiers grant a pool of `total_credits` valid until `end_ms`.
-        # `daily_credits` only applies to the legacy `daily` daily-pass tier
-        # (still per-day capped); standard/pro have no per-day cap.
+        # Daily passes (basic/standard/premium + period daily) add per-day credits
+        # on top of the free quota; monthly/yearly pool tiers have no per-day cap.
         self._subscription_catalog = {
-            "daily": {
+            "basic": {
                 "daily": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_DAILY_PRICE_SUM,
+                    "price_sum": settings.PAYME_SUBSCRIPTION_BASIC_DAILY_PRICE_SUM,
                     "days": 1,
-                    "daily_credits": 300,
-                    "total_credits": 300,
+                    "daily_credits": 200,
+                    "total_credits": 200,
                 },
             },
             "standard": {
+                "daily": {
+                    "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_DAILY_PRICE_SUM,
+                    "days": 1,
+                    "daily_credits": 500,
+                    "total_credits": 500,
+                },
                 "monthly": {
                     "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM,
                     "days": 30,
@@ -45,6 +55,14 @@ class BasePaymentService:
                     "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM,
                     "days": 360,
                     "total_credits": 72000,
+                },
+            },
+            "premium": {
+                "daily": {
+                    "price_sum": settings.PAYME_SUBSCRIPTION_PREMIUM_DAILY_PRICE_SUM,
+                    "days": 1,
+                    "daily_credits": 800,
+                    "total_credits": 800,
                 },
             },
             "pro": {
@@ -167,10 +185,12 @@ class BasePaymentService:
         daily_pass_daily = None
         daily_pass_start_ms = None
         daily_pass_end_ms = None
+        daily_pass_tier = None
         if isinstance(daily_pass, dict):
             daily_pass_daily = int(daily_pass.get("daily_credits") or 0)
             daily_pass_start_ms = daily_pass.get("start_ms")
             daily_pass_end_ms = daily_pass.get("end_ms")
+            daily_pass_tier = daily_pass.get("tier")
             daily_pass_active = bool(
                 int(daily_pass_end_ms or 0) > now_ms and daily_pass_daily > 0
             )
@@ -181,6 +201,7 @@ class BasePaymentService:
                 "user_id": user_id,
                 "active": False,
                 "daily_pass_active": daily_pass_active,
+                "daily_pass_tier": daily_pass_tier if daily_pass_active else None,
                 "daily_pass_daily_credits": daily_pass_daily,
                 "daily_pass_start_ms": daily_pass_start_ms,
                 "daily_pass_end_ms": daily_pass_end_ms,
@@ -219,6 +240,7 @@ class BasePaymentService:
             "start_ms": sub.get("start_ms"),
             "end_ms": sub.get("end_ms"),
             "daily_pass_active": daily_pass_active,
+            "daily_pass_tier": daily_pass_tier if daily_pass_active else None,
             "daily_pass_daily_credits": daily_pass_daily,
             "daily_pass_start_ms": daily_pass_start_ms,
             "daily_pass_end_ms": daily_pass_end_ms,
@@ -234,16 +256,12 @@ class BasePaymentService:
     def _resolve_purpose(self, quote: dict | None) -> str:
         if not quote:
             return "payment"
-        if quote.get("tier") == "daily" and quote.get("period") == "daily":
+        if is_daily_pass_quote(quote):
             return "daily_pass"
         return "subscription"
 
     def _is_daily_pass_quote(self, quote: dict | None) -> bool:
-        return bool(
-            isinstance(quote, dict)
-            and quote.get("tier") == "daily"
-            and quote.get("period") == "daily"
-        )
+        return is_daily_pass_quote(quote)
 
     async def _get_active_daily_pass(self, user_id: str, now_ms: int) -> dict | None:
         daily_pass = await self.subscription_storage.get_daily_subscription(user_id)
@@ -280,10 +298,24 @@ class BasePaymentService:
             if active_daily_pass is None:
                 return
 
+            new_rank = daily_pass_rank(str(quote.get("tier")))
+            old_rank = daily_pass_rank(str(active_daily_pass.get("tier")))
+            active_end_ms = int(active_daily_pass.get("end_ms") or 0)
+
+            if new_rank > old_rank:
+                return
+
+            if new_rank == old_rank:
+                raise SubscriptionEligibilityError(
+                    code="ACTIVE_DAILY_PASS_SAME_TIER",
+                    message="An active daily pass for this tier already exists for this user.",
+                    active_daily_pass_end_ms=active_end_ms,
+                )
+
             raise SubscriptionEligibilityError(
-                code="ACTIVE_DAILY_PASS_EXISTS",
-                message="An active daily pass already exists for this user.",
-                active_daily_pass_end_ms=int(active_daily_pass.get("end_ms") or 0),
+                code="DAILY_PASS_DOWNGRADE_NOT_ALLOWED",
+                message="Downgrading an active daily pass is not allowed.",
+                active_daily_pass_end_ms=active_end_ms,
             )
 
         active_subscription = await self._get_active_subscription(
@@ -344,12 +376,26 @@ class BasePaymentService:
                 int(active_daily_pass.get("end_ms") or 0) if active_daily_pass else 0
             )
             if active_end_ms > now_ms:
-                resolution = "granted_after_payment_conflict"
-                resolution_update = {
-                    "active_daily_pass_end_ms": active_end_ms,
-                    "apply_strategy": "extend_existing_daily_pass",
-                }
-                logger.warning(f"[{self.provider}] Paid daily pass reapplied for user {user_id} after eligibility conflict; extending active pass until {active_end_ms}")
+                new_rank = daily_pass_rank(str(quote.get("tier")))
+                old_rank = daily_pass_rank(
+                    str(active_daily_pass.get("tier")) if active_daily_pass else None
+                )
+                if new_rank > old_rank:
+                    resolution = "granted_daily_pass_upgrade"
+                    resolution_update = {
+                        "apply_strategy": "upgrade_daily_pass",
+                        "previous_daily_pass_tier": active_daily_pass.get("tier"),
+                    }
+                else:
+                    resolution = "granted_after_payment_conflict"
+                    resolution_update = {
+                        "active_daily_pass_end_ms": active_end_ms,
+                        "apply_strategy": "replace_after_eligibility_conflict",
+                    }
+                    logger.warning(
+                        f"[{self.provider}] Daily pass payment for user {user_id} "
+                        f"conflicts with active pass until {active_end_ms}"
+                    )
 
         await self.subscription_storage.upsert_subscription(
             user_id=user_id,

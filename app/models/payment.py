@@ -6,6 +6,10 @@ from bson import ObjectId
 from pydantic import BaseModel, Field
 
 
+SubscriptionTier = Literal["basic", "standard", "premium", "pro", "test"]
+SubscriptionPeriod = Literal["daily", "monthly", "yearly"]
+
+
 # Methods
 class PaymeMethod:
     CheckPerformTransaction = "CheckPerformTransaction"
@@ -251,10 +255,10 @@ class PaymeInitRequest(BaseModel):
     user_id: str
     callback_url: str
     order_id: str | None = None  # If not provided, server generates a new one
-    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = Field(
+    subscription_tier: SubscriptionTier | None = Field(
         default=None
     )
-    subscription_period: Literal["daily", "monthly", "yearly"] | None = Field(
+    subscription_period: SubscriptionPeriod | None = Field(
         default=None
     )
     order_id: str | None = None  # Optional order/invoice id to include in `ac.order_id`
@@ -291,6 +295,7 @@ class UserSubscriptionResponse(BaseModel):
 
     # Optional daily pass (pay-per-day) info; does not override subscription.
     daily_pass_active: bool | None = None
+    daily_pass_tier: str | None = None
     daily_pass_daily_credits: int | None = None
     daily_pass_start_ms: int | None = None
     daily_pass_end_ms: int | None = None
@@ -323,8 +328,8 @@ class ClickInitRequest(BaseModel):
     user_id: str
     callback_url: str
     order_id: str | None = None
-    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = None
-    subscription_period: Literal["daily", "monthly", "yearly"] | None = None
+    subscription_tier: SubscriptionTier | None = None
+    subscription_period: SubscriptionPeriod | None = None
 
 
 class ClickInitResponse(BaseModel):
@@ -457,5 +462,5 @@ class DTInitRequest(BaseModel):
     amount: int | None = None
     user_id: str
     order_id: str | None = None
-    subscription_tier: Literal["daily", "standard", "pro", "test"] | None = None
-    subscription_period: Literal["daily", "monthly", "yearly"] | None = None
+    subscription_tier: SubscriptionTier | None = None
+    subscription_period: SubscriptionPeriod | None = None
