@@ -54,7 +54,7 @@ The WakilAI system consists of multiple interconnected components that work toge
 
 ### 1. MongoDB Collections
 
-MongoDB serves as the primary relational data store for the system.
+MongoDB serves as the primary document-oriented data store for the system.
 
 | Collection | Purpose | Key Fields | Indexed Fields |
 |-----------|---------|-----------|-----------------|
