@@ -17,6 +17,7 @@ from langchain_core.messages import (
 )
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
@@ -68,19 +69,33 @@ class LangChain(LLM):
         self.checkpointer = checkpointer
         self.model = self.resolve_model_name(model_name)
 
+    @staticmethod
+    def _is_gemini_model(model_name: str | None) -> bool:
+        name = (model_name or "").strip().lower()
+        return name.startswith("gemini") or name.startswith("models/gemini")
+
     @classmethod
     def resolve_model_name(cls, model_name: str | None = None) -> str:
+        candidate: str | None = None
         if isinstance(model_name, str) and model_name.strip():
-            return resolve_gemini_model_name(model_name)
-        raw = getattr(settings, "GEMINI_LANGCHAIN_CHAT_MODEL", "")
-        if isinstance(raw, str) and raw.strip():
-            return resolve_gemini_model_name(raw)
-        default = settings.DEFAULT_CHAT_MODEL or ""
-        if isinstance(default, str) and default.strip().startswith("gemini"):
-            return resolve_gemini_model_name(default)
-        return resolve_gemini_model_name("gemini-2.5-flash")
+            candidate = model_name.strip()
+        else:
+            raw = getattr(settings, "GEMINI_LANGCHAIN_CHAT_MODEL", "")
+            if isinstance(raw, str) and raw.strip():
+                candidate = raw.strip()
+            else:
+                default = settings.DEFAULT_CHAT_MODEL or ""
+                if isinstance(default, str) and default.strip():
+                    candidate = default.strip()
+        if not candidate:
+            candidate = "gpt-5.2"
+        if cls._is_gemini_model(candidate):
+            return resolve_gemini_model_name(candidate)
+        return candidate
 
-    def build_chat_model(self) -> ChatGoogleGenerativeAI:
+    def build_chat_model(self) -> BaseChatModel:
+        if not self._is_gemini_model(self.model):
+            return self._build_openai_chat_model()
         if not settings.GEMINI_API_KEY:
             raise RuntimeError(
                 "GEMINI_API_KEY is required for LangChain / LangGraph generation."
@@ -103,6 +118,25 @@ class LangChain(LLM):
             include_thoughts=True,
             streaming=True,
         )
+
+    def _build_openai_chat_model(self) -> ChatOpenAI:
+        if not settings.OPENAI_API_KEY:
+            raise RuntimeError(
+                "OPENAI_API_KEY is required for OpenAI LangGraph generation."
+            )
+        model = (self.model or settings.GPT_COMPLETION_MODEL or "gpt-5.2").strip()
+        is_reasoning = model.startswith("o1") or model.startswith("gpt-5")
+        token_param = "max_completion_tokens" if is_reasoning else "max_tokens"
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "api_key": settings.OPENAI_API_KEY,
+            "streaming": True,
+            token_param: settings.OUTPUT_MAX_TOKENS,
+        }
+        # gpt-5 / o1 reasoning models only accept the default temperature.
+        if not is_reasoning:
+            kwargs["temperature"] = settings.TEMPERATURE
+        return ChatOpenAI(**kwargs)
 
     def compile_chat(self, *, system_prompt: str) -> Any:
         if self.checkpointer is None:

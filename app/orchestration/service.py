@@ -72,7 +72,7 @@ class OrchestrationService:
         return self._lite_llm
 
     @property
-    def generation_llm(self) -> ChatGoogleGenerativeAI:
+    def generation_llm(self) -> BaseChatModel:
         if self._generation_llm is None:
             self._generation_llm = self._build_llm(
                 settings.DEFAULT_CHAT_MODEL,
@@ -199,8 +199,10 @@ class OrchestrationService:
         return name.startswith("gemini") or name.startswith("models/gemini")
 
     def _build_llm(self, model_name: str, purpose: Purpose) -> BaseChatModel:
-        if purpose == Purpose.LITE and not self._is_gemini_model_name(model_name):
-            return self._build_openai_lite_llm(model_name)
+        if not self._is_gemini_model_name(model_name):
+            if purpose == Purpose.LITE:
+                return self._build_openai_lite_llm(model_name)
+            return self._build_openai_generation_llm(model_name)
 
         if not settings.GEMINI_API_KEY:
             raise RuntimeError(
@@ -250,6 +252,25 @@ class OrchestrationService:
             temperature=0.0,
             **{token_param: 512},
         )
+
+    def _build_openai_generation_llm(self, model_name: str) -> ChatOpenAI:
+        if not settings.OPENAI_API_KEY:
+            raise RuntimeError(
+                "OPENAI_API_KEY is required when DEFAULT_CHAT_MODEL is an OpenAI model."
+            )
+        model = (model_name or settings.GPT_COMPLETION_MODEL or "gpt-5.2").strip()
+        logger.info(f"OpenAI generation model: {model}")
+        is_reasoning = model.startswith("o1") or model.startswith("gpt-5")
+        token_param = "max_completion_tokens" if is_reasoning else "max_tokens"
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "api_key": settings.OPENAI_API_KEY,
+            "streaming": True,
+            token_param: settings.OUTPUT_MAX_TOKENS,
+        }
+        if not is_reasoning:
+            kwargs["temperature"] = settings.TEMPERATURE
+        return ChatOpenAI(**kwargs)
 
     def _build_checkpointer(self) -> Any:
         """Use the same AsyncRedisSaver as ``init_agent_checkpointer`` (app lifespan).
