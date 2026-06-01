@@ -51,6 +51,7 @@ Conceptual understanding of how things work:
 
 ## Data & Storage
 
+- [Data flow diagram](data-flow-diagram.md) — system overview, where data is stored, major flows
 - [Database architecture & collections](database-architecture.md) — MongoDB schemas
 - [File management & project workspaces](file-management.md) — upload pipeline, Milvus `project_files`
 
