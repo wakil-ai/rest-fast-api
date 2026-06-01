@@ -29,6 +29,7 @@ if TYPE_CHECKING:
         RateLimitService,
         RedisService,
         ReferralService,
+        FingerprintService,
         StorageService,
         SubscriptionStorage,
         TransactionService,
@@ -241,6 +242,13 @@ def get_referral_service() -> "ReferralService":
     from app.services import ReferralService
 
     return ReferralService()
+
+
+@lru_cache
+def get_fingerprint_service() -> "FingerprintService":
+    from app.services import FingerprintService
+
+    return FingerprintService()
 
 
 @lru_cache

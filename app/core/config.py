@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     TOKEN_COUNTING_COLLECTION: str = "token_counts"
     TELEGRAM_CHATS_COLLECTION: str = "telegram_chats"
     REFERRAL_SOURCES_COLLECTION: str = "referral_sources"
+    FINGERPRINTS_COLLECTION: str = "fingerprints"
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
@@ -152,7 +153,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
 
     # Default models
-    DEFAULT_CHAT_MODEL: str = "gemini-3.1-pro-preview"  # Default model for chat completions
+    DEFAULT_CHAT_MODEL: str = "gpt-5.2"  # Default model for chat completions (gemini-* routes to Gemini)
     DEFAULT_LITE_MODEL: str = "gpt-4.1-mini"  # Routing, intent, Milvus filters, query rewrite
 
     # Fallback model for chat completions
