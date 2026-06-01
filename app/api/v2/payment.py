@@ -10,6 +10,7 @@ from app.core.dependencies import (
     get_click_service,
     get_subscription_storage,
     get_transaction_service,
+    get_uzum_service,
 )
 from app.core.logger import logger
 from app.models.payment import (
@@ -28,6 +29,8 @@ from app.models.payment import (
     SubscriptionPlan,
     TransactionError,
     UserSubscriptionResponse,
+    UzumResponseStatus,
+    UzumServiceError,
 )
 from app.security import (
     verify_api_key,
@@ -35,8 +38,9 @@ from app.security import (
     verify_dt_api_key,
     verify_dt_user_web_client,
     verify_payme_authorization,
+    verify_uzum_authorization,
 )
-from app.services import ClickService, TransactionService
+from app.services import ClickService, TransactionService, UzumService
 from app.services.subscription_storage import SubscriptionStorage
 
 router = APIRouter(prefix="/transaction", tags=["Payme"])
@@ -278,6 +282,120 @@ async def click_complete(
     return JSONResponse(status_code=200, content=result)
 
 
+# MARK: Uzum Merchant API
+async def _handle_uzum_webhook(
+    request: Request,
+    handler,
+    *,
+    failed_extra: dict | None = None,
+) -> JSONResponse:
+    """Shared wrapper: parse JSON, enforce Basic Auth, dispatch, format error envelope.
+
+    `handler` must be an awaitable that takes a dict payload and returns the success body.
+    `failed_extra` is merged into the error body for endpoints that should always echo
+    transId / timestamps even on failure (per spec).
+    """
+    authorization = request.headers.get("Authorization")
+    if not verify_uzum_authorization(authorization):
+        body = {
+            "status": UzumResponseStatus.FAILED,
+            "errorCode": "10001",  # Access Denied
+        }
+        if failed_extra:
+            body = {**failed_extra, **body}
+        return JSONResponse(status_code=401, content=body)
+
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Body is not a JSON object")
+    except Exception:
+        body = {
+            "status": UzumResponseStatus.FAILED,
+            "errorCode": "10002",  # JSON Parsing Error
+        }
+        return JSONResponse(status_code=400, content=body)
+
+    service_id = payload.get("serviceId")
+    trans_id = payload.get("transId")
+    timestamp_now = int(time.time() * 1000)
+
+    try:
+        result = await handler(payload)
+        return JSONResponse(status_code=200, content=result)
+    except UzumServiceError as err:
+        body = {
+            "status": UzumResponseStatus.FAILED,
+            "errorCode": err.error_code,
+        }
+        if service_id is not None:
+            body["serviceId"] = service_id
+        if trans_id is not None:
+            body["transId"] = trans_id
+        if failed_extra:
+            for key, value in failed_extra.items():
+                body.setdefault(key, value)
+        # Per-endpoint expected timestamp fields default to "now".
+        body.setdefault("timestamp", timestamp_now)
+        return JSONResponse(status_code=err.http_status, content=body)
+    except Exception:
+        logger.exception("[Uzum] Unhandled error in webhook handler")
+        body = {
+            "status": UzumResponseStatus.FAILED,
+            "errorCode": "99999",  # Data verification error
+        }
+        if service_id is not None:
+            body["serviceId"] = service_id
+        if trans_id is not None:
+            body["transId"] = trans_id
+        body["timestamp"] = timestamp_now
+        return JSONResponse(status_code=400, content=body)
+
+
+@router.post("/uzum/check")
+async def uzum_check(
+    request: Request,
+    uzum_service: UzumService = Depends(get_uzum_service),
+):
+    return await _handle_uzum_webhook(request, uzum_service.check)
+
+
+@router.post("/uzum/create")
+async def uzum_create(
+    request: Request,
+    uzum_service: UzumService = Depends(get_uzum_service),
+):
+    extra = {"transTime": int(time.time() * 1000)}
+    return await _handle_uzum_webhook(request, uzum_service.create, failed_extra=extra)
+
+
+@router.post("/uzum/confirm")
+async def uzum_confirm(
+    request: Request,
+    uzum_service: UzumService = Depends(get_uzum_service),
+):
+    extra = {"confirmTime": int(time.time() * 1000)}
+    return await _handle_uzum_webhook(request, uzum_service.confirm, failed_extra=extra)
+
+
+@router.post("/uzum/reverse")
+async def uzum_reverse(
+    request: Request,
+    uzum_service: UzumService = Depends(get_uzum_service),
+):
+    extra = {"reverseTime": int(time.time() * 1000)}
+    return await _handle_uzum_webhook(request, uzum_service.reverse, failed_extra=extra)
+
+
+@router.post("/uzum/status")
+async def uzum_status(
+    request: Request,
+    uzum_service: UzumService = Depends(get_uzum_service),
+):
+    extra = {"transTime": int(time.time() * 1000)}
+    return await _handle_uzum_webhook(request, uzum_service.status, failed_extra=extra)
+
+
 # MARK: Subscriptions
 @router.get(
     "/payme/subscriptions/catalog",
@@ -377,6 +495,7 @@ async def init_dt_subscription(
             start_ms=subscription_doc["start_ms"],
             end_ms=subscription_doc["end_ms"],
             total_credits=quote["total_credits"],
+            credits_remaining=subscription_doc["credits_remaining"],
         )
     except SubscriptionEligibilityError as e:
         logger.warning(f"[DTSubscription] Eligibility check failed: {e.code}")

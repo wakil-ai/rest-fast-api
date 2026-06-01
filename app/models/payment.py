@@ -283,7 +283,9 @@ class UserSubscriptionResponse(BaseModel):
     active: bool
     tier: str | None = None
     period: str | None = None
-    daily_credits: int | None = None
+    daily_credits: int | None = None  # Legacy field; 0 for pool-based tiers.
+    total_credits: int | None = None  # Purchased pool for paid tiers.
+    credits_remaining: int | None = None  # Remaining pool for paid tiers.
     start_ms: int | None = None
     end_ms: int | None = None
 
@@ -359,6 +361,83 @@ class ClickCompleteResponse(BaseModel):
     error_note: str
 
 
+# Uzum Merchant API Models
+class UzumResponseStatus:
+    OK = "OK"
+    FAILED = "FAILED"
+    CREATED = "CREATED"
+    CONFIRMED = "CONFIRMED"
+    REVERSED = "REVERSED"
+
+
+class UzumTransactionState:
+    """Internal representation of Uzum transaction states."""
+
+    CREATED = "CREATED"
+    CONFIRMED = "CONFIRMED"
+    REVERSED = "REVERSED"
+
+
+class UzumError:
+    """Error codes per Uzum Merchant API spec (string, not int)."""
+
+    ACCESS_DENIED = "10001"
+    JSON_PARSING_ERROR = "10002"
+    INVALID_OPERATION = "10003"
+    MISSING_REQUIRED_PARAMETERS = "10005"
+    INVALID_SERVICE_ID = "10006"
+    ADDITIONAL_PAYMENT_ATTRIBUTE_NOT_FOUND = "10007"
+    PAYMENT_ALREADY_MADE = "10008"
+    PAYMENT_CANCELLED = "10009"
+    DATA_VERIFICATION_ERROR = "99999"
+
+
+class UzumServiceError(Exception):
+    """Raised inside UzumService to signal a 400 response with a specific error code."""
+
+    def __init__(self, error_code: str, *, http_status: int = 400):
+        self.error_code = error_code
+        self.http_status = http_status
+        super().__init__(error_code)
+
+
+class UzumCheckRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    params: dict
+
+
+class UzumCreateRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    transId: str
+    params: dict
+    amount: int  # in tiyin
+
+
+class UzumConfirmRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    transId: str
+    paymentSource: str | None = None
+    tariff: str | None = None
+    processingReferenceNumber: str | None = None
+    phone: str | None = None
+    cardType: int | None = None
+
+
+class UzumReverseRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    transId: str
+
+
+class UzumStatusRequest(BaseModel):
+    serviceId: int
+    timestamp: int
+    transId: str
+
+
 # DT Team Subscription Models
 class DTSubscriptionApplyResponse(BaseModel):
     """Response for DT team subscription application"""
@@ -367,10 +446,11 @@ class DTSubscriptionApplyResponse(BaseModel):
     user_id: str
     tier: str
     period: str
-    daily_credits: int
+    daily_credits: int  # 0 for pool-based tiers (standard/pro).
     start_ms: int
     end_ms: int
     total_credits: int
+    credits_remaining: int
 
 
 class DTInitRequest(BaseModel):

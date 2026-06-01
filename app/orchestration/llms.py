@@ -29,6 +29,7 @@ from app.core.langfuse_tracing import (
     record_final_answer_span_input,
     traced_ainvoke,
 )
+from app.orchestration.gemini_prompt_cache import get_gemini_prompt_cache
 from app.orchestration.providers import LLM, resolve_gemini_model_name
 from app.orchestration.text import message_content_to_plain_str
 
@@ -109,15 +110,31 @@ class LangChain(LLM):
         if level not in allowed:
             level = "low"
 
-        return ChatGoogleGenerativeAI(
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "google_api_key": settings.GEMINI_API_KEY,
+            "temperature": settings.TEMPERATURE,
+            "max_output_tokens": settings.OUTPUT_MAX_TOKENS,
+            "thinking_level": level,
+            "include_thoughts": True,
+            "streaming": True,
+        }
+        if cached_content:
+            kwargs["cached_content"] = cached_content
+        return ChatGoogleGenerativeAI(**kwargs)
+
+    async def _prepare_chat(
+        self,
+        *,
+        system_prompt: str,
+    ) -> tuple[Any, str]:
+        cached_content = await get_gemini_prompt_cache().get_or_create_cached_content_name(
             model=self.model,
-            google_api_key=settings.GEMINI_API_KEY,
-            temperature=settings.TEMPERATURE,
-            max_output_tokens=settings.OUTPUT_MAX_TOKENS,
-            thinking_level=level,
-            include_thoughts=True,
-            streaming=True,
+            system_prompt=system_prompt,
         )
+        if cached_content:
+            return self.build_chat_model(cached_content=cached_content), ""
+        return self.build_chat_model(), system_prompt
 
     def _build_openai_chat_model(self) -> ChatOpenAI:
         if not settings.OPENAI_API_KEY:
@@ -144,10 +161,13 @@ class LangChain(LLM):
                 "LangChain.compile_chat requires a Redis checkpointer. "
                 "Pass checkpointer= to LangChain(...)."
             )
-        return create_agent(
-            self.build_chat_model(),
-            [],
+        model, effective_system_prompt = await self._prepare_chat(
             system_prompt=system_prompt,
+        )
+        return create_agent(
+            model,
+            [],
+            system_prompt=effective_system_prompt,
             checkpointer=self.checkpointer,
         )
 
@@ -166,7 +186,7 @@ class LangChain(LLM):
         session_id: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
-        agent = self.compile_chat(system_prompt=system_prompt)
+        agent = await self.compile_chat(system_prompt=system_prompt)
 
         invoke_config = merge_langchain_config(
             self.thread_config(thread_id),
@@ -219,7 +239,7 @@ class LangChain(LLM):
         session_id: str | None = None,
     ) -> AsyncGenerator[str | dict[str, Any], None]:
         canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
-        agent = self.compile_chat(system_prompt=system_prompt)
+        agent = await self.compile_chat(system_prompt=system_prompt)
 
         stream_config = merge_langchain_config(
             self.thread_config(thread_id),

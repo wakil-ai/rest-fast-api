@@ -209,13 +209,22 @@ class ChatHistoryService:
     ) -> None:
         """Require each attachment to exist and belong to the given user."""
 
-        for file_id in file_ids or []:
-            files = await self.db_manager.find_documents(
-                self.files_collection, {"_id": file_id}
-            )
-            if not files:
+        unique_file_ids = list(dict.fromkeys(file_ids or []))
+        if not unique_file_ids:
+            return
+
+        files = await self.db_manager.find_documents(
+            self.files_collection,
+            {"_id": {"$in": unique_file_ids}},
+            limit=len(unique_file_ids),
+        )
+        files_by_id = {file["_id"]: file for file in files}
+
+        for file_id in unique_file_ids:
+            file = files_by_id.get(file_id)
+            if file is None:
                 raise InvalidInputError(f"File {file_id} not found")
-            if files[0].get("user_id") != user_id:
+            if file.get("user_id") != user_id:
                 raise InvalidInputError(f"File {file_id} does not belong to this user")
 
     # Users Management
