@@ -94,7 +94,7 @@ class LangChain(LLM):
             return resolve_gemini_model_name(candidate)
         return candidate
 
-    def build_chat_model(self) -> BaseChatModel:
+    def build_chat_model(self, *, cached_content: str | None = None) -> BaseChatModel:
         if not self._is_gemini_model(self.model):
             return self._build_openai_chat_model()
         if not settings.GEMINI_API_KEY:
@@ -155,7 +155,7 @@ class LangChain(LLM):
             kwargs["temperature"] = settings.TEMPERATURE
         return ChatOpenAI(**kwargs)
 
-    def compile_chat(self, *, system_prompt: str) -> Any:
+    async def compile_chat(self, *, system_prompt: str) -> Any:
         if self.checkpointer is None:
             raise RuntimeError(
                 "LangChain.compile_chat requires a Redis checkpointer. "
