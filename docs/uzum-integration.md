@@ -237,7 +237,7 @@ All errors follow:
 
 | Code | When we return it |
 |---|---|
-| `10001` | Missing or invalid `Authorization` header (HTTP 401) |
+| `10001` | Missing or invalid `Authorization` header (HTTP 400 per Uzum spec — the body is what matters; status code mirrors all other failures) |
 | `10002` | Body is not valid JSON |
 | `10005` | Required field missing (`userId`, `planId`, `transId`, `amount`, etc.) |
 | `10006` | `serviceId` does not match `UZUM_SERVICE_ID` |
@@ -264,7 +264,7 @@ Once we deploy and share credentials, the Uzum team can run the following flow:
 
 Negative tests worth running:
 
-- Bad `Authorization` header → `401` with errorCode `10001`.
+- Bad `Authorization` header → `400` with errorCode `10001`.
 - Wrong `serviceId` → `400` with errorCode `10006`.
 - `planId` not in the catalog → `400` with errorCode `10007`.
 - `amount` not matching plan price → `400` with errorCode `10007`.

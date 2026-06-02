@@ -303,7 +303,7 @@ async def _handle_uzum_webhook(
         }
         if failed_extra:
             body = {**failed_extra, **body}
-        return JSONResponse(status_code=401, content=body)
+        return JSONResponse(status_code=400, content=body)
 
     try:
         payload = await request.json()
