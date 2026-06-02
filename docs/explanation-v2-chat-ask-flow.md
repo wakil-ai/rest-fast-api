@@ -81,7 +81,7 @@ Before orchestration starts, credits are checked and decremented:
    - **Unlimited promo**: request is allowed with unlimited marker.
 3. If credits are insufficient, request returns `429 Too Many Requests` (`InsufficientCreditsException`) with a `detail` message.
 
-Important: credit deduction happens before answer generation.
+Important: credit deduction happens before the orchestration pipeline executes.
 
 ---
 
@@ -199,7 +199,7 @@ Client receives SSE events in order:
 - Insufficient credits
 - Orchestration/provider/database errors
 
-Unhandled internal errors are wrapped to chat-generation errors with server logging.
+Unhandled internal errors are converted to chat-generation errors with server logging.
 
 ---
 
