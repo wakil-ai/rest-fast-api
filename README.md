@@ -79,6 +79,7 @@ For the **complete, up-to-date** endpoint list (REST + WebSocket), see
 - [Tutorial: File upload + chat](docs/tutorial-file-upload.md)
 - [How-to: Deploy to production](docs/howto-deploy-production.md)
 - [How-to: Switch LLM provider](docs/howto-switch-llm-provider.md)
+- [Explanation: API v2 Chat Ask flow](docs/explanation-v2-chat-ask-flow.md)
 - [Explanation: Orchestration pipeline](docs/explanation-orchestration.md)
 - [Reference: Environment variables](docs/reference-environment-variables.md)
 - [API reference (all endpoints)](docs/api-reference.md)

@@ -42,6 +42,7 @@ Lookup tables and complete specs:
 
 Conceptual understanding of how things work:
 
+- [API v2 Chat Ask end-to-end flow](explanation-v2-chat-ask-flow.md) — request lifecycle from auth and credits to persistence
 - [How LangGraph orchestration works](explanation-orchestration.md) — 11-node pipeline with ASCII diagram
 - [How hybrid vector search works](explanation-hybrid-search.md) — dense + sparse, alpha weighting
 - [Assistant routing strategy](explanation-assistant-routing.md) — intent → court → collection selection
