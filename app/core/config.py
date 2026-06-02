@@ -297,9 +297,10 @@ class Settings(BaseSettings):
     UZUM_SERVICE_ID: int | None = None  # Single service id assigned to wakil.ai in Uzum catalog
     UZUM_TRANSACTIONS_COLLECTION: str = "uzum_transactions"
 
-    # Payme Subscriptions
-    # Daily: pay-per-day plan (300 credits/day)
-    PAYME_SUBSCRIPTION_DAILY_PRICE_SUM: int = 15_000
+    # Payme Subscriptions — daily passes (stack on free quota; credits per pass tier)
+    PAYME_SUBSCRIPTION_BASIC_DAILY_PRICE_SUM: int = 15_000
+    PAYME_SUBSCRIPTION_STANDARD_DAILY_PRICE_SUM: int = 30_000
+    PAYME_SUBSCRIPTION_PREMIUM_DAILY_PRICE_SUM: int = 50_000
     PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 300_000
     PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 3_000_000
     PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM: int = 600_000

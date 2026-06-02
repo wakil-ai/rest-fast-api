@@ -11,7 +11,7 @@ from app.models.payment import (
 )
 from app.services.payments.base import BasePaymentService
 
-# Acceptable planId formats: "<tier>_<period>" — e.g. "standard_monthly", "pro_yearly", "daily_daily".
+# Acceptable planId formats: "<tier>_<period>" — e.g. "standard_monthly", "basic_daily".
 _VALID_PERIODS = {"daily", "monthly", "yearly"}
 
 
@@ -79,6 +79,8 @@ class UzumService(BasePaymentService):
         tier, period = plan_id.rsplit("_", 1)
         tier = tier.strip().lower()
         period = period.strip().lower()
+        if tier == "daily" and period == "daily":
+            tier = "basic"
         if not tier or period not in _VALID_PERIODS:
             raise UzumServiceError(UzumError.ADDITIONAL_PAYMENT_ATTRIBUTE_NOT_FOUND)
         return tier, period

@@ -1,6 +1,7 @@
 from app.core.config import settings
 from app.core.dependencies import get_mongo_handler
 from app.core.logger import logger
+from app.core.subscription_tiers import is_daily_pass_quote
 
 
 class SubscriptionStorage:
@@ -102,9 +103,7 @@ class SubscriptionStorage:
     ) -> dict:
         await self.ensure_indexes()
 
-        is_daily_subscription = (
-            quote.get("tier") == "daily" and quote.get("period") == "daily"
-        )
+        is_daily_subscription = is_daily_pass_quote(quote)
 
         existing_record = (
             await self.get_daily_subscription(user_id)
@@ -117,29 +116,41 @@ class SubscriptionStorage:
             else 0
         )
 
-        start_ms = max(now_ms, existing_end_ms)
-        end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
-
         purchased_total = int(
             quote.get("total_credits")
             or int(quote.get("daily_credits") or 0) * int(quote["days"])
         )
 
-        # Top up the existing pool when renewing/extending an active subscription;
-        # otherwise initialize the pool from the purchase.
-        existing_remaining = 0
-        if isinstance(existing_record, dict) and existing_end_ms > now_ms:
-            existing_remaining = max(
-                0, int(existing_record.get("credits_remaining") or 0)
-            )
+        if is_daily_subscription:
+            daily_credits = int(quote.get("daily_credits") or 0)
+            days = int(quote["days"])
+            if existing_end_ms > now_ms:
+                # Upgrade or eligibility-conflict apply: keep pass window, replace tier/credits.
+                start_ms = int(existing_record.get("start_ms") or now_ms)
+                end_ms = existing_end_ms
+                credits_remaining = daily_credits
+            else:
+                start_ms = now_ms
+                end_ms = start_ms + days * 24 * 60 * 60 * 1000
+                credits_remaining = purchased_total
+        else:
+            start_ms = max(now_ms, existing_end_ms)
+            end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
 
-        credits_remaining = existing_remaining + purchased_total
+            existing_remaining = 0
+            if isinstance(existing_record, dict) and existing_end_ms > now_ms:
+                existing_remaining = max(
+                    0, int(existing_record.get("credits_remaining") or 0)
+                )
+
+            credits_remaining = existing_remaining + purchased_total
+            daily_credits = int(quote.get("daily_credits") or 0)
 
         document = {
             "user_id": user_id,
             "tier": quote["tier"],
             "period": quote["period"],
-            "daily_credits": int(quote.get("daily_credits") or 0),
+            "daily_credits": daily_credits if is_daily_subscription else int(quote.get("daily_credits") or 0),
             "days": int(quote["days"]),
             "total_credits": purchased_total,
             "credits_remaining": credits_remaining,

@@ -22,8 +22,8 @@ class RateLimitService:
     Free users and users without an active paid subscription continue to use
     the per-day quota tracked in the rate-limit collection.
 
-    A legacy "daily pass" tier (``tier='daily'``) layers an additional per-day
-    bonus on top of the free quota.
+    A daily pass (``basic`` / ``standard`` / ``premium`` with period ``daily``, or
+    legacy ``tier='daily'``) layers an additional per-day bonus on top of the free quota.
     """
 
     RATE_LIMIT_COLLECTION = settings.RATE_LIMIT_COLLECTION
