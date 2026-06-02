@@ -12,6 +12,9 @@ This document explains what happens step-by-step when a user sends:
 
 Example:
 
+> In this codebase, the default API key header name is `admin`.  
+> It is configurable via `API_KEY_NAME`, so your deployment may use a different header name.
+
 ```http
 POST /api/v2/chat/ask
 admin: <api-key>
@@ -76,7 +79,7 @@ Before orchestration starts, credits are checked and decremented:
    - **Pool subscription path** (`standard/pro/test` internal tiers): spends from monthly `credits_remaining`.
    - **Free/daily-pass/promo users**: spends from daily quota.
    - **Unlimited promo**: request is allowed with unlimited marker.
-3. If credits are insufficient, request returns an insufficient credits error.
+3. If credits are insufficient, request returns `429 Too Many Requests` (`InsufficientCreditsException`) with a `detail` message.
 
 Important: credit deduction happens before answer generation.
 
@@ -93,7 +96,9 @@ Important: credit deduction happens before answer generation.
 4. If needed, links session to project (with ownership checks).
 5. Allocates a new `message_id` (uuid7-based short ID).
 
-If session ownership or project constraints fail, request returns validation errors.
+If session ownership or project constraints fail, request returns validation errors:
+- `400 Bad Request` for invalid input/ownership mismatch.
+- `404 Not Found` when session is missing.
 
 ---
 
@@ -219,7 +224,7 @@ sequenceDiagram
     CS->>RL: check_and_decrement_credits
     RL-->>CS: allowed/blocked
     CS->>CH: ensure_session_for_user + create_message_id
-    CS->>Orch: run/stream orchestration pipeline
+    CS->>Orch: run/stream orchestration pipeline (rewrite→route→retrieve→generate)
     Orch-->>CS: final answer + metadata
     CS->>DB: persist message (+ optional DOCX upload)
     CS-->>Client: JSON or SSE events
