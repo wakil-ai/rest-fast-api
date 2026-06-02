@@ -26,6 +26,8 @@ Content-Type: application/json
 }
 ```
 
+Example query translation: “What is the procedure for terminating an employment contract?”
+
 Main request fields:
 - `user_id` — the user making the request.
 - `session_id` — existing chat session owned by that user.
@@ -40,7 +42,7 @@ Main request fields:
 
 1. FastAPI dependency `verify_api_key_or_dt_key` runs first.
 2. Request is accepted only if either:
-   - the regular API key header (`admin` by default) is valid, or
+   - the regular API key header (`admin` by default, configurable via `API_KEY_NAME`) is valid, or
    - the DT team API key header is valid.
 3. Router mapping:
    - `/api/v2/chat/ask` is backward-compatible and re-exports the v3 router.
@@ -71,7 +73,7 @@ Before orchestration starts, credits are checked and decremented:
 
 1. `RateLimitService.check_and_decrement_credits` is called.
 2. Credit behavior:
-   - **Paid pool subscription** (`standard/pro/test`): spends from monthly `credits_remaining`.
+   - **Pool subscription path** (`standard/pro/test` internal tiers): spends from monthly `credits_remaining`.
    - **Free/daily-pass/promo users**: spends from daily quota.
    - **Unlimited promo**: request is allowed with unlimited marker.
 3. If credits are insufficient, request returns an insufficient credits error.
