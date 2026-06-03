@@ -31,7 +31,9 @@ from app.api.v2 import (
     admin,
     auth,
     chat,
+    fingerprint,
     memory,
+    otp,
     payment,
     promo_codes,
     referral,
@@ -127,10 +129,15 @@ def create_app() -> FastAPI:
         prefix=settings.API_PREFIX,
         dependencies=[Depends(verify_api_key_or_dt_key)],
     )
+    app.include_router(
+        fingerprint.router,
+        prefix=settings.API_PREFIX,
+    )
     app.include_router(admin.router, prefix=settings.API_PREFIX)
     app.include_router(promo_codes.router, prefix=settings.API_PREFIX)
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
+    app.include_router(otp.router, prefix=settings.API_PREFIX)
     app.include_router(payment.router, prefix=settings.API_PREFIX)
     app.include_router(referral.router, prefix=settings.API_PREFIX)
     app.include_router(share_router, prefix=settings.API_PREFIX, tags=["Public"])

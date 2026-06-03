@@ -17,6 +17,7 @@ from langchain_core.messages import (
 )
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
@@ -28,6 +29,7 @@ from app.core.langfuse_tracing import (
     record_final_answer_span_input,
     traced_ainvoke,
 )
+from app.orchestration.gemini_prompt_cache import get_gemini_prompt_cache
 from app.orchestration.providers import LLM, resolve_gemini_model_name
 from app.orchestration.text import message_content_to_plain_str
 
@@ -68,19 +70,33 @@ class LangChain(LLM):
         self.checkpointer = checkpointer
         self.model = self.resolve_model_name(model_name)
 
+    @staticmethod
+    def _is_gemini_model(model_name: str | None) -> bool:
+        name = (model_name or "").strip().lower()
+        return name.startswith("gemini") or name.startswith("models/gemini")
+
     @classmethod
     def resolve_model_name(cls, model_name: str | None = None) -> str:
+        candidate: str | None = None
         if isinstance(model_name, str) and model_name.strip():
-            return resolve_gemini_model_name(model_name)
-        raw = getattr(settings, "GEMINI_LANGCHAIN_CHAT_MODEL", "")
-        if isinstance(raw, str) and raw.strip():
-            return resolve_gemini_model_name(raw)
-        default = settings.DEFAULT_CHAT_MODEL or ""
-        if isinstance(default, str) and default.strip().startswith("gemini"):
-            return resolve_gemini_model_name(default)
-        return resolve_gemini_model_name("gemini-2.5-flash")
+            candidate = model_name.strip()
+        else:
+            raw = getattr(settings, "GEMINI_LANGCHAIN_CHAT_MODEL", "")
+            if isinstance(raw, str) and raw.strip():
+                candidate = raw.strip()
+            else:
+                default = settings.DEFAULT_CHAT_MODEL or ""
+                if isinstance(default, str) and default.strip():
+                    candidate = default.strip()
+        if not candidate:
+            candidate = "gpt-5.2"
+        if cls._is_gemini_model(candidate):
+            return resolve_gemini_model_name(candidate)
+        return candidate
 
-    def build_chat_model(self) -> ChatGoogleGenerativeAI:
+    def build_chat_model(self) -> BaseChatModel:
+        if not self._is_gemini_model(self.model):
+            return self._build_openai_chat_model()
         if not settings.GEMINI_API_KEY:
             raise RuntimeError(
                 "GEMINI_API_KEY is required for LangChain / LangGraph generation."
@@ -94,15 +110,50 @@ class LangChain(LLM):
         if level not in allowed:
             level = "low"
 
-        return ChatGoogleGenerativeAI(
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "google_api_key": settings.GEMINI_API_KEY,
+            "temperature": settings.TEMPERATURE,
+            "max_output_tokens": settings.OUTPUT_MAX_TOKENS,
+            "thinking_level": level,
+            "include_thoughts": True,
+            "streaming": True,
+        }
+        if cached_content:
+            kwargs["cached_content"] = cached_content
+        return ChatGoogleGenerativeAI(**kwargs)
+
+    async def _prepare_chat(
+        self,
+        *,
+        system_prompt: str,
+    ) -> tuple[Any, str]:
+        cached_content = await get_gemini_prompt_cache().get_or_create_cached_content_name(
             model=self.model,
-            google_api_key=settings.GEMINI_API_KEY,
-            temperature=settings.TEMPERATURE,
-            max_output_tokens=settings.OUTPUT_MAX_TOKENS,
-            thinking_level=level,
-            include_thoughts=True,
-            streaming=True,
+            system_prompt=system_prompt,
         )
+        if cached_content:
+            return self.build_chat_model(cached_content=cached_content), ""
+        return self.build_chat_model(), system_prompt
+
+    def _build_openai_chat_model(self) -> ChatOpenAI:
+        if not settings.OPENAI_API_KEY:
+            raise RuntimeError(
+                "OPENAI_API_KEY is required for OpenAI LangGraph generation."
+            )
+        model = (self.model or settings.GPT_COMPLETION_MODEL or "gpt-5.2").strip()
+        is_reasoning = model.startswith("o1") or model.startswith("gpt-5")
+        token_param = "max_completion_tokens" if is_reasoning else "max_tokens"
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "api_key": settings.OPENAI_API_KEY,
+            "streaming": True,
+            token_param: settings.OUTPUT_MAX_TOKENS,
+        }
+        # gpt-5 / o1 reasoning models only accept the default temperature.
+        if not is_reasoning:
+            kwargs["temperature"] = settings.TEMPERATURE
+        return ChatOpenAI(**kwargs)
 
     def compile_chat(self, *, system_prompt: str) -> Any:
         if self.checkpointer is None:
@@ -110,10 +161,13 @@ class LangChain(LLM):
                 "LangChain.compile_chat requires a Redis checkpointer. "
                 "Pass checkpointer= to LangChain(...)."
             )
-        return create_agent(
-            self.build_chat_model(),
-            [],
+        model, effective_system_prompt = await self._prepare_chat(
             system_prompt=system_prompt,
+        )
+        return create_agent(
+            model,
+            [],
+            system_prompt=effective_system_prompt,
             checkpointer=self.checkpointer,
         )
 
@@ -132,7 +186,7 @@ class LangChain(LLM):
         session_id: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
-        agent = self.compile_chat(system_prompt=system_prompt)
+        agent = await self.compile_chat(system_prompt=system_prompt)
 
         invoke_config = merge_langchain_config(
             self.thread_config(thread_id),
@@ -185,7 +239,7 @@ class LangChain(LLM):
         session_id: str | None = None,
     ) -> AsyncGenerator[str | dict[str, Any], None]:
         canonical = AssistantConfig.validate_assistant_or_default(assistant_name)
-        agent = self.compile_chat(system_prompt=system_prompt)
+        agent = await self.compile_chat(system_prompt=system_prompt)
 
         stream_config = merge_langchain_config(
             self.thread_config(thread_id),

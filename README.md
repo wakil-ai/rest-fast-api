@@ -156,9 +156,19 @@ For the **complete, up-to-date** endpoint list (REST + WebSocket), see
    
    # OpenAI Configuration
    OPENAI_API_KEY=your-openai-key
+   DEFAULT_LITE_MODEL=gpt-4.1-mini
    GPT_COMPLETION_MODEL=gpt-5.2
    OPENAI_EMBEDDING_MODEL=text-embedding-ada-002
-   
+
+   # Gemini Configuration
+   GEMINI_API_KEY=your-gemini-key
+   DEFAULT_CHAT_MODEL=gemini-3.1-pro-preview
+   GEMINI_LANGCHAIN_THINKING_LEVEL=high
+   GEMINI_EXPLICIT_CACHE_ENABLED=false
+   GEMINI_EXPLICIT_CACHE_TTL=3600s
+   GEMINI_EXPLICIT_CACHE_MIN_TOKENS=4096
+   GEMINI_EXPLICIT_CACHE_MAX_LOCAL_ENTRIES=256
+
    # Local VLLM Configuration
    LOCAL_VLLM_BASE_URL=http://localhost:8000
    LOCAL_VLLM_MODEL=gpt-oss-120b
@@ -381,6 +391,9 @@ Once the server is running, access interactive documentation:
 - `EMBEDDING_MODEL`: Select from `qwen`, `openai`, `novita_qwen`, `deepinfra`, `SILICONFLOW`
 - `VECTOR_DB_TYPE`: Choose between `milvus` or `pinecone`
 - `SPEECH_TO_TEXT_PROVIDER`: Choose between `google` or `azure`
+- `GEMINI_EXPLICIT_CACHE_ENABLED`: Enable explicit Gemini context caching for large repeated system prompts
+- `GEMINI_EXPLICIT_CACHE_TTL`: Gemini explicit cache lifetime, e.g. `3600s`
+- `GEMINI_EXPLICIT_CACHE_MIN_TOKENS`: Minimum estimated prompt tokens before creating an explicit Gemini cache
 
 ### Performance Tuning
 - `TOP_K`: Number of documents to retrieve (default: 10)

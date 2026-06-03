@@ -15,6 +15,7 @@ from langchain_openai import ChatOpenAI
 from app.core.config import settings
 from app.core.langfuse_tracing import LlmRunName, langchain_invoke_config, traced_ainvoke
 from app.core.logger import logger
+from app.orchestration.gemini_prompt_cache import get_gemini_prompt_cache
 from app.orchestration.text import message_content_to_plain_str
 
 GEMINI_MODEL_ALIASES: dict[str, str] = {
@@ -82,17 +83,21 @@ class LangChainChatModel(LLM):
         user_id: str | None = None,
         session_id: str | None = None,
     ) -> str | AsyncGenerator[str, None]:
-        messages = self._messages(user_prompt, system_prompt)
+        lc, effective_system_prompt = await self._prepare_invocation_model(
+            system_prompt,
+        )
+        messages = self._messages(user_prompt, effective_system_prompt)
         try:
             if stream:
                 return self._stream_messages(
+                    lc,
                     messages,
                     run_name=run_name,
                     user_id=user_id,
                     session_id=session_id,
                 )
             out = await traced_ainvoke(
-                self._lc,
+                lc,
                 messages,
                 run_name=run_name,
                 user_id=user_id,
@@ -106,14 +111,19 @@ class LangChainChatModel(LLM):
             )
             raise
 
+    async def _prepare_invocation_model(self, system_prompt: str) -> tuple[Any, str]:
+        return self._lc, system_prompt
+
     def _messages(self, user_prompt: str, system_prompt: str) -> list:
-        return [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt),
-        ]
+        messages = []
+        if system_prompt:
+            messages.append(SystemMessage(content=system_prompt))
+        messages.append(HumanMessage(content=user_prompt))
+        return messages
 
     async def _stream_messages(
         self,
+        lc: Any,
         messages: list,
         *,
         run_name: str = LlmRunName.ASSISTANT_GENERATION,
@@ -126,7 +136,7 @@ class LangChainChatModel(LLM):
             session_id=session_id,
             tags=[self.__class__.__name__],
         )
-        async for chunk in self._streaming_model().astream(messages, config or None):
+        async for chunk in self._streaming_model(lc).astream(messages, config or None):
             raw = getattr(chunk, "content", None)
             if not raw:
                 continue
@@ -134,8 +144,8 @@ class LangChainChatModel(LLM):
             if piece:
                 yield piece
 
-    def _streaming_model(self):
-        return self._lc
+    def _streaming_model(self, lc: Any | None = None):
+        return lc or self._lc
 
 
 class ChatGPT(LangChainChatModel):
@@ -207,7 +217,7 @@ class Gemini(LangChainChatModel):
                 model_name or settings.DEFAULT_CHAT_MODEL or "gemini-2.5-flash"
             )
         ).strip()
-        kwargs: dict[str, Any] = {
+        self._kwargs: dict[str, Any] = {
             "model": self.model,
             "google_api_key": settings.GEMINI_API_KEY,
             "temperature": settings.TEMPERATURE,
@@ -221,12 +231,27 @@ class Gemini(LangChainChatModel):
             allowed = frozenset({"minimal", "low", "medium", "high"})
             if level not in allowed:
                 level = "low"
-            kwargs["thinking_level"] = level
-            kwargs["include_thoughts"] = True
-        self._lc = ChatGoogleGenerativeAI(**kwargs)
+            self._kwargs["thinking_level"] = level
+            self._kwargs["include_thoughts"] = True
+        self._lc = ChatGoogleGenerativeAI(**self._kwargs)
 
-    def _streaming_model(self):
-        return self._lc.bind(streaming=True)
+    async def _prepare_invocation_model(self, system_prompt: str) -> tuple[Any, str]:
+        cached_content = await get_gemini_prompt_cache().get_or_create_cached_content_name(
+            model=self.model,
+            system_prompt=system_prompt,
+        )
+        if not cached_content:
+            return self._lc, system_prompt
+        return (
+            ChatGoogleGenerativeAI(
+                **self._kwargs,
+                cached_content=cached_content,
+            ),
+            "",
+        )
+
+    def _streaming_model(self, lc: Any | None = None):
+        return (lc or self._lc).bind(streaming=True)
 
 
 __all__ = [

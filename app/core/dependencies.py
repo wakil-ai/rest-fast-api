@@ -23,11 +23,13 @@ if TYPE_CHECKING:
         ClickService,
         FileManager,
         OCRService,
+        OTPService,
         ProjectService,
         PromoCodeService,
         RateLimitService,
         RedisService,
         ReferralService,
+        FingerprintService,
         StorageService,
         SubscriptionStorage,
         TransactionService,
@@ -222,6 +224,13 @@ def get_project_service() -> "ProjectService":
 
 
 @lru_cache
+def get_project_member_service() -> "ProjectMemberService":
+    from app.services.project_member_service import ProjectMemberService
+
+    return ProjectMemberService()
+
+
+@lru_cache
 def get_rate_limit_service() -> "RateLimitService":
     from app.services import RateLimitService
 
@@ -233,6 +242,13 @@ def get_referral_service() -> "ReferralService":
     from app.services import ReferralService
 
     return ReferralService()
+
+
+@lru_cache
+def get_fingerprint_service() -> "FingerprintService":
+    from app.services import FingerprintService
+
+    return FingerprintService()
 
 
 @lru_cache
@@ -257,7 +273,21 @@ def get_click_service() -> "ClickService":
 
 
 @lru_cache
+def get_uzum_service() -> "UzumService":
+    from app.services import UzumService
+
+    return UzumService()
+
+
+@lru_cache
 def get_subscription_storage() -> "SubscriptionStorage":
     from app.services import SubscriptionStorage
 
     return SubscriptionStorage()
+
+
+@lru_cache
+def get_otp_service() -> "OTPService":
+    from app.services import OTPService
+
+    return OTPService()
