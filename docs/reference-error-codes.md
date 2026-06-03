@@ -34,6 +34,35 @@ The user's daily credit pool is exhausted for the requested assistant type. Cred
 
 ---
 
+### `FILE_UPLOAD_REQUIRES_PAID_PLAN`
+
+```
+HTTP 402 Payment Required
+{
+  "detail": {
+    "code": "FILE_UPLOAD_REQUIRES_PAID_PLAN",
+    "message": "File upload is available for paid plans only.",
+    "upgrade_required": true
+  }
+}
+```
+
+File upload is a paid-plan feature. Returned by the upload endpoints
+(`POST /api/v2/history/files` and `POST /api/v2/history/projects/{project_id}/files`) when the
+user is **not** entitled to upload. A user is entitled if they have an active
+subscription, an active daily pass, or an unlimited promo code.
+
+The check runs at the API layer **before** any file is read or processed, and the
+backend is the source of truth — it cannot be bypassed from the client. Clients
+should read the machine-readable `detail.code` (not the human message) and route
+the user to the upgrade flow. See [Explanation: Credit System](explanation-credit-system.md)
+and the subscription status endpoint `GET /api/v2/transaction/payme/subscriptions/{user_id}`
+(`active` flag) for deriving upload eligibility ahead of time.
+
+**Source:** [app/utils/entitlements.py](../app/utils/entitlements.py)
+
+---
+
 ### `ChatGenerationException`
 
 ```

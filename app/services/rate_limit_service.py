@@ -308,6 +308,52 @@ class RateLimitService:
 
         return daily_limit
 
+    async def can_upload_files(self, user_id: str) -> bool:
+        """Return True if the user is entitled to upload files.
+
+        File upload is a paid-plan *tier* entitlement, so a paid subscriber
+        qualifies while their subscription is within its active window —
+        regardless of how much of the credit pool is left. A user qualifies if
+        they have:
+          * an active paid subscription (``tier`` in ``POOL_TIERS`` and
+            ``end_ms`` in the future), OR
+          * an active daily pass, OR
+          * an unlimited promo code.
+
+        This is a paywall check, so it fails *closed* (returns ``False``) on any
+        lookup error, unlike the credit check which fails open.
+        """
+        try:
+            # Active paid subscription, by tier + window (not credit balance).
+            sub = await self.subscription_storage.get_subscription(user_id)
+            if (
+                isinstance(sub, dict)
+                and sub.get("tier") in self.POOL_TIERS
+                and int(sub.get("end_ms") or 0) > self._now_ms()
+            ):
+                return True
+
+            # Active daily pass.
+            daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
+            if daily_pass_bonus > 0:
+                return True
+
+            has_promo, promo_credit_limit = (
+                await self.promo_code_service.get_user_promo_status(user_id)
+            )
+            # promo_credit_limit is None => unlimited promo access.
+            if has_promo and promo_credit_limit is None:
+                return True
+
+            return False
+        except Exception as e:
+            logger.error(
+                f"[RateLimitService] Error checking upload entitlement for user "
+                f"{user_id}: {str(e)}"
+            )
+            # Fail closed: deny upload when entitlement cannot be confirmed.
+            return False
+
     def reset_user_limit(self, user_id: str) -> bool:
         """
         Reset rate limit for a specific user (admin function).

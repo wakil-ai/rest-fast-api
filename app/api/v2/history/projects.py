@@ -22,6 +22,7 @@ from app.models.projects import (
     ProjectStatus,
     ProjectUpdateRequest,
 )
+from app.utils.entitlements import ensure_can_upload_files
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
@@ -163,6 +164,11 @@ async def upload_project_file(
     webhook_url: str | None = Form(default=None),
     session_id: str | None = Form(default=None),
 ):
+    # Paid-plan entitlement gate — block before any file read/processing.
+    await ensure_can_upload_files(
+        user_id, endpoint=f"POST /projects/{project_id}/files"
+    )
+
     code, resp = await file_manager.upload_project_file(
         file,
         user_id=user_id,
