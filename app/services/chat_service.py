@@ -47,15 +47,9 @@ def _orchestration_exception_detail(exc: BaseException) -> str:
         return text
     cause = exc.__cause__
     if cause is not None and str(cause).strip():
-        return (
-            f"{type(exc).__name__} ({type(cause).__name__}: {str(cause).strip()})"
-        )
+        return f"{type(exc).__name__} ({type(cause).__name__}: {str(cause).strip()})"
     ctx = exc.__context__
-    if (
-        ctx is not None
-        and str(ctx).strip()
-        and ctx is not cause
-    ):
+    if ctx is not None and str(ctx).strip() and ctx is not cause:
         return f"{type(exc).__name__} ({type(ctx).__name__}: {str(ctx).strip()})"
 
     name = type(exc).__name__
@@ -99,11 +93,13 @@ class ChatService:
     ) -> None:
         """Verify user has sufficient credits and deduct them."""
         try:
-            is_allowed, credits_remaining, limit = (
-                await self.rate_limit_service.check_and_decrement_credits(
-                    user_id=user_id,
-                    assistant_type=cast(AssistantType, assistant_type),
-                )
+            (
+                is_allowed,
+                credits_remaining,
+                limit,
+            ) = await self.rate_limit_service.check_and_decrement_credits(
+                user_id=user_id,
+                assistant_type=cast(AssistantType, assistant_type),
             )
 
             if not is_allowed:
@@ -434,9 +430,7 @@ class ChatService:
                 orchestration_result=result_wrapped,
             )
             stream_meta = {
-                k: v
-                for k, v in final_generation_meta.items()
-                if k != "attachments"
+                k: v for k, v in final_generation_meta.items() if k != "attachments"
             }
             generation_meta.update(stream_meta)
             generation_meta["attachments"] = self.merge_message_attachments(
@@ -462,9 +456,7 @@ class ChatService:
             user_id=user_id,
             answer=answer_out,
             existing_attachments=generation_meta.get("attachments"),
-            classified_legal_intent=str(
-                last_state.get("classified_legal_intent") or ""
-            )
+            classified_legal_intent=str(last_state.get("classified_legal_intent") or "")
             or None,
         )
         if attachments:
@@ -597,12 +589,14 @@ class ChatService:
             )
             is_dt = self.is_dt_team_request(raw_request)
 
-            session_id, message_id, resolved_project_id = (
-                await self.prepare_chat_request(
-                    user_id=request.user_id,
-                    session_id=request.session_id,
-                    project_id=request.project_id,
-                )
+            (
+                session_id,
+                message_id,
+                resolved_project_id,
+            ) = await self.prepare_chat_request(
+                user_id=request.user_id,
+                session_id=request.session_id,
+                project_id=request.project_id,
             )
 
             if should_stream:
@@ -709,12 +703,14 @@ class ChatService:
                 required_credits=credit_cost,
             )
 
-            session_id, message_id, resolved_project_id = (
-                await self.prepare_chat_request(
-                    user_id=request.user_id,
-                    session_id=request.session_id,
-                    project_id=request.project_id,
-                )
+            (
+                session_id,
+                message_id,
+                resolved_project_id,
+            ) = await self.prepare_chat_request(
+                user_id=request.user_id,
+                session_id=request.session_id,
+                project_id=request.project_id,
             )
 
             started_at = perf_counter()

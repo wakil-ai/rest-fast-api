@@ -281,6 +281,44 @@ class RateLimitService:
 
         return daily_limit
 
+    async def can_upload_files(self, user_id: str) -> bool:
+        """Return True if the user is entitled to upload files.
+
+        File upload is a paid-plan feature. A user qualifies if they have:
+          * an active subscription (``end_ms`` in the future and ``daily_credits > 0``), OR
+          * an active daily pass, OR
+          * an unlimited promo code.
+
+        This is a paywall check, so it fails *closed* (returns ``False``) on any
+        lookup error, unlike the credit check which fails open.
+        """
+        try:
+            subscription_daily = await self._get_active_subscription_daily_limit(
+                user_id
+            )
+            if subscription_daily is not None and subscription_daily > 0:
+                return True
+
+            daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
+            if daily_pass_bonus > 0:
+                return True
+
+            has_promo, promo_credit_limit = (
+                await self.promo_code_service.get_user_promo_status(user_id)
+            )
+            # promo_credit_limit is None => unlimited promo access.
+            if has_promo and promo_credit_limit is None:
+                return True
+
+            return False
+        except Exception as e:
+            logger.error(
+                f"[RateLimitService] Error checking upload entitlement for user "
+                f"{user_id}: {str(e)}"
+            )
+            # Fail closed: deny upload when entitlement cannot be confirmed.
+            return False
+
     def reset_user_limit(self, user_id: str) -> bool:
         """
         Reset rate limit for a specific user (admin function).

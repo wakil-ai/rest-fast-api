@@ -9,6 +9,7 @@ from app.core.dependencies import (
 )
 from app.core.logger import logger
 from app.models.chat_history import FilePublicMetadataResponse, FileUploadResponse
+from app.utils.entitlements import ensure_can_upload_files
 from app.utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/files", tags=["Files"])
@@ -34,6 +35,9 @@ async def upload_file_for_message(
     file: UploadFile = File(...),
     user_id: str = Form(...),
 ):
+    # Paid-plan entitlement gate — block before any file read/processing.
+    await ensure_can_upload_files(user_id, endpoint="POST /files")
+
     status, resp = await file_manager.upload_message_file(file, user_id)
     if status != 200:
         raise HTTPException(status, resp)

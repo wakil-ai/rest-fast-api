@@ -16,4 +16,4 @@ docker/
 *.json
 
 .vscode/
-*.txt
+scratch/
