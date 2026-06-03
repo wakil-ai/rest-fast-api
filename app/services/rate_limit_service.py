@@ -51,15 +51,99 @@ class RateLimitService:
         user_limit = await collection.find_one({"user_id": user_id, "date": today})
         return int(user_limit.get("credits_used", 0)) if user_limit else 0
 
-    def _default_daily_limit_for(self, user: dict | None) -> int:
-        """Default daily limit, granting the signup-day bonus if registered today (UTC)."""
-        if isinstance(user, dict):
+    def _get_signup_credits_used(self, user: dict) -> int:
+        return int(user.get("signup_credits_used") or 0)
+
+    def _is_on_signup_bonus(self, user: dict) -> bool:
+        """True while the user still has unused welcome credits."""
+        if user.get("signup_bonus_exhausted"):
+            return False
+
+        used = self._get_signup_credits_used(user)
+        if used >= settings.SIGNUP_DAY_CREDITS_LIMIT:
+            return False
+
+        # Legacy users created before signup_credits_used tracking.
+        if "signup_credits_used" not in user and "signup_bonus_exhausted" not in user:
             created_at = user.get("created_at")
             if isinstance(created_at, datetime):
                 if created_at.tzinfo is None:
                     created_at = created_at.replace(tzinfo=timezone.utc)
-                if created_at.strftime("%Y-%m-%d") == self._get_today_date():
-                    return settings.SIGNUP_DAY_CREDITS_LIMIT
+                if created_at.strftime("%Y-%m-%d") != self._get_today_date():
+                    return False
+        return True
+
+    def _signup_bonus_status(self, user: dict) -> dict[str, int]:
+        limit = settings.SIGNUP_DAY_CREDITS_LIMIT
+        used = self._get_signup_credits_used(user)
+        remaining = max(0, limit - used)
+        return {
+            "remaining_credits": remaining,
+            "effective_daily_credit_limit": remaining,
+            "today_credits_used": used,
+        }
+
+    async def _try_consume_signup_bonus(
+        self, user_id: str, user: dict, credit_cost: int
+    ) -> tuple[bool, int, int] | None:
+        """Consume welcome credits if eligible. Returns None to use the daily quota."""
+        if not self._is_on_signup_bonus(user):
+            return None
+
+        limit = settings.SIGNUP_DAY_CREDITS_LIMIT
+        used = self._get_signup_credits_used(user)
+        remaining = limit - used
+        if remaining < credit_cost:
+            logger.warning(
+                f"[RateLimitService] User {user_id} has insufficient welcome credits "
+                f"({remaining} < {credit_cost})."
+            )
+            return False, remaining, limit
+
+        users = self.mongo_handler.db[settings.USERS_COLLECTION]
+        updated = await users.find_one_and_update(
+            {
+                "_id": user_id,
+                "signup_bonus_exhausted": {"$ne": True},
+                "$expr": {
+                    "$lte": [
+                        {
+                            "$add": [
+                                {"$ifNull": ["$signup_credits_used", 0]},
+                                credit_cost,
+                            ]
+                        },
+                        limit,
+                    ]
+                },
+            },
+            {
+                "$inc": {"signup_credits_used": credit_cost},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+            return_document=True,
+        )
+        if updated is None:
+            fresh = await users.find_one({"_id": user_id})
+            if fresh and self._is_on_signup_bonus(fresh):
+                used = self._get_signup_credits_used(fresh)
+                remaining = max(0, limit - used)
+                return False, remaining, limit
+            return None
+
+        new_used = self._get_signup_credits_used(updated)
+        if new_used >= limit and not updated.get("signup_bonus_exhausted"):
+            await users.update_one(
+                {"_id": user_id},
+                {"$set": {"signup_bonus_exhausted": True}},
+            )
+
+        new_remaining = max(0, limit - new_used)
+        return True, new_remaining, limit
+
+    def _default_daily_limit_for(self, user: dict | None) -> int:
+        """Default daily limit after the welcome pool is exhausted."""
+        del user
         return settings.DAILY_CREDITS_LIMIT
 
     async def _fetch_user(self, user_id: str) -> dict | None:
@@ -147,6 +231,12 @@ class RateLimitService:
                 new_remaining = int(updated.get("credits_remaining") or 0)
                 return True, new_remaining, total
 
+            signup_result = await self._try_consume_signup_bonus(
+                user_id, user, credit_cost
+            )
+            if signup_result is not None:
+                return signup_result
+
             # Free / daily-pass / promo path: per-day quota.
             daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
             (
@@ -218,13 +308,18 @@ class RateLimitService:
             if pool_sub is not None:
                 return int(pool_sub.get("credits_remaining") or 0)
 
+            user = await self._fetch_user(user_id)
+            if user and self._is_on_signup_bonus(user):
+                return self._signup_bonus_status(user)["remaining_credits"]
+
             daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
             (
                 has_promo,
                 promo_credit_limit,
             ) = await self.promo_code_service.get_user_promo_status(user_id)
 
-            user = await self._fetch_user(user_id)
+            if user is None:
+                user = await self._fetch_user(user_id)
             daily_limit = self._default_daily_limit_for(user) + daily_pass_bonus
 
             if has_promo:
@@ -263,6 +358,14 @@ class RateLimitService:
                 "uses_combined_credit_pool": True,
             }
 
+        user = await self._fetch_user(user_id)
+        if user and self._is_on_signup_bonus(user):
+            status = self._signup_bonus_status(user)
+            return {
+                **status,
+                "uses_combined_credit_pool": True,
+            }
+
         daily_limit = await self.get_daily_credit_limit(user_id)
         if daily_limit == -1:
             return {
@@ -291,6 +394,10 @@ class RateLimitService:
         if pool_sub is not None:
             return int(pool_sub.get("credits_remaining") or 0)
 
+        user = await self._fetch_user(user_id)
+        if user and self._is_on_signup_bonus(user):
+            return self._signup_bonus_status(user)["remaining_credits"]
+
         daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
 
         (
@@ -298,7 +405,6 @@ class RateLimitService:
             promo_credit_limit,
         ) = await self.promo_code_service.get_user_promo_status(user_id)
 
-        user = await self._fetch_user(user_id)
         daily_limit = self._default_daily_limit_for(user) + daily_pass_bonus
 
         if has_promo:

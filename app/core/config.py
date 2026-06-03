@@ -256,8 +256,8 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str | None = None
 
     # Credit System Configuration
-    DAILY_CREDITS_LIMIT: int = 40  # Total daily credits per user
-    SIGNUP_DAY_CREDITS_LIMIT: int = 100  # Credits granted on the user's registration day
+    DAILY_CREDITS_LIMIT: int = 30  # Daily credits after the welcome pool is exhausted
+    SIGNUP_DAY_CREDITS_LIMIT: int = 100  # One-time welcome pool for new users (persists until used)
     CREDIT_COST_MAIN_ASSISTANT: int = 10  # Credits for main assistant (umumiy)
     CREDIT_COST_SOLIQ_ASSISTANT: int = 20  # Credits for tax specialized assistant
     CREDIT_COST_SUD_ASSISTANT: int = 25  # Credits for sud specialized assistant

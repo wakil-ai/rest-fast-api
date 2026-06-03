@@ -291,6 +291,7 @@ class ChatHistoryService:
             "blocked_at": None,
             "blocked_reason": None,
             "unblocked_at": None,
+            "signup_credits_used": 0,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
         }
