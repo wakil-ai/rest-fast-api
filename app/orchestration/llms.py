@@ -155,7 +155,7 @@ class LangChain(LLM):
             kwargs["temperature"] = settings.TEMPERATURE
         return ChatOpenAI(**kwargs)
 
-    def compile_chat(self, *, system_prompt: str) -> Any:
+    async def compile_chat(self, *, system_prompt: str) -> Any:
         if self.checkpointer is None:
             raise RuntimeError(
                 "LangChain.compile_chat requires a Redis checkpointer. "

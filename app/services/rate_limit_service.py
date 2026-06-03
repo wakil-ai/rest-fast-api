@@ -311,8 +311,12 @@ class RateLimitService:
     async def can_upload_files(self, user_id: str) -> bool:
         """Return True if the user is entitled to upload files.
 
-        File upload is a paid-plan feature. A user qualifies if they have:
-          * an active subscription (``end_ms`` in the future and ``daily_credits > 0``), OR
+        File upload is a paid-plan *tier* entitlement, so a paid subscriber
+        qualifies while their subscription is within its active window —
+        regardless of how much of the credit pool is left. A user qualifies if
+        they have:
+          * an active paid subscription (``tier`` in ``POOL_TIERS`` and
+            ``end_ms`` in the future), OR
           * an active daily pass, OR
           * an unlimited promo code.
 
@@ -320,12 +324,16 @@ class RateLimitService:
         lookup error, unlike the credit check which fails open.
         """
         try:
-            subscription_daily = await self._get_active_subscription_daily_limit(
-                user_id
-            )
-            if subscription_daily is not None and subscription_daily > 0:
+            # Active paid subscription, by tier + window (not credit balance).
+            sub = await self.subscription_storage.get_subscription(user_id)
+            if (
+                isinstance(sub, dict)
+                and sub.get("tier") in self.POOL_TIERS
+                and int(sub.get("end_ms") or 0) > self._now_ms()
+            ):
                 return True
 
+            # Active daily pass.
             daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
             if daily_pass_bonus > 0:
                 return True

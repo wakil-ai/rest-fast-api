@@ -52,7 +52,16 @@ def _make_service(
 
 async def test_active_subscription_allows_upload():
     service = _make_service(
-        subscription={"daily_credits": 200, "end_ms": _FUTURE_MS},
+        subscription={"tier": "pro", "end_ms": _FUTURE_MS, "credits_remaining": 200},
+    )
+    assert await service.can_upload_files("u1") is True
+
+
+async def test_active_subscription_with_depleted_pool_still_allows_upload():
+    # Upload is a tier entitlement, not a per-credit charge: a paid subscriber
+    # whose pool is exhausted can still upload while the subscription is active.
+    service = _make_service(
+        subscription={"tier": "standard", "end_ms": _FUTURE_MS, "credits_remaining": 0},
     )
     assert await service.can_upload_files("u1") is True
 
@@ -77,15 +86,15 @@ async def test_free_user_denied():
 
 async def test_expired_subscription_denied():
     service = _make_service(
-        subscription={"daily_credits": 200, "end_ms": _PAST_MS},
+        subscription={"tier": "pro", "end_ms": _PAST_MS, "credits_remaining": 200},
     )
     assert await service.can_upload_files("u1") is False
 
 
-async def test_disabled_subscription_zero_credits_denied():
-    # Active window but daily_credits == 0 (explicitly disabled access).
+async def test_non_paid_tier_subscription_denied():
+    # A 'daily' tier record is not a paid pool subscription (handled via daily pass).
     service = _make_service(
-        subscription={"daily_credits": 0, "end_ms": _FUTURE_MS},
+        subscription={"tier": "daily", "end_ms": _FUTURE_MS, "credits_remaining": 50},
     )
     assert await service.can_upload_files("u1") is False
 

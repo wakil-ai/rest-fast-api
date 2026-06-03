@@ -322,8 +322,8 @@ def _format_main_system_instructions() -> str:
     )
 
 
-def _compile_lc_agent(*, system_prompt: str) -> Any:
-    return LangChain(checkpointer=_get_agent_checkpointer()).compile_chat(
+async def _compile_lc_agent(*, system_prompt: str) -> Any:
+    return await LangChain(checkpointer=_get_agent_checkpointer()).compile_chat(
         system_prompt=system_prompt,
     )
 
