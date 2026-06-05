@@ -45,7 +45,7 @@ The top-K documents by `final_score` are returned.
 
 ## Milvus implementation
 
-**File:** [app/db/milvus_handler.py](../app/db/milvus_handler.py)
+**File:** [src/db/milvus_handler.py](../src/db/milvus_handler.py)
 
 Milvus calls this **WeightedRanker hybrid search**:
 
