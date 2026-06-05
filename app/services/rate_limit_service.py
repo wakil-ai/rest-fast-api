@@ -150,6 +150,54 @@ class RateLimitService:
         users = self.mongo_handler.db[settings.USERS_COLLECTION]
         return await users.find_one({"_id": user_id})
 
+    def _ms_to_date(self, ms: int) -> str:
+        """Convert epoch milliseconds to a UTC YYYY-MM-DD string."""
+        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime(
+            "%Y-%m-%d"
+        )
+
+    async def _get_subscription_period_credits_used(
+        self, user_id: str, start_ms: int, end_ms: int
+    ) -> int:
+        """Sum ``credits_used`` in ``creditusage`` from subscription start to end."""
+        if start_ms <= 0 or end_ms <= 0 or end_ms < start_ms:
+            return 0
+
+        start_date = self._ms_to_date(start_ms)
+        end_date = self._ms_to_date(end_ms)
+        collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
+
+        pipeline = [
+            {
+                "$match": {
+                    "user_id": user_id,
+                    "date": {"$gte": start_date, "$lte": end_date},
+                }
+            },
+            {"$group": {"_id": None, "total": {"$sum": "$credits_used"}}},
+        ]
+        rows = await collection.aggregate(pipeline).to_list(length=1)
+        if not rows:
+            return 0
+        return int(rows[0].get("total") or 0)
+
+    async def _get_pool_credits_remaining(self, user_id: str, sub: dict) -> int:
+        """Remaining pool credits from ``creditusage`` over the subscription window.
+
+        Legacy subscriptions may only have decrements on ``credits_remaining``;
+        take the higher of the two usage sources so we never over-credit.
+        """
+        total = int(sub.get("total_credits") or 0)
+        start_ms = int(sub.get("start_ms") or 0)
+        end_ms = int(sub.get("end_ms") or 0)
+
+        creditusage_used = await self._get_subscription_period_credits_used(
+            user_id, start_ms, end_ms
+        )
+        legacy_used = max(0, total - int(sub.get("credits_remaining") or 0))
+        effective_used = max(creditusage_used, legacy_used)
+        return max(0, total - effective_used)
+
     async def _get_active_pool_subscription(self, user_id: str) -> dict | None:
         """Return the active pool-based subscription doc, or None."""
         try:
@@ -167,7 +215,7 @@ class RateLimitService:
         if end_ms <= self._now_ms():
             return None
 
-        remaining = int(sub.get("credits_remaining") or 0)
+        remaining = await self._get_pool_credits_remaining(user_id, sub)
         if remaining <= 0:
             return None
 
@@ -188,11 +236,70 @@ class RateLimitService:
         except Exception:
             return 0
 
-    async def _consume_pool_credits(self, user_id: str, cost: int) -> dict | None:
-        """Attempt to consume `cost` from the pool subscription; returns updated doc or None."""
-        return await self.subscription_storage.try_consume_pool_credits(
-            user_id, cost, self._now_ms()
+    async def _sync_pool_credits_remaining(
+        self, user_id: str, remaining: int
+    ) -> None:
+        """Keep ``subscriptions.credits_remaining`` aligned with creditusage totals."""
+        try:
+            await self.mongo_handler.db[settings.SUBSCRIPTIONS_COLLECTION].update_one(
+                {"user_id": user_id},
+                {
+                    "$set": {
+                        "credits_remaining": remaining,
+                        "updated_at_ms": self._now_ms(),
+                    }
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                f"[RateLimitService] Failed to sync pool credits for {user_id}: {exc}"
+            )
+
+    async def _increment_today_credits_used(self, user_id: str, cost: int) -> None:
+        today = self._get_today_date()
+        collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
+        query = {"user_id": user_id, "date": today}
+        now = datetime.now(timezone.utc)
+
+        await collection.update_one(
+            query,
+            {
+                "$inc": {"credits_used": cost},
+                "$set": {"updated_at": now},
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
         )
+
+    async def _rollback_today_credits_used(self, user_id: str, cost: int) -> None:
+        today = self._get_today_date()
+        collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
+        await collection.update_one(
+            {"user_id": user_id, "date": today},
+            {
+                "$inc": {"credits_used": -cost},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+        )
+
+    async def _consume_pool_credits(
+        self, user_id: str, cost: int, pool_sub: dict
+    ) -> tuple[bool, int, int]:
+        """Consume from the monthly pool via ``creditusage`` over the sub window."""
+        total = int(pool_sub.get("total_credits") or 0)
+        remaining = await self._get_pool_credits_remaining(user_id, pool_sub)
+        if remaining < cost:
+            return False, remaining, total
+
+        await self._increment_today_credits_used(user_id, cost)
+        new_remaining = await self._get_pool_credits_remaining(user_id, pool_sub)
+        if new_remaining < 0:
+            await self._rollback_today_credits_used(user_id, cost)
+            refreshed = await self._get_pool_credits_remaining(user_id, pool_sub)
+            return False, refreshed, total
+
+        await self._sync_pool_credits_remaining(user_id, new_remaining)
+        return True, new_remaining, total
 
     async def check_and_decrement_credits(
         self, user_id: str, assistant_type: AssistantType = "main"
@@ -219,17 +326,16 @@ class RateLimitService:
             # not stack on top of an active paid subscription.
             pool_sub = await self._get_active_pool_subscription(user_id)
             if pool_sub is not None:
-                updated = await self._consume_pool_credits(user_id, credit_cost)
-                total = int(pool_sub.get("total_credits") or 0)
-                if updated is None:
-                    remaining = int(pool_sub.get("credits_remaining") or 0)
+                allowed, remaining, total = await self._consume_pool_credits(
+                    user_id, credit_cost, pool_sub
+                )
+                if not allowed:
                     logger.warning(
                         f"[RateLimitService] User {user_id} pool insufficient "
                         f"({remaining} < {credit_cost}) for {assistant_type}."
                     )
                     return False, remaining, total
-                new_remaining = int(updated.get("credits_remaining") or 0)
-                return True, new_remaining, total
+                return True, remaining, total
 
             signup_result = await self._try_consume_signup_bonus(
                 user_id, user, credit_cost
@@ -306,7 +412,7 @@ class RateLimitService:
         try:
             pool_sub = await self._get_active_pool_subscription(user_id)
             if pool_sub is not None:
-                return int(pool_sub.get("credits_remaining") or 0)
+                return await self._get_pool_credits_remaining(user_id, pool_sub)
 
             user = await self._fetch_user(user_id)
             if user and self._is_on_signup_bonus(user):
@@ -345,16 +451,22 @@ class RateLimitService:
     async def get_credit_status(self, user_id: str) -> dict[str, int | bool]:
         """Return a status dict suitable for the subscription/history endpoints.
 
-        For paid subs the daily fields reflect the pool (today_credits_used is 0
-        since the pool is not date-bucketed)."""
+        For paid subs, remaining is derived from ``creditusage`` between
+        ``start_ms`` and ``end_ms``; ``today_credits_used`` is today's bucket."""
         pool_sub = await self._get_active_pool_subscription(user_id)
         if pool_sub is not None:
             total = int(pool_sub.get("total_credits") or 0)
-            remaining = int(pool_sub.get("credits_remaining") or 0)
+            remaining = await self._get_pool_credits_remaining(user_id, pool_sub)
+            start_ms = int(pool_sub.get("start_ms") or 0)
+            end_ms = int(pool_sub.get("end_ms") or 0)
+            period_used = await self._get_subscription_period_credits_used(
+                user_id, start_ms, end_ms
+            )
             return {
                 "remaining_credits": remaining,
                 "effective_daily_credit_limit": remaining,
-                "today_credits_used": max(0, total - remaining),
+                "today_credits_used": await self._get_today_credits_used(user_id),
+                "period_credits_used": period_used,
                 "uses_combined_credit_pool": True,
             }
 
@@ -392,7 +504,7 @@ class RateLimitService:
         """
         pool_sub = await self._get_active_pool_subscription(user_id)
         if pool_sub is not None:
-            return int(pool_sub.get("credits_remaining") or 0)
+            return await self._get_pool_credits_remaining(user_id, pool_sub)
 
         user = await self._fetch_user(user_id)
         if user and self._is_on_signup_bonus(user):

@@ -217,8 +217,12 @@ class BasePaymentService:
         end_ms = int(sub.get("end_ms") or 0)
         sub_daily = int(sub.get("daily_credits") or 0)
         total_credits = int(sub.get("total_credits") or 0)
-        credits_remaining = int(sub.get("credits_remaining") or 0)
         is_pool_tier = sub.get("tier") in {"standard", "pro", "test"}
+        credits_remaining = (
+            int(credit_status["remaining_credits"])
+            if is_pool_tier
+            else int(sub.get("credits_remaining") or 0)
+        )
 
         if is_pool_tier:
             active = bool(end_ms > now_ms and credits_remaining > 0)
