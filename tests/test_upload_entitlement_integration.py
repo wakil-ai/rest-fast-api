@@ -17,8 +17,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.models.chat_history import FileUploadResponse
-from app.utils.entitlements import FILE_UPLOAD_REQUIRES_PAID_PLAN
+from src.models.chat_history import FileUploadResponse
+from src.utils.entitlements import FILE_UPLOAD_REQUIRES_PAID_PLAN
 
 
 def _valid_upload_response() -> FileUploadResponse:
@@ -58,7 +58,7 @@ def _build_client(*, can_upload: bool):
             return_value=MagicMock(),
         ),
     ):
-        import app.api.v2.history.files as files_module
+        import src.api.v2.history.files as files_module
 
         files_module = importlib.reload(files_module)
 

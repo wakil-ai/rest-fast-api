@@ -3,11 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1 --reload
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 1 --reload
     environment:
       DEBUG: "true"
       PYTHONUNBUFFERED: 1
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
 
     volumes:
-      - ./app:/app/app:rw
+      - ./src:/app/src:rw

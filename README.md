@@ -460,7 +460,7 @@ docker-compose down
 
 ## 🤖 Two-stage RAG (LangGraph + pipeline)
 
-Chat and streaming agent endpoints use a **LangGraph** retrieval subgraph (strategy → corpus fetch → context evaluation → optional Tavily web search) followed by a **single** final LLM call. Structured steps use OpenAI JSON mode (`app/agents/pipeline/retrieval_structured_llm.py`). The coordinator is `app/agents/pipeline/flow.py` (`AgenticRAGFlow`).
+Chat and streaming agent endpoints use a **LangGraph** retrieval subgraph (strategy → corpus fetch → context evaluation → optional Tavily web search) followed by a **single** final LLM call. Structured steps use OpenAI JSON mode (`src/agents/pipeline/retrieval_structured_llm.py`). The coordinator is `src/agents/pipeline/flow.py` (`AgenticRAGFlow`).
 
 **Primary modules**: `retrieval_graph.py`, `retrieval_runner.py`, `chat_turn.py`, `last_answer.py`, `schemas.py`, `flow.py`.
 
@@ -470,7 +470,7 @@ Chat and streaming agent endpoints use a **LangGraph** retrieval subgraph (strat
 
 ### Project Structure
 ```
-app/
+src/
 ├── assistants/      # Specialist agents (retrieval, tools, prompts)
 ├── api/               # API route handlers
 │   ├── auth.py        # Telegram authentication
@@ -494,12 +494,12 @@ app/
 
 ### Adding New Features
 
-1. **New API Endpoints**: Add routes in `app/api/` with proper authentication
-2. **New Models**: Define Pydantic models in `app/models/` for request/response schemas
-3. **New Services**: Implement business logic in `app/services/` following existing patterns
-4. **New LLM Providers**: Add providers in `app/llms/` with base class inheritance
-5. **New STT Providers**: Extend speech services in `app/services/streaming_speech_to_text.py`
-6. **New Database Handlers**: Add handlers in `app/db/` with consistent interfaces
+1. **New API Endpoints**: Add routes in `src/api/` with proper authentication
+2. **New Models**: Define Pydantic models in `src/models/` for request/response schemas
+3. **New Services**: Implement business logic in `src/services/` following existing patterns
+4. **New LLM Providers**: Add providers in `src/llms/` with base class inheritance
+5. **New STT Providers**: Extend speech services in `src/services/streaming_speech_to_text.py`
+6. **New Database Handlers**: Add handlers in `src/db/` with consistent interfaces
 
 ## 🤝 Contributing
 
