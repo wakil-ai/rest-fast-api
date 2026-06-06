@@ -13,7 +13,7 @@ Refactor the chat agents so they do not pre-retrieve context and hand one static
   - session/message ids,
   - optional file/project ids.
 - Move history, memory, file context, project context, retrieval, court filters, and contract intent behind callable tools.
-- Add a shared agent tool layer under `app/agents/common`:
+- Add a shared agent tool layer under `src/agents/common`:
   - `get_chat_history`
   - `search_memory`
   - `get_uploaded_file_context`
@@ -57,7 +57,7 @@ Refactor the chat agents so they do not pre-retrieve context and hand one static
   - final answer and metadata persist to DB.
   - attachments event and metadata are preserved.
 - Run:
-  - `.venv/bin/python -m compileall app/assistants app/orchestration app/services app/main.py`
+  - `.venv/bin/python -m compileall src/assistants src/orchestration src/services src/main.py`
   - `.venv/bin/pytest tests -q`
 
 ## Assumptions

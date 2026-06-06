@@ -203,10 +203,10 @@ Stores user-promo code assignments:
 
 ### Files Modified/Created
 
-1. **`app/models/promo_code.py`** - Pydantic models for promo codes
-2. **`app/services/promo_code_service.py`** - Service layer for promo code operations
-3. **`app/services/rate_limit_service.py`** - Updated to check promo codes
-4. **`app/api/admin.py`** - Admin endpoints for promo code management
+1. **`src/models/promo_code.py`** - Pydantic models for promo codes
+2. **`src/services/promo_code_service.py`** - Service layer for promo code operations
+3. **`src/services/rate_limit_service.py`** - Updated to check promo codes
+4. **`src/api/admin.py`** - Admin endpoints for promo code management
 
 ### Key Methods
 

@@ -146,7 +146,7 @@ This prevents hallucination on queries about recent events, amendments, or niche
 ### Stage 7 — Final answer generation
 
 The generation LLM (`DEFAULT_CHAT_MODEL`, default: Gemini) receives:
-- A system prompt (assistant-specific, loaded from `app/orchestration/prompts/`)
+- A system prompt (assistant-specific, loaded from `src/orchestration/prompts/`)
 - The retrieval context
 - The user's question + rewritten query
 - Uploaded file and project file context

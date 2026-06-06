@@ -78,7 +78,7 @@ EMBEDDING_MODEL=siliconflow
 SILICONFLOW_API_KEY=<your-key>
 ```
 
-> **Note:** `.env.example` is not exhaustive. Orchestration also reads `GEMINI_API_KEY`, `REDIS_*`, and Neo4j settings from `app/core/config.py`. If something fails at startup, check that file for the full list of settings.
+> **Note:** `.env.example` is not exhaustive. Orchestration also reads `GEMINI_API_KEY`, `REDIS_*`, and Neo4j settings from `src/core/config.py`. If something fails at startup, check that file for the full list of settings.
 
 ### 2. Python virtual environment
 
@@ -169,7 +169,7 @@ docker compose -f compose.yml -f dev/compose.override.dev.yml up --build
 
 ```
 rest-api/
-├── app/
+├── src/
 │   ├── main.py              # FastAPI app, lifespan, routers
 │   ├── api/v2/              # History, auth, admin, payments, STT, …
 │   ├── api/v3/chat.py       # Primary chat endpoints (v2 re-exports same router)
@@ -193,13 +193,13 @@ rest-api/
 
 | Task | Start here |
 |------|------------|
-| New HTTP route | `app/api/v2/` or `app/api/v3/` |
-| Chat / streaming behavior | `app/services/chat_service.py` |
-| Orchestration pipeline (rewrite → retrieve → answer) | `app/orchestration/` (`graph.py`, `nodes.py`, `service.py`) |
-| Assistant prompts | `app/orchestration/prompts/` |
-| Milvus collection / filter logic | `app/assistants/`, `app/orchestration/agents/milvus_agent.py` |
-| Credits / rate limits | `app/services/rate_limit_service.py` |
-| Env / feature flags | `app/core/config.py` |
+| New HTTP route | `src/api/v2/` or `src/api/v3/` |
+| Chat / streaming behavior | `src/services/chat_service.py` |
+| Orchestration pipeline (rewrite → retrieve → answer) | `src/orchestration/` (`graph.py`, `nodes.py`, `service.py`) |
+| Assistant prompts | `src/orchestration/prompts/` |
+| Milvus collection / filter logic | `src/assistants/`, `src/orchestration/agents/milvus_agent.py` |
+| Credits / rate limits | `src/services/rate_limit_service.py` |
+| Env / feature flags | `src/core/config.py` |
 
 ---
 
@@ -228,7 +228,7 @@ sequenceDiagram
     CS->>API: persist message (MongoDB)
 ```
 
-**Orchestration stages** (`app/orchestration/service.py` → `_prepare_final_state_inner`):
+**Orchestration stages** (`src/orchestration/service.py` → `_prepare_final_state_inner`):
 
 1. Load file / project context  
 2. Ingest payload, merge LangGraph thread history from Redis  
@@ -236,15 +236,15 @@ sequenceDiagram
 4. Criminal-case subgraph (if `criminal_court` assistant)  
 5. Document retrieval (assistant-specific Milvus / Neo4j)  
 6. Optional Tavily web search when context is insufficient  
-7. Stream final answer with `ChatGoogleGenerativeAI` (`app/orchestration/llms.py`)
+7. Stream final answer with `ChatGoogleGenerativeAI` (`src/orchestration/llms.py`)
 
-**Streaming events** (SSE): `metadata` → optional `attachments` → text chunks → optional `think` → final `attachments` / `end`. See `app/utils/streaming.py`.
+**Streaming events** (SSE): `metadata` → optional `attachments` → text chunks → optional `think` → final `attachments` / `end`. See `src/utils/streaming.py`.
 
 ---
 
 ## Assistants
 
-Assistants are configured in `app/core/config.py` (`ASSISTANTS` dict) and exposed via `GET /api/v3/chat/assistants`.
+Assistants are configured in `src/core/config.py` (`ASSISTANTS` dict) and exposed via `GET /api/v3/chat/assistants`.
 
 | Canonical name | Role |
 |----------------|------|
@@ -254,7 +254,7 @@ Assistants are configured in `app/core/config.py` (`ASSISTANTS` dict) and expose
 | `contract_analyzer` | Contract risk + template generation |
 | `criminal_court` | Criminal law (Neo4j + Mongo subgraph + v2 prompts) |
 
-**Aliases** (API accepts old names): `deepresearch` → `main`, `soliq` → `tax`, `court` / `sud` → `court`, etc. See `app/core/assistants.py`.
+**Aliases** (API accepts old names): `deepresearch` → `main`, `soliq` → `tax`, `court` / `sud` → `court`, etc. See `src/core/assistants.py`.
 
 Each assistant has a **credit cost**; requests are rejected when the user has insufficient credits (`InsufficientCreditsException`).
 
@@ -312,7 +312,7 @@ Collection names and schemas: [database-architecture.md](database-architecture.m
 | `LANGGRAPH_CHECKPOINT_USE_REDIS` | Must be `true` for agent memory |
 | `LANGFUSE_TRACING_ENABLED` | Optional LLM tracing |
 
-Full defaults live in `app/core/config.py` and `.env.example`.
+Full defaults live in `src/core/config.py` and `.env.example`.
 
 ---
 
@@ -338,7 +338,7 @@ LANGFUSE_BASE_URL=https://cloud.langfuse.com
 ### Compile-check after orchestration changes
 
 ```bash
-.venv/bin/python -m compileall app/orchestration app/services app/assistants app/main.py
+.venv/bin/python -m compileall src/orchestration src/services src/assistants src/main.py
 ```
 
 ### List public assistants
@@ -360,7 +360,7 @@ curl http://localhost:8080/api/v3/chat/assistants -H "admin: $API_KEY"
 | 401 on API | Wrong header name (`admin` vs `x-api-key` in old docs) or `API_KEY` mismatch |
 | Credits errors | User has no credits in `creditusage` collection |
 
-Logs use **Loguru** (`app/core/logger.py`). Orchestration errors are logged from `app/services/chat_service.py` with full tracebacks when `exc_info=True`.
+Logs use **Loguru** (`src/core/logger.py`). Orchestration errors are logged from `src/services/chat_service.py` with full tracebacks when `exc_info=True`.
 
 ---
 
@@ -435,7 +435,7 @@ Root overview: [README.md](../README.md). Full index: [README.md](README.md).
 - [ ] Run API locally and get `GET /health` → 200  
 - [ ] Send one non-streaming and one streaming `POST /api/v3/chat/ask`  
 - [ ] Open `/docs` and skim chat + history routes  
-- [ ] Read `app/orchestration/graph.py` and trace one request in logs  
+- [ ] Read `src/orchestration/graph.py` and trace one request in logs  
 - [ ] Confirm Redis Stack and MongoDB connectivity with your team’s dev URIs  
 - [ ] Skim [database-architecture.md](database-architecture.md) for `users` / `sessions` / `messages`  
 - [ ] Get access to shared Milvus/GCS/Langfuse from your lead  
@@ -444,7 +444,7 @@ Root overview: [README.md](../README.md). Full index: [README.md](README.md).
 
 ## Getting help
 
-- **Config source of truth:** `app/core/config.py`  
+- **Config source of truth:** `src/core/config.py`  
 - **Breaking API changes:** `CHANGELOG.md`, `docs/updates-v2.md`, `docs/updates-v3.md`  
 - **Infrastructure / deploy:** platform team + [deployment.md](deployment.md)  
 

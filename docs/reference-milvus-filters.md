@@ -2,7 +2,7 @@
 
 Milvus uses a SQL-like expression language to filter documents before or during vector search. The WakilAI API generates these filters automatically via `MilvusQueryAgent`, but you can also pass them directly in API requests and understand what they mean in logs.
 
-**Source:** [app/utils/milvus_expr.py](../app/utils/milvus_expr.py), [app/db/milvus_handler.py](../app/db/milvus_handler.py), [app/orchestration/agents/milvus_agent.py](../app/orchestration/agents/milvus_agent.py)
+**Source:** [src/utils/milvus_expr.py](../src/utils/milvus_expr.py), [src/db/milvus_handler.py](../src/db/milvus_handler.py), [src/orchestration/agents/milvus_agent.py](../src/orchestration/agents/milvus_agent.py)
 
 ---
 
@@ -135,14 +135,14 @@ When the query doesn't imply specific articles or sources, the filter is omitted
 
 ## How Filters Are Generated
 
-The `MilvusQueryAgent` (defined in [app/orchestration/agents/milvus_agent.py](../app/orchestration/agents/milvus_agent.py)) uses the lite LLM (`DEFAULT_LITE_MODEL`) to generate a filter expression from the rewritten query.
+The `MilvusQueryAgent` (defined in [src/orchestration/agents/milvus_agent.py](../src/orchestration/agents/milvus_agent.py)) uses the lite LLM (`DEFAULT_LITE_MODEL`) to generate a filter expression from the rewritten query.
 
 The agent is prompted with:
 - The rewritten user query
 - The available field names and their types
 - Example filters for context
 
-The output goes through `normalize_milvus_filter_llm_output()` in [app/utils/milvus_expr.py](../app/utils/milvus_expr.py), which:
+The output goes through `normalize_milvus_filter_llm_output()` in [src/utils/milvus_expr.py](../src/utils/milvus_expr.py), which:
 1. Strips markdown code fences (` ``` `)
 2. Removes prefixes like `filter:` or `expr:`
 3. Extracts expressions from JSON wrappers (`{"filter": "..."}`)
