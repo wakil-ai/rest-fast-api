@@ -1,6 +1,6 @@
 # Environment Variables Reference
 
-Complete listing of every environment variable the WakilAI REST API reads from `.env` (or the process environment). Source of truth: [src/core/config.py](../src/core/config.py).
+Complete listing of every environment variable the WakilAI REST API reads from `.env` (or the process environment). Source of truth: [app/core/config.py](../app/core/config.py).
 
 Values shown are the code defaults — override any of them in `.env`.
 
@@ -293,7 +293,7 @@ These let you rename collections without code changes.
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `GCS_BUCKET_NAME` | str\|None | `null` | GCS bucket for uploaded files |
-| `GCS_CREDENTIALS_PATH` | str\|None | `null` | Path to GCS service account JSON (e.g. `/app/src/security/gcs_creds.json`) |
+| `GCS_CREDENTIALS_PATH` | str\|None | `null` | Path to GCS service account JSON (e.g. `/app/app/security/gcs_creds.json`) |
 | `GCS_PROJECT_ID` | str\|None | `null` | GCP project ID |
 
 ---

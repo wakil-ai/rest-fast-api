@@ -129,7 +129,7 @@ Send a test chat request and confirm the answer arrives.
 
 ## Supported model IDs
 
-These model IDs are defined in `ChatModel` enum ([src/models/chat.py](../src/models/chat.py)) and accepted by the API:
+These model IDs are defined in `ChatModel` enum ([app/models/chat.py](../app/models/chat.py)) and accepted by the API:
 
 | Model ID | Provider |
 |----------|---------|

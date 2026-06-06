@@ -22,7 +22,7 @@ A single pipeline cannot serve all of these with the same retrieval parameters. 
 
 ## Step 1 — Resolve the requested assistant
 
-**File:** [src/orchestration/retrieval.py](../src/orchestration/retrieval.py) — `resolve_assistant()`
+**File:** [app/orchestration/retrieval.py](../app/orchestration/retrieval.py) — `resolve_assistant()`
 
 When a request arrives, `assistant_name` in the state is the client-provided value (e.g. `"court"`, `"soliq"`, `"deepresearch"`). The resolver normalizes it:
 
@@ -139,7 +139,7 @@ This dramatically reduces the search space, improving both speed and precision.
 
 ## Prompt selection
 
-Each assistant has a corresponding prompt template in `src/orchestration/prompts/`:
+Each assistant has a corresponding prompt template in `app/orchestration/prompts/`:
 
 ```
 prompts/

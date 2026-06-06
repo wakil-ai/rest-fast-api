@@ -114,7 +114,7 @@ Response:
 
 ## Structured logs — Loguru
 
-All application logs go through Loguru (`src/core/logger.py`). In Docker, view with:
+All application logs go through Loguru (`app/core/logger.py`). In Docker, view with:
 
 ```bash
 docker compose logs -f api

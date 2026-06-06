@@ -2,7 +2,7 @@
 
 All custom exceptions and HTTP error responses the WakilAI API can return.
 
-**Source:** [src/core/exceptions.py](../src/core/exceptions.py)
+**Source:** [app/core/exceptions.py](../app/core/exceptions.py)
 
 ---
 
@@ -59,7 +59,7 @@ the user to the upgrade flow. See [Explanation: Credit System](explanation-credi
 and the subscription status endpoint `GET /api/v2/transaction/payme/subscriptions/{user_id}`
 (`active` flag) for deriving upload eligibility ahead of time.
 
-**Source:** [src/utils/entitlements.py](../src/utils/entitlements.py)
+**Source:** [app/utils/entitlements.py](../app/utils/entitlements.py)
 
 ---
 

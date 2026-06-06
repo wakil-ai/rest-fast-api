@@ -1,6 +1,6 @@
 # LangGraph Orchestration — State & Node Reference
 
-Complete reference for the retrieval graph defined in [src/orchestration/graph.py](../src/orchestration/graph.py). Every state field, node signature, and conditional edge is documented here.
+Complete reference for the retrieval graph defined in [app/orchestration/graph.py](../app/orchestration/graph.py). Every state field, node signature, and conditional edge is documented here.
 
 For a conceptual explanation of why the graph is structured this way, see [Explanation: LangGraph Orchestration](explanation-orchestration.md).
 
@@ -8,7 +8,7 @@ For a conceptual explanation of why the graph is structured this way, see [Expla
 
 ## State Schema — `RetrievalRewriteState`
 
-**File:** [src/orchestration/state.py](../src/orchestration/state.py)
+**File:** [app/orchestration/state.py](../app/orchestration/state.py)
 
 `RetrievalRewriteState` is a `TypedDict` with `total=False` (all fields optional at construction; nodes fill them incrementally).
 
@@ -113,7 +113,7 @@ Uses `DEFAULT_LITE_MODEL` to rewrite the user's query for better retrieval. Inco
 **Input fields used:** `rewritten_query`, `assistant_name`, `file_context`  
 **Output fields:** `intent_domain`, `legal_intent`, `selected_assistant`
 
-Only runs when the assistant is `contract_analyzer` or `contract`. Classifies the legal intent using `IntentClassifier` (defined in [src/orchestration/agents/intent_recognition.py](../src/orchestration/agents/intent_recognition.py)). For other assistants, the node is a no-op (returns `{}`).
+Only runs when the assistant is `contract_analyzer` or `contract`. Classifies the legal intent using `IntentClassifier` (defined in [app/orchestration/agents/intent_recognition.py](../app/orchestration/agents/intent_recognition.py)). For other assistants, the node is a no-op (returns `{}`).
 
 ---
 

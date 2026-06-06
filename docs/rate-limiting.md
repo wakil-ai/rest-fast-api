@@ -103,7 +103,7 @@ To modify the limit, change the `DAILY_LIMIT` constant and redeploy the applicat
 
 ### Service Layer
 
-- **File:** `src/services/rate_limit_service.py`
+- **File:** `app/services/rate_limit_service.py`
 - **Class:** `RateLimitService`
 - **Key Methods:**
   - `check_and_increment_limit(user_id)` - Checks and increments the user's request count
@@ -112,7 +112,7 @@ To modify the limit, change the `DAILY_LIMIT` constant and redeploy the applicat
 
 ### Integration
 
-Rate limiting is integrated into each chat endpoint in `src/api/chat.py`. The check is performed at the beginning of each request handler:
+Rate limiting is integrated into each chat endpoint in `app/api/chat.py`. The check is performed at the beginning of each request handler:
 
 ```python
 # Check rate limit
