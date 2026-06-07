@@ -172,7 +172,7 @@ class LlmServiceClient:
         return await self.post_json("/api/v1/embed", payload)
 
     async def search_project(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await self.post_json("/api/v1/project-search", payload)
+        return await self.post_json("/api/v1/project/search", payload)
 
     async def search_files(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.post_json("/api/v1/files/search", payload)
