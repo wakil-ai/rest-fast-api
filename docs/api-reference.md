@@ -233,4 +233,4 @@ Base path: `/api/v3/chat`
 
 | Method | Path | Description |
 | --- | --- | --- |
-| POST | `/api/v3/chat/ask` | LangChain-only general assistant (`main`) |
+| POST | `/api/v3/chat/ask` | Backward-compatible chat endpoint proxied to `rest-api-llm` |

@@ -65,11 +65,9 @@ data: {"type": "end"}
     }
   ],
   "logs": [
-    "Using LLM: Novita",
-    "Retrieving context from collection: lexuz",
-    "Retrieved 10 documents",
-    "Memory context retrieved",
-    "Generating response with primary LLM",
+    "Calling internal LLM service",
+    "Loading uploaded/project context",
+    "Persisting generated response",
     "Response generated successfully"
   ]
 }

@@ -84,7 +84,8 @@ class ChatRequest(BaseModel):
         default=None,
         description=(
             "Optional legal project: links the session to this project on first use, "
-            "retrieves Milvus `project_files` by this id, and stores `project_id` on the message"
+            "loads project/file context through the internal LLM service, and stores "
+            "`project_id` on the message"
         ),
     )
 
@@ -114,18 +115,18 @@ class ModelInfoResponse(BaseModel):
     Model configuration information.
     """
 
-    top_k: int = Field(..., example=5, description="Number of top documents retrieved")
+    top_k: int = Field(..., example=5, description="Default context search limit")
     alpha: float = Field(
-        ..., example=0.8, description="Alpha value for relevance scoring"
+        ..., example=0.0, description="Legacy compatibility field"
     )
     temperature: float = Field(
-        ..., example=0.1, description="Temperature setting for the LLM"
+        ..., example=0.0, description="Legacy compatibility field"
     )
     service_provider: str = Field(
-        ..., example="novita", description="Service provider (novita or deepinfra)"
+        ..., example="rest-api-llm", description="Internal AI service provider"
     )
     embedding_model: str = Field(
-        ..., example="qwen", description="Embedding model (qwen or openai)"
+        ..., example="rest-api-llm", description="Internal AI service embedding label"
     )
     stream: bool = Field(
         ..., example=False, description="Whether streaming responses are enabled"
@@ -166,7 +167,7 @@ class AgenticRAGRequest(BaseModel):
     """
     Request body for streaming deep-research chat (``/chat/agent/stream``).
 
-    Uses the orchestration graph with Tavily fallback when context is insufficient.
+    Proxied to the internal LLM service for orchestration and optional web/retrieval work.
     """
 
     query: str = Field(

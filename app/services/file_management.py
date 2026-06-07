@@ -4,19 +4,15 @@ import os
 import tempfile
 
 from fastapi import UploadFile
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from uuid6 import uuid7
 
 from app.core.config import settings
 from app.core.dependencies import (
     get_chat_history_service,
-    get_db_manager,
-    get_embedding_manager,
-    get_ocr_service,
+    get_llm_service_client,
     get_storage_service,
 )
 from app.core.logger import logger
-from app.utils.milvus_expr import split_text_for_milvus_varchar
 from app.models.chat_history import FileUploadResponse
 from app.utils.progress_webhook import send_project_file_progress_webhook
 from app.utils.tokens import count_tokens
@@ -27,11 +23,16 @@ class FileManager:
 
     def __init__(self):
         self.storage = get_storage_service()
-        self.ocr = get_ocr_service()
-        self.db = get_db_manager()
         self.history = get_chat_history_service()
-        self.embedding_manager = get_embedding_manager()
-        self.vector_db_collection = settings.MILVUS_PROJECT_FILES
+
+    async def _process_ocr(self, temp_path: str, *, filename: str, content_type: str) -> str:
+        with open(temp_path, "rb") as file_obj:
+            result = await get_llm_service_client().ocr_file(
+                file=file_obj,
+                filename=filename,
+                content_type=content_type,
+            )
+        return str(result.get("ocr_text") or "")
 
     async def upload_message_file(
         self, file: UploadFile, user_id: str
@@ -63,7 +64,11 @@ class FileManager:
                 )
                 return 200, response
 
-            ocr_result = await self.ocr.process_file(temp_path)
+            ocr_result = await self._process_ocr(
+                temp_path,
+                filename=file.filename or "upload",
+                content_type=file.content_type or "application/octet-stream",
+            )
             file_id = self._build_deterministic_file_id(ocr_result)
 
             existing_record = await self.history.get_file_by_id(file_id)
@@ -140,7 +145,7 @@ class FileManager:
     ) -> tuple[int, FileUploadResponse | str]:
         """
         Upload a document into a project: OCR (webhook 25%), then async chunking,
-        embeddings (50%), Milvus upsert in ``project_files`` with ``project_id`` (100%).
+        embeddings (50%), indexed file context with ``project_id`` (100%).
         """
         from app.core.dependencies import get_project_service
 
@@ -170,7 +175,11 @@ class FileManager:
                 )
                 return 200, response
 
-            ocr_result = await self.ocr.process_file(temp_path)
+            ocr_result = await self._process_ocr(
+                temp_path,
+                filename=file.filename or "upload",
+                content_type=file.content_type or "application/octet-stream",
+            )
             file_id = self._build_deterministic_file_id(ocr_result)
             gcs_path = self.storage.generate_project_file_path(
                 project_id, file_id, file.filename or "upload"
@@ -248,7 +257,7 @@ class FileManager:
         file_id: str,
         user_id: str,
     ) -> tuple[int, str | None]:
-        """Remove a project-scoped file from storage, Mongo, Milvus, and the project record."""
+        """Remove a project-scoped file from Mongo/index metadata and the project record."""
         from app.core.dependencies import get_project_service
 
         project_service = get_project_service()
@@ -273,14 +282,12 @@ class FileManager:
         #         )
 
         try:
-            await asyncio.to_thread(
-                self.db.delete_vectors_by_filter,
-                f'metadata["file_id"] == "{file_id}"',
-                self.vector_db_collection,
+            await get_llm_service_client().delete_vectors(
+                {"filter_expr": f'metadata["file_id"] == "{file_id}"'}
             )
         except Exception as exc:
             logger.warning(
-                f"Could not delete Milvus vectors for project file {file_id}: {exc}"
+                f"Could not delete indexed vectors for project file {file_id}: {exc}"
             )
 
         await self.history.delete_file_upload(file_id)
@@ -330,8 +337,26 @@ class FileManager:
                 )
                 return
 
-            chunks = self._chunk_file_content(text)
-            if not chunks:
+            embed_result = await get_llm_service_client().embed_file(
+                {
+                    "file_id": file_id,
+                    "user_id": user_id,
+                    "project_id": project_id,
+                    "session_id": record.get("session_id"),
+                    "file_name": file_name,
+                    "ocr_text": text,
+                    "force_index": True,
+                }
+            )
+            chunk_count = int(embed_result.get("chunk_count") or 0)
+            if embed_result.get("skipped"):
+                await self.history.update_file_metadata_fields(
+                    file_id,
+                    {
+                        "file_metadata.milvus_file_index.enabled": False,
+                        "file_metadata.milvus_file_index.reason": embed_result.get("reason"),
+                    },
+                )
                 await self.history.update_file_status(file_id, "completed")
                 await send_project_file_progress_webhook(
                     hook,
@@ -340,11 +365,10 @@ class FileManager:
                     stage="ingestion_skipped",
                     progress_percent=100,
                     status="completed",
-                    extra={"reason": "no_chunks"},
+                    extra={"reason": embed_result.get("reason")},
                 )
                 return
 
-            embeddings = await self.embedding_manager.aembed_batch(chunks)
             await send_project_file_progress_webhook(
                 hook,
                 project_id=project_id,
@@ -352,45 +376,18 @@ class FileManager:
                 stage="embedding_complete",
                 progress_percent=50,
                 status="processing",
-                extra={"chunk_count": len(chunks)},
+                extra={"chunk_count": chunk_count},
             )
-
-            documents: list[dict] = []
-            for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
-                doc_id = f"{file_id}_{idx}"
-                meta = {
-                    "user_id": user_id,
-                    "file_id": file_id,
-                    "file_name": file_name,
-                    "chunk_index": idx,
-                    "project_id": project_id,
-                }
-                sid = record.get("session_id")
-                if sid:
-                    meta["session_id"] = sid
-                documents.append(
-                    {
-                        "id": doc_id,
-                        "text": chunk_text,
-                        "embedding": embedding,
-                        "metadata": meta,
-                    }
-                )
-
-            await asyncio.to_thread(
-                self.db._upsert_vectors,
-                documents,
-                self.vector_db_collection,
-            )
-            chunk_count = len(documents)
             token_count = count_tokens(ocr_result)
             await self.history.update_file_metadata_fields(
                 file_id,
                 {
                     "file_metadata.ocr_token_count": token_count,
                     "file_metadata.milvus_file_index.enabled": True,
-                    "file_metadata.milvus_file_index.collection": self.vector_db_collection,
-                    "file_metadata.milvus_file_index.embedding_model": settings.SILICONFLOW_EMBEDDING_MODEL,
+                    "file_metadata.milvus_file_index.collection": embed_result.get("collection")
+                    or settings.PROJECT_FILES_INDEX_NAME,
+                    "file_metadata.milvus_file_index.embedding_model": embed_result.get("embedding_model")
+                    or settings.LLM_SERVICE_EMBEDDING_MODEL_NAME,
                     "file_metadata.milvus_file_index.chunk_count": chunk_count,
                 },
             )
@@ -435,55 +432,31 @@ class FileManager:
         message_id: str | None = None,
         project_id: str | None = None,
     ) -> int:
-        """Chunk content and upsert file context to Milvus (``project_files`` collection)."""
+        """Ask the internal LLM service to chunk and index uploaded file context."""
         if not content:
             logger.warning(
                 f"Empty OCR result for file_id: {file_id}, skipping ingestion"
             )
             return 0
 
-        chunks = self._chunk_file_content(content)
-
-        if not chunks:
-            return 0
-
-        embeddings = await self.embedding_manager.aembed_batch(chunks)
-
-        documents = []
-        for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
-            doc_id = f"{file_id}_{idx}"
-            metadata = {
-                "user_id": user_id,
-                "file_id": file_id,
-                "file_name": file_name,
-                "chunk_index": idx,
-            }
-            if session_id:
-                metadata["session_id"] = session_id
-            if message_id:
-                metadata["message_id"] = message_id
-            if project_id:
-                metadata["project_id"] = project_id
-
-            documents.append(
+        try:
+            result = await get_llm_service_client().embed_file(
                 {
-                    "id": doc_id,
-                    "text": chunk_text,
-                    "embedding": embedding,
-                    "metadata": metadata,
+                    "file_id": file_id,
+                    "user_id": user_id,
+                    "file_name": file_name,
+                    "ocr_text": content,
+                    "session_id": session_id,
+                    "message_id": message_id,
+                    "project_id": project_id,
+                    "force_index": bool(project_id),
                 }
             )
-
-        try:
-            await asyncio.to_thread(
-                self.db._upsert_vectors,
-                documents,
-                self.vector_db_collection,
-            )
+            chunk_count = int(result.get("chunk_count") or 0)
             logger.info(
-                f"Successfully ingested {len(documents)} chunks for file_id: {file_id}"
+                f"Successfully ingested {chunk_count} chunks for file_id: {file_id}"
             )
-            return len(documents)
+            return chunk_count
         except Exception as e:
             logger.error(f"Failed to ingest file into Vector DB: {str(e)}")
             raise
@@ -577,7 +550,7 @@ class FileManager:
 
         logger.info(
             f"File {file_id} exceeds FILE_CONTENT_TOKEN_LIMIT ({token_count} > "
-            f"{settings.FILE_CONTENT_TOKEN_LIMIT}); indexing with Milvus file search"
+            f"{settings.FILE_CONTENT_TOKEN_LIMIT}); indexing with internal file search"
         )
 
         try:
@@ -595,14 +568,14 @@ class FileManager:
                 {
                     "file_metadata.ocr_token_count": token_count,
                     "file_metadata.milvus_file_index.enabled": True,
-                    "file_metadata.milvus_file_index.collection": self.vector_db_collection,
-                    "file_metadata.milvus_file_index.embedding_model": settings.SILICONFLOW_EMBEDDING_MODEL,
+                    "file_metadata.milvus_file_index.collection": settings.PROJECT_FILES_INDEX_NAME,
+                    "file_metadata.milvus_file_index.embedding_model": settings.LLM_SERVICE_EMBEDDING_MODEL_NAME,
                     "file_metadata.milvus_file_index.chunk_count": chunk_count,
                 },
             )
         except Exception as exc:
             logger.warning(
-                f"Milvus file indexing failed for file {file_id}; "
+                f"File indexing failed for file {file_id}; "
                 f"falling back to direct OCR context: {exc}",
                 exc_info=True,
             )
@@ -614,21 +587,3 @@ class FileManager:
                     "file_metadata.milvus_file_index.error": str(exc),
                 },
             )
-
-    @staticmethod
-    def _chunk_file_content(content: str) -> list[str]:
-        if not content:
-            return []
-
-        splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            model_name="gpt-4.1",
-            chunk_size=3000,
-            chunk_overlap=1000,
-        )
-        chunks = [
-            chunk.strip() for chunk in splitter.split_text(content) if chunk.strip()
-        ]
-        sized: list[str] = []
-        for chunk in chunks:
-            sized.extend(split_text_for_milvus_varchar(chunk))
-        return sized

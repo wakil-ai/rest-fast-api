@@ -21,10 +21,6 @@ from app.core.langfuse_tracing import (
     flush_langfuse,
     is_langfuse_enabled,
 )
-from app.orchestration.utils import (
-    init_agent_checkpointer,
-    shutdown_agent_checkpointer,
-)
 
 # Internal imports
 from app.api.v2 import (
@@ -42,6 +38,7 @@ from app.api.v2 import (
 from app.api.v2.history.router import router as chat_history
 from app.api.v2.history.share import router as share_router
 from app.api.v3 import chat as v3_chat
+from app.api.internal import router as internal_router
 from app.core.config import settings
 from app.core.logger import logger
 from app.security import (
@@ -62,12 +59,9 @@ async def lifespan(app: FastAPI):
     else:
         os.environ["OTEL_SDK_DISABLED"] = "true"
 
-    await init_agent_checkpointer()
-
     yield
 
     flush_langfuse()
-    await shutdown_agent_checkpointer()
 
 
 def create_app() -> FastAPI:
@@ -141,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(payment.router, prefix=settings.API_PREFIX)
     app.include_router(referral.router, prefix=settings.API_PREFIX)
     app.include_router(share_router, prefix=settings.API_PREFIX, tags=["Public"])
+    app.include_router(internal_router)
 
     # Health Check Route (no authentication required)
     @app.get("/", tags=["Health"], include_in_schema=False)

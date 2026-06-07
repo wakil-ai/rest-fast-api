@@ -1,14 +1,10 @@
-"""Legal project workspace: Mongo projects + Milvus ``project_files`` ingestion."""
-
-import asyncio
+"""Legal project workspace: Mongo projects + LLM-service file ingestion."""
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
-from app.core.config import settings
 from app.core.dependencies import (
-    get_db_manager,
-    get_embedding_manager,
     get_file_manager,
+    get_llm_service_client,
     get_project_service,
 )
 from app.models.chat_history import FileUploadResponse, SessionResponse
@@ -207,17 +203,11 @@ async def delete_project_file(project_id: str, file_id: str, user_id: str):
 @handle_service_error
 async def search_project_knowledge(project_id: str, body: ProjectFileSearchQuery):
     await project_service.get_project(project_id, body.user_id)
-    embedding_manager = get_embedding_manager()
-    db = get_db_manager()
-    embedding = await embedding_manager.aembed_query(body.q)
-    expr = f'metadata["project_id"] == "{project_id}"'
-    docs = await asyncio.to_thread(
-        db.search_hybrid,
-        embedding,
-        body.q,
-        body.top_k,
-        settings.ALPHA,
-        settings.MILVUS_PROJECT_FILES,
-        expr,
+    return await get_llm_service_client().search_project(
+        {
+            "project_id": project_id,
+            "user_id": body.user_id,
+            "query": body.q,
+            "top_k": body.top_k,
+        }
     )
-    return {"query": body.q, "hits": docs}

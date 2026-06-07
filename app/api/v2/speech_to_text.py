@@ -1,5 +1,6 @@
 import asyncio
 import json
+from urllib.parse import urlparse, urlunparse
 
 from fastapi import (
     APIRouter,
@@ -10,19 +11,25 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+import websockets
 
+from app.core.config import settings
+from app.core.dependencies import get_llm_service_client
 from app.core.logger import logger
 from app.models.speech_to_text import TranscriptionResponse
-from app.services.speech_to_text_service import get_speech_to_text_service
-from app.services.streaming_speech_to_text import (  # for WS STT
-    get_streaming_stt_service,
-)
 
 router = APIRouter(prefix="/speech-to-text", tags=["Speech-to-Text"])
 
 
+def _llm_ws_url(path: str) -> str:
+    base = (settings.LLM_SERVICE_URL or "").strip().rstrip("/")
+    parsed = urlparse(base)
+    scheme = "wss" if parsed.scheme == "https" else "ws"
+    return urlunparse(parsed._replace(scheme=scheme, path=path, params="", query="", fragment=""))
+
+
 @router.post("/transcribe", response_model=TranscriptionResponse)
-def transcribe_audio(
+async def transcribe_audio(
     file: UploadFile = File(...),
     language: str = Form(...),
 ):
@@ -34,10 +41,13 @@ def transcribe_audio(
     - **hints**: A comma-separated string of words or phrases to improve recognition accuracy.
     """
     try:
-        speech_to_text_service = get_speech_to_text_service()
-
-        text = speech_to_text_service.transcribe_audio(file.file, language)
-        return TranscriptionResponse(text=text)
+        result = await get_llm_service_client().transcribe_audio(
+            file=file.file,
+            filename=file.filename or "audio",
+            content_type=file.content_type or "application/octet-stream",
+            language=language,
+        )
+        return TranscriptionResponse(text=str(result.get("text") or ""))
     except Exception as e:
         logger.error(f"[SpeechToTextAPI] Error: {str(e)}")
         raise HTTPException(
@@ -50,81 +60,37 @@ def transcribe_audio(
 async def stt_websocket(ws: WebSocket):
     await ws.accept()
 
-    service = None
-    started = False
-
     try:
-        first = await ws.receive()
-        if "text" not in first:
-            await ws.send_text(
-                json.dumps(
-                    {"type": "error", "message": "First frame must be JSON 'start'"}
-                )
-            )
-            await ws.close(code=1002)
-            return
+        headers = {}
+        if settings.LLM_SERVICE_INTERNAL_TOKEN:
+            headers[settings.LLM_SERVICE_INTERNAL_HEADER] = settings.LLM_SERVICE_INTERNAL_TOKEN
 
-        start_msg = json.loads(first["text"])
-        if not isinstance(start_msg, dict) or start_msg.get("event") != "start":
-            await ws.send_text(
-                json.dumps({"type": "error", "message": "Expected event='start' JSON"})
-            )
-            await ws.close(code=1002)
-            return
+        async with websockets.connect(
+            _llm_ws_url("/api/v1/speech-to-text/ws/transcribe"),
+            additional_headers=headers,
+            open_timeout=10,
+            close_timeout=10,
+        ) as upstream:
+            async def client_to_upstream():
+                while True:
+                    msg = await ws.receive()
+                    if "bytes" in msg and msg["bytes"] is not None:
+                        await upstream.send(msg["bytes"])
+                    elif "text" in msg and msg["text"] is not None:
+                        await upstream.send(msg["text"])
 
-        provider = (start_msg.get("provider") or "azure").lower()
-        language = start_msg.get("language") or "en-US"
-        hints = start_msg.get("hints") or []
+            async def upstream_to_client():
+                async for message in upstream:
+                    if isinstance(message, bytes):
+                        await ws.send_bytes(message)
+                    else:
+                        await ws.send_text(message)
 
-        service = get_streaming_stt_service(provider)
-        await service.start(language=language, hints=hints)
-        started = True
-
-        # Kick off a task to pump results back to client
-        async def result_pump():
-            try:
-                async for item in service.results():
-                    await ws.send_text(json.dumps(item, ensure_ascii=False))
-            except Exception as e:
-                await ws.send_text(json.dumps({"type": "error", "message": str(e)}))
-
-        pump_task = asyncio.create_task(result_pump())
-
-        # Receive loop
-        while True:
-            msg = await ws.receive()
-
-            if "bytes" in msg and msg["bytes"] is not None:
-                # Binary audio frame: raw PCM16
-                await service.feed_audio(msg["bytes"])
-                continue
-
-            if "text" in msg and msg["text"] is not None:
-                try:
-                    payload = json.loads(msg["text"])
-                except Exception:
-                    await ws.send_text(
-                        json.dumps({"type": "error", "message": "Invalid JSON"})
-                    )
-                    continue
-
-                if payload.get("event") == "stop":
-                    await service.finalize()
-                    await pump_task
-                    await ws.close(code=1000)
-                    break
-                else:
-                    await ws.send_text(
-                        json.dumps({"type": "error", "message": "Unknown event"})
-                    )
-                    continue
+            await asyncio.gather(client_to_upstream(), upstream_to_client())
 
     except WebSocketDisconnect:
-        # Client disconnected; ensure cleanup
-        if started and service:
-            await service.finalize()
+        return
     except Exception as e:
-        # Bubble error to client
         try:
             await ws.send_text(json.dumps({"type": "error", "message": str(e)}))
         finally:

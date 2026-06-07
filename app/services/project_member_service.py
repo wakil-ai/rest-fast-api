@@ -23,7 +23,12 @@ class ProjectMemberService:
         self.invite_prefix = "pinv-"
         self.member_prefix = "pmem-"
 
-        asyncio.create_task(self._init_collections())
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None:
+            loop.create_task(self._init_collections())
 
     async def _init_collections(self) -> None:
         await self.db.create_collection(self.members_collection)

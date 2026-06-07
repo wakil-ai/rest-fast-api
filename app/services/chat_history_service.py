@@ -4,7 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.orchestration.utils import delete_agent_thread
+async def delete_agent_thread(*, user_id: str, session_id: str) -> bool:
+    return False
 from app.core.config import settings
 from app.core.dependencies import get_bitrix24_service, get_db_manager
 from app.core.exceptions import (
@@ -34,8 +35,13 @@ class ChatHistoryService:
         self.token_counting_collection = settings.TOKEN_COUNTING_COLLECTION
         self.bitrix24_service = get_bitrix24_service()
 
-        # Create collections and indexes asynchronously on first use
-        asyncio.create_task(self._init_collections())
+        # Create collections and indexes when a running loop is available.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None:
+            loop.create_task(self._init_collections())
 
     async def _init_collections(self):
         """Initialize necessary database collections (async)."""

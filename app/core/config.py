@@ -1,38 +1,12 @@
 import os
-from enum import Enum
 
 from dotenv import load_dotenv
-# from google.genai._interactions.types.interaction import AgentConfig
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 # Manually load the .env file from the root project directory
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", ".env"))
 load_dotenv(dotenv_path=env_path, override=True)
-
-
-class VectorDBType(str, Enum):
-    pinecone = "pinecone"
-    milvus = "milvus"
-
-
-class LLMProvider(str, Enum):
-    novita = "novita"
-    openai = "openai"
-
-
-class EmbeddingModel(str, Enum):
-    qwen = "qwen"
-    openai = "openai"
-    novita_qwen = "novita_qwen"
-    deepinfra = "deepinfra"
-    siliconflow = "siliconflow"
-
-
-# SPEECH TO TEXT
-class SpeechToTextProvider(str, Enum):
-    google = "google"
-    azure = "azure"
 
 
 class Settings(BaseSettings):
@@ -45,7 +19,7 @@ class Settings(BaseSettings):
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Reserved for future OpenTelemetry wiring
 
-    # Langfuse (LangChain callback tracing)
+    # Langfuse
     LANGFUSE_TRACING_ENABLED: bool = False
     LANGFUSE_PUBLIC_KEY: str | None = None
     LANGFUSE_SECRET_KEY: str | None = None
@@ -59,45 +33,12 @@ class Settings(BaseSettings):
         "http://wakil.ai",
     ]  # CORS allowed origins
 
-    # Memory Service API Key
-    MEM0_API_KEY: str = None  # Mem
-    MEM0_PROJECT_ID: str = None
-    MEM0_ORG_ID: str = None
-
-    # VECTOR DBs
-    # Vector Database Configuration
-    VECTOR_DB_TYPE: VectorDBType = VectorDBType.milvus
-
     # MongoDB
     MONGODB_URI: str | None = None  # Make optional
     COLLECTION_NAME: str | None = None  # Make optional
     MONGODB_DB_NAME: str = "wakilai"
-    #: Criminal-case documents DB (same as ``neoj4`` ingest; often ``criminal``).
+    #: Criminal-case documents DB used by internal excerpt bridge.
     CRIMINAL_CASES_MONGODB_DATABASE: str = "criminal"
-
-    # Neo4j criminal-case graph (``neoj4`` stack)
-    NEO4J_URI: str | None = None
-    NEO4J_USERNAME: str = "neo4j"
-    NEO4J_PASSWORD: str | None = None
-    NEO4J_DATABASE: str = "neo4j"
-    NEO4J_CASE_VECTOR_INDEX: str = "case_summary_embedding"
-    #: Full-text index on the same ``Case`` label as ``NEO4J_CASE_VECTOR_INDEX``; enables
-    #: LangChain ``Neo4jVector`` hybrid (vector + keyword). Leave empty for vector-only.
-    NEO4J_CASE_FULLTEXT_INDEX: str = ""
-    #: LangChain ``Neo4jVector`` suffix after the index step. ``Case`` rows from neoj4 often have
-    #: no ``text`` property; coalesce avoids "missing or empty `text`" errors (full text lives in Mongo).
-    NEO4J_CASE_VECTOR_RETRIEVAL_QUERY: str = (
-        "RETURN coalesce(node.text, node.case_summary, node.case_number, node.doc_id, '') AS text, score, "
-        "node {.*, `text`: Null, `embedding`: Null, id: Null } AS metadata"
-    )
-    #: Optional ``Case`` node property names for metadata-filtered vector search (Neo4j 5.18+).
-    #: Map the cypher agent's first structured value to a property; unset = no property filter.
-    NEO4J_CASE_FILTER_ARTICLE_PROP: str | None = None
-    NEO4J_CASE_FILTER_COURT_PROP: str | None = None
-    NEO4J_CASE_FILTER_INSTANCE_PROP: str | None = None
-    NEO4J_SECTION_VECTOR_INDEX: str = "legal_section_embedding"
-    #: When false, ``search_criminal_case_graph`` returns a configuration hint only.
-    CRIMINAL_GRAPH_RETRIEVAL_ENABLED: bool = True
     USERS_COLLECTION: str = "users"
     SESSIONS_COLLECTION: str = "sessions"
     MESSAGES_COLLECTION: str = "messages"
@@ -122,96 +63,21 @@ class Settings(BaseSettings):
     GCS_CREDENTIALS_PATH: str | None = None  # Path to service account JSON file
     GCS_PROJECT_ID: str | None = None
 
-    # Milvus
-    MILVUS_MAIN_NAME: str = "lexuz"
-    MILVUS_TAX_COLLECTION: str = "soliq"
-    MILVUS_PROJECT_FILES: str = "project_files"
-    MILVUS_ADMINISTRATIVE_COURT: str = "mamuriy_sud"
-    MILVUS_ADMINISTRATIVE_COURT_ALL: str = "mamuriy_sud_all"
-    MILVUS_CONTRACT_ANALYZER: str = "shartnoma"
-    # Min hybrid-search hit score (Milvus `score` on retrieved docs) to offer a file attachment
+    # Assistant compatibility names owned by public routes/credits.
+    ASSISTANT_MAIN_COLLECTION: str = "lexuz"
+    ASSISTANT_TAX_COLLECTION: str = "soliq"
+    ASSISTANT_COURT_COLLECTION: str = "mamuriy_sud_all"
+    ASSISTANT_CONTRACT_COLLECTION: str = "shartnoma"
+    ASSISTANT_ECONOMIC_COURT_COLLECTION: str = "economic_court"
+    ASSISTANT_CIVIL_COURT_COLLECTION: str = "civil_court"
+    PROJECT_FILES_INDEX_NAME: str = "project_files"
+    LLM_SERVICE_EMBEDDING_MODEL_NAME: str = "rest-api-llm"
+    # Min search hit score to offer a contract attachment.
     CONTRACT_ATTACHMENT_MIN_SIMILARITY: float = 0.6
-    MILVUS_ECONOMIC_COURT: str = "economic_court"
-    MILVUS_CIVIL_COURT: str = "civil_court"
-    MILVUS_CRIMINAL_COURT: str = "criminal_court"
-    MILVUS_URI: str = "http://localhost:19530"
-    MILVUS_USER: str | None = None
-    MILVUS_PASSWORD: str | None = None
-    MILVUS_TOKEN: str | None = None
-
-    # Pinecone
-    PINECONE_API_KEY: str | None = None
-    PINECONE_ENVIRONMENT: str | None = None
-    PINECONE_INDEX_NAME: str | None = None
-    NAMESPACE_NAME: str = "lexuz"
-
-    # LLM
-    # Model Selection
-    LLM_PROVIDER: LLMProvider = LLMProvider.openai
-
-    # OpenAI GPT
-    OPENAI_API_KEY: str | None = None
-
-    # Default models
-    DEFAULT_CHAT_MODEL: str = "gpt-5.2"  # Default model for chat completions (gemini-* routes to Gemini)
-    DEFAULT_LITE_MODEL: str = "gpt-4.1-mini"  # Routing, intent, Milvus filters, query rewrite
-
-    # Fallback model for chat completions
-    GPT_COMPLETION_MODEL: str = "gpt-5.2"  # Legacy OpenAI fallback model for chat completions
-
-    # Gemini explicit context caching
-    GEMINI_EXPLICIT_CACHE_ENABLED: bool = False
-    GEMINI_EXPLICIT_CACHE_TTL: str = "3600s"
-    GEMINI_EXPLICIT_CACHE_MIN_TOKENS: int = 4096
-    GEMINI_EXPLICIT_CACHE_MAX_LOCAL_ENTRIES: int = 256
-
-    # Anthropic Claude
-    ANTHROPIC_API_KEY: str | None = None
-
-    # Novita AI API for Gemma provider
-    NOVITA_API_BASE: str = "https://api.novita.ai/v3/openai"
-    NOVITA_API_KEY: str | None = None
-    NOVITA_TINY_MODEL: str = "openai/gpt-oss-120b"
-    NOVITA_MODEL: str = "openai/gpt-oss-120b"
-
-    # Novita Embeddings (OpenAI-compatible)
-    NOVITA_EMBEDDING_BASE_URL: str = "https://api.novita.ai/openai"
-    NOVITA_EMBEDDING_MODEL: str = "qwen/qwen3-embedding-8b"
-
-    # DeepInfra Embeddings (OpenAI-compatible)
-    DEEPINFRA_API_KEY: str | None = None
-    DEEPINFRA_EMBEDDING_BASE_URL: str = "https://api.deepinfra.com/v1/openai"
-    DEEPINFRA_EMBEDDING_MODEL: str = "Qwen/Qwen3-Embedding-4B"
-
-    # SiliconFlow Embeddings (OpenAI-compatible)
-    SILICONFLOW_API_KEY: str | None = None
-    SILICONFLOW_EMBEDDING_BASE_URL: str = "https://api.siliconflow.com/v1/embeddings/"
-    SILICONFLOW_EMBEDDING_MODEL: str = "Qwen/Qwen3-Embedding-4B"
-
-    # EMBEDDING MODEL
-    EMBEDDING_MODEL: EmbeddingModel = EmbeddingModel.qwen
-    EMBEDDING_DIM: int = 2560
-
-    SPEECH_TO_TEXT_PROVIDER: SpeechToTextProvider = SpeechToTextProvider.azure
-    AZURE_SPEECH_KEY: str | None = None
-    AZURE_SPEECH_REGION: str | None = None
-
-    # OCR Service
-    DATALAB_API_KEY: str | None = None
     FILE_CONTENT_TOKEN_LIMIT: int = (
         50_000  # Max uploaded file context tokens for LLM prompts
     )
-    #: Cap for combined assistant + upload context passed to the final answer LLM.
-    RETRIEVAL_CONTEXT_TOKEN_LIMIT: int = 300_000
-    EMBEDDING_QUERY_TOKEN_LIMIT: int = 10_000  # Max query tokens sent to embedding APIs
     FILE_SEARCH_TOP_K: int = 3
-
-    # OpenAI Embedding Model
-    OPENAI_EMBEDDING_MODEL: str = "text-embedding-ada-002"
-
-    # Qwen with vllm
-    QWEN_EMBEDDING_URL: str | None = None
-    QWEN_EMBEDDING_MODEL: str | None = None
 
     # SECURITY
     # Docs User
@@ -232,28 +98,19 @@ class Settings(BaseSettings):
     STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0
     STREAM_SSE_MAX_RESPONSE_CHARS: int = 200
     TOP_K: int = 10
-    ADDITIONAL_TOP_K: int = (
-        3  # For multi-collection retrievals (e.g. contract analyzer + main)
-    )
-    ALPHA: float = 0.8
-
-    # TEMPERATURE
-    TEMPERATURE: float = 0.1
     CHAT_HISTORY_LIMIT: int = 3
-    OUTPUT_MAX_TOKENS: int = 8192
     MAX_QUERY_LENGTH: int = 5000
 
-    LOCAL_VLLM_BASE_URL: str = "http://localhost:8000"
-    LOCAL_VLLM_MODEL: str = "gpt-oss-120b"
-    LOCAL_VLLM_API_KEY: str = "sk-no-key-required"
+    # Internal LLM service (rest-api -> rest-api-llm)
+    LLM_SERVICE_URL: str | None = None
+    LLM_SERVICE_INTERNAL_TOKEN: str | None = None
+    LLM_SERVICE_INTERNAL_HEADER: str = "x-internal-token"
+    LLM_SERVICE_TIMEOUT_SECONDS: float = 600.0
 
     # Auth (For Telegram Login)
     TELEGRAM_BOT_TOKEN: str = None
     TELEGRAM_BOT_LOGIN: str = None
     TELEGRAM_SESSION_TIMEOUT: int = 86400 * 3  # 3 day in seconds
-
-    # Web Scraping
-    TAVILY_API_KEY: str | None = None
 
     # Credit System Configuration
     DAILY_CREDITS_LIMIT: int = 30  # Daily credits after the welcome pool is exhausted
@@ -328,23 +185,10 @@ class Settings(BaseSettings):
     OTP_VERIFY_LIMIT_PER_PHONE: int = 10
     OTP_VERIFY_WINDOW_SECONDS: int = 3600
 
-    GEMINI_API_KEY: str | None = None
-    GEMINI_LANGCHAIN_THINKING_LEVEL: str = "high"
-
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_EXPIRATION_SECONDS: int = 86400 * 3  # 3 days in seconds
-    #: Full Redis URL for LangGraph checkpoints (optional). If unset, built from host/port/password.
-    REDIS_URI: str | None = None
     REDIS_PASSWORD: str | None = None
-    #: Persist LangGraph thread state in Redis (AsyncRedisSaver). Required for chat agents.
-    #: Requires ``langgraph-checkpoint-redis`` and Redis with RedisJSON / RediSearch support.
-    #: Session delete calls ``adelete_thread``; keys also expire after ``LANGGRAPH_CHECKPOINT_TTL_SECONDS``.
-    LANGGRAPH_CHECKPOINT_USE_REDIS: bool = True
-    #: Redis TTL for LangGraph checkpoint keys (seconds). After this period Redis drops checkpoint data for a thread.
-    LANGGRAPH_CHECKPOINT_TTL_SECONDS: int = (
-        86400 * 3
-    )  # 3 days, independent of general cache TTL if needed
 
     # OneID / B2B Integration
     DT_SERVER_IP: str = "87.192.230.47"  # OneID server IP for birdarcha web client
@@ -370,56 +214,56 @@ class Settings(BaseSettings):
         self.ASSISTANTS = {
             "main": {
                 "name": "main",
-                "collection_name": self.MILVUS_MAIN_NAME,
+                "collection_name": self.ASSISTANT_MAIN_COLLECTION,
                 "credit_cost": self.CREDIT_COST_MAIN_ASSISTANT,
                 "description": "General legal assistant",
                 "public": True,
             },
             "tax": {
                 "name": "tax",
-                "collection_name": self.MILVUS_TAX_COLLECTION,
+                "collection_name": self.ASSISTANT_TAX_COLLECTION,
                 "credit_cost": self.CREDIT_COST_SOLIQ_ASSISTANT,
                 "description": "Tax specialized assistant",
                 "public": True,
             },
             "court": {
                 "name": "court",
-                "collection_name": self.MILVUS_ADMINISTRATIVE_COURT_ALL,
+                "collection_name": self.ASSISTANT_COURT_COLLECTION,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Court assistant that automatically routes to the correct court type",
                 "public": True,
             },
             "administrative_court": {
                 "name": "administrative_court",
-                "collection_name": self.MILVUS_ADMINISTRATIVE_COURT_ALL,
+                "collection_name": self.ASSISTANT_COURT_COLLECTION,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Administrative court specialized assistant",
                 "public": False,
             },
             "contract_analyzer": {
                 "name": "contract_analyzer",
-                "collection_name": self.MILVUS_CONTRACT_ANALYZER,
+                "collection_name": self.ASSISTANT_CONTRACT_COLLECTION,
                 "credit_cost": self.CREDIT_COST_SHARTNOMA_ASSISTANT,
                 "description": "Contract analyzer assistant",
                 "public": True,
             },
             "criminal_court": {
                 "name": "criminal_court",
-                "collection_name": self.MILVUS_MAIN_NAME,
+                "collection_name": self.ASSISTANT_MAIN_COLLECTION,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Criminal court specialized assistant",
                 "public": False,
             },
             "economic_court": {
                 "name": "economic_court",
-                "collection_name": self.MILVUS_ECONOMIC_COURT,  # untill updated
+                "collection_name": self.ASSISTANT_ECONOMIC_COURT_COLLECTION,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Economic court specialized assistant",
                 "public": False,
             },
             "civil_court": {
                 "name": "civil_court",
-                "collection_name": self.MILVUS_CIVIL_COURT,
+                "collection_name": self.ASSISTANT_CIVIL_COURT_COLLECTION,
                 "credit_cost": self.CREDIT_COST_SUD_ASSISTANT,
                 "description": "Civil court specialized assistant",
                 "public": False,

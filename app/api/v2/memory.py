@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.core.dependencies import get_memory_service
+from app.core.dependencies import get_llm_service_client
 from app.core.logger import logger
 from app.models.memory import (
     GetAllMemoriesResponse,
@@ -11,7 +11,6 @@ from app.models.memory import (
 )
 
 router = APIRouter(prefix="/memory", tags=["Memory"])
-memory_service = get_memory_service()
 
 
 @router.get(
@@ -24,8 +23,7 @@ async def get_user_memories(user_id: str) -> GetAllMemoriesResponse:
     Retrieve past interactions for a user.
     """
     try:
-        results = await memory_service.get_all_memories(user_id)
-        return {"user_id": user_id, **results}
+        return await get_llm_service_client().memory_get_all(user_id)
     except Exception as e:
         logger.error(f"Error retrieving memories for user {user_id}: {e}")
         return {"user_id": user_id, "memories": [], "categories": [], "memory_ids": []}
@@ -39,11 +37,9 @@ async def delete_user_memories(user_id: str) -> dict:
     Delete all past interactions for a user.
     """
     try:
-        success = await memory_service.delete_all_user_memories(user_id)
-        if success:
-            return {"message": f"All memories for user {user_id} deleted successfully."}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to delete memories.")
+        return await get_llm_service_client().request_json(
+            "DELETE", f"/api/v1/memory/user/{user_id}/"
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -58,23 +54,13 @@ async def save_interaction(request: SaveInteractionRequest) -> SaveInteractionRe
     Save a user interaction (query and answer) to memory.
     """
     try:
-        messages = [
-            {"role": "user", "content": pair.query} for pair in request.messages
-        ] + [{"role": "assistant", "content": pair.answer} for pair in request.messages]
-        result = await memory_service.add_memory(request.user_id, messages)
-
-        return {
-            "message": result.get("message", "Memory added successfully on background.")
-        }
+        return await get_llm_service_client().post_json(
+            "/api/v1/memory/save/",
+            request.model_dump(),
+        )
     except Exception as e:
         logger.error(f"[ChatMemoryService] Error saving memory: {e}")
         return {"message": f"Failed to save memory: {str(e)}"}
-    try:
-        return await memory_service._save_interaction_to_memory(
-            request.user_id, request.query, request.answer
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete(
@@ -85,11 +71,9 @@ async def delete_memory(memory_id: str):
     Delete a specific memory by its ID.
     """
     try:
-        success = await memory_service.delete_memory(memory_id)
-        if success:
-            return {"message": f"Memory {memory_id} deleted successfully."}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to delete memory.")
+        return await get_llm_service_client().request_json(
+            "DELETE", f"/api/v1/memory/{memory_id}/"
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -106,13 +90,10 @@ async def update_memory(
     Update a specific memory by its ID.
     """
     try:
-        updated_memory = await memory_service.update_memory(memory_id, request.text)
-        if updated_memory:
-            return {
-                "message": f"Memory {memory_id} updated successfully.",
-                "memory": updated_memory,
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to update memory.")
+        return await get_llm_service_client().request_json(
+            "PUT",
+            f"/api/v1/memory/update/{memory_id}",
+            payload=request.model_dump(),
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

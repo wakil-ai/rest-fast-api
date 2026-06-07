@@ -11,7 +11,7 @@ from app.core.assistants import AssistantConfig
 from app.core.config import settings
 from app.core.dependencies import (
     get_chat_history_service,
-    get_orchestration_service,
+    get_llm_service_client,
     get_project_service,
     get_rate_limit_service,
     get_storage_service,
@@ -55,14 +55,12 @@ def _orchestration_exception_detail(exc: BaseException) -> str:
     name = type(exc).__name__
     if isinstance(exc, NotImplementedError):
         return (
-            f"{name} (empty message). See server traceback — e.g. LangGraph async "
-            "checkpoint methods on a sync-only saver, or an unimplemented "
-            "checkpoint/store base method."
+            f"{name} (empty message). See server traceback from the internal LLM service."
         )
 
     return (
         f"{name} with no message; see server logs (traceback). "
-        "If this is a missing-service error, verify GEMINI_API_KEY and Redis/Mongo URIs."
+        "If this is a missing-service error, verify LLM_SERVICE_URL and internal token settings."
     )
 
 
@@ -337,25 +335,142 @@ class ChatService:
         project_id: str | None = None,
         file_context: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
-        service = get_orchestration_service()
-        payload = service.build_payload(
+        payload = await self.build_llm_inference_payload(
             query=query,
             user_id=user_id,
             session_id=session_id,
-            message_id=message_id,
-            assistant_name=assistant,
+            assistant=assistant,
             file_ids=file_ids,
             project_id=project_id,
             file_context=file_context,
         )
-        result = await service.arun(payload)
-        return (
-            str(result.get("final_answer") or ""),
-            self.orchestration_generation_meta(
-                assistant=assistant,
-                orchestration_result=result,
-            ),
+        result = await get_llm_service_client().ask_chat(payload)
+        meta = dict(result.get("metadata") or {})
+        if attachments := result.get("attachments"):
+            meta["attachments"] = attachments
+        if not meta.get("selected_assistant"):
+            meta["selected_assistant"] = assistant
+        if not meta.get("workflow"):
+            meta["workflow"] = "rest_api_llm"
+        return str(result.get("answer") or ""), meta
+
+    async def build_llm_inference_payload(
+        self,
+        *,
+        query: str,
+        user_id: str,
+        session_id: str,
+        assistant: str,
+        file_ids: list[str] | None = None,
+        project_id: str | None = None,
+        file_context: str | None = None,
+    ) -> dict[str, Any]:
+        user_uploaded_context = await self.collect_user_uploaded_context(
+            query=query,
+            user_id=user_id,
+            file_ids=file_ids,
+            project_id=project_id,
+            inline_context=file_context,
         )
+
+        return {
+            "query": query,
+            "assistant": assistant,
+            "thread_id": f"{user_id}:{session_id}",
+            "user_uploaded_context": user_uploaded_context or None,
+        }
+
+    async def collect_user_uploaded_context(
+        self,
+        *,
+        query: str,
+        user_id: str,
+        file_ids: list[str] | None = None,
+        project_id: str | None = None,
+        inline_context: str | None = None,
+    ) -> str:
+        sections: list[str] = []
+        if inline_context and inline_context.strip():
+            sections.append("## INLINE USER UPLOADED CONTEXT\n" + inline_context.strip())
+
+        if project_id:
+            try:
+                data = await get_project_service().get_project_instructions(
+                    project_id, user_id
+                )
+                instructions = str(data.get("instructions") or "").strip()
+                if instructions:
+                    sections.append("## PROJECT INSTRUCTIONS\n" + instructions)
+            except Exception as exc:
+                logger.warning(
+                    f"[ChatService] Could not load project instructions for {project_id}: {exc}",
+                    exc_info=True,
+                )
+
+            try:
+                result = await get_llm_service_client().search_project(
+                    {
+                        "project_id": project_id,
+                        "user_id": user_id,
+                        "query": query,
+                        "top_k": settings.TOP_K,
+                    }
+                )
+                context = str(result.get("context") or "").strip()
+                if context:
+                    sections.append(context)
+            except Exception as exc:
+                logger.warning(
+                    f"[ChatService] Project context search failed for {project_id}: {exc}",
+                    exc_info=True,
+                )
+
+        indexed_file_ids: list[str] = []
+        ocr_sections: list[str] = []
+        for file_id in file_ids or []:
+            try:
+                record = await self.chat_history_service.get_file_by_id(file_id)
+            except Exception as exc:
+                logger.warning(
+                    f"[ChatService] Could not load file record {file_id}: {exc}",
+                    exc_info=True,
+                )
+                continue
+            if not record:
+                continue
+            metadata = record.get("file_metadata") or {}
+            file_name = metadata.get("file_name") or file_id
+            milvus_file_index = metadata.get("milvus_file_index") or {}
+            if milvus_file_index.get("enabled"):
+                indexed_file_ids.append(file_id)
+                continue
+            ocr_result = str(record.get("ocr_result") or "").strip()
+            if ocr_result:
+                ocr_sections.append(f"## USER FILE CONTEXT: {file_name}\n{ocr_result}")
+
+        if indexed_file_ids:
+            try:
+                result = await get_llm_service_client().search_files(
+                    {
+                        "file_ids": indexed_file_ids,
+                        "user_id": user_id,
+                        "query": query,
+                        "top_k": settings.FILE_SEARCH_TOP_K,
+                    }
+                )
+                context = str(result.get("context") or "").strip()
+                if context:
+                    sections.append(context)
+            except Exception as exc:
+                logger.warning(
+                    f"[ChatService] File vector context search failed: {exc}",
+                    exc_info=True,
+                )
+
+        sections.extend(ocr_sections)
+        if not sections:
+            return ""
+        return "\n\n".join(sections)
 
     async def astream_orchestrated_chat(
         self,
@@ -370,6 +485,7 @@ class ChatService:
         is_dt_team_request: bool = False,
         project_id: str | None = None,
         file_context: str | None = None,
+        stream_endpoint: str = "/api/v1/chat/ask/stream",
     ) -> AsyncGenerator[Any, None]:
         yield {
             "type": "metadata",
@@ -378,65 +494,57 @@ class ChatService:
         }
 
         try:
-            service = get_orchestration_service()
-            payload = service.build_payload(
+            payload = await self.build_llm_inference_payload(
                 query=query,
                 user_id=user_id,
                 session_id=session_id,
-                message_id=message_id,
-                assistant_name=assistant,
+                assistant=assistant,
                 file_ids=file_ids,
                 project_id=project_id,
                 file_context=file_context,
             )
-            last_state = await service.prepare_final_state(payload)
-            state_attachments = (
-                list(last_state.get("attachments") or [])
-                if isinstance(last_state.get("attachments"), list)
-                else []
-            )
-            if state_attachments:
-                yield {
-                    "type": "attachments",
-                    "attachments": list(state_attachments),
-                }
-
             answer_chunks: list[str] = []
-            final_generation_meta: dict[str, Any] = {}
-            async for item in service.astream_final_answer(last_state):
+            generation_meta: dict[str, Any] = {
+                "workflow": "rest_api_llm_stream",
+                "selected_assistant": assistant,
+            }
+            async for item in get_llm_service_client().stream_json(
+                stream_endpoint,
+                payload,
+            ):
                 if isinstance(item, str):
                     answer_chunks.append(item)
-                elif (
-                    isinstance(item, dict)
-                    and item.get("type") == "_generation_meta"
-                    and isinstance(item.get("meta"), dict)
-                ):
-                    final_generation_meta = item["meta"]
+                    yield item
+                    continue
+                if not isinstance(item, dict):
+                    yield item
+                    continue
+
+                event_type = item.get("type")
+                if event_type == "metadata":
+                    generation_meta.update(
+                        {k: v for k, v in item.items() if k != "type"}
+                    )
+                    item["session_id"] = session_id
+                    item["message_id"] = message_id
+                    yield item
+                    continue
+                if event_type == "chunk":
+                    answer_chunks.append(str(item.get("chunk") or ""))
+                    yield item
+                    continue
+                if event_type == "attachments":
+                    generation_meta["attachments"] = item.get("attachments") or []
+                    yield item
+                    continue
+                if event_type == "end":
+                    generation_meta.update(
+                        {k: v for k, v in item.items() if k != "type"}
+                    )
                     continue
                 yield item
 
             answer = "".join(answer_chunks).strip()
-            last_state["final_answer"] = answer
-            last_state["retrieval_context"] = ""
-            result_wrapped = {
-                "original_query": query,
-                "rewritten_query": last_state.get("rewritten_query"),
-                "retrieval_context": last_state.get("retrieval_context", ""),
-                "final_answer": answer,
-                "result": last_state,
-            }
-            generation_meta = self.orchestration_generation_meta(
-                assistant=assistant,
-                orchestration_result=result_wrapped,
-            )
-            stream_meta = {
-                k: v for k, v in final_generation_meta.items() if k != "attachments"
-            }
-            generation_meta.update(stream_meta)
-            generation_meta["attachments"] = self.merge_message_attachments(
-                state_attachments,
-                generation_meta.get("attachments"),
-            )
         except Exception as error:
             detail = _orchestration_exception_detail(error)
             logger.error(
@@ -456,13 +564,12 @@ class ChatService:
             user_id=user_id,
             answer=answer_out,
             existing_attachments=generation_meta.get("attachments"),
-            classified_legal_intent=str(last_state.get("classified_legal_intent") or "")
-            or None,
+            classified_legal_intent=generation_meta.get("classified_legal_intent"),
         )
         if attachments:
             generation_meta["attachments"] = attachments
             # Always send the full merged list at the end. Clients typically replace
-            # attachments on each event; sending only new items drops Milvus templates
+            # attachments on each event; sending only new items drops upstream templates
             # that were streamed earlier after retrieval.
             yield {"type": "attachments", "attachments": attachments}
 
@@ -725,6 +832,7 @@ class ChatService:
                     started_at=started_at,
                     project_id=resolved_project_id,
                     file_context=request.file_context,
+                    stream_endpoint="/api/v1/chat/agent/stream",
                 )
             )
 
@@ -754,10 +862,10 @@ class ChatService:
     @staticmethod
     def get_model_info_response() -> ModelInfoResponse:
         return ModelInfoResponse(
-            service_provider=settings.LLM_PROVIDER,
-            embedding_model=settings.EMBEDDING_MODEL,
+            service_provider="rest-api-llm",
+            embedding_model=settings.LLM_SERVICE_EMBEDDING_MODEL_NAME,
             stream=settings.STREAM,
             top_k=settings.TOP_K,
-            alpha=settings.ALPHA,
-            temperature=settings.TEMPERATURE,
+            alpha=0.0,
+            temperature=0.0,
         )

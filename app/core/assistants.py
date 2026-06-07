@@ -85,10 +85,8 @@ class AssistantConfig:
 
     @classmethod
     def is_web_search_enabled(cls, assistant_name: str | None) -> bool:
-        """Pipeline Tavily fallback is only for deep-research turns."""
-        return bool(settings.TAVILY_API_KEY) and cls.is_deep_research_assistant(
-            assistant_name
-        )
+        """Web/research behavior is only requested for deep-research turns."""
+        return cls.is_deep_research_assistant(assistant_name)
 
     @classmethod
     def validate_assistant_or_default(cls, assistant_name: str | None) -> str:

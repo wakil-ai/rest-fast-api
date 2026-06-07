@@ -85,7 +85,7 @@ HTTP 500 Internal Server Error
 }
 ```
 
-The LangGraph orchestration pipeline encountered an unrecoverable error. Logs contain the full traceback. Common causes: Redis unavailable (checkpoint save failed), Milvus connection error, or missing API key.
+The internal LLM service returned an unrecoverable chat error or could not be reached. Logs contain the full traceback. Common causes: `LLM_SERVICE_URL` is wrong, the internal token is missing, or `rest-api-llm` is unavailable.
 
 ---
 
@@ -111,7 +111,7 @@ HTTP 500 Internal Server Error
 }
 ```
 
-An error occurred while building or flushing the SSE stream. Often caused by upstream Gemini stream drops. Retry the request.
+An error occurred while relaying the SSE stream from `rest-api-llm`. Retry the request and check the internal service logs.
 
 ---
 
