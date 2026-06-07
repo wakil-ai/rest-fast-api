@@ -23,7 +23,6 @@ from app.core.exceptions import (
     InvalidInputError,
     QueryTooLongException,
 )
-from app.core.langfuse_tracing import flush_langfuse_if_enabled
 from app.core.logger import logger
 from app.models.chat import (
     AgenticRAGRequest,
@@ -641,7 +640,6 @@ class ChatService:
         if merged_meta.get("attachments"):
             end_event["attachments"] = merged_meta["attachments"]
         yield end_event
-        flush_langfuse_if_enabled()
 
     async def _persist_assistant_message_safe(
         self,

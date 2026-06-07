@@ -72,7 +72,7 @@ HTTP 500 Internal Server Error
 }
 ```
 
-The LLM generation step failed — network error, upstream API timeout, or model refusal. Retry with exponential backoff. Check Langfuse traces for the specific failure point.
+The LLM generation step failed — network error, upstream API timeout, or model refusal. Retry with exponential backoff. Check the `rest-api-llm` service logs/traces for the specific failure point.
 
 ---
 
@@ -251,7 +251,7 @@ Payme RPC error codes follow the Payme documentation.
 
 ## Debugging Errors
 
-1. **Enable Langfuse tracing** — captures every LLM call, retrieval step, and timing: see [How-To: Monitor Usage](howto-monitor-usage.md).
+1. **Check `rest-api-llm` traces** — LLM-call, retrieval, and timing observability lives in the `rest-api-llm` service.
 2. **Check Loguru output** — errors from `chat_service.py` include full tracebacks when logged with `exc_info=True`.
 3. **Health check** — `GET /health` returns 200 when the API is up (no auth required). If it's down, the process crashed or the port is wrong.
 4. **Swagger UI** — `GET /docs` (HTTP Basic Auth) allows manual request testing with all schemas visible.

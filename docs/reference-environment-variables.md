@@ -119,13 +119,3 @@ Source of truth: [`app/core/config.py`](../app/core/config.py).
 ## Payments And CRM
 
 Payment and CRM variables are still owned by `rest-api`; see `.env.example` for the full provider list.
-
-## Langfuse
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `LANGFUSE_TRACING_ENABLED` | `false` | Enable Langfuse SDK tracing |
-| `LANGFUSE_PUBLIC_KEY` | `null` | Langfuse public key |
-| `LANGFUSE_SECRET_KEY` | `null` | Langfuse secret key |
-| `LANGFUSE_BASE_URL` | `null` | Langfuse base URL |
-| `LANGFUSE_HOST` | `null` | Alias/fallback host |
