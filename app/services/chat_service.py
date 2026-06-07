@@ -260,6 +260,41 @@ class ChatService:
         return merged
 
     @staticmethod
+    def resolve_attachment_urls(
+        attachments: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        """Turn rest-api-llm attachment metadata into signed download URLs.
+
+        rest-api-llm emits only attachment metadata (a ``gcs_path`` object
+        pointer); this service owns the storage credentials and resolves it
+        into a temporary signed ``url``. Attachments that already carry a
+        ``url`` are passed through unchanged (idempotent).
+        """
+        if not attachments:
+            return []
+        resolved: list[dict[str, Any]] = []
+        for att in attachments:
+            if not isinstance(att, dict):
+                continue
+            item = dict(att)
+            gcs_path = str(item.pop("gcs_path", "") or "").strip()
+            if not item.get("url") and gcs_path:
+                try:
+                    item["url"] = get_storage_service().get_signed_url(gcs_path)
+                except Exception as error:
+                    logger.warning(
+                        f"[ChatService] Could not sign attachment '{gcs_path}': {error}",
+                        exc_info=True,
+                    )
+                    continue
+            resolved.append(item)
+        logger.info(
+            f"[ChatService] resolve_attachment_urls: {len(attachments)} in -> "
+            f"{len(resolved)} out (signed)"
+        )
+        return resolved
+
+    @staticmethod
     def should_attach_final_answer_docx(
         assistant: str | None,
         *,
@@ -347,7 +382,7 @@ class ChatService:
         result = await get_llm_service_client().ask_chat(payload)
         meta = dict(result.get("metadata") or {})
         if attachments := result.get("attachments"):
-            meta["attachments"] = attachments
+            meta["attachments"] = self.resolve_attachment_urls(attachments)
         if not meta.get("selected_assistant"):
             meta["selected_assistant"] = assistant
         if not meta.get("workflow"):
@@ -534,13 +569,18 @@ class ChatService:
                     yield item
                     continue
                 if event_type == "attachments":
-                    generation_meta["attachments"] = item.get("attachments") or []
+                    resolved = self.resolve_attachment_urls(item.get("attachments"))
+                    generation_meta["attachments"] = resolved
+                    item["attachments"] = resolved
                     yield item
                     continue
                 if event_type == "end":
-                    generation_meta.update(
-                        {k: v for k, v in item.items() if k != "type"}
-                    )
+                    updates = {k: v for k, v in item.items() if k != "type"}
+                    if "attachments" in updates:
+                        updates["attachments"] = self.resolve_attachment_urls(
+                            updates["attachments"]
+                        )
+                    generation_meta.update(updates)
                     continue
                 yield item
 
