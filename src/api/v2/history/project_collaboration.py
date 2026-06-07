@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, status
 
-from app.core.dependencies import get_project_member_service, get_project_service
-from app.models.project_collaboration import (
+from core.dependencies import get_project_member_service, get_project_service
+from models.project_collaboration import (
     ProjectInviteAcceptRequest,
     ProjectInviteAcceptResponse,
     ProjectInvitePreviewResponse,
@@ -13,7 +13,7 @@ from app.models.project_collaboration import (
     ProjectMembersListResponse,
     ProjectMembershipRole,
 )
-from app.utils.user_management import handle_service_error, serialize_mongo_id
+from utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/projects", tags=["Project Collaboration"])
 

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.core.dependencies import get_chat_history_service
-from app.models.chat_history import ShareResponse
-from app.utils.user_management import handle_service_error
+from core.dependencies import get_chat_history_service
+from models.chat_history import ShareResponse
+from utils.user_management import handle_service_error
 
 router = APIRouter(prefix="/share", tags=["Share"])
 

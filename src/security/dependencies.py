@@ -4,8 +4,8 @@ import secrets
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
 
-from app.core.config import settings
-from app.core.dependencies import get_chat_history_service
+from core.config import settings
+from core.dependencies import get_chat_history_service
 
 # HTTP Basic (docs)
 security = HTTPBasic()

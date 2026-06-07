@@ -2,13 +2,13 @@
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
-from app.core.dependencies import (
+from core.dependencies import (
     get_file_manager,
     get_llm_service_client,
     get_project_service,
 )
-from app.models.chat_history import FileUploadResponse, SessionResponse
-from app.models.projects import (
+from models.chat_history import FileUploadResponse, SessionResponse
+from models.projects import (
     ProjectCreateRequest,
     ProjectFileSearchQuery,
     ProjectInstructionsResponse,
@@ -18,8 +18,8 @@ from app.models.projects import (
     ProjectStatus,
     ProjectUpdateRequest,
 )
-from app.utils.entitlements import ensure_can_upload_files
-from app.utils.user_management import handle_service_error, serialize_mongo_id
+from utils.entitlements import ensure_can_upload_files
+from utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 

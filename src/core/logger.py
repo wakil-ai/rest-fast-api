@@ -3,7 +3,7 @@ from functools import lru_cache
 
 from loguru import logger as loguru_logger
 
-from app.core.config import settings
+from core.config import settings
 
 
 @lru_cache

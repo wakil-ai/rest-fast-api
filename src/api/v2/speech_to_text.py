@@ -13,10 +13,10 @@ from fastapi import (
 )
 import websockets
 
-from app.core.config import settings
-from app.core.dependencies import get_llm_service_client
-from app.core.logger import logger
-from app.models.speech_to_text import TranscriptionResponse
+from core.config import settings
+from core.dependencies import get_llm_service_client
+from core.logger import logger
+from models.speech_to_text import TranscriptionResponse
 
 router = APIRouter(prefix="/speech-to-text", tags=["Speech-to-Text"])
 

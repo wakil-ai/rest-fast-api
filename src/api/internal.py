@@ -5,8 +5,8 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.config import settings
-from app.core.dependencies import get_mongo_handler
+from core.config import settings
+from core.dependencies import get_mongo_handler
 
 router = APIRouter(prefix="/internal", tags=["Internal"])
 

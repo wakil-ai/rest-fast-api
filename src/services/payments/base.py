@@ -2,18 +2,18 @@ import secrets
 import time
 from datetime import datetime, timezone
 
-from app.core.config import settings
-from app.core.subscription_tiers import (
+from core.config import settings
+from core.subscription_tiers import (
     daily_pass_rank,
     is_daily_pass_quote,
 )
-from app.core.dependencies import (
+from core.dependencies import (
     get_mongo_handler,
     get_rate_limit_service,
     get_subscription_storage,
 )
-from app.core.logger import logger
-from app.models.payment import SubscriptionEligibilityError
+from core.logger import logger
+from models.payment import SubscriptionEligibilityError
 
 
 class BasePaymentService:

@@ -2,7 +2,7 @@ from typing import Any
 
 import httpx
 
-from app.core.logger import logger
+from core.logger import logger
 
 
 async def send_project_file_progress_webhook(

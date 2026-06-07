@@ -4,15 +4,15 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from app.core.config import settings
-from app.core.dependencies import get_chat_history_service, get_db_manager
-from app.core.logger import logger
-from app.models.projects import (
+from core.config import settings
+from core.dependencies import get_chat_history_service, get_db_manager
+from core.logger import logger
+from models.projects import (
     ProjectCreateRequest,
     ProjectStatus,
     ProjectUpdateRequest,
 )
-from app.utils.user_management import clean_for_mongodb, generate_short_id
+from utils.user_management import clean_for_mongodb, generate_short_id
 
 
 class ProjectService:
@@ -35,7 +35,7 @@ class ProjectService:
         await self.db.create_collection(self.collection)
 
     def _member_service(self):
-        from app.core.dependencies import get_project_member_service
+        from core.dependencies import get_project_member_service
 
         return get_project_member_service()
 

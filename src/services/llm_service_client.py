@@ -6,8 +6,8 @@ from typing import Any, BinaryIO
 
 import httpx
 
-from app.core.config import settings
-from app.core.logger import logger
+from core.config import settings
+from core.logger import logger
 
 
 class LlmServiceClient:

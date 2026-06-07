@@ -3,10 +3,10 @@ from typing import Any
 
 from pymongo import ReturnDocument
 
-from app.core.config import settings
-from app.core.dependencies import get_db_manager, get_mongo_handler
-from app.core.logger import logger
-from app.utils.user_management import clean_for_mongodb
+from core.config import settings
+from core.dependencies import get_db_manager, get_mongo_handler
+from core.logger import logger
+from utils.user_management import clean_for_mongodb
 
 
 class FingerprintService:

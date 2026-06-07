@@ -3,7 +3,7 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any, Optional
 
-from app.core.config import settings
+from core.config import settings
 
 SUPPORTED_STREAM_EVENT_TYPES = {
     "progress",

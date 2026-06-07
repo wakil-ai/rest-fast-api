@@ -1,14 +1,14 @@
 from datetime import datetime, timezone
 
-from app.core.assistants import AssistantConfig
-from app.core.config import settings
-from app.core.dependencies import (
+from core.assistants import AssistantConfig
+from core.config import settings
+from core.dependencies import (
     get_mongo_handler,
     get_promo_code_service,
     get_subscription_storage,
 )
-from app.core.logger import logger
-from app.models.chat import AssistantType
+from core.logger import logger
+from models.chat import AssistantType
 
 
 class RateLimitService:

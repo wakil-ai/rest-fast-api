@@ -1,15 +1,15 @@
 # app/routers/history/router.py
 from fastapi import APIRouter
 
-from app.api.v2.history.feedbacks import router as feedbacks_router
-from app.api.v2.history.files import router as files_router
-from app.api.v2.history.messages import router as messages_router
-from app.api.v2.history.project_collaboration import (
+from api.v2.history.feedbacks import router as feedbacks_router
+from api.v2.history.files import router as files_router
+from api.v2.history.messages import router as messages_router
+from api.v2.history.project_collaboration import (
     router as project_collaboration_router,
 )
-from app.api.v2.history.projects import router as projects_router
-from app.api.v2.history.sessions import router as sessions_router
-from app.api.v2.history.users import router as users_router
+from api.v2.history.projects import router as projects_router
+from api.v2.history.sessions import router as sessions_router
+from api.v2.history.users import router as users_router
 
 router = APIRouter(prefix="/history", tags=["Chat History"])
 

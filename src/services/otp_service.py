@@ -4,15 +4,15 @@ from typing import Literal
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
-from app.core.config import settings
-from app.core.exceptions import (
+from core.config import settings
+from core.exceptions import (
     OTPRateLimitExceededException,
     OTPSendFailedException,
     OTPServiceNotConfiguredException,
     OTPVerificationFailedException,
 )
-from app.core.logger import logger
-from app.services.redis_service import RedisService
+from core.logger import logger
+from services.redis_service import RedisService
 
 
 def _mask_phone(phone: str) -> str:

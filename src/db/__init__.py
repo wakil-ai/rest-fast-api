@@ -1,5 +1,5 @@
-from app.db.db_manager import DBManager
-from app.db.mongo_handler import MongoHandler
+from db.db_manager import DBManager
+from db.mongo_handler import MongoHandler
 
 __all__ = [
     "DBManager",

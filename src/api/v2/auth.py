@@ -7,14 +7,14 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from app.core.config import settings
-from app.core.dependencies import get_chat_history_service
-from app.core.exceptions import UserAlreadyExistsException
-from app.core.logger import logger
-from app.models.auth import DTUserCreateRequest, DTUserCreateResponse, TelegramAuth
-from app.security.dependencies import verify_dt_api_key
-from app.services import validate_telegram_data
-from app.utils.user_management import generate_short_id
+from core.config import settings
+from core.dependencies import get_chat_history_service
+from core.exceptions import UserAlreadyExistsException
+from core.logger import logger
+from models.auth import DTUserCreateRequest, DTUserCreateResponse, TelegramAuth
+from security.dependencies import verify_dt_api_key
+from services import validate_telegram_data
+from utils.user_management import generate_short_id
 
 router = APIRouter(prefix="/auth", tags=["Auth for Login"])
 

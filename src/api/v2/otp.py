@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends
 
-from app.core.dependencies import get_otp_service
-from app.models.otp import (
+from core.dependencies import get_otp_service
+from models.otp import (
     SendOTPRequest,
     SendOTPResponse,
     VerifyOTPRequest,
     VerifyOTPResponse,
 )
-from app.services import OTPService
+from services import OTPService
 
 router = APIRouter(prefix="/auth/otp", tags=["Auth for Login"])
 

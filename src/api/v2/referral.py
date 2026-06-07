@@ -2,14 +2,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.dependencies import get_referral_service
-from app.models.referral import (
+from core.dependencies import get_referral_service
+from models.referral import (
     ReferralSourceStats,
     ReferralStatsResponse,
     ReferralTrackResponse,
 )
-from app.security import verify_api_key
-from app.services.referral_service import ReferralService
+from security import verify_api_key
+from services.referral_service import ReferralService
 
 router = APIRouter(prefix="/referrals", tags=["Referrals"])
 

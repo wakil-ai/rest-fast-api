@@ -3,11 +3,11 @@ import time
 from decimal import Decimal
 from urllib.parse import urlencode
 
-from app.core.config import settings
-from app.core.logger import logger
-from app.models.payment import ClickError
-from app.services.payments.base import BasePaymentService
-from app.utils.text_cleaning import _as_decimal, _as_int, _md5_hex
+from core.config import settings
+from core.logger import logger
+from models.payment import ClickError
+from services.payments.base import BasePaymentService
+from utils.text_cleaning import _as_decimal, _as_int, _md5_hex
 
 
 class ClickService(BasePaymentService):

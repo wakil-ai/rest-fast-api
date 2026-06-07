@@ -1,15 +1,15 @@
 import time
 
-from app.core.config import settings
-from app.core.logger import logger
-from app.models.payment import (
+from core.config import settings
+from core.logger import logger
+from models.payment import (
     SubscriptionEligibilityError,
     UzumError,
     UzumResponseStatus,
     UzumServiceError,
     UzumTransactionState,
 )
-from app.services.payments.base import BasePaymentService
+from services.payments.base import BasePaymentService
 
 # Acceptable planId formats: "<tier>_<period>" — e.g. "standard_monthly", "basic_daily".
 _VALID_PERIODS = {"daily", "monthly", "yearly"}

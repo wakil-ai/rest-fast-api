@@ -4,12 +4,12 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from app.core.config import settings
-from app.core.dependencies import get_chat_history_service, get_db_manager
-from app.core.logger import logger
-from app.models.project_collaboration import ProjectInviteStatus, ProjectMembershipRole
-from app.models.projects import ProjectStatus
-from app.utils.user_management import clean_for_mongodb, generate_short_id
+from core.config import settings
+from core.dependencies import get_chat_history_service, get_db_manager
+from core.logger import logger
+from models.project_collaboration import ProjectInviteStatus, ProjectMembershipRole
+from models.projects import ProjectStatus
+from utils.user_management import clean_for_mongodb, generate_short_id
 
 
 class ProjectMemberService:
@@ -94,7 +94,7 @@ class ProjectMemberService:
     async def remove_member(
         self, project_id: str, member_user_id: str, owner_id: str
     ) -> None:
-        from app.services.project_service import ProjectService
+        from services.project_service import ProjectService
 
         await ProjectService().assert_project_owner(project_id, owner_id)
         if member_user_id == owner_id:
@@ -176,7 +176,7 @@ class ProjectMemberService:
 
     async def _assert_invite_owner(self, project_id: str, user_id: str) -> dict[str, Any]:
         """Invite links can only be created or managed by the project owner."""
-        from app.services.project_service import ProjectService
+        from services.project_service import ProjectService
 
         project = await ProjectService()._load_project_row(project_id)
         if project.get("owner_id") != user_id:
@@ -262,7 +262,7 @@ class ProjectMemberService:
     async def get_invite_preview(
         self, invite_id: str, user_id: str
     ) -> dict[str, Any]:
-        from app.services.project_service import ProjectService
+        from services.project_service import ProjectService
 
         invite = await self._load_invite_row(invite_id)
         eff_status = self._effective_invite_status(invite)

@@ -4,9 +4,9 @@ from urllib.parse import urlparse
 
 from pymongo import ReturnDocument
 
-from app.core.config import settings
-from app.core.dependencies import get_mongo_handler
-from app.core.logger import logger
+from core.config import settings
+from core.dependencies import get_mongo_handler
+from core.logger import logger
 
 
 class ReferralService:

@@ -5,8 +5,8 @@ Backend is the source of truth: these checks cannot be bypassed from the client.
 
 from fastapi import HTTPException, status
 
-from app.core.dependencies import get_rate_limit_service
-from app.core.logger import logger
+from core.dependencies import get_rate_limit_service
+from core.logger import logger
 
 # Machine-readable contract returned to clients when an upload is denied.
 # NOTE: FastAPI nests ``detail`` under the response body, so the wire shape is:

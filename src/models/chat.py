@@ -2,8 +2,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from app.core.assistants import AssistantConfig
-from app.core.config import settings
+from core.assistants import AssistantConfig
+from core.config import settings
 
 
 class ChatModel(str, Enum):

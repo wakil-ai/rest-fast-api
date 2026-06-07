@@ -3,8 +3,8 @@ from typing import Any
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.server_api import ServerApi
 
-from app.core.config import settings
-from app.core.logger import logger
+from core.config import settings
+from core.logger import logger
 
 
 class MongoHandler:
@@ -12,7 +12,7 @@ class MongoHandler:
     Async MongoDB handler using Motor for storing and querying documents.
 
     Note: Instance sharing is now managed by FastAPI dependency injection.
-    Use get_mongo_handler() from app.core.dependencies instead of direct instantiation.
+    Use get_mongo_handler() from core.dependencies instead of direct instantiation.
     """
 
     def __init__(self):

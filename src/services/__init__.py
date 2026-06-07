@@ -1,24 +1,24 @@
-from app.services.bitrix24_service import Bitrix24Service
-from app.services.auth_service import validate_telegram_data
-from app.services.chat_history_service import ChatHistoryService
-from app.services.chat_service import ChatService
-from app.services.file_management import FileManager
-from app.services.llm_service_client import LlmServiceClient
-from app.services.otp_service import OTPService
-from app.services.payments import (
+from services.bitrix24_service import Bitrix24Service
+from services.auth_service import validate_telegram_data
+from services.chat_history_service import ChatHistoryService
+from services.chat_service import ChatService
+from services.file_management import FileManager
+from services.llm_service_client import LlmServiceClient
+from services.otp_service import OTPService
+from services.payments import (
     BasePaymentService,
     ClickService,
     TransactionService,
     UzumService,
 )
-from app.services.project_service import ProjectService
-from app.services.promo_code_service import PromoCodeService
-from app.services.rate_limit_service import RateLimitService
-from app.services.redis_service import RedisService
-from app.services.referral_service import ReferralService
-from app.services.fingerprint_service import FingerprintService
-from app.services.storage_service import StorageService
-from app.services.subscription_storage import SubscriptionStorage
+from services.project_service import ProjectService
+from services.promo_code_service import PromoCodeService
+from services.rate_limit_service import RateLimitService
+from services.redis_service import RedisService
+from services.referral_service import ReferralService
+from services.fingerprint_service import FingerprintService
+from services.storage_service import StorageService
+from services.subscription_storage import SubscriptionStorage
 
 __all__ = [
     # Auth

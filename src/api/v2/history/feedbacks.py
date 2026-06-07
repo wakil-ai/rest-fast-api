@@ -1,9 +1,9 @@
 # app/routers/history/feedbacks.py
 from fastapi import APIRouter, status
 
-from app.core.dependencies import get_chat_history_service
-from app.models.chat_history import FeedbackCreateRequest
-from app.utils.user_management import handle_service_error
+from core.dependencies import get_chat_history_service
+from models.chat_history import FeedbackCreateRequest
+from utils.user_management import handle_service_error
 
 router = APIRouter(prefix="/feedback", tags=["Feedback"])
 

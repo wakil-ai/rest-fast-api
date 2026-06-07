@@ -2,22 +2,22 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
-from app.core.config import settings
-from app.core.dependencies import (
+from core.config import settings
+from core.dependencies import (
     get_chat_history_service,
     get_rate_limit_service,
     get_redis_service,
 )
-from app.core.logger import logger
-from app.models.chat_history import (
+from core.logger import logger
+from models.chat_history import (
     UserCreateRequest,
     UserCreateResponse,
     UserPhoneUpdateRequest,
     UserUpdateRequest,
 )
-from app.models.rate_limit import RateLimitResponse
-from app.security import verify_super_admin_key
-from app.utils.user_management import handle_service_error, serialize_mongo_id
+from models.rate_limit import RateLimitResponse
+from security import verify_super_admin_key
+from utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
 

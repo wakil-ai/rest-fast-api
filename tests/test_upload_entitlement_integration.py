@@ -17,8 +17,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.models.chat_history import FileUploadResponse
-from app.utils.entitlements import FILE_UPLOAD_REQUIRES_PAID_PLAN
+from models.chat_history import FileUploadResponse
+from utils.entitlements import FILE_UPLOAD_REQUIRES_PAID_PLAN
 
 
 def _valid_upload_response() -> FileUploadResponse:
@@ -46,19 +46,19 @@ def _build_client(*, can_upload: bool):
 
     with (
         patch(
-            "app.core.dependencies.get_file_manager",
+            "core.dependencies.get_file_manager",
             return_value=file_manager_mock,
         ),
         patch(
-            "app.core.dependencies.get_chat_history_service",
+            "core.dependencies.get_chat_history_service",
             return_value=MagicMock(),
         ),
         patch(
-            "app.core.dependencies.get_storage_service",
+            "core.dependencies.get_storage_service",
             return_value=MagicMock(),
         ),
     ):
-        import app.api.v2.history.files as files_module
+        import api.v2.history.files as files_module
 
         files_module = importlib.reload(files_module)
 
@@ -67,7 +67,7 @@ def _build_client(*, can_upload: bool):
 
         # Keep the entitlement decision patched for the duration of the request.
         with patch(
-            "app.utils.entitlements.get_rate_limit_service",
+            "utils.entitlements.get_rate_limit_service",
             return_value=rate_limit_stub,
         ):
             with TestClient(app) as client:

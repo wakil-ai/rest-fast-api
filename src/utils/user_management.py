@@ -11,7 +11,7 @@ from typing import Any
 import uuid6
 from fastapi import HTTPException, status
 
-from app.core.logger import logger
+from core.logger import logger
 
 
 def generate_short_id(prefix: str = "", length: int = 8, type: str = "random") -> str:

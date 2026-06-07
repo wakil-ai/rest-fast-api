@@ -1,14 +1,14 @@
 # app/routers/history/messages.py
 from fastapi import APIRouter, HTTPException, status
 
-from app.core.dependencies import get_chat_history_service
-from app.models.chat_history import (
+from core.dependencies import get_chat_history_service
+from models.chat_history import (
     MessageCreateRequest,
     MessageResponse,
     MessageSharedRequest,
     MessageSharedResponse,
 )
-from app.utils.user_management import (
+from utils.user_management import (
     handle_service_error,
     sanitize_message_for_response,
     serialize_mongo_id,

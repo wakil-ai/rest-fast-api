@@ -7,36 +7,36 @@ from typing import Any, cast
 from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.core.assistants import AssistantConfig
-from app.core.config import settings
-from app.core.dependencies import (
+from core.assistants import AssistantConfig
+from core.config import settings
+from core.dependencies import (
     get_chat_history_service,
     get_llm_service_client,
     get_project_service,
     get_rate_limit_service,
     get_storage_service,
 )
-from app.core.exceptions import (
+from core.exceptions import (
     ChatException,
     ChatGenerationException,
     InsufficientCreditsException,
     InvalidInputError,
     QueryTooLongException,
 )
-from app.core.logger import logger
-from app.models.chat import (
+from core.logger import logger
+from models.chat import (
     AgenticRAGRequest,
     AssistantType,
     ChatRequest,
     ChatResponse,
     ModelInfoResponse,
 )
-from app.models.intent_types import LegalIntent
-from app.utils.streaming import (
+from models.intent_types import LegalIntent
+from utils.streaming import (
     format_streaming_response,
     get_streaming_headers,
 )
-from app.utils.contract_docx import contract_text_to_docx_bytes
+from utils.contract_docx import contract_text_to_docx_bytes
 
 
 def _orchestration_exception_detail(exc: BaseException) -> str:

@@ -1,13 +1,13 @@
 # app/routers/history/sessions.py
 from fastapi import APIRouter, HTTPException, status
 
-from app.core.dependencies import get_chat_history_service
-from app.models.chat_history import (
+from core.dependencies import get_chat_history_service
+from models.chat_history import (
     SessionCreateRequest,
     SessionEditRequest,
     SessionResponse,
 )
-from app.utils.user_management import handle_service_error, serialize_mongo_id
+from utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
 

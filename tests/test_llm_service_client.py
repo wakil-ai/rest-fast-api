@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from app.core.config import settings
-from app.services.llm_service_client import LlmServiceClient
+from core.config import settings
+from services.llm_service_client import LlmServiceClient
 
 
 class FakeResponse:
@@ -66,7 +66,7 @@ def configure_client(monkeypatch):
     monkeypatch.setattr(settings, "LLM_SERVICE_URL", "http://llm.internal")
     monkeypatch.setattr(settings, "LLM_SERVICE_INTERNAL_TOKEN", "secret")
     monkeypatch.setattr(settings, "LLM_SERVICE_INTERNAL_HEADER", "x-internal-token")
-    monkeypatch.setattr("app.services.llm_service_client.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("services.llm_service_client.httpx.AsyncClient", FakeAsyncClient)
 
 
 @pytest.mark.asyncio

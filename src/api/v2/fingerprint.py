@@ -2,9 +2,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from app.core.dependencies import get_fingerprint_service
-from app.core.logger import logger
-from app.models.fingerprint import (
+from core.dependencies import get_fingerprint_service
+from core.logger import logger
+from models.fingerprint import (
     FingerprintBlockRequest,
     FingerprintBlockResponse,
     FingerprintCollectRequest,
@@ -15,8 +15,8 @@ from app.models.fingerprint import (
     UserFingerprintsResponse,
     VisitorFingerprintDetailResponse,
 )
-from app.security import verify_api_key_or_dt_key, verify_super_admin_key
-from app.services.fingerprint_service import FingerprintService
+from security import verify_api_key_or_dt_key, verify_super_admin_key
+from services.fingerprint_service import FingerprintService
 
 router = APIRouter(prefix="/fingerprint", tags=["Fingerprint"])
 

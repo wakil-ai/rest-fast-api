@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from google.cloud import storage
 from google.oauth2 import service_account
 
-from app.core.config import settings
-from app.core.logger import logger
+from core.config import settings
+from core.logger import logger
 
 warnings.filterwarnings(
     "ignore", category=FutureWarning, module="google.api_core._python_version_support"

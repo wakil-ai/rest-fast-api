@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import time
 
-from app.models.auth import TelegramAuth, TelegramDataError, TelegramDataIsOutdated
+from models.auth import TelegramAuth, TelegramDataError, TelegramDataIsOutdated
 
 
 def validate_telegram_data(telegram_bot_token: str, data: TelegramAuth) -> dict:

@@ -4,8 +4,8 @@ from decimal import Decimal
 
 import redis
 
-from app.core.config import settings
-from app.core.logger import logger
+from core.config import settings
+from core.logger import logger
 
 
 class DateTimeEncoder(json.JSONEncoder):

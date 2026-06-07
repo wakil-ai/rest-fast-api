@@ -5,15 +5,15 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.core.config import settings
-from app.core.dependencies import (
+from core.config import settings
+from core.dependencies import (
     get_click_service,
     get_subscription_storage,
     get_transaction_service,
     get_uzum_service,
 )
-from app.core.logger import logger
-from app.models.payment import (
+from core.logger import logger
+from models.payment import (
     ClickInitRequest,
     ClickInitResponse,
     DTInitRequest,
@@ -32,7 +32,7 @@ from app.models.payment import (
     UzumResponseStatus,
     UzumServiceError,
 )
-from app.security import (
+from security import (
     verify_api_key,
     verify_api_key_or_dt_key,
     verify_dt_api_key,
@@ -40,8 +40,8 @@ from app.security import (
     verify_payme_authorization,
     verify_uzum_authorization,
 )
-from app.services import ClickService, TransactionService, UzumService
-from app.services.subscription_storage import SubscriptionStorage
+from services import ClickService, TransactionService, UzumService
+from services.subscription_storage import SubscriptionStorage
 
 router = APIRouter(prefix="/transaction", tags=["Payme"])
 

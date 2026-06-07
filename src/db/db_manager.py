@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.core.dependencies import get_mongo_handler
+from core.dependencies import get_mongo_handler
 
 
 class DBManager:

@@ -2,15 +2,15 @@
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import RedirectResponse
 
-from app.core.dependencies import (
+from core.dependencies import (
     get_chat_history_service,
     get_file_manager,
     get_storage_service,
 )
-from app.core.logger import logger
-from app.models.chat_history import FilePublicMetadataResponse, FileUploadResponse
-from app.utils.entitlements import ensure_can_upload_files
-from app.utils.user_management import handle_service_error, serialize_mongo_id
+from core.logger import logger
+from models.chat_history import FilePublicMetadataResponse, FileUploadResponse
+from utils.entitlements import ensure_can_upload_files
+from utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/files", tags=["Files"])
 

@@ -1,6 +1,6 @@
 # Environment Variables Reference
 
-Source of truth: [`app/core/config.py`](../app/core/config.py).
+Source of truth: [`src/core/config.py`](../src/core/config.py).
 
 `rest-api` should not require OpenAI, Gemini, Anthropic, Milvus, Pinecone, Neo4j, Mem0, OCR, or STT provider keys. Configure those in `rest-api-llm`.
 

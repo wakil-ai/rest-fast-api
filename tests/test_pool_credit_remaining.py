@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.rate_limit_service import RateLimitService
+from services.rate_limit_service import RateLimitService
 
 _NOW_MS = int(time.time() * 1000)
 _START_MS = _NOW_MS - 5 * 24 * 60 * 60 * 1000

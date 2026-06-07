@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Request
 
-from app.core.dependencies import get_chat_service
-from app.core.exceptions import ChatGenerationException
-from app.core.logger import logger
-from app.models.chat import AgenticRAGRequest, ChatRequest, ModelInfoResponse
+from core.dependencies import get_chat_service
+from core.exceptions import ChatGenerationException
+from core.logger import logger
+from models.chat import AgenticRAGRequest, ChatRequest, ModelInfoResponse
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 

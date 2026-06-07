@@ -2,10 +2,10 @@ import base64
 import time
 from math import floor
 
-from app.core.config import settings
-from app.core.logger import logger
-from app.models.payment import PaymeData, PaymeError, TransactionError, TransactionState
-from app.services.payments.base import BasePaymentService
+from core.config import settings
+from core.logger import logger
+from models.payment import PaymeData, PaymeError, TransactionError, TransactionState
+from services.payments.base import BasePaymentService
 
 
 class TransactionService(BasePaymentService):  # Paycom

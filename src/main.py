@@ -1,9 +1,15 @@
 import os
+import sys
+
+# Make this package's directory importable so internal modules can be referenced
+# without the package prefix (e.g. `from core.config import settings` instead of
+# `from src.core.config import settings`).
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-from app.core.warnings_config import configure_startup_warnings
+from core.warnings_config import configure_startup_warnings
 
 configure_startup_warnings()
 
@@ -17,7 +23,7 @@ from fastapi.openapi.utils import get_openapi
 from starlette.middleware.sessions import SessionMiddleware
 
 # Internal imports
-from app.api.v2 import (
+from api.v2 import (
     admin,
     auth,
     chat,
@@ -29,13 +35,13 @@ from app.api.v2 import (
     referral,
     speech_to_text,
 )
-from app.api.v2.history.router import router as chat_history
-from app.api.v2.history.share import router as share_router
-from app.api.v3 import chat as v3_chat
-from app.api.internal import router as internal_router
-from app.core.config import settings
-from app.core.logger import logger
-from app.security import (
+from api.v2.history.router import router as chat_history
+from api.v2.history.share import router as share_router
+from api.v3 import chat as v3_chat
+from api.internal import router as internal_router
+from core.config import settings
+from core.logger import logger
+from security import (
     get_current_username,
     verify_api_key_or_dt_key,
 )

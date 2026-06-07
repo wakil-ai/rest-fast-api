@@ -1,7 +1,7 @@
-from app.core.config import settings
-from app.core.dependencies import get_mongo_handler
-from app.core.logger import logger
-from app.core.subscription_tiers import is_daily_pass_quote
+from core.config import settings
+from core.dependencies import get_mongo_handler
+from core.logger import logger
+from core.subscription_tiers import is_daily_pass_quote
 
 
 class SubscriptionStorage:

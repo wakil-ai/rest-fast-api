@@ -6,17 +6,17 @@ from pydantic import BaseModel
 
 async def delete_agent_thread(*, user_id: str, session_id: str) -> bool:
     return False
-from app.core.config import settings
-from app.core.dependencies import get_bitrix24_service, get_db_manager
-from app.core.exceptions import (
+from core.config import settings
+from core.dependencies import get_bitrix24_service, get_db_manager
+from core.exceptions import (
     InvalidInputError,
     MessageNotFoundError,
     SessionNotFoundError,
     UserNotFoundError,
 )
-from app.core.logger import logger
-from app.models.chat_history import SessionStatus, ShareResponse
-from app.utils.user_management import clean_for_mongodb, generate_short_id
+from core.logger import logger
+from models.chat_history import SessionStatus, ShareResponse
+from utils.user_management import clean_for_mongodb, generate_short_id
 
 
 class ChatHistoryService:

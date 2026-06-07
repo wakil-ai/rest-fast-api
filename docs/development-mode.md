@@ -118,11 +118,11 @@ An array of processing steps including:
 
 The feature is implemented across several layers:
 
-1. **Config** ([app/core/config.py](app/core/config.py)): `DEVELOPMENT_MODE` flag
-2. **Models** ([app/models/chat.py](app/models/chat.py)): Extended `ChatResponse` with optional debug fields
-3. **Retrieval** ([app/retrieval/retrieval_service.py](app/retrieval/retrieval_service.py)): Returns raw document metadata when requested
-4. **Assistant Agents** ([app/agents/base.py](../app/agents/base.py)): Own chat-turn context, retrieval, and generation flow
-5. **API** ([app/api/chat.py](app/api/chat.py)): Includes debug data in responses
+1. **Config** ([src/core/config.py](src/core/config.py)): `DEVELOPMENT_MODE` flag
+2. **Models** ([src/models/chat.py](src/models/chat.py)): Extended `ChatResponse` with optional debug fields
+3. **Retrieval** ([src/retrieval/retrieval_service.py](src/retrieval/retrieval_service.py)): Returns raw document metadata when requested
+4. **Assistant Agents** ([src/agents/base.py](../src/agents/base.py)): Own chat-turn context, retrieval, and generation flow
+5. **API** ([src/api/chat.py](src/api/chat.py)): Includes debug data in responses
 
 ## Example Usage
 

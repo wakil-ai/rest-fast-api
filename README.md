@@ -59,7 +59,7 @@ Provider keys such as OpenAI, Gemini, Milvus, Neo4j, Mem0, OCR, and STT keys sho
 python -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 Health checks:

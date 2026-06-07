@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 
-from app.core.dependencies import get_llm_service_client
-from app.core.logger import logger
-from app.models.memory import (
+from core.dependencies import get_llm_service_client
+from core.logger import logger
+from models.memory import (
     GetAllMemoriesResponse,
     SaveInteractionRequest,
     SaveInteractionResponse,

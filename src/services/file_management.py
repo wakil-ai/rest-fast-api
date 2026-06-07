@@ -6,16 +6,16 @@ import tempfile
 from fastapi import UploadFile
 from uuid6 import uuid7
 
-from app.core.config import settings
-from app.core.dependencies import (
+from core.config import settings
+from core.dependencies import (
     get_chat_history_service,
     get_llm_service_client,
     get_storage_service,
 )
-from app.core.logger import logger
-from app.models.chat_history import FileUploadResponse
-from app.utils.progress_webhook import send_project_file_progress_webhook
-from app.utils.tokens import count_tokens
+from core.logger import logger
+from models.chat_history import FileUploadResponse
+from utils.progress_webhook import send_project_file_progress_webhook
+from utils.tokens import count_tokens
 
 
 class FileManager:
@@ -147,7 +147,7 @@ class FileManager:
         Upload a document into a project: OCR (webhook 25%), then async chunking,
         embeddings (50%), indexed file context with ``project_id`` (100%).
         """
-        from app.core.dependencies import get_project_service
+        from core.dependencies import get_project_service
 
         project_service = get_project_service()
         await project_service.get_project(project_id, user_id)
@@ -258,7 +258,7 @@ class FileManager:
         user_id: str,
     ) -> tuple[int, str | None]:
         """Remove a project-scoped file from Mongo/index metadata and the project record."""
-        from app.core.dependencies import get_project_service
+        from core.dependencies import get_project_service
 
         project_service = get_project_service()
         await project_service.get_project(project_id, user_id)
@@ -310,7 +310,7 @@ class FileManager:
         webhook_url: str | None,
         file_name: str,
     ) -> None:
-        from app.core.dependencies import get_project_service
+        from core.dependencies import get_project_service
 
         project_service = get_project_service()
         hook = webhook_url or ""

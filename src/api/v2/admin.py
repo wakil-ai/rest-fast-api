@@ -4,15 +4,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo import UpdateOne
 
-from app.core.config import settings
-from app.core.dependencies import get_mongo_handler
-from app.core.logger import logger
-from app.models.telegram import (
+from core.config import settings
+from core.dependencies import get_mongo_handler
+from core.logger import logger
+from models.telegram import (
     TelegramChatEntry,
     TelegramChatsListResponse,
     TelegramChatsSaveRequest,
 )
-from app.security import verify_super_admin_key
+from security import verify_super_admin_key
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 

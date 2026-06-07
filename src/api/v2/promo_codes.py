@@ -2,10 +2,10 @@ from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.dependencies import get_promo_code_service
-from app.core.logger import logger
-from app.models.promo_code import PromoCodeCreate, UserPromoCode
-from app.security import verify_api_key, verify_api_key_or_dt_key
+from core.dependencies import get_promo_code_service
+from core.logger import logger
+from models.promo_code import PromoCodeCreate, UserPromoCode
+from security import verify_api_key, verify_api_key_or_dt_key
 
 router = APIRouter(prefix="/promo-codes", tags=["Promo Codes"])
 

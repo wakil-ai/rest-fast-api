@@ -1,4 +1,4 @@
-from app.security.dependencies import (
+from security.dependencies import (
     get_current_username,
     verify_api_key,
     verify_api_key_or_dt_key,
