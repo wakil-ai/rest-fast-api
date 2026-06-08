@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException, status
 
-from app.services.rate_limit_service import RateLimitService
-from app.utils import entitlements
-from app.utils.entitlements import (
+from services.rate_limit_service import RateLimitService
+from utils import entitlements
+from utils.entitlements import (
     FILE_UPLOAD_REQUIRES_PAID_PLAN,
     ensure_can_upload_files,
 )

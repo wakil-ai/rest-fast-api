@@ -2,7 +2,7 @@
 
 All custom exceptions and HTTP error responses the WakilAI API can return.
 
-**Source:** [app/core/exceptions.py](../app/core/exceptions.py)
+**Source:** [src/core/exceptions.py](../src/core/exceptions.py)
 
 ---
 
@@ -59,7 +59,7 @@ the user to the upgrade flow. See [Explanation: Credit System](explanation-credi
 and the subscription status endpoint `GET /api/v2/transaction/payme/subscriptions/{user_id}`
 (`active` flag) for deriving upload eligibility ahead of time.
 
-**Source:** [app/utils/entitlements.py](../app/utils/entitlements.py)
+**Source:** [src/utils/entitlements.py](../src/utils/entitlements.py)
 
 ---
 
@@ -72,7 +72,7 @@ HTTP 500 Internal Server Error
 }
 ```
 
-The LLM generation step failed — network error, upstream API timeout, or model refusal. Retry with exponential backoff. Check Langfuse traces for the specific failure point.
+The LLM generation step failed — network error, upstream API timeout, or model refusal. Retry with exponential backoff. Check the `rest-api-llm` service logs/traces for the specific failure point.
 
 ---
 
@@ -85,7 +85,7 @@ HTTP 500 Internal Server Error
 }
 ```
 
-The LangGraph orchestration pipeline encountered an unrecoverable error. Logs contain the full traceback. Common causes: Redis unavailable (checkpoint save failed), Milvus connection error, or missing API key.
+The internal LLM service returned an unrecoverable chat error or could not be reached. Logs contain the full traceback. Common causes: `LLM_SERVICE_URL` is wrong, the internal token is missing, or `rest-api-llm` is unavailable.
 
 ---
 
@@ -111,7 +111,7 @@ HTTP 500 Internal Server Error
 }
 ```
 
-An error occurred while building or flushing the SSE stream. Often caused by upstream Gemini stream drops. Retry the request.
+An error occurred while relaying the SSE stream from `rest-api-llm`. Retry the request and check the internal service logs.
 
 ---
 
@@ -251,7 +251,7 @@ Payme RPC error codes follow the Payme documentation.
 
 ## Debugging Errors
 
-1. **Enable Langfuse tracing** — captures every LLM call, retrieval step, and timing: see [How-To: Monitor Usage](howto-monitor-usage.md).
+1. **Check `rest-api-llm` traces** — LLM-call, retrieval, and timing observability lives in the `rest-api-llm` service.
 2. **Check Loguru output** — errors from `chat_service.py` include full tracebacks when logged with `exc_info=True`.
 3. **Health check** — `GET /health` returns 200 when the API is up (no auth required). If it's down, the process crashed or the port is wrong.
 4. **Swagger UI** — `GET /docs` (HTTP Basic Auth) allows manual request testing with all schemas visible.

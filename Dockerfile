@@ -34,7 +34,7 @@ COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/* && rm -rf /wheels
 
 # Copy application code
-COPY app/ ./app/
+COPY src/ ./src/
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -45,4 +45,4 @@ ENV PYTHONUNBUFFERED=1 \
 EXPOSE ${PORT}
 
 # Run with optimized uvicorn settings
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --loop asyncio
+CMD uvicorn src.main:app --host 0.0.0.0 --port ${PORT} --loop asyncio
