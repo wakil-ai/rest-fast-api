@@ -1,558 +1,95 @@
-# WakilAI API
+# WakilAI Rest API
 
-A comprehensive legal document retrieval and conversational AI system designed for Uzbek legal documents, powered by advanced language models, vector databases, and real-time speech processing capabilities.
+`rest-api` is the public/core backend. It owns authentication, credits, MongoDB chat history, projects, payments, storage, public route compatibility, and attachment persistence.
 
-## 🚀 Overview
+AI execution is delegated to the internal `rest-api-llm` service through `LlmServiceClient`.
 
-WakilAI API provides intelligent legal document search, question-answering, and conversational capabilities with persistent memory. It combines vector database retrieval with large language models to deliver accurate, context-aware responses to legal queries in Uzbek, with support for real-time speech-to-text processing, user management, and conversation history.
+## Responsibilities
 
-## 📚 Tech Stack
+- Public API routing for `/api/v2/*` and `/api/v3/*`
+- Auth, OTP, referrals, fingerprints, promo codes, subscriptions, and payments
+- MongoDB users, sessions, messages, files, projects, and transaction records
+- Google Cloud Storage upload/download paths for user files and generated DOCX attachments
+- Public memory and speech-to-text route compatibility by proxying to `rest-api-llm`
+- File upload validation, temp spooling, content hash reuse, OCR/embed proxy calls, and project stats
+- Internal criminal excerpt bridge used by `rest-api-llm`
 
-### Backend Framework
-- **FastAPI** - Modern, fast web framework for building APIs
-- **Python 3.11** - Programming language
-- **Uvicorn** - ASGI web server with multi-worker support
-- **WebSockets** - Real-time bidirectional communication
+## Not Owned Here
 
-### AI & Machine Learning
-- **LangChain** - Framework for LLM application development
-- **LangGraph** - Advanced workflow orchestration
-- **OpenAI API** - GPT models for text generation
-- **Novita AI** - Alternative LLM provider (Gemma models)
-- **Local VLLM** - Self-hosted language models
-- **Qwen Embeddings** - Advanced text embedding models
-- **FastText** - Language detection and processing
-- **Mem0AI** - Persistent memory management
-- **Tavily API** - Web search and content extraction
+These belong in `rest-api-llm`:
 
-### Speech Processing
-- **Google Cloud Speech-to-Text** - Enterprise speech recognition
-- **Azure Cognitive Services Speech** - Alternative STT provider
-- **PyDub** - Audio processing and manipulation
-- **Real-time WebSocket STT** - Live speech transcription
+- Chat orchestration and assistant logic
+- LLM provider clients
+- Embeddings and vector indexing/search
+- OCR
+- Speech-to-text execution
+- Mem0/memory execution
+- Web search and retrieval logic
+- Criminal assistant graph/vector retrieval
 
-### Databases & Storage
-- **MongoDB** - Document storage, full-text search, and user management
-- **Milvus** - High-performance vector database for similarity search
-- **Pinecone** - Cloud vector database alternative
-- **TikToken** - Token counting and text analysis
+## Required Services
 
-### Authentication & Security
-- **API Key Authentication** - Secure API access
-- **HTTP Basic Auth** - Documentation access protection
-- **Telegram Bot Integration** - Social authentication
-- **Cryptography** - Advanced data encryption utilities
-- **CORS Middleware** - Cross-origin request handling
+- MongoDB
+- Redis
+- Google Cloud Storage credentials, when file persistence is enabled
+- `rest-api-llm`, reachable through `LLM_SERVICE_URL`
 
-### Additional Tools
-- **Pydantic** - Data validation and settings management
-- **Loguru** - Advanced structured logging
-- **Docker** - Production containerization
-- **UzTransliterator** - Uzbek text processing
+## Environment
 
-## 🛠️ API Endpoints
+Copy `.env.example` and configure the public backend:
 
-For the **complete, up-to-date** endpoint list (REST + WebSocket), see
-[docs/api-reference.md](docs/api-reference.md).
+```bash
+cp .env.example .env
+```
 
-### Quick overview
-- Health: `GET /`, `GET /health`
-- Auth: `/api/v2/auth/*` (Google, Telegram, DT)
-- Chat: `/api/v2/chat/ask`, `/api/v2/chat/agent/stream`
-- Chat history: `/api/v2/history/*` (users, sessions, messages, files, feedback, **projects**)
-- Memory: `/api/v2/memory/*`
-- Speech-to-text: `/api/v2/speech-to-text/*` (REST + WS)
-- Promo codes: `/api/v2/promo-codes/*`
-- Admin: `/api/v2/admin/*` (Telegram chats; `x-super-admin-key`)
-- Credits: `GET /api/v2/history/users/rate-limit/{user_id}`
+Important settings:
+
+- `MONGODB_URI`, `MONGODB_DB_NAME`
+- `LLM_SERVICE_URL`
+- `LLM_SERVICE_INTERNAL_TOKEN`
+- `API_KEY`, `SUPER_ADMIN_API_KEY`
+- `GCS_BUCKET_NAME`, `GCS_CREDENTIALS_PATH`, `GCS_PROJECT_ID`
+- payment provider settings, if payments are enabled
+
+Provider keys such as OpenAI, Gemini, Milvus, Neo4j, Mem0, OCR, and STT keys should be configured in `rest-api-llm`, not here.
+
+## Run Locally
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
+```
+
+Health checks:
+
+- `GET /`
+- `GET /health`
+
+Protected docs:
+
+- `GET /docs`
+- `GET /redoc`
+- `GET /openapi.json`
+
+## Main Route Groups
+
+- Chat: `/api/v2/chat/*`, `/api/v3/chat/*`
+- History/projects/files: `/api/v2/history/*`
+- Memory proxy: `/api/v2/memory/*`
+- Speech-to-text proxy: `/api/v2/speech-to-text/*`
+- Auth/OTP: `/api/v2/auth/*`, `/api/v2/otp/*`
 - Payments: `/api/v2/transaction/*`
+- Promo codes: `/api/v2/promo-codes/*`
 - Referrals: `/api/v2/referrals/*`
-- v3 Chat: `/api/v3/chat/ask`
-- Docs (protected): `/docs`, `/redoc`, `/openapi.json`
+- Admin: `/api/v2/admin/*`
+- Internal bridge: `/internal/*`
 
-## 📖 Documentation
-
-- **[Developer onboarding](docs/onboarding.md)** — local setup, architecture, first tasks
-- **[Documentation index](docs/README.md)** — full index of all docs
-- [Tutorial: First chat](docs/tutorial-first-chat.md)
-- [Tutorial: SSE streaming](docs/tutorial-streaming.md)
-- [Tutorial: File upload + chat](docs/tutorial-file-upload.md)
-- [How-to: Deploy to production](docs/howto-deploy-production.md)
-- [How-to: Switch LLM provider](docs/howto-switch-llm-provider.md)
-- [Explanation: Orchestration pipeline](docs/explanation-orchestration.md)
-- [Reference: Environment variables](docs/reference-environment-variables.md)
-- [API reference (all endpoints)](docs/api-reference.md)
-- [Changelog (v3.0.0)](CHANGELOG.md)
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.11+
-- Docker (optional)
-- MongoDB instance
-- Vector database (Milvus or Pinecone)
-
-### Environment Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd api.wakilai
-   ```
-
-2. **Create environment file**
-   ```bash
-   cp .env.example .env
-   ```
-
-3. **Configure environment variables** (`.env` file):
-   ```env
-   # App Configuration
-   APP_NAME=WakilAI Chatbot
-   VERSION=5.0.0
-   DEBUG=false
-   
-   # Authentication & Security
-   API_KEY_NAME=x-api-key
-   API_KEY=your-api-key-here
-   DOCS_USER=admin
-   DOCS_PASSWORD=secure-password
-   
-   # Database Configuration
-   MONGODB_URI=mongodb://localhost:27017
-   MONGODB_DB_NAME=wakilai
-   COLLECTION_NAME=itemdocs
-   USERS_COLLECTION=users
-   SESSIONS_COLLECTION=sessions
-   MESSAGES_COLLECTION=messages
-   FEEDBACK_COLLECTION=feedbacks
-   
-   # Vector Database (choose one)
-   VECTOR_DB_TYPE=milvus  # or pinecone
-   
-   # Milvus Configuration
-   MILVUS_URI=http://localhost:19530
-   MILVUS_MAIN_NAME=lexuz
-   MILVUS_USER=optional-username
-   MILVUS_PASSWORD=optional-password
-   
-   # Or Pinecone Configuration
-   PINECONE_API_KEY=your-pinecone-key
-   PINECONE_INDEX_NAME=your-index
-   NAMESPACE_NAME=lexuz
-   
-   # Memory Management
-   MEM0_API_KEY=your-mem0-api-key
-   
-   # LLM Configuration
-   LLM_PROVIDER=novita  # novita, local
-   
-   # Novita AI
-   NOVITA_API_KEY=your-novita-key
-   NOVITA_MODEL=google/gemma-3-27b-it
-   NOVITA_EMBEDDING_BASE_URL=https://api.novita.ai/openai
-   NOVITA_EMBEDDING_MODEL=qwen/qwen3-embedding-8b
-   
-   # OpenAI Configuration
-   OPENAI_API_KEY=your-openai-key
-   DEFAULT_LITE_MODEL=gpt-4.1-mini
-   GPT_COMPLETION_MODEL=gpt-5.2
-   OPENAI_EMBEDDING_MODEL=text-embedding-ada-002
-
-   # Gemini Configuration
-   GEMINI_API_KEY=your-gemini-key
-   DEFAULT_CHAT_MODEL=gemini-3.1-pro-preview
-   GEMINI_LANGCHAIN_THINKING_LEVEL=high
-   GEMINI_EXPLICIT_CACHE_ENABLED=false
-   GEMINI_EXPLICIT_CACHE_TTL=3600s
-   GEMINI_EXPLICIT_CACHE_MIN_TOKENS=4096
-   GEMINI_EXPLICIT_CACHE_MAX_LOCAL_ENTRIES=256
-
-   # Local VLLM Configuration
-   LOCAL_VLLM_BASE_URL=http://localhost:8000
-   LOCAL_VLLM_MODEL=gpt-oss-120b
-   LOCAL_VLLM_API_KEY=sk-no-key-required
-   
-   # DeepInfra Configuration
-   DEEPINFRA_API_KEY=your-deepinfra-key
-   DEEPINFRA_EMBEDDING_BASE_URL=https://api.deepinfra.com/v1/openai
-   DEEPINFRA_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-4B
-   
-   # SILICONFLOW 
-   SILICONFLOW_API_KEY=your-SILICONFLOW-api-key
-   SILICONFLOW_EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-   SILICONFLOW_EMBEDDING_MODEL=qwen3-4b-embedding
-   
-   # Embedding Configuration
-   EMBEDDING_MODEL=qwen  # qwen, openai, novita_qwen, deepinfra, SILICONFLOW
-   
-   # Qwen VLLM Embedding (if using local)
-   QWEN_EMBEDDING_URL=http://localhost:8001
-   QWEN_EMBEDDING_MODEL=qwen-embedding
-   
-   # Speech-to-Text Configuration
-   SPEECH_TO_TEXT_PROVIDER=azure  # google, azure
-   
-   # Azure Speech Services
-   AZURE_SPEECH_KEY=your-azure-speech-key
-   AZURE_SPEECH_REGION=your-azure-region
-   
-   # Telegram Authentication
-   TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-   TELEGRAM_BOT_LOGIN=your-bot-username
-   TELEGRAM_SESSION_TIMEOUT=259200  # 3 days in seconds
-   
-   # Performance & Behavior Settings
-   STREAM=true
-   TOP_K=10
-   ALPHA=0.8
-   TEMPERATURE=0.1
-   CHAT_HISTORY_LIMIT=5
-   OUTPUT_MAX_TOKENS=8192
-   ```
-
-### Installation Methods
-
-#### Method 1: Local Development
-
-1. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Run the application**
-   ```bash
-   uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
-   ```
-
-#### Method 2: Docker Compose (Recommended)
-
-*Note: You can use docker compose file when all the services are running on same server*
-
-The easiest way to get started with all required services:
-
-1. **Create environment file**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and configuration
-   ```
-
-2. **Start all services**
-   ```bash
-   docker-compose up -d
-   ```
-
-This will start:
-- FastAPI application (port 8080)
-- MongoDB database (port 27017)
-- Milvus vector database (port 19530)
-- Supporting services (etcd, MinIO)
-
-3. **Verify services**
-   ```bash
-   docker-compose ps
-   curl http://localhost:8080/
-   ```
-
-4. **View logs**
-   ```bash
-   docker-compose logs -f api
-   ```
-
-#### Method 3: Run services separately (Milvus, Mongo)
-
-*Will be used when DBs or services deployed on separate servers than backend*
-
-##### Milvus
-```bash
-# 1 Get Milvus/download milvus
-wget https://github.com/milvus-io/milvus/releases/download/v2.5.14/milvus-standalone-docker-compose.yml -O docker-compose.yml
-
-# 2 Start the container
-docker compose up -d
-
-# 3 Check whether it is working
-sudo docker compose ps
-docker port milvus-standalone 19530/tcp
-```
-
-##### Mongo
-```bash
-# 1 Pull the MongoDB Image:
-docker pull mongo:latest
-
-# 2 Create a Docker Volume for Persistent Data:
-docker volume create mongodb_data
-
-# 3 Run the MongoDB Container:
-docker run -d \
-  --name wakilai-mongodb \
-  -p 27017:27017 \
-  -v mongodb_data:/data/db \
-  -e MONGO_INITDB_ROOT_USERNAME=nlp \
-  -e MONGO_INITDB_ROOT_PASSWORD=nlp123 \
-  mongo:latest
-```
-
-#### Method 4: Docker (Single Container)
-
-If you already have MongoDB and Milvus running:
-
-1. **Build and run with Docker**
-   ```bash
-   docker build -t wakilai-api .
-   docker run -d -p 8080:8080 --env-file .env wakilai-api
-   ```
-
-### API Usage
-
-#### Authentication
-
-All API endpoints (except health check and docs) require an API key. The header name is configured via `API_KEY_NAME` (default: `admin`):
+## Tests
 
 ```bash
-curl -H "admin: your-api-key" http://localhost:8080/health
+python -m pytest -q
 ```
 
-#### Example Chat Request
-
-```bash
-curl -X POST "http://localhost:8080/api/v3/chat/ask" \
-  -H "Content-Type: application/json" \
-  -H "admin: your-api-key" \
-  -d '{
-    "query": "What are the marriage laws in Uzbekistan?",
-    "user_id": "user123",
-    "session_id": "session456",
-    "stream": false
-  }'
-```
-
-#### Example WebSocket Speech-to-Text
-```javascript
-const ws = new WebSocket('ws://localhost:8080/api/ws/stt?api_key=your-api-key');
-
-// Start transcription
-ws.send(JSON.stringify({
-  "event": "start",
-  "provider": "azure", 
-  "language": "uz-UZ",
-  "hints": ["huquq", "qonun", "sud"]
-}));
-
-// Send audio data (PCM16 mono 16kHz)
-ws.send(audioBuffer);
-
-// Stop transcription
-ws.send(JSON.stringify({"event": "stop"}));
-```
-
-#### Example Memory Interaction
-```bash
-curl -X POST "http://localhost:8080/api/memory/save/" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: your-api-key" \
-  -d '{
-    "user_id": "user123",
-    "query": "Marriage age requirements",
-    "response": "In Uzbekistan, minimum marriage age is 18 years",
-    "metadata": {"topic": "family_law"}
-  }'
-```
-
-#### Example Response
-```json
-{
-  "answer": "According to Uzbek family law, marriage is regulated by...",
-  "sources": [
-    {
-      "content": "Marriage regulations in Uzbekistan...",
-      "metadata": {"law": "Family Code", "article": "12"}
-    }
-  ],
-  "session_id": "session456"
-}
-```
-
-## 📖 API Documentation
-
-Once the server is running, access interactive documentation:
-
-- **Swagger UI**: http://localhost:8080/docs
-- **ReDoc**: http://localhost:8080/redoc
-
-*Note: Documentation is protected with basic authentication using `DOCS_USER` and `DOCS_PASSWORD`.*
-
-## 🔧 Configuration
-
-### Model Configuration
-- `LLM_PROVIDER`: Choose between `novita` or `local` for language models
-- `EMBEDDING_MODEL`: Select from `qwen`, `openai`, `novita_qwen`, `deepinfra`, `SILICONFLOW`
-- `VECTOR_DB_TYPE`: Choose between `milvus` or `pinecone`
-- `SPEECH_TO_TEXT_PROVIDER`: Choose between `google` or `azure`
-- `GEMINI_EXPLICIT_CACHE_ENABLED`: Enable explicit Gemini context caching for large repeated system prompts
-- `GEMINI_EXPLICIT_CACHE_TTL`: Gemini explicit cache lifetime, e.g. `3600s`
-- `GEMINI_EXPLICIT_CACHE_MIN_TOKENS`: Minimum estimated prompt tokens before creating an explicit Gemini cache
-
-### Performance Tuning
-- `TOP_K`: Number of documents to retrieve (default: 10)
-- `ALPHA`: Hybrid search weighting (default: 0.8) 
-- `TEMPERATURE`: LLM creativity level (default: 0.1)
-- `STREAM`: Enable streaming responses (default: true)
-- `CHAT_HISTORY_LIMIT`: Maximum conversation history (default: 5)
-- `OUTPUT_MAX_TOKENS`: Maximum tokens in response (default: 8192)
-
-### Memory Management
-- `MEM0_API_KEY`: API key for persistent memory service
-- `TELEGRAM_SESSION_TIMEOUT`: Session expiration time (default: 3 days)
-
-### Audio Processing
-- **Supported Formats**: WAV, MP3, M4A, FLAC, PCM16
-- **Real-time Requirements**: PCM16 mono 16kHz for WebSocket STT
-- **Language Support**: Uzbek (uz-UZ), English (en-US), Russian (ru-RU)
-
-## 🐳 Docker Support
-
-The application includes complete Docker support with Docker Compose:
-
-### Docker Compose Features
-- **Complete Stack**: API, MongoDB, Milvus vector database, and dependencies
-- **One-Command Setup**: Get everything running with `docker-compose up -d`
-- **Persistent Storage**: Data volumes for MongoDB and Milvus
-- **Health Checks**: Automatic service health monitoring
-- **Networking**: Isolated network for service communication
-- **Easy Management**: Simple start, stop, and log viewing
-
-### Dockerfile Features
-- **Optimized for streaming responses** with asyncio loop and httptools
-- **Audio processing support** with ffmpeg and ALSA libraries  
-- **Health check endpoints** for container orchestration
-- **Proper signal handling** for graceful shutdowns
-- **System dependencies** for cryptography, database drivers, and Azure Speech SDK
-- **Lightweight base** using Python 3.11-slim for reduced image size
-
-### Quick Start with Docker Compose
-
-*Note: You can use docker compose file when all the services are running on same server*
-
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop all services
-docker-compose down
-```
-## 🔒 Security Features
-
-- **API Key Authentication** for all protected endpoints
-- **WebSocket Authentication** via query parameters
-- **Basic Authentication** for documentation access
-- **Telegram Bot Integration** for login
-- **CORS Configuration** for secure web client access
-- **Request Validation** with Pydantic models
-- **Cryptographic Security** for data encryption
-- **Session Management** with configurable timeouts
-- **Rate Limiting** and secure headers middleware
-
-## 🤖 Two-stage RAG (LangGraph + pipeline)
-
-Chat and streaming agent endpoints use a **LangGraph** retrieval subgraph (strategy → corpus fetch → context evaluation → optional Tavily web search) followed by a **single** final LLM call. Structured steps use OpenAI JSON mode (`app/agents/pipeline/retrieval_structured_llm.py`). The coordinator is `app/agents/pipeline/flow.py` (`AgenticRAGFlow`).
-
-**Primary modules**: `retrieval_graph.py`, `retrieval_runner.py`, `chat_turn.py`, `last_answer.py`, `schemas.py`, `flow.py`.
-
----
-
-## 📝 Development
-
-### Project Structure
-```
-app/
-├── assistants/      # Specialist agents (retrieval, tools, prompts)
-├── api/               # API route handlers
-│   ├── auth.py        # Telegram authentication
-│   ├── chat.py        # Chat and Q&A endpoints
-│   ├── chat_history.py # User management and sessions
-│   ├── count.py       # Token counting utilities
-│   ├── memory.py      # Persistent memory management
-│   ├── retrieval.py   # Search and retrieval
-│   ├── speech_to_text.py # Audio transcription
-│   └── ws_stt.py      # WebSocket speech-to-text
-├── orchestration/     # LangGraph orchestration + markdown prompts
-├── core/              # Configuration and logging
-├── db/                # Database handlers (MongoDB, Milvus, Pinecone)
-├── llms/              # Language model providers
-├── models/            # Pydantic models and schemas
-├── retrieval/         # Document retrieval and embedding logic
-├── services/          # Business logic and service layers
-├── utils/             # Utility functions and helpers
-└── assets/            # Static assets (FastText models, etc.)
-```
-
-### Adding New Features
-
-1. **New API Endpoints**: Add routes in `app/api/` with proper authentication
-2. **New Models**: Define Pydantic models in `app/models/` for request/response schemas
-3. **New Services**: Implement business logic in `app/services/` following existing patterns
-4. **New LLM Providers**: Add providers in `app/llms/` with base class inheritance
-5. **New STT Providers**: Extend speech services in `app/services/streaming_speech_to_text.py`
-6. **New Database Handlers**: Add handlers in `app/db/` with consistent interfaces
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-
-## 🚀 Recent Updates & Features
-
-### Version 5.1.0+ - LangGraph two-stage RAG
-- **📚 Retrieval**: LangGraph state machine + OpenAI JSON for strategy, evaluation, and optional Tavily web search
-- **🌐 Web augmentation**: Tavily when corpus context is insufficient
-- **⚡ Async pipeline**: Streaming progress on `/chat/agent/stream`
-- **🛡️ Error resilience**: Fallbacks per stage; errors recorded on pipeline state
-
-### Version 5.0.0 - Major Feature Release
-- **️ Real-time Speech-to-Text**: WebSocket-based live audio transcription
-- **🧠 Persistent Memory**: Long-term conversation memory with Mem0AI
-- **👥 User Management**: Complete user session and conversation tracking
-- **🔐 Telegram Authentication**: Social login integration
-- **📊 Advanced Analytics**: Token counting and usage tracking
-- **🔍 Enhanced Search**: Improved hybrid and metadata search capabilities
-- **🎯 Multi-language Support**: Uzbek, English, and Russian STT
-- **⚡ Performance Optimization**: Multi-worker deployment with streaming
-
-### Latest Capabilities
-- **Multi-modal Interaction**: Text, voice, and real-time audio processing
-- **Context Awareness**: Persistent memory across sessions
-- **Scalable Architecture**: Microservices-based design with Docker support
-- **Enterprise Features**: Advanced authentication, logging, and monitoring
-
-## 🆘 Support & Resources
-
-### Documentation & Help
-- **Interactive API Docs**: http://localhost:8080/docs (Swagger UI)
-- **Alternative Docs**: http://localhost:8080/redoc (ReDoc)
-- **Health Check**: http://localhost:8080/ (API status)
-
-### Getting Help
-- Create an issue in the repository for bugs or feature requests
-- Contact the development team for enterprise support
-- Check the API documentation for endpoint details and examples
-- Review configuration examples for setup guidance
-
-### Monitoring & Debugging
-- Check application logs for detailed error information
-- Use `/api/chat/model-info` endpoint for system configuration details
-- Monitor WebSocket connections for real-time service status
-- Verify database connections and API key configurations
-
----
-
-**Status**: 🚀 **WakilAI API v5.1.0** - Production-ready legal AI assistant with LangGraph-backed retrieval and conversational capabilities!
+The service should start without AI provider, vector database, OCR, STT, or Mem0 keys. The only AI-related configuration needed here is the internal `rest-api-llm` URL/token pair.

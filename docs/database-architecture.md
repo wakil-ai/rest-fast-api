@@ -6,7 +6,7 @@ WakilAI uses MongoDB as the primary database for storing user data, chat history
 ---
 
 ## Collection Names (Defaults)
-Collection names are configurable via environment variables (see `.env.example` and `app/core/config.py`).
+Collection names are configurable via environment variables (see `.env.example` and `src/core/config.py`).
 The table below lists the **default** collection names used by the API.
 
 | Purpose | Default name | Setting |
@@ -203,7 +203,7 @@ Tracks daily credit usage for users (base limits + promo/subscription credits).
 **How it works:**
 - **Resets daily**: Each day gets a new document
 - **Default limit**: 100 credits per day (configurable via `DAILY_CREDITS_LIMIT`)
-- **Credit costs**: Per assistant, see `CREDIT_COST_*` in `app/core/config.py` (e.g. main, tax, court).
+- **Credit costs**: Per assistant, see `CREDIT_COST_*` in `src/core/config.py` (e.g. main, tax, court).
 
 **Example calculation:**
 - User with 100 daily credits can make any mix of requests whose per-request costs sum to at most 100 for that day.
@@ -578,7 +578,7 @@ if (!limit) {
 - **Tracked in**: `creditusage` collection (same as default, but different limit)
 
 ### Credit Costs by Assistant Type
-Costs are defined in `settings.ASSISTANTS` (see `app/core/config.py`). Typical entries include main (umumiy), tax (soliq), court, and contract analyzer.
+Costs are defined in `settings.ASSISTANTS` (see `src/core/config.py`). Typical entries include main (umumiy), tax (soliq), court, and contract analyzer.
 
 **Example:** With main at 10 credits per turn, a user with 100 daily credits can make up to 10 main-only requests if no other assistants are used.
 

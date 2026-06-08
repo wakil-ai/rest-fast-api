@@ -18,11 +18,11 @@ from pathlib import Path
 from typing import Any
 
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / "src"))
 
-from app.core.config import settings
-from app.db import DBManager
-from app.models.chat_history import SessionStatus
+from core.config import settings
+from db import DBManager
+from models.chat_history import SessionStatus
 
 
 def _build_legacy_sessions_query() -> dict[str, Any]:

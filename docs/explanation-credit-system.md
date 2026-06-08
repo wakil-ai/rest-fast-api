@@ -2,7 +2,7 @@
 
 How WakilAI controls API usage through a daily credit pool, per-assistant costs, promo codes, and subscriptions.
 
-**Source:** [app/services/rate_limit_service.py](../app/services/rate_limit_service.py), [app/core/config.py](../app/core/config.py)
+**Source:** [src/services/rate_limit_service.py](../src/services/rate_limit_service.py), [src/core/config.py](../src/core/config.py)
 
 ---
 
@@ -38,7 +38,7 @@ CREDIT_COST_SHARTNOMA_ASSISTANT=25
 
 ## How credits are checked and deducted
 
-**File:** [app/services/rate_limit_service.py](../app/services/rate_limit_service.py) — `check_and_decrement_credits()`
+**File:** [src/services/rate_limit_service.py](../src/services/rate_limit_service.py) — `check_and_decrement_credits()`
 
 Every chat request goes through this sequence:
 
