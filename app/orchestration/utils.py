@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.messages import messages_from_dict
+from langchain_core.messages import messages_from_dict, trim_messages
+from langchain_core.messages.utils import count_tokens_approximately
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
 
@@ -293,11 +294,46 @@ async def load_langgraph_agent_thread_messages(thread_id: str) -> list[BaseMessa
     return out
 
 
+def cap_history_to_input_budget(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Truncate a message list to ``settings.MODEL_MAX_INPUT_TOKENS`` (approx).
+
+    Shared context cap for the pre-agent pipeline (rewrite / intent / routing),
+    which builds prompts from the full thread history. Keeps the most recent
+    turns and starts on a human turn so the sequence stays valid. The final
+    ``create_agent`` model call is capped separately by ``ContextController``.
+    """
+    cap = settings.MODEL_MAX_INPUT_TOKENS
+    if cap <= 0 or not messages:
+        return messages
+    if count_tokens_approximately(messages) <= cap:
+        return messages
+    trimmed = trim_messages(
+        messages,
+        max_tokens=cap,
+        token_counter=count_tokens_approximately,
+        strategy="last",
+        start_on="human",
+        include_system=False,
+        allow_partial=False,
+    )
+    if not trimmed:
+        trimmed = messages[-1:]
+    logger.warning(
+        "[ContextController] pre-agent history {} tok > cap {} tok; truncated {} -> {} messages",
+        count_tokens_approximately(messages),
+        cap,
+        len(messages),
+        len(trimmed),
+    )
+    return trimmed
+
+
 async def merge_langgraph_thread_into_state_messages(state: dict[str, Any]) -> None:
     """Copy ``messages`` from the LangGraph Redis thread into ``state`` for pre-agent nodes.
 
     Rewrite / intent / retrieval run outside ``create_agent``; they read ``state['messages']``.
-    This hydrates that list from the same ``thread_id`` the final LangChain agent uses.
+    This hydrates that list from the same ``thread_id`` the final LangChain agent uses,
+    capped to the model input budget so a long thread can't overflow those calls.
     """
     user_id = str(state.get("user_id") or "").strip()
     session_id = str(state.get("session_id") or "").strip()
@@ -309,9 +345,9 @@ async def merge_langgraph_thread_into_state_messages(state: dict[str, Any]) -> N
         return
     current = state.get("messages") or []
     if not isinstance(current, list) or not current:
-        state["messages"] = list(prior)
+        state["messages"] = cap_history_to_input_budget(list(prior))
         return
-    state["messages"] = list(prior) + list(current)
+    state["messages"] = cap_history_to_input_budget(list(prior) + list(current))
 
 
 def _format_main_system_instructions() -> str:

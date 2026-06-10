@@ -297,6 +297,16 @@ async def traced_ainvoke(
     use_parent_span: bool = True,
     trace_name: str | None = None,
 ) -> Any:
+    # Shared context controller for every lite/classification agent that funnels
+    # through here (query rewrite, intent, court routing, milvus, criminal
+    # routing, context evaluation): cap the input so a giant thread/file context
+    # can't overflow these calls. The final streaming agent is capped separately
+    # by ContextController middleware.
+    from app.core.config import settings
+    from app.utils.tokens import cap_invoke_input
+
+    input = cap_invoke_input(input, settings.MODEL_MAX_INPUT_TOKENS)
+
     invoke_config = langchain_invoke_config(
         run_name,
         user_id=user_id,
