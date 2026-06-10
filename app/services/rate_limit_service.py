@@ -337,19 +337,23 @@ class RateLimitService:
                     return False, remaining, total
                 return True, remaining, total
 
-            signup_result = await self._try_consume_signup_bonus(
-                user_id, user, credit_cost
-            )
-            if signup_result is not None:
-                return signup_result
-
-            # Free / daily-pass / promo path: per-day quota.
             daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
             (
                 has_promo,
                 promo_credit_limit,
             ) = await self.promo_code_service.get_user_promo_status(user_id)
 
+            # Welcome credits are a one-time free pool. Once the user has an
+            # active daily pass or promo entitlement, do not let a small leftover
+            # welcome balance block paid/promo usage or hide those credits.
+            if daily_pass_bonus <= 0 and not has_promo:
+                signup_result = await self._try_consume_signup_bonus(
+                    user_id, user, credit_cost
+                )
+                if signup_result is not None:
+                    return signup_result
+
+            # Free / daily-pass / promo path: per-day quota.
             daily_limit = self._default_daily_limit_for(user) + daily_pass_bonus
 
             if has_promo:
@@ -414,15 +418,20 @@ class RateLimitService:
             if pool_sub is not None:
                 return await self._get_pool_credits_remaining(user_id, pool_sub)
 
-            user = await self._fetch_user(user_id)
-            if user and self._is_on_signup_bonus(user):
-                return self._signup_bonus_status(user)["remaining_credits"]
-
             daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
             (
                 has_promo,
                 promo_credit_limit,
             ) = await self.promo_code_service.get_user_promo_status(user_id)
+
+            user = await self._fetch_user(user_id)
+            if (
+                user
+                and self._is_on_signup_bonus(user)
+                and daily_pass_bonus <= 0
+                and not has_promo
+            ):
+                return self._signup_bonus_status(user)["remaining_credits"]
 
             if user is None:
                 user = await self._fetch_user(user_id)
@@ -471,7 +480,16 @@ class RateLimitService:
             }
 
         user = await self._fetch_user(user_id)
-        if user and self._is_on_signup_bonus(user):
+        daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
+        has_promo, _promo_credit_limit = (
+            await self.promo_code_service.get_user_promo_status(user_id)
+        )
+        if (
+            user
+            and self._is_on_signup_bonus(user)
+            and daily_pass_bonus <= 0
+            and not has_promo
+        ):
             status = self._signup_bonus_status(user)
             return {
                 **status,
@@ -506,16 +524,21 @@ class RateLimitService:
         if pool_sub is not None:
             return await self._get_pool_credits_remaining(user_id, pool_sub)
 
-        user = await self._fetch_user(user_id)
-        if user and self._is_on_signup_bonus(user):
-            return self._signup_bonus_status(user)["remaining_credits"]
-
         daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
 
         (
             has_promo,
             promo_credit_limit,
         ) = await self.promo_code_service.get_user_promo_status(user_id)
+
+        user = await self._fetch_user(user_id)
+        if (
+            user
+            and self._is_on_signup_bonus(user)
+            and daily_pass_bonus <= 0
+            and not has_promo
+        ):
+            return self._signup_bonus_status(user)["remaining_credits"]
 
         daily_limit = self._default_daily_limit_for(user) + daily_pass_bonus
 
