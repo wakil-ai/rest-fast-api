@@ -8,13 +8,16 @@ from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
     SystemMessage,
+    trim_messages,
 )
+from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
@@ -32,6 +35,49 @@ from app.core.langfuse_tracing import (
 from app.orchestration.gemini_prompt_cache import get_gemini_prompt_cache
 from app.orchestration.providers import LLM, resolve_gemini_model_name
 from app.orchestration.text import message_content_to_plain_str
+
+
+class HistoryTrimMiddleware(AgentMiddleware):
+    """Trim checkpointed chat history to a token budget before each model call.
+
+    The full conversation is still persisted in the Redis checkpointer (so the
+    chat-history endpoints keep every turn). This only bounds the slice of
+    history sent to the model, which prevents context-window overflow and
+    runaway latency/cost once a session thread gets long.
+
+    Uses ``strategy="last"`` (keep the most recent messages) and
+    ``start_on="human"`` so the trimmed window always begins on a user turn,
+    keeping the message sequence valid for the model.
+    """
+
+    def __init__(self, max_tokens: int) -> None:
+        super().__init__()
+        self._max_tokens = max_tokens
+
+    def _trim(self, messages: list[BaseMessage]) -> list[BaseMessage]:
+        if not messages:
+            return messages
+        trimmed = trim_messages(
+            messages,
+            max_tokens=self._max_tokens,
+            token_counter=count_tokens_approximately,
+            strategy="last",
+            start_on="human",
+            include_system=False,
+            allow_partial=False,
+        )
+        # A budget smaller than the most recent turn (or one oversized message)
+        # makes trim_messages return []. Never send zero messages to the model:
+        # fall back to the latest message (the current user turn).
+        if not trimmed:
+            return messages[-1:]
+        return trimmed
+
+    def wrap_model_call(self, request, handler):
+        return handler(request.override(messages=self._trim(request.messages)))
+
+    async def awrap_model_call(self, request, handler):
+        return await handler(request.override(messages=self._trim(request.messages)))
 
 
 async def ainvoke_lite_classification_chat(
@@ -164,10 +210,16 @@ class LangChain(LLM):
         model, effective_system_prompt = await self._prepare_chat(
             system_prompt=system_prompt,
         )
+        middleware: list[AgentMiddleware] = []
+        if settings.AGENT_HISTORY_TRIM_MAX_TOKENS > 0:
+            middleware.append(
+                HistoryTrimMiddleware(settings.AGENT_HISTORY_TRIM_MAX_TOKENS)
+            )
         return create_agent(
             model,
             [],
             system_prompt=effective_system_prompt,
+            middleware=middleware,
             checkpointer=self.checkpointer,
         )
 

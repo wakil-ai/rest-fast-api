@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from typing import Any, Optional
 
 from app.core.config import settings
+from app.core.logger import logger
 
 SUPPORTED_STREAM_EVENT_TYPES = {
     "progress",
@@ -94,6 +95,12 @@ async def format_streaming_response(
             yield _format_sse_message({"type": "end"})
 
     except Exception as e:
+        # Log the full traceback before swallowing it into the SSE stream.
+        # Without this, the client only ever sees ``str(e)`` (e.g. "'error'" for a
+        # bare ``KeyError('error')``) and the originating frame is lost.
+        logger.opt(exception=e).error(
+            f"[streaming] response generator failed: {type(e).__name__}: {e}"
+        )
         # Send error in streaming format
         error_data = {"type": "error", "error": str(e)}
         yield _format_sse_message(error_data)
