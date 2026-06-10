@@ -107,7 +107,7 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 ```
 
-Redis stores the full LangChain message thread per session. The last `CHAT_HISTORY_LIMIT` (default: 3) turns are injected as context in every turn.
+Redis stores a compact LangChain message thread per session. After each turn, the checkpoint is rewritten to keep only recent conversational messages (`LANGGRAPH_CHECKPOINT_MAX_MESSAGES`) with per-message and total token caps. The full current-turn retrieval and file context is still sent to the model, but it is not retained indefinitely in Redis.
 
 Session state expires after `LANGGRAPH_CHECKPOINT_TTL_SECONDS` (default: 3 days). Deleting a session via `DELETE /api/v2/history/sessions/{session_id}` also calls `adelete_thread()` to clean up the Redis checkpoint.
 

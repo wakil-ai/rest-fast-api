@@ -134,6 +134,9 @@ These let you rename collections without code changes.
 | `REDIS_EXPIRATION_SECONDS` | int | `259200` | General Redis cache TTL (3 days) |
 | `LANGGRAPH_CHECKPOINT_USE_REDIS` | bool | `true` | Persist LangGraph thread state in Redis. Requires Redis Stack (RediSearch + RedisJSON). |
 | `LANGGRAPH_CHECKPOINT_TTL_SECONDS` | int | `259200` | TTL for LangGraph checkpoint keys (3 days) |
+| `LANGGRAPH_CHECKPOINT_MAX_MESSAGES` | int | `6` | Maximum recent LangChain messages retained in each Redis checkpoint after a turn |
+| `LANGGRAPH_CHECKPOINT_MAX_TOKENS` | int | `80000` | Approximate token cap for retained Redis checkpoint messages |
+| `LANGGRAPH_CHECKPOINT_MAX_MESSAGE_CHARS` | int | `16000` | Character cap for each retained Redis checkpoint message |
 
 > **Redis Stack is required.** Plain Redis lacks the `FT.*` commands used by `AsyncRedisSaver`. Run `redis/redis-stack-server:7.4.0-v3` or later.
 
@@ -195,6 +198,7 @@ These let you rename collections without code changes.
 | `TEMPERATURE` | float | `0.1` | LLM generation temperature (lower = more deterministic) |
 | `OUTPUT_MAX_TOKENS` | int | `8192` | Max tokens in the final answer |
 | `CHAT_HISTORY_LIMIT` | int | `3` | Number of prior turns injected into context |
+| `SESSION_FILE_LOOKBACK_MESSAGES` | int | `3` | Number of latest session messages inspected when inheriting attached file IDs |
 | `STREAM` | bool | `true` | Default streaming mode for responses |
 | `STREAM_KEEPALIVE_INTERVAL_SECONDS` | float | `60.0` | SSE heartbeat interval to prevent proxy timeouts |
 | `STREAM_SSE_MAX_RESPONSE_CHARS` | int | `200` | Max characters per SSE chunk |

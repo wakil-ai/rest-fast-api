@@ -234,9 +234,15 @@ class Settings(BaseSettings):
     # Hard ceiling on total model input (system prompt + all messages) per call.
     # The ContextController truncates the oldest turns until the whole input fits
     # under this many (approx) tokens, so long session threads can never overflow
-    # the model context window. The full history stays in the Redis checkpointer;
-    # only the per-call input is capped. Set to 0 to disable.
+    # the model context window. Set to 0 to disable.
     MODEL_MAX_INPUT_TOKENS: int = 500_000
+    # Keep Redis LangGraph checkpoints compact. The model still receives the full
+    # current-turn retrieval/file context, but the persisted thread is rewritten
+    # after each turn to recent conversational memory only.
+    LANGGRAPH_CHECKPOINT_MAX_MESSAGES: int = 6
+    LANGGRAPH_CHECKPOINT_MAX_TOKENS: int = 80_000
+    LANGGRAPH_CHECKPOINT_MAX_MESSAGE_CHARS: int = 16_000
+    SESSION_FILE_LOOKBACK_MESSAGES: int = 3
     TOP_K: int = 10
     ADDITIONAL_TOP_K: int = (
         3  # For multi-collection retrievals (e.g. contract analyzer + main)

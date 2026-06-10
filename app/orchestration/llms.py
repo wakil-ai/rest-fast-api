@@ -14,6 +14,7 @@ from langchain_core.messages import (
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
+    RemoveMessage,
     SystemMessage,
     trim_messages,
 )
@@ -36,6 +37,11 @@ from app.core.langfuse_tracing import (
 from app.orchestration.gemini_prompt_cache import get_gemini_prompt_cache
 from app.orchestration.providers import LLM, resolve_gemini_model_name
 from app.orchestration.text import message_content_to_plain_str
+
+try:
+    from langgraph.graph.message import REMOVE_ALL_MESSAGES
+except Exception:  # pragma: no cover - optional langgraph internals
+    REMOVE_ALL_MESSAGES = "__remove_all__"
 
 
 class ContextController(AgentMiddleware):
@@ -256,6 +262,173 @@ class LangChain(LLM):
     def thread_config(thread_id: str) -> dict[str, Any]:
         return {"configurable": {"thread_id": thread_id}}
 
+    @staticmethod
+    def _checkpoint_message_limit() -> int:
+        try:
+            return max(int(settings.LANGGRAPH_CHECKPOINT_MAX_MESSAGES), 0)
+        except (TypeError, ValueError):
+            return 6
+
+    @staticmethod
+    def _checkpoint_token_limit() -> int:
+        try:
+            return max(int(settings.LANGGRAPH_CHECKPOINT_MAX_TOKENS), 0)
+        except (TypeError, ValueError):
+            return 80_000
+
+    @staticmethod
+    def _checkpoint_message_char_limit() -> int:
+        try:
+            return max(int(settings.LANGGRAPH_CHECKPOINT_MAX_MESSAGE_CHARS), 2000)
+        except (TypeError, ValueError):
+            return 16_000
+
+    @classmethod
+    def _truncate_checkpoint_text(cls, text: str) -> str:
+        limit = cls._checkpoint_message_char_limit()
+        if len(text) <= limit:
+            return text
+        return text[: limit - 3].rstrip() + "..."
+
+    @staticmethod
+    def _message_text_for_checkpoint(msg: BaseMessage) -> str:
+        content = getattr(msg, "content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    text = block.get("text") or block.get("content")
+                    if text:
+                        parts.append(str(text))
+            return "".join(parts)
+        return str(content) if content is not None else ""
+
+    @classmethod
+    def _compact_human_checkpoint_text(
+        cls, text: str, fallback_user_text: str | None
+    ) -> str:
+        fallback = (fallback_user_text or "").strip()
+        if fallback:
+            return cls._truncate_checkpoint_text(fallback)
+        marker = "User question:\n"
+        if text.startswith(marker):
+            body = text[len(marker) :]
+            for separator in (
+                "\n\nRewritten retrieval query:",
+                "\n\nUser uploaded files:",
+                "\n\nProject files:",
+            ):
+                if separator in body:
+                    body = body.split(separator, 1)[0]
+                    break
+            return cls._truncate_checkpoint_text(body.strip())
+        return cls._truncate_checkpoint_text(text.strip())
+
+    @classmethod
+    def _compact_checkpoint_messages(
+        cls,
+        messages: list[BaseMessage],
+        *,
+        latest_user_text: str | None = None,
+    ) -> list[BaseMessage]:
+        if not messages:
+            return []
+
+        max_messages = cls._checkpoint_message_limit()
+        selected = list(messages[-max_messages:]) if max_messages else []
+        compacted: list[BaseMessage] = []
+        latest_human_index = next(
+            (
+                i
+                for i in range(len(selected) - 1, -1, -1)
+                if isinstance(selected[i], HumanMessage)
+            ),
+            -1,
+        )
+        for index, msg in enumerate(selected):
+            text = cls._message_text_for_checkpoint(msg)
+            if isinstance(msg, HumanMessage):
+                compacted.append(
+                    HumanMessage(
+                        content=cls._compact_human_checkpoint_text(
+                            text,
+                            latest_user_text if index == latest_human_index else None,
+                        ),
+                        id=msg.id,
+                    )
+                )
+            elif isinstance(msg, AIMessage):
+                compacted.append(
+                    AIMessage(
+                        content=cls._truncate_checkpoint_text(
+                            cls._answer_text(msg) or text
+                        ),
+                        id=msg.id,
+                    )
+                )
+            else:
+                compacted.append(msg)
+
+        token_limit = cls._checkpoint_token_limit()
+        if token_limit and count_tokens_approximately(compacted) > token_limit:
+            trimmed = trim_messages(
+                compacted,
+                max_tokens=token_limit,
+                token_counter=count_tokens_approximately,
+                strategy="last",
+                start_on="human",
+                include_system=False,
+                allow_partial=False,
+            )
+            compacted = list(trimmed or compacted[-1:])
+        return compacted
+
+    @classmethod
+    async def _compact_thread_checkpoint(
+        cls,
+        agent: Any,
+        config: dict[str, Any],
+        *,
+        latest_user_text: str | None = None,
+    ) -> None:
+        aget_state = getattr(agent, "aget_state", None)
+        aupdate_state = getattr(agent, "aupdate_state", None)
+        if not callable(aget_state) or not callable(aupdate_state):
+            return
+        try:
+            snapshot = await aget_state(config)
+            values = getattr(snapshot, "values", None) or {}
+            messages = list(values.get("messages") or [])
+            compacted = cls._compact_checkpoint_messages(
+                messages,
+                latest_user_text=latest_user_text,
+            )
+            if not compacted:
+                return
+            await aupdate_state(
+                config,
+                {
+                    "messages": [
+                        RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                        *compacted,
+                    ]
+                },
+            )
+            logger.info(
+                "[chat_agent] compacted Redis thread messages {} -> {}",
+                len(messages),
+                len(compacted),
+            )
+        except Exception as exc:
+            logger.warning(
+                f"[chat_agent] failed to compact Redis checkpoint messages: {exc}",
+                exc_info=True,
+            )
+
     async def invoke_turn(
         self,
         *,
@@ -292,6 +465,11 @@ class LangChain(LLM):
             outcome = await agent.ainvoke(
                 {"messages": [HumanMessage(content=user_text)]},
                 invoke_config,
+            )
+            await self._compact_thread_checkpoint(
+                agent,
+                invoke_config,
+                latest_user_text=self._compact_human_checkpoint_text(user_text, None),
             )
         msgs: list[BaseMessage] = list(outcome.get("messages") or [])
         answer = self._last_ai_text(msgs)
@@ -413,6 +591,12 @@ class LangChain(LLM):
                         if isinstance(usage, dict):
                             collected_meta["token_usage"] = usage
                         final_ai_text = self._answer_text(chunk)
+
+        await self._compact_thread_checkpoint(
+            agent,
+            stream_config,
+            latest_user_text=self._compact_human_checkpoint_text(user_text, None),
+        )
 
         if not emitted_text and final_ai_text:
             for part in self._iter_text_slices_for_sse(final_ai_text, max_chars=sse_slice):

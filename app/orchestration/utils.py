@@ -560,9 +560,9 @@ async def resolve_turn_file_ids(request: AgentRequestContext) -> list[str] | Non
         return None
     history_service = get_chat_history_service()
     try:
-        messages = await history_service.get_messages(
+        messages = await history_service.get_recent_messages(
             session_id=request.session_id,
-            limit=max(settings.CHAT_HISTORY_LIMIT, 20),
+            limit=max(int(settings.SESSION_FILE_LOOKBACK_MESSAGES), 0),
         )
     except Exception as exc:
         logger.warning(
@@ -570,7 +570,6 @@ async def resolve_turn_file_ids(request: AgentRequestContext) -> list[str] | Non
             exc_info=True,
         )
         return None
-    messages.sort(key=lambda msg: str(msg.get("created_at") or ""))
     file_ids: list[str] = []
     seen: set[str] = set()
     for msg in messages:
