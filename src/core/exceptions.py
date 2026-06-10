@@ -152,6 +152,16 @@ class UserAlreadyExistsException(ChatHistoryException):
         )
 
 
+class PhoneNumberAlreadyExistsError(ChatHistoryException):
+    """Raised when a phone number is already in use by another user."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            detail="This phone number is already in use by another account.",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
 # OTP / Twilio Verify Exceptions
 class OTPException(ChatException):
     """Base exception for OTP-related errors."""

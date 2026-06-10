@@ -1,0 +1,4 @@
+[lint.per-file-ignores]
+# Maintenance scripts inject `src/` into sys.path before importing project
+# modules, so their imports intentionally come after executable statements.
+"scripts/*" = ["E402"]

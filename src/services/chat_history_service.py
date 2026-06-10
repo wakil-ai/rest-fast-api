@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel
+from pymongo.errors import DuplicateKeyError
 
 async def delete_agent_thread(*, user_id: str, session_id: str) -> bool:
     return False
@@ -11,6 +12,7 @@ from core.dependencies import get_bitrix24_service, get_db_manager
 from core.exceptions import (
     InvalidInputError,
     MessageNotFoundError,
+    PhoneNumberAlreadyExistsError,
     SessionNotFoundError,
     UserNotFoundError,
 )
@@ -97,6 +99,19 @@ class ChatHistoryService:
             await self.db_manager.mongo_handler.db[
                 self.token_counting_collection
             ].create_index([("user_id", 1), ("created_at", -1)])
+
+            # Users - enforce one account per phone number. Partial so the many
+            # users with phone_number == null do not collide with each other.
+            # Build fails if duplicates still exist; run
+            # scripts/dedupe_phone_numbers.py first (see docs).
+            await self.db_manager.mongo_handler.db[
+                self.users_collection
+            ].create_index(
+                [("phone_number", 1)],
+                name="uniq_phone_number",
+                unique=True,
+                partialFilterExpression={"phone_number": {"$type": "string"}},
+            )
         except Exception as e:
             logger.warning(f"Error creating indexes: {str(e)}")
 
@@ -283,6 +298,10 @@ class ChatHistoryService:
             logger.info(f"User with user_id {user_id} already exists.")
             return existing_user[0]
 
+        # Reject a phone number already claimed by another account.
+        if phone_number:
+            await self._assert_phone_number_available(phone_number)
+
         user = {
             "_id": user_id,  # Use user_id as _id
             "user_id": user_id,  # Also store user_id in a separate field for easier querying
@@ -310,8 +329,13 @@ class ChatHistoryService:
             await self._create_bitrix_lead_if_needed(user)
             return user
         except Exception as e:
-            # Handle race condition: another request may have inserted the user
+            # Handle race conditions where a concurrent request inserted first.
             if "E11000" in str(e) or "duplicate key" in str(e).lower():
+                # Phone-number unique index collision: a different account
+                # already owns this number.
+                if "uniq_phone_number" in str(e):
+                    raise PhoneNumberAlreadyExistsError()
+                # Otherwise the _id was taken concurrently; return that user.
                 logger.info(
                     f"User {user_id} was created by a concurrent request, returning existing user."
                 )
@@ -335,6 +359,24 @@ class ChatHistoryService:
             self.users_collection, {"external_id": external_id}
         )
         return users[0] if users else None
+
+    async def _assert_phone_number_available(
+        self, phone_number: str, *, exclude_user_id: str | None = None
+    ) -> None:
+        """Raise if another user already owns this phone number.
+
+        The check excludes ``exclude_user_id`` so a user re-submitting their own
+        number is treated as a no-op rather than a conflict.
+        """
+        query: dict[str, Any] = {"phone_number": phone_number}
+        if exclude_user_id is not None:
+            query["_id"] = {"$ne": exclude_user_id}
+
+        existing = await self.db_manager.mongo_handler.find_one(
+            self.users_collection, query
+        )
+        if existing:
+            raise PhoneNumberAlreadyExistsError()
 
     async def update_user_info(
         self, user_id: str, field: str, value: str
@@ -369,17 +411,28 @@ class ChatHistoryService:
         if not phone_number:
             raise InvalidInputError("Phone number cannot be empty")
 
+        # Reject numbers already claimed by another account (excluding this user
+        # so re-submitting your own number is a no-op).
+        await self._assert_phone_number_available(
+            phone_number, exclude_user_id=user_id
+        )
+
         update_fields = {
             "phone_number": phone_number,
             "updated_at": datetime.now(timezone.utc),
         }
 
-        # Even if modified_count is 0 (e.g. same value), we still return the current document.
-        await self.db_manager.update_documents(
-            self.users_collection,
-            {"_id": user_id},
-            {"$set": update_fields},
-        )
+        try:
+            # Even if modified_count is 0 (e.g. same value), we still return the current document.
+            await self.db_manager.update_documents(
+                self.users_collection,
+                {"_id": user_id},
+                {"$set": update_fields},
+            )
+        except DuplicateKeyError:
+            # Lost a race against a concurrent writer between the check above and
+            # the write; the unique index is the source of truth.
+            raise PhoneNumberAlreadyExistsError()
 
         user = await self.get_user(user_id)
         if user:
