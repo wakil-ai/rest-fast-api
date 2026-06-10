@@ -231,11 +231,12 @@ class Settings(BaseSettings):
     STREAM: bool = True  # Whether to use streaming responses
     STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0
     STREAM_SSE_MAX_RESPONSE_CHARS: int = 200
-    # Trim checkpointed chat history to this many (approx) tokens before each
-    # model call so long-running session threads don't overflow the model
-    # context window. The full history stays in the Redis checkpointer; only the
-    # slice sent to the model is bounded. Set to 0 to disable trimming.
-    AGENT_HISTORY_TRIM_MAX_TOKENS: int = 24000
+    # Hard ceiling on total model input (system prompt + all messages) per call.
+    # The ContextController truncates the oldest turns until the whole input fits
+    # under this many (approx) tokens, so long session threads can never overflow
+    # the model context window. The full history stays in the Redis checkpointer;
+    # only the per-call input is capped. Set to 0 to disable.
+    MODEL_MAX_INPUT_TOKENS: int = 500_000
     TOP_K: int = 10
     ADDITIONAL_TOP_K: int = (
         3  # For multi-collection retrievals (e.g. contract analyzer + main)

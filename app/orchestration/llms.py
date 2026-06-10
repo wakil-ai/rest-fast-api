@@ -24,6 +24,7 @@ from langchain_openai import ChatOpenAI
 
 from app.core.assistants import AssistantConfig
 from app.core.config import settings
+from app.core.logger import logger
 from app.core.langfuse_tracing import (
     LlmRunName,
     atraced_llm_span,
@@ -37,47 +38,77 @@ from app.orchestration.providers import LLM, resolve_gemini_model_name
 from app.orchestration.text import message_content_to_plain_str
 
 
-class HistoryTrimMiddleware(AgentMiddleware):
-    """Trim checkpointed chat history to a token budget before each model call.
+class ContextController(AgentMiddleware):
+    """Hard ceiling on total model input (system prompt + all messages).
 
-    The full conversation is still persisted in the Redis checkpointer (so the
-    chat-history endpoints keep every turn). This only bounds the slice of
-    history sent to the model, which prevents context-window overflow and
-    runaway latency/cost once a session thread gets long.
+    Before every model call it counts the whole input. If it stays within
+    ``max_input_tokens`` the request passes through untouched. If it exceeds the
+    cap, it truncates the oldest turns (keeping the most recent, starting on a
+    human turn) until system prompt + remaining messages fit under the cap, so a
+    long thread can never overflow the model context window.
 
-    Uses ``strategy="last"`` (keep the most recent messages) and
-    ``start_on="human"`` so the trimmed window always begins on a user turn,
-    keeping the message sequence valid for the model.
+    The full conversation is still persisted in the Redis checkpointer (the
+    chat-history endpoints keep every turn); only the per-call input is capped.
     """
 
-    def __init__(self, max_tokens: int) -> None:
-        super().__init__()
-        self._max_tokens = max_tokens
+    # Floor so a giant system prompt can't drive the message budget to zero.
+    _MIN_MESSAGE_BUDGET = 1000
 
-    def _trim(self, messages: list[BaseMessage]) -> list[BaseMessage]:
+    def __init__(self, max_input_tokens: int) -> None:
+        super().__init__()
+        self._max = max_input_tokens
+
+    @staticmethod
+    def _system_text(request: Any) -> str:
+        sm = getattr(request, "system_message", None) or getattr(
+            request, "system_prompt", None
+        )
+        if sm is None:
+            return ""
+        content = getattr(sm, "content", sm)
+        return content if isinstance(content, str) else str(content)
+
+    def _enforce(self, request: Any) -> Any:
+        messages: list[BaseMessage] = list(request.messages or [])
         if not messages:
-            return messages
+            return request
+
+        system_tokens = (
+            count_tokens_approximately([self._system_text(request)])
+            if self._system_text(request)
+            else 0
+        )
+        total = system_tokens + count_tokens_approximately(messages)
+        if total <= self._max:
+            return request
+
+        budget = max(self._max - system_tokens, self._MIN_MESSAGE_BUDGET)
         trimmed = trim_messages(
             messages,
-            max_tokens=self._max_tokens,
+            max_tokens=budget,
             token_counter=count_tokens_approximately,
             strategy="last",
             start_on="human",
             include_system=False,
             allow_partial=False,
         )
-        # A budget smaller than the most recent turn (or one oversized message)
-        # makes trim_messages return []. Never send zero messages to the model:
-        # fall back to the latest message (the current user turn).
+        # Never send zero messages (e.g. one oversized turn larger than budget).
         if not trimmed:
-            return messages[-1:]
-        return trimmed
+            trimmed = messages[-1:]
+        logger.warning(
+            "[ContextController] input {} tok > cap {} tok; truncated {} -> {} messages",
+            total,
+            self._max,
+            len(messages),
+            len(trimmed),
+        )
+        return request.override(messages=trimmed)
 
     def wrap_model_call(self, request, handler):
-        return handler(request.override(messages=self._trim(request.messages)))
+        return handler(self._enforce(request))
 
     async def awrap_model_call(self, request, handler):
-        return await handler(request.override(messages=self._trim(request.messages)))
+        return await handler(self._enforce(request))
 
 
 async def ainvoke_lite_classification_chat(
@@ -211,10 +242,8 @@ class LangChain(LLM):
             system_prompt=system_prompt,
         )
         middleware: list[AgentMiddleware] = []
-        if settings.AGENT_HISTORY_TRIM_MAX_TOKENS > 0:
-            middleware.append(
-                HistoryTrimMiddleware(settings.AGENT_HISTORY_TRIM_MAX_TOKENS)
-            )
+        if settings.MODEL_MAX_INPUT_TOKENS > 0:
+            middleware.append(ContextController(settings.MODEL_MAX_INPUT_TOKENS))
         return create_agent(
             model,
             [],
