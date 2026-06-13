@@ -28,7 +28,7 @@ class DocumentProcessingSubmissionError(Exception):
 class FileManager:
     """Handles file upload, OCR processing, storage and metadata persistence."""
 
-    PROCESSING_POLL_TIMEOUT_SECONDS = 15 * 60
+    PROCESSING_POLL_TIMEOUT_SECONDS = 300
 
     def __init__(self):
         self.storage = get_storage_service()
