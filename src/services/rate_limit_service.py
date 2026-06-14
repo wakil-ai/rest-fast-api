@@ -222,19 +222,85 @@ class RateLimitService:
         return sub
 
     async def _get_active_daily_pass_bonus(self, user_id: str) -> int:
-        """Return active daily-pass credits to add to the free daily limit."""
+        """Return active paid daily-pass credits remaining."""
+        summary = await self._get_daily_pass_summary(user_id)
+        return int(summary.get("remaining") or 0)
+
+    async def _get_daily_pass_summary(self, user_id: str) -> dict:
+        """Aggregate active paid daily credit lots."""
         try:
+            helper = getattr(
+                self.subscription_storage, "get_daily_pass_credit_summary", None
+            )
+            if callable(helper):
+                summary = await helper(user_id, self._now_ms())
+                if isinstance(summary, dict):
+                    return {
+                        "active": bool(summary.get("active")),
+                        "remaining": int(summary.get("remaining") or 0),
+                        "total": int(summary.get("total") or 0),
+                        "nearest_end_ms": summary.get("nearest_end_ms"),
+                        "latest_end_ms": summary.get("latest_end_ms"),
+                        "tier": summary.get("tier"),
+                    }
+
             daily_pass = await self.subscription_storage.get_daily_subscription(user_id)
             if not isinstance(daily_pass, dict):
-                return 0
+                return {"active": False, "remaining": 0, "total": 0}
 
-            daily = int(daily_pass.get("daily_credits") or 0)
+            remaining = int(
+                daily_pass.get("credits_remaining")
+                if "credits_remaining" in daily_pass
+                else daily_pass.get("daily_credits") or 0
+            )
+            total = int(
+                daily_pass.get("total_credits")
+                or daily_pass.get("daily_credits")
+                or 0
+            )
             end_ms = int(daily_pass.get("end_ms") or 0)
-            if end_ms > self._now_ms() and "daily_credits" in daily_pass:
-                return max(0, daily)
-            return 0
+            if end_ms > self._now_ms() and remaining > 0:
+                return {
+                    "active": True,
+                    "remaining": max(0, remaining),
+                    "total": max(0, total),
+                    "nearest_end_ms": daily_pass.get("nearest_end_ms") or end_ms,
+                    "latest_end_ms": daily_pass.get("latest_end_ms") or end_ms,
+                    "tier": daily_pass.get("tier"),
+                }
+            return {"active": False, "remaining": 0, "total": 0}
         except Exception:
-            return 0
+            return {"active": False, "remaining": 0, "total": 0}
+
+    async def _try_consume_daily_pass_credits(
+        self, user_id: str, cost: int
+    ) -> tuple[bool, int, int] | None:
+        """Consume paid daily lots if they can cover the full cost."""
+        try:
+            helper = getattr(
+                self.subscription_storage, "try_consume_daily_pass_credits", None
+            )
+            if callable(helper):
+                result = await helper(user_id, cost, self._now_ms())
+                if isinstance(result, dict):
+                    return (
+                        True,
+                        int(result.get("credits_remaining") or 0),
+                        int(result.get("total_credits") or 0),
+                    )
+                if result is not None:
+                    summary = await self._get_daily_pass_summary(user_id)
+                    remaining = int(summary.get("remaining") or 0)
+                    if remaining >= cost:
+                        total = int(summary.get("total") or remaining)
+                        return True, remaining - cost, total
+            return None
+        except Exception as exc:
+            logger.warning(
+                f"[RateLimitService] Failed to consume daily pass credits for "
+                f"{user_id}: {exc}"
+            )
+            return None
 
     async def _sync_pool_credits_remaining(
         self, user_id: str, remaining: int
@@ -337,20 +403,33 @@ class RateLimitService:
                     return False, remaining, total
                 return True, remaining, total
 
-            signup_result = await self._try_consume_signup_bonus(
-                user_id, user, credit_cost
-            )
-            if signup_result is not None:
-                return signup_result
+            daily_pass_summary = await self._get_daily_pass_summary(user_id)
+            daily_pass_remaining = int(daily_pass_summary.get("remaining") or 0)
+            if daily_pass_remaining >= credit_cost:
+                daily_result = await self._try_consume_daily_pass_credits(
+                    user_id, credit_cost
+                )
+                if daily_result is not None:
+                    return daily_result
 
-            # Free / daily-pass / promo path: per-day quota.
-            daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
             (
                 has_promo,
                 promo_credit_limit,
             ) = await self.promo_code_service.get_user_promo_status(user_id)
 
-            daily_limit = self._default_daily_limit_for(user) + daily_pass_bonus
+            # Welcome credits are a one-time free pool. Once the user has an
+            # active daily pass or promo entitlement, do not let a small leftover
+            # welcome balance block paid/promo usage or hide those credits.
+            if daily_pass_remaining <= 0 and not has_promo:
+                signup_result = await self._try_consume_signup_bonus(
+                    user_id, user, credit_cost
+                )
+                if signup_result is not None:
+                    return signup_result
+
+            # Free / promo path: per-day quota. Paid daily lots are handled above
+            # from their own expiring credit pools, so they do not reset at UTC midnight.
+            daily_limit = self._default_daily_limit_for(user)
 
             if has_promo:
                 if promo_credit_limit is None:
@@ -414,19 +493,25 @@ class RateLimitService:
             if pool_sub is not None:
                 return await self._get_pool_credits_remaining(user_id, pool_sub)
 
-            user = await self._fetch_user(user_id)
-            if user and self._is_on_signup_bonus(user):
-                return self._signup_bonus_status(user)["remaining_credits"]
-
-            daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
+            daily_pass_summary = await self._get_daily_pass_summary(user_id)
+            daily_pass_remaining = int(daily_pass_summary.get("remaining") or 0)
             (
                 has_promo,
                 promo_credit_limit,
             ) = await self.promo_code_service.get_user_promo_status(user_id)
 
+            user = await self._fetch_user(user_id)
+            if (
+                user
+                and self._is_on_signup_bonus(user)
+                and daily_pass_remaining <= 0
+                and not has_promo
+            ):
+                return self._signup_bonus_status(user)["remaining_credits"]
+
             if user is None:
                 user = await self._fetch_user(user_id)
-            daily_limit = self._default_daily_limit_for(user) + daily_pass_bonus
+            daily_limit = self._default_daily_limit_for(user)
 
             if has_promo:
                 if promo_credit_limit is None:
@@ -439,8 +524,8 @@ class RateLimitService:
 
             if user_limit:
                 credits_used = user_limit.get("credits_used", 0)
-                return max(0, daily_limit - credits_used)
-            return daily_limit
+                return daily_pass_remaining + max(0, daily_limit - credits_used)
+            return daily_pass_remaining + daily_limit
 
         except Exception as e:
             logger.error(
@@ -471,7 +556,17 @@ class RateLimitService:
             }
 
         user = await self._fetch_user(user_id)
-        if user and self._is_on_signup_bonus(user):
+        daily_pass_summary = await self._get_daily_pass_summary(user_id)
+        daily_pass_remaining = int(daily_pass_summary.get("remaining") or 0)
+        has_promo, _promo_credit_limit = (
+            await self.promo_code_service.get_user_promo_status(user_id)
+        )
+        if (
+            user
+            and self._is_on_signup_bonus(user)
+            and daily_pass_remaining <= 0
+            and not has_promo
+        ):
             status = self._signup_bonus_status(user)
             return {
                 **status,
@@ -488,8 +583,10 @@ class RateLimitService:
             }
 
         credits_used = await self._get_today_credits_used(user_id)
+        free_and_promo_limit = max(0, daily_limit - daily_pass_remaining)
         return {
-            "remaining_credits": max(0, daily_limit - credits_used),
+            "remaining_credits": daily_pass_remaining
+            + max(0, free_and_promo_limit - credits_used),
             "effective_daily_credit_limit": daily_limit,
             "today_credits_used": credits_used,
             "uses_combined_credit_pool": True,
@@ -506,18 +603,24 @@ class RateLimitService:
         if pool_sub is not None:
             return await self._get_pool_credits_remaining(user_id, pool_sub)
 
-        user = await self._fetch_user(user_id)
-        if user and self._is_on_signup_bonus(user):
-            return self._signup_bonus_status(user)["remaining_credits"]
-
-        daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
+        daily_pass_summary = await self._get_daily_pass_summary(user_id)
+        daily_pass_remaining = int(daily_pass_summary.get("remaining") or 0)
 
         (
             has_promo,
             promo_credit_limit,
         ) = await self.promo_code_service.get_user_promo_status(user_id)
 
-        daily_limit = self._default_daily_limit_for(user) + daily_pass_bonus
+        user = await self._fetch_user(user_id)
+        if (
+            user
+            and self._is_on_signup_bonus(user)
+            and daily_pass_remaining <= 0
+            and not has_promo
+        ):
+            return self._signup_bonus_status(user)["remaining_credits"]
+
+        daily_limit = self._default_daily_limit_for(user) + daily_pass_remaining
 
         if has_promo:
             if promo_credit_limit is None:
