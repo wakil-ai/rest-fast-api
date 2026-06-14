@@ -310,11 +310,7 @@ class BasePaymentService:
                 return
 
             if new_rank == old_rank:
-                raise SubscriptionEligibilityError(
-                    code="ACTIVE_DAILY_PASS_SAME_TIER",
-                    message="An active daily pass for this tier already exists for this user.",
-                    active_daily_pass_end_ms=active_end_ms,
-                )
+                return
 
             raise SubscriptionEligibilityError(
                 code="DAILY_PASS_DOWNGRADE_NOT_ALLOWED",
@@ -389,6 +385,12 @@ class BasePaymentService:
                     resolution_update = {
                         "apply_strategy": "upgrade_daily_pass",
                         "previous_daily_pass_tier": active_daily_pass.get("tier"),
+                    }
+                elif new_rank == old_rank:
+                    resolution = "granted_daily_pass_stack"
+                    resolution_update = {
+                        "apply_strategy": "stack_daily_pass_lot",
+                        "active_daily_pass_end_ms": active_end_ms,
                     }
                 else:
                     resolution = "granted_after_payment_conflict"
