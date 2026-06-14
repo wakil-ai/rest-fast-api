@@ -131,7 +131,13 @@ class SubscriptionStorage:
             {
                 "user_id": user_id,
                 "end_ms": {"$gt": now_ms},
-                "credits_remaining": {"$gt": 0},
+                "$or": [
+                    {"credits_remaining": {"$gt": 0}},
+                    {
+                        "credits_remaining": {"$exists": False},
+                        "daily_credits": {"$gt": 0},
+                    },
+                ],
             }
         ).sort("end_ms", 1)
         return await cursor.to_list(length=100)
@@ -152,8 +158,11 @@ class SubscriptionStorage:
                 "active_lot_count": 0,
             }
 
-        remaining = sum(max(0, int(lot.get("credits_remaining") or 0)) for lot in lots)
-        total = sum(max(0, int(lot.get("total_credits") or 0)) for lot in lots)
+        remaining = sum(self._daily_lot_remaining(lot) for lot in lots)
+        total = sum(
+            max(0, int(lot.get("total_credits") or lot.get("daily_credits") or 0))
+            for lot in lots
+        )
         sorted_lots = sorted(lots, key=lambda lot: int(lot.get("end_ms") or 0))
         latest_lot = max(lots, key=lambda lot: int(lot.get("end_ms") or 0))
         return {
@@ -167,11 +176,17 @@ class SubscriptionStorage:
             "active_lot_count": len(lots),
         }
 
+    @staticmethod
+    def _daily_lot_remaining(lot: dict) -> int:
+        if "credits_remaining" in lot:
+            return max(0, int(lot.get("credits_remaining") or 0))
+        return max(0, int(lot.get("daily_credits") or 0))
+
     async def try_consume_daily_pass_credits(
         self, user_id: str, cost: int, now_ms: int
     ) -> dict | None:
         lots = await self.get_active_daily_subscriptions(user_id, now_ms)
-        total = sum(max(0, int(lot.get("credits_remaining") or 0)) for lot in lots)
+        total = sum(self._daily_lot_remaining(lot) for lot in lots)
         if total < cost:
             return None
 
@@ -183,22 +198,40 @@ class SubscriptionStorage:
             if remaining_to_consume <= 0:
                 break
 
-            lot_remaining = max(0, int(lot.get("credits_remaining") or 0))
+            lot_remaining = self._daily_lot_remaining(lot)
             spend = min(lot_remaining, remaining_to_consume)
             if spend <= 0:
                 continue
 
-            updated = await collection.find_one_and_update(
-                {
+            if "credits_remaining" in lot:
+                query = {
                     "_id": lot.get("_id"),
                     "user_id": user_id,
                     "end_ms": {"$gt": now_ms},
                     "credits_remaining": {"$gte": spend},
-                },
-                {
+                }
+                update = {
                     "$inc": {"credits_remaining": -spend},
                     "$set": {"updated_at_ms": now_ms},
-                },
+                }
+            else:
+                query = {
+                    "_id": lot.get("_id"),
+                    "user_id": user_id,
+                    "end_ms": {"$gt": now_ms},
+                    "credits_remaining": {"$exists": False},
+                    "daily_credits": {"$gte": spend},
+                }
+                update = {
+                    "$set": {
+                        "credits_remaining": lot_remaining - spend,
+                        "updated_at_ms": now_ms,
+                    },
+                }
+
+            updated = await collection.find_one_and_update(
+                query,
+                update,
                 return_document=ReturnDocument.AFTER,
             )
             if updated is None:
