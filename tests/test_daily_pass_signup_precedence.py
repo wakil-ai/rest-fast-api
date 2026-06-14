@@ -64,13 +64,13 @@ async def test_daily_pass_spend_is_not_blocked_by_leftover_signup_credits():
     )
 
     assert allowed is True
-    assert limit == settings.DAILY_CREDITS_LIMIT + 200
-    assert remaining == settings.DAILY_CREDITS_LIMIT + 200 - 10
+    assert limit == 200
+    assert remaining == 200 - 10
 
     users = service.mongo_handler.db[settings.USERS_COLLECTION]
     creditusage = service.mongo_handler.db[RateLimitService.RATE_LIMIT_COLLECTION]
     users.find_one_and_update.assert_not_called()
-    creditusage.insert_one.assert_awaited_once()
+    creditusage.insert_one.assert_not_called()
 
 
 @pytest.mark.asyncio
