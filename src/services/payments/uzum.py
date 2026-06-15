@@ -143,11 +143,18 @@ class UzumService(BasePaymentService):
             )
             raise UzumServiceError(UzumError.PAYMENT_ALREADY_MADE) from exc
 
+        # Uzum's catalog has no amount field — they display whatever we return here
+        # to the customer for confirmation. Per Uzum spec, the amount in /check
+        # response is in SUMS (string), unlike everywhere else in the protocol
+        # where amount is in tiyin.
+        data = self._data_block(user_id, plan_id)
+        data["amount"] = {"value": str(int(quote["amount_sum"]))}
+
         return {
             "serviceId": int(service_id),
             "timestamp": now,
             "status": UzumResponseStatus.OK,
-            "data": self._data_block(user_id, plan_id),
+            "data": data,
         }
 
     # ---------------------------------------------------------------- /create
