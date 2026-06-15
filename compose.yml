@@ -12,6 +12,7 @@ services:
       - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     networks:
       - wakilai-bridge
+      - rest-api-ai_wakil-network
     restart: unless-stopped
     depends_on:
       redis:
@@ -61,6 +62,8 @@ services:
 networks:
   wakilai-bridge:
     driver: bridge
+  rest-api-ai_wakil-network:
+    external: true
 
 volumes:
   redis_data:
