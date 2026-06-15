@@ -208,6 +208,24 @@ class FileUploadResponse(BaseModel):
     status: str = Field(
         ..., description="Processing status: processing/completed/failed"
     )
+    processing_task_id: str | None = Field(
+        default=None, description="Async document processing task id"
+    )
+    processing_status: str | None = Field(
+        default=None, description="Async document processing status"
+    )
+    processing_error: str | None = Field(
+        default=None, description="Safe processing failure message"
+    )
+    processed_chunk_count: int | None = Field(
+        default=None, description="Number of chunks ingested by document processing"
+    )
+    processing_skipped: bool | None = Field(
+        default=None, description="Whether processing completed without indexing"
+    )
+    processing_skip_reason: str | None = Field(
+        default=None, description="Reason processing skipped indexing"
+    )
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}

@@ -2,8 +2,10 @@ import asyncio
 import hashlib
 import os
 import tempfile
+from datetime import datetime, timezone
 
 from fastapi import UploadFile
+import httpx
 from uuid6 import uuid7
 
 from core.config import settings
@@ -15,30 +17,28 @@ from core.dependencies import (
 from core.logger import logger
 from models.chat_history import FileUploadResponse
 from utils.progress_webhook import send_project_file_progress_webhook
-from utils.tokens import count_tokens
+
+
+class DocumentProcessingSubmissionError(Exception):
+    def __init__(self, message: str, status_code: int = 500) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class FileManager:
     """Handles file upload, OCR processing, storage and metadata persistence."""
 
+    PROCESSING_POLL_TIMEOUT_SECONDS = 300
+
     def __init__(self):
         self.storage = get_storage_service()
         self.history = get_chat_history_service()
-
-    async def _process_ocr(self, temp_path: str, *, filename: str, content_type: str) -> str:
-        with open(temp_path, "rb") as file_obj:
-            result = await get_llm_service_client().ocr_file(
-                file=file_obj,
-                filename=filename,
-                content_type=content_type,
-            )
-        return str(result.get("ocr_text") or "")
 
     async def upload_message_file(
         self, file: UploadFile, user_id: str
     ) -> tuple[int, FileUploadResponse | str]:
         """
-        Process file upload for a message: validate → OCR → store → save metadata
+        Process file upload for a message: validate → store → wait for processing.
         Returns: (status_code, response_or_error_message)
         """
         temp_path, content_hash, file_size = await self._spool_upload_to_temp(
@@ -52,8 +52,33 @@ class FileManager:
             )
             if existing_by_content:
                 existing_file_id = existing_by_content["_id"]
+                if self._is_ingested_to_milvus(existing_by_content):
+                    logger.info(
+                        f"Reusing existing ingested file by content hash for "
+                        f"file_id: {existing_file_id}"
+                    )
+                    response = self._build_success_response(
+                        file_id=existing_file_id,
+                        metadata=existing_by_content.get("file_metadata", {}),
+                        ocr_result=existing_by_content.get("ocr_result", ""),
+                        record=existing_by_content,
+                        project_id=None,
+                    )
+                    return 200, response
                 logger.info(
-                    f"Reusing existing file by content hash for file_id: {existing_file_id}"
+                    f"Existing file cache hit is not ingested; reprocessing "
+                    f"file_id: {existing_file_id}"
+                )
+                existing_by_content = await self._submit_processing_job(
+                    file_id=existing_file_id,
+                    temp_path=temp_path,
+                    filename=file.filename or "upload",
+                    content_type=file.content_type or "application/octet-stream",
+                    user_id=user_id,
+                    record=existing_by_content,
+                )
+                existing_by_content = await self._await_processing_success(
+                    existing_by_content
                 )
                 response = self._build_success_response(
                     file_id=existing_file_id,
@@ -64,12 +89,7 @@ class FileManager:
                 )
                 return 200, response
 
-            ocr_result = await self._process_ocr(
-                temp_path,
-                filename=file.filename or "upload",
-                content_type=file.content_type or "application/octet-stream",
-            )
-            file_id = self._build_deterministic_file_id(ocr_result)
+            file_id = self._build_file_id()
 
             existing_record = await self.history.get_file_by_id(file_id)
             if existing_record:
@@ -79,7 +99,7 @@ class FileManager:
                 response = self._build_success_response(
                     file_id=file_id,
                     metadata=existing_record.get("file_metadata", {}),
-                    ocr_result=existing_record.get("ocr_result", ocr_result),
+                    ocr_result=existing_record.get("ocr_result", ""),
                     record=existing_record,
                     project_id=None,
                 )
@@ -102,20 +122,27 @@ class FileManager:
                 user_id=user_id,
                 file_id=file_id,
                 file_url=file_url,
-                ocr_result=ocr_result,
+                ocr_result="",
                 file_metadata=metadata,
-                status="pending",  # Pending association with a message
+                status="processing",
                 scope="message",
             )
 
-            asyncio.create_task(
-                self.index_file(file_id=file_id, ocr_result=ocr_result, record=record)
+            record = await self._submit_processing_job(
+                file_id=file_id,
+                temp_path=temp_path,
+                filename=file.filename or "upload",
+                content_type=file.content_type or "application/octet-stream",
+                user_id=user_id,
+                record=record,
             )
+
+            record = await self._await_processing_success(record)
 
             response = self._build_success_response(
                 file_id=file_id,
                 metadata=record.get("file_metadata", metadata),
-                ocr_result=ocr_result,
+                ocr_result=record.get("ocr_result", ""),
                 record=record,
                 project_id=None,
             )
@@ -126,11 +153,16 @@ class FileManager:
             return 200, response
 
         except Exception as e:
+            status_code = (
+                e.status_code
+                if isinstance(e, DocumentProcessingSubmissionError)
+                else 500
+            )
             logger.error(
                 f"Message file upload failed: {file.filename} - {str(e)}",
                 exc_info=True,
             )
-            return 500, str(e)
+            return status_code, str(e)
 
         finally:
             self._safe_remove_temp_file(temp_path)
@@ -144,8 +176,7 @@ class FileManager:
         session_id: str | None = None,
     ) -> tuple[int, FileUploadResponse | str]:
         """
-        Upload a document into a project: OCR (webhook 25%), then async chunking,
-        embeddings (50%), indexed file context with ``project_id`` (100%).
+        Upload a project document and hand it to rest-api-llm for end-to-end processing.
         """
         from core.dependencies import get_project_service
 
@@ -166,6 +197,36 @@ class FileManager:
             )
             if existing_by_content:
                 fid = existing_by_content["_id"]
+                if self._is_ingested_to_milvus(existing_by_content):
+                    logger.info(
+                        f"Reusing existing ingested project file by content hash for "
+                        f"file_id: {fid}"
+                    )
+                    response = self._build_success_response(
+                        file_id=fid,
+                        metadata=existing_by_content.get("file_metadata", {}),
+                        ocr_result=existing_by_content.get("ocr_result", ""),
+                        record=existing_by_content,
+                        project_id=project_id,
+                    )
+                    return 200, response
+                logger.info(
+                    f"Existing project file cache hit is not ingested; reprocessing "
+                    f"file_id: {fid}"
+                )
+                existing_by_content = await self._submit_processing_job(
+                    file_id=fid,
+                    temp_path=temp_path,
+                    filename=file.filename or "upload",
+                    content_type=file.content_type or "application/octet-stream",
+                    user_id=user_id,
+                    record=existing_by_content,
+                    project_id=project_id,
+                    session_id=session_id,
+                )
+                existing_by_content = await self._await_processing_success(
+                    existing_by_content
+                )
                 response = self._build_success_response(
                     file_id=fid,
                     metadata=existing_by_content.get("file_metadata", {}),
@@ -175,12 +236,7 @@ class FileManager:
                 )
                 return 200, response
 
-            ocr_result = await self._process_ocr(
-                temp_path,
-                filename=file.filename or "upload",
-                content_type=file.content_type or "application/octet-stream",
-            )
-            file_id = self._build_deterministic_file_id(ocr_result)
+            file_id = self._build_file_id()
             gcs_path = self.storage.generate_project_file_path(
                 project_id, file_id, file.filename or "upload"
             )
@@ -197,7 +253,7 @@ class FileManager:
                 user_id=user_id,
                 file_id=file_id,
                 file_url=file_url,
-                ocr_result=ocr_result,
+                ocr_result="",
                 file_metadata=metadata,
                 status="processing",
                 scope="project",
@@ -212,27 +268,28 @@ class FileManager:
                 webhook_url or "",
                 project_id=project_id,
                 file_id=file_id,
-                stage="ocr_complete",
-                progress_percent=25,
+                stage="processing_queued",
+                progress_percent=10,
                 status="processing",
             )
 
-            asyncio.create_task(
-                self._finalize_project_file_ingestion(
-                    file_id=file_id,
-                    project_id=project_id,
-                    user_id=user_id,
-                    ocr_result=ocr_result,
-                    record=record,
-                    webhook_url=webhook_url,
-                    file_name=metadata.get("file_name") or file_id,
-                )
+            record = await self._submit_processing_job(
+                file_id=file_id,
+                temp_path=temp_path,
+                filename=file.filename or "upload",
+                content_type=file.content_type or "application/octet-stream",
+                user_id=user_id,
+                record=record,
+                project_id=project_id,
+                session_id=session_id,
             )
+
+            record = await self._await_processing_success(record)
 
             response = self._build_success_response(
                 file_id=file_id,
                 metadata=record.get("file_metadata", metadata),
-                ocr_result=ocr_result,
+                ocr_result=record.get("ocr_result", ""),
                 record=record,
                 project_id=project_id,
             )
@@ -242,11 +299,16 @@ class FileManager:
             return 200, response
 
         except Exception as e:
+            status_code = (
+                e.status_code
+                if isinstance(e, DocumentProcessingSubmissionError)
+                else 500
+            )
             logger.error(
                 f"Project file upload failed: {file.filename} - {str(e)}",
                 exc_info=True,
             )
-            return 500, str(e)
+            return status_code, str(e)
 
         finally:
             self._safe_remove_temp_file(temp_path)
@@ -299,167 +361,287 @@ class FileManager:
         )
         return 204, None
 
-    async def _finalize_project_file_ingestion(
+    async def _submit_processing_job(
         self,
         *,
         file_id: str,
-        project_id: str,
+        temp_path: str,
+        filename: str,
+        content_type: str,
         user_id: str,
-        ocr_result: str,
         record: dict,
-        webhook_url: str | None,
-        file_name: str,
-    ) -> None:
+        project_id: str | None = None,
+        session_id: str | None = None,
+        message_id: str | None = None,
+    ) -> dict:
+        try:
+            with open(temp_path, "rb") as file_obj:
+                result = await get_llm_service_client().submit_document_processing(
+                    document_id=file_id,
+                    file=file_obj,
+                    filename=filename,
+                    content_type=content_type,
+                    user_id=user_id,
+                    project_id=project_id,
+                    session_id=session_id,
+                    message_id=message_id,
+                    force_index=True,
+                )
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code == 413:
+                message = "File is too large for document processing."
+            elif status_code == 422:
+                message = "Document processing request is invalid."
+            else:
+                message = "Document processing could not be started."
+            await self._mark_processing_failed(
+                record,
+                message,
+                processing_status="failed",
+            )
+            raise DocumentProcessingSubmissionError(message, status_code) from exc
+        except Exception as exc:
+            message = "Document processing could not be started."
+            await self._mark_processing_failed(
+                record,
+                message,
+                processing_status="failed",
+            )
+            raise DocumentProcessingSubmissionError(message) from exc
+
+        task_id = str(result.get("task_id") or "").strip()
+        if not task_id:
+            message = "Document processing did not return a task id."
+            await self._mark_processing_failed(
+                record,
+                message,
+                processing_status="failed",
+            )
+            raise DocumentProcessingSubmissionError(message)
+
+        return await self.history.update_file_metadata_fields(
+            file_id,
+            {
+                "processing_task_id": task_id,
+                "processing_status": str(result.get("status") or "queued"),
+                "processing_error": None,
+                "processing_submitted_at": datetime.now(timezone.utc),
+            },
+        )
+
+    async def _await_processing_success(self, record: dict) -> dict:
+        if self._processing_completed_successfully(record):
+            return record
+        if not self._processing_is_active(record):
+            raise DocumentProcessingSubmissionError(
+                str(
+                    record.get("processing_error")
+                    or "Document processing did not complete successfully."
+                )
+            )
+
+        final_record = await self._poll_processing_job(record)
+        if final_record and self._processing_completed_successfully(final_record):
+            return final_record
+        raise DocumentProcessingSubmissionError(
+            str(
+                (final_record or {}).get("processing_error")
+                or "Document processing did not complete successfully."
+            )
+        )
+
+    async def _poll_processing_job(self, record: dict) -> dict | None:
         from core.dependencies import get_project_service
 
-        project_service = get_project_service()
-        hook = webhook_url or ""
+        file_id = str(record.get("_id") or record.get("file_id") or "")
+        task_id = str(record.get("processing_task_id") or "")
+        project_id = record.get("project_id")
+        webhook_url = str(record.get("webhook_url") or "")
+        started_at = asyncio.get_running_loop().time()
+        last_status: str | None = None
 
-        try:
-            text = (ocr_result or "").strip()
-            if not text:
-                await self.history.update_file_metadata_fields(
-                    file_id,
-                    {
-                        "file_metadata.milvus_file_index.enabled": False,
-                        "file_metadata.milvus_file_index.reason": "empty_ocr",
-                    },
-                )
-                await self.history.update_file_status(file_id, "completed")
-                await send_project_file_progress_webhook(
-                    hook,
-                    project_id=project_id,
-                    file_id=file_id,
-                    stage="ingestion_skipped",
-                    progress_percent=100,
-                    status="completed",
-                    extra={"reason": "empty_ocr"},
-                )
-                return
+        if not file_id or not task_id:
+            logger.warning(
+                f"[FileManager] Cannot poll processing job without file/task id: {record}"
+            )
+            return None
 
-            embed_result = await get_llm_service_client().embed_file(
-                {
-                    "file_id": file_id,
-                    "user_id": user_id,
-                    "project_id": project_id,
-                    "session_id": record.get("session_id"),
-                    "file_name": file_name,
-                    "ocr_text": text,
-                    "force_index": True,
-                }
-            )
-            chunk_count = int(embed_result.get("chunk_count") or 0)
-            if embed_result.get("skipped"):
-                await self.history.update_file_metadata_fields(
-                    file_id,
-                    {
-                        "file_metadata.milvus_file_index.enabled": False,
-                        "file_metadata.milvus_file_index.reason": embed_result.get("reason"),
-                    },
+        while True:
+            elapsed = asyncio.get_running_loop().time() - started_at
+            if elapsed > self.PROCESSING_POLL_TIMEOUT_SECONDS:
+                return await self._mark_processing_failed(
+                    record,
+                    "Document processing timed out.",
+                    processing_status="failed",
                 )
-                await self.history.update_file_status(file_id, "completed")
-                await send_project_file_progress_webhook(
-                    hook,
-                    project_id=project_id,
-                    file_id=file_id,
-                    stage="ingestion_skipped",
-                    progress_percent=100,
-                    status="completed",
-                    extra={"reason": embed_result.get("reason")},
-                )
-                return
 
-            await send_project_file_progress_webhook(
-                hook,
-                project_id=project_id,
-                file_id=file_id,
-                stage="embedding_complete",
-                progress_percent=50,
-                status="processing",
-                extra={"chunk_count": chunk_count},
-            )
-            token_count = count_tokens(ocr_result)
-            await self.history.update_file_metadata_fields(
-                file_id,
-                {
-                    "file_metadata.ocr_token_count": token_count,
-                    "file_metadata.milvus_file_index.enabled": True,
-                    "file_metadata.milvus_file_index.collection": embed_result.get("collection")
-                    or settings.PROJECT_FILES_INDEX_NAME,
-                    "file_metadata.milvus_file_index.embedding_model": embed_result.get("embedding_model")
-                    or settings.LLM_SERVICE_EMBEDDING_MODEL_NAME,
-                    "file_metadata.milvus_file_index.chunk_count": chunk_count,
-                },
-            )
-            await self.history.update_file_status(file_id, "completed")
-            await send_project_file_progress_webhook(
-                hook,
-                project_id=project_id,
-                file_id=file_id,
-                stage="ingestion_complete",
-                progress_percent=100,
-                status="completed",
-                extra={"chunk_count": chunk_count},
-            )
-            await project_service.increment_stat(project_id, "docs", 1)
-
-        except Exception as exc:
-            logger.error(
-                f"Project file ingestion failed file_id={file_id}: {exc}",
-                exc_info=True,
-            )
             try:
-                await self.history.update_file_status(file_id, "failed")
-            except Exception:
-                pass
+                payload = await get_llm_service_client().get_document_processing_status(
+                    document_id=file_id,
+                    task_id=task_id,
+                )
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    return await self._mark_processing_failed(
+                        record,
+                        "Document processing job expired.",
+                        processing_status="failed",
+                    )
+                logger.warning(
+                    f"[FileManager] Polling failed for file_id={file_id}: {exc}",
+                    exc_info=True,
+                )
+                await asyncio.sleep(self._processing_poll_interval(elapsed))
+                continue
+            except Exception as exc:
+                logger.warning(
+                    f"[FileManager] Polling failed for file_id={file_id}: {exc}",
+                    exc_info=True,
+                )
+                await asyncio.sleep(self._processing_poll_interval(elapsed))
+                continue
+
+            status = str(payload.get("status") or "").strip().lower()
+            if status in {"queued", "started"}:
+                await self.history.update_file_metadata_fields(
+                    file_id,
+                    {
+                        "processing_status": status,
+                    },
+                )
+                if project_id and status != last_status:
+                    await send_project_file_progress_webhook(
+                        webhook_url,
+                        project_id=project_id,
+                        file_id=file_id,
+                        stage=f"processing_{status}",
+                        progress_percent=25 if status == "started" else 10,
+                        status="processing",
+                    )
+                last_status = status
+                await asyncio.sleep(self._processing_poll_interval(elapsed))
+                continue
+
+            if status == "failed":
+                return await self._mark_processing_failed(
+                    record,
+                    str(payload.get("error") or "Document processing failed."),
+                    processing_status="failed",
+                )
+
+            if status == "succeeded":
+                result = payload.get("result") or {}
+                chunk_count = int(result.get("chunk_count") or 0)
+                collection = (
+                    result.get("collection") or settings.PROJECT_FILES_INDEX_NAME
+                )
+                skipped = bool(result.get("skipped"))
+                skip_reason = result.get("reason")
+                if skipped:
+                    return await self._mark_processing_failed(
+                        record,
+                        f"Document processing skipped Milvus ingestion: {skip_reason or 'unknown'}",
+                        processing_status="failed",
+                    )
+                final_record = await self.history.update_file_metadata_fields(
+                    file_id,
+                    {
+                        "status": "completed",
+                        "processing_status": "succeeded",
+                        "processing_error": None,
+                        "processed_chunk_count": chunk_count,
+                        "processing_skipped": skipped,
+                        "processing_skip_reason": skip_reason,
+                        "processing_completed_at": datetime.now(timezone.utc),
+                        "file_metadata.milvus_file_index.enabled": not skipped,
+                        "file_metadata.milvus_file_index.collection": collection,
+                        "file_metadata.milvus_file_index.chunk_count": chunk_count,
+                        "file_metadata.milvus_file_index.reason": skip_reason,
+                    },
+                )
+                if project_id:
+                    await send_project_file_progress_webhook(
+                        webhook_url,
+                        project_id=project_id,
+                        file_id=file_id,
+                        stage="ingestion_complete"
+                        if not skipped
+                        else "ingestion_skipped",
+                        progress_percent=100,
+                        status="completed",
+                        extra={"chunk_count": chunk_count, "reason": skip_reason},
+                    )
+                    await get_project_service().increment_stat(project_id, "docs", 1)
+                return final_record
+
+            logger.warning(
+                f"[FileManager] Unknown document processing status for "
+                f"file_id={file_id}: {status!r}"
+            )
+            await asyncio.sleep(self._processing_poll_interval(elapsed))
+
+    async def _mark_processing_failed(
+        self,
+        record: dict,
+        error: str,
+        *,
+        processing_status: str,
+    ) -> dict | None:
+        file_id = str(record.get("_id") or record.get("file_id") or "")
+        if not file_id:
+            return None
+        failed_record = await self.history.update_file_metadata_fields(
+            file_id,
+            {
+                "status": "failed",
+                "processing_status": processing_status,
+                "processing_error": error,
+                "processing_completed_at": datetime.now(timezone.utc),
+                "file_metadata.milvus_file_index.enabled": False,
+                "file_metadata.milvus_file_index.error": error,
+            },
+        )
+        project_id = record.get("project_id")
+        if project_id:
             await send_project_file_progress_webhook(
-                hook,
+                str(record.get("webhook_url") or ""),
                 project_id=project_id,
                 file_id=file_id,
                 stage="failed",
                 progress_percent=100,
                 status="failed",
-                extra={"error": str(exc)},
+                extra={"error": error},
             )
+        return failed_record
 
-    async def _upsert_to_vector_db(
-        self,
-        content: str,
-        user_id: str,
-        file_id: str,
-        file_name: str,
-        session_id: str | None = None,
-        message_id: str | None = None,
-        project_id: str | None = None,
-    ) -> int:
-        """Ask the internal LLM service to chunk and index uploaded file context."""
-        if not content:
-            logger.warning(
-                f"Empty OCR result for file_id: {file_id}, skipping ingestion"
-            )
-            return 0
+    @staticmethod
+    def _processing_poll_interval(elapsed_seconds: float) -> float:
+        if elapsed_seconds < 30:
+            return 2
+        if elapsed_seconds < 5 * 60:
+            return 5
+        return 15
 
-        try:
-            result = await get_llm_service_client().embed_file(
-                {
-                    "file_id": file_id,
-                    "user_id": user_id,
-                    "file_name": file_name,
-                    "ocr_text": content,
-                    "session_id": session_id,
-                    "message_id": message_id,
-                    "project_id": project_id,
-                    "force_index": bool(project_id),
-                }
-            )
-            chunk_count = int(result.get("chunk_count") or 0)
-            logger.info(
-                f"Successfully ingested {chunk_count} chunks for file_id: {file_id}"
-            )
-            return chunk_count
-        except Exception as e:
-            logger.error(f"Failed to ingest file into Vector DB: {str(e)}")
-            raise
+    @staticmethod
+    def _processing_is_active(record: dict) -> bool:
+        return bool(record.get("processing_task_id")) and record.get(
+            "processing_status"
+        ) != "failed"
+
+    @staticmethod
+    def _processing_completed_successfully(record: dict) -> bool:
+        return (
+            record.get("status") == "completed"
+            and record.get("processing_status") == "succeeded"
+            and FileManager._is_ingested_to_milvus(record)
+        )
+
+    @staticmethod
+    def _is_ingested_to_milvus(record: dict) -> bool:
+        metadata = record.get("file_metadata") or {}
+        milvus_file_index = metadata.get("milvus_file_index") or {}
+        return bool(milvus_file_index.get("enabled"))
 
     async def _spool_upload_to_temp(
         self, file: UploadFile, original_filename: str
@@ -507,12 +689,18 @@ class FileManager:
             file_metadata=metadata,
             ocr_result=ocr_result,
             status=record.get("status", "completed"),
+            processing_task_id=record.get("processing_task_id"),
+            processing_status=record.get("processing_status"),
+            processing_error=record.get("processing_error"),
+            processed_chunk_count=record.get("processed_chunk_count"),
+            processing_skipped=record.get("processing_skipped"),
+            processing_skip_reason=record.get("processing_skip_reason"),
             created_at=record["created_at"],
             updated_at=record["updated_at"],
         )
 
     @staticmethod
-    def _build_deterministic_file_id(_extracted_text: str) -> str:
+    def _build_file_id() -> str:
         return f"file-{uuid7()}"
 
     @staticmethod
@@ -536,54 +724,3 @@ class FileManager:
                 os.remove(path)
         except OSError:
             pass  # silent cleanup failure
-
-    async def index_file(
-        self,
-        *,
-        file_id: str,
-        ocr_result: str,
-        record: dict,
-    ) -> dict:
-        token_count = count_tokens(ocr_result)
-        if token_count <= settings.FILE_CONTENT_TOKEN_LIMIT:
-            return record
-
-        logger.info(
-            f"File {file_id} exceeds FILE_CONTENT_TOKEN_LIMIT ({token_count} > "
-            f"{settings.FILE_CONTENT_TOKEN_LIMIT}); indexing with internal file search"
-        )
-
-        try:
-            chunk_count = await self._upsert_to_vector_db(
-                content=ocr_result,
-                user_id=record["user_id"],
-                file_id=file_id,
-                file_name=record.get("file_metadata", {}).get("file_name", file_id),
-                message_id=record.get("message_id"),
-                session_id=record.get("session_id"),
-                project_id=record.get("project_id"),
-            )
-            return await self.history.update_file_metadata_fields(
-                file_id,
-                {
-                    "file_metadata.ocr_token_count": token_count,
-                    "file_metadata.milvus_file_index.enabled": True,
-                    "file_metadata.milvus_file_index.collection": settings.PROJECT_FILES_INDEX_NAME,
-                    "file_metadata.milvus_file_index.embedding_model": settings.LLM_SERVICE_EMBEDDING_MODEL_NAME,
-                    "file_metadata.milvus_file_index.chunk_count": chunk_count,
-                },
-            )
-        except Exception as exc:
-            logger.warning(
-                f"File indexing failed for file {file_id}; "
-                f"falling back to direct OCR context: {exc}",
-                exc_info=True,
-            )
-            return await self.history.update_file_metadata_fields(
-                file_id,
-                {
-                    "file_metadata.ocr_token_count": token_count,
-                    "file_metadata.milvus_file_index.enabled": False,
-                    "file_metadata.milvus_file_index.error": str(exc),
-                },
-            )

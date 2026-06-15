@@ -165,6 +165,52 @@ class LlmServiceClient:
             body = body["data"]
         return body if isinstance(body, dict) else {}
 
+    async def submit_document_processing(
+        self,
+        *,
+        document_id: str,
+        file: BinaryIO,
+        filename: str,
+        content_type: str,
+        user_id: str,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        message_id: str | None = None,
+        force_index: bool = True,
+    ) -> dict[str, Any]:
+        files = {"file": (filename, file, content_type)}
+        data: dict[str, str] = {
+            "user_id": user_id,
+            "force_index": str(force_index).lower(),
+        }
+        if project_id:
+            data["project_id"] = project_id
+        if session_id:
+            data["session_id"] = session_id
+        if message_id:
+            data["message_id"] = message_id
+
+        path = f"/api/v1/documents/{document_id}/process"
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                self._url(path),
+                files=files,
+                data=data,
+                headers=self._headers(json_content=False),
+            )
+            self._raise_for_status(response, path=path, body_text=response.text)
+            body = response.json()
+        if isinstance(body, dict) and "data" in body:
+            body = body["data"]
+        return body if isinstance(body, dict) else {}
+
+    async def get_document_processing_status(
+        self, *, document_id: str, task_id: str
+    ) -> dict[str, Any]:
+        return await self.request_json(
+            "GET", f"/api/v1/documents/{document_id}/process/{task_id}"
+        )
+
     async def ask_chat(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.post_json("/api/v1/chat/ask", payload)
 
