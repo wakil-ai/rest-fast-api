@@ -98,7 +98,19 @@ curl -i -X POST https://dev-backend.wakil.ai/api/v2/transaction/uzum/check \
 ```
 Expect: `HTTP/2 200` + `status:"OK"` + the `data` block with `account.value` = user, `tariff.value` = `standard_daily`.
 
-Both verified passing on 2026-06-07 23:38 UTC.
+Verified passing on 2026-06-07 23:38 UTC.
+
+### 3. `/check` returns amount in sums (post-Phase-4 change)
+
+After deploying commit `ee304dd`, run #2 above and expect the response to also
+include `data.amount.value = "30000"` (as a string, in SUMS — `standard_daily`
+is 30,000 so'm). For `standard_monthly` the value should be `"300000"`, for
+`pro_yearly` it should be `"6000000"`. If the field is missing, the deploy is
+stale or didn't pick up the change.
+
+> Status as of 2026-06-16: commit made locally, not yet pushed/deployed. The
+> curl above will return the OLD response shape (no amount block) until that
+> happens.
 
 ---
 
@@ -123,13 +135,48 @@ Both verified passing on 2026-06-07 23:38 UTC.
 - Sent updated 7-plan list with official Uzbek labels (from wakil.ai's own /billing page)
 - Appended question: does Uzum support deeplink/QR to launch payment directly from a scanned link?
 
-**Phase 4 — Amount-in-/check pivot (2026-06-15)**
-- Uzum replied: they **cannot** pin fixed amounts per `planId` on their side
-- Their actual model: their catalog only collects `userId` + `planId`, then they call our `/check`, and **we return the amount** under `data.amount.value` (in SUMS, string), which they display to the customer for confirmation
-- Their example: `{"data": {"order_id": {"value": "6010"}, "amount": {"value": "79900"}}}`
+**Phase 4 — Amount-in-/check pivot (2026-06-15 → 2026-06-16)**
+- Uzum replied (Adxam, 2026-06-15 13:59): they **cannot** pin fixed amounts per `planId` on their side
+- Their actual model: their catalog only collects `userId` + `planId`, then they call our `/check`, and **we return the amount** under `data.amount.value` (in SUMS, string), which they display to the customer for confirmation. Then `/create` arrives with that same amount, but in tiyin.
+- Their verbatim example:
+  ```json
+  {
+    "serviceId": 11111,
+    "timestamp": 1775106438905,
+    "status": "OK",
+    "data": {
+      "order_id": { "value": "6010" },
+      "amount":   { "value": "79900" }
+    }
+  }
+  ```
 - Crucial unit gotcha: `data.amount.value` in `/check` response is **in sums**, NOT tiyin. Every other amount in this protocol stays in tiyin.
-- Deeplink: confirmed exists, testable on prod (URL format not yet shared)
-- Backend change shipped (2026-06-16, this branch): `app/services/payments/uzum.py:check` now adds `data.amount.value` from `quote["amount_sum"]`
+- Deeplink: confirmed exists, testable on prod (URL format / params not yet shared)
+- **Backend change shipped 2026-06-16** (commit `ee304dd` on `feat/uzum-payment-integration`): `app/services/payments/uzum.py` `check()` method now appends `data.amount = {"value": str(quote["amount_sum"])}`. Docs updated in both `uzum-integration.md` and this file.
+- **NOT YET pushed to remote** as of doc save time — next session: `git push -u origin feat/uzum-payment-integration` (or whatever the active branch was), then redeploy dev-backend to pick it up.
+
+**Reply drafted for Uzum (RU, Telegram-friendly, await user-sent confirmation):**
+```
+Понял, спасибо за уточнение.
+
+Доработали — теперь на /check возвращаем сумму внутри data:
+
+"data": {
+  "account": { "value": "<userId>" },
+  "tariff":  { "value": "<planId>" },
+  "amount":  { "value": "300000" }
+}
+
+Значение — в сумах (строкой), как в вашем примере. Берём из нашего
+каталога по planId. Изменения уже на dev-backend.wakil.ai,
+можно тестировать.
+
+Про deeplink — отлично, что поддерживается. Не могли бы поделиться
+форматом ссылки (схема URL + какие параметры мы должны прокинуть:
+serviceId, userId, planId)? Хотим у себя на сайте сгенерировать
+QR/кнопку «Оплатить через Uzum», чтобы клиент сразу попадал в нужный
+экран в приложении.
+```
 
 **Last message sent (2026-06-07):**
 ```
@@ -174,10 +221,15 @@ userId и planId? Это сильно улучшит UX — клиенту не 
 
 ## Outstanding TODOs (in priority order)
 
+### Immediate (do these first in the next chat)
+0. **Push `ee304dd` to remote** so dev-backend can be redeployed: `git push -u origin feat/uzum-payment-integration`. Confirm CI / deploy is green. Then re-run verification curl #3 against dev-backend to confirm `data.amount.value` is present in the `/check` response.
+0a. **Send the drafted reply** to Uzum (see Phase 4 above for verbatim text) if not already sent.
+
 ### Pre-prod blockers
-1. **Frontend "Pay with Uzum" button** on Nuxt billing page (`../frontend-nuxt/CheckoutBar.vue` pattern). UX depends on Uzum's deeplink reply — if deeplink supported, render QR + "open in Uzum app" button; otherwise instructional modal pointing user to the catalog manually.
-2. **Production credentials** — request from Uzum once integration approved. Rotate `UZUM_USERNAME` / `UZUM_PASSWORD` / `UZUM_SERVICE_ID` on prod.
-3. **Catalog activation on Uzum side** — they need to actually configure the dropdown with our 7 planIds before customers can buy anything.
+1. **Deeplink URL format from Uzum** — ask Adxam for the URL schema + which params we need to embed (`serviceId`, `userId`, `planId`?). Without this we can't wire the frontend QR/button.
+2. **Frontend "Pay with Uzum" button** on Nuxt billing page (`../frontend-nuxt/CheckoutBar.vue` pattern). Once we have the deeplink format: render QR + "open in Uzum app" button; if for some reason it falls through, fall back to an instructional modal pointing user to the catalog manually.
+3. **Production credentials** — request from Uzum once integration approved. Rotate `UZUM_USERNAME` / `UZUM_PASSWORD` / `UZUM_SERVICE_ID` on prod.
+4. **Catalog activation on Uzum side** — they need to actually configure the dropdown (or whatever UI they have) with our 7 planIds and our `/check` URL before customers can buy anything.
 
 ### Polish
 4. **Reverse semantics** — currently, `/reverse` on a CONFIRMED transaction is logged as a warning but doesn't auto-revoke the granted subscription. Decide whether this needs explicit handling or stays manual-review.
@@ -216,7 +268,8 @@ Quick navigation map. Read these in order if onboarding fresh:
 4. **The Uzum team's preferred language is Russian** for business communication, **Uzbek (Latin)** for customer-facing labels. Mirror that pattern in any future replies.
 5. **Don't pivot to Uzum's other products (Checkout, Dynamic QR)** without explicit user approval — user was told by Uzum to use Merchant API specifically, and we've designed for that.
 6. **HTTP status code on auth failure = 400, not 401**, per Uzum spec. The body `{status: "FAILED", errorCode: "10001"}` is the actual error signal; HTTP 400 is just a transport convention they enforce.
-7. **Customer does NOT enter amount.** Amount is derived from planId on Uzum's side (via the dropdown they're configuring) and validated by us on `/create`. If `amount_tiyin / 100 != quote.amount_sum`, we return errorCode `10007`.
+7. **Customer does NOT enter amount.** Amount is derived from planId by **us** (returned in `/check.data.amount.value`, in sums as a string). Uzum displays it; customer confirms; Uzum sends `/create` with that amount in tiyin. We re-validate on `/create`: if `amount_tiyin / 100 != quote.amount_sum`, we return errorCode `10007`.
+8. **The unit-mixing in `/check` is a footgun.** `data.amount.value` is the **only** place in this protocol where amount is in SUMS. Every other amount field — `/create` request `amount`, all response `amount` fields in `/create`/`/confirm`/`/reverse`/`/status` — is in tiyin. If you "fix" the `/check` response to use tiyin for consistency, Uzum will display the wrong (100× too large) price to the customer.
 
 ---
 
