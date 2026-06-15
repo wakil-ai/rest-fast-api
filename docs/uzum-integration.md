@@ -41,26 +41,35 @@ errorCode `10006`.
 
 ## Plan / amount model
 
-wakil.ai has 5 subscription plans with fixed prices. The customer in the Uzum Bank
-app must enter **two fields**, which arrive in `params`:
+wakil.ai has 7 subscription plans with fixed prices. The customer in the Uzum Bank
+app enters **two fields** in Uzum's catalog UI, which arrive in `params`:
 
 | Field key (any accepted) | What it is | Example |
 |---|---|---|
 | `userId` (also `user_id`, `account`) | wakil.ai user identifier | `1163985408800857144` |
 | `planId` (also `plan_id`, `tariff`) | Plan code `<tier>_<period>` | `standard_monthly` |
 
+The customer does **not** type an amount. Instead, Uzum's catalog UI calls our
+`/check` with the chosen `userId` + `planId`, and we return the price under
+`data.amount.value` (in sums, see `/check` example below). Uzum displays that
+amount to the customer for confirmation, then `/create` is called with the same
+amount in tiyin.
+
 Valid `planId` values:
 
 | planId | Price (SUM) | Price (tiyin) |
 |---|---:|---:|
-| `daily_daily`       | 15 000     | 1 500 000     |
+| `basic_daily`       | 15 000     | 1 500 000     |
+| `standard_daily`    | 30 000     | 3 000 000     |
+| `premium_daily`     | 50 000     | 5 000 000     |
 | `standard_monthly`  | 300 000    | 30 000 000    |
 | `standard_yearly`   | 3 000 000  | 300 000 000   |
 | `pro_monthly`       | 600 000    | 60 000 000    |
 | `pro_yearly`        | 6 000 000  | 600 000 000   |
 
 (Prices are taken from the `PAYME_SUBSCRIPTION_*_PRICE_SUM` env vars and shared across
-all payment providers. The values above are the production defaults.)
+all payment providers. The values above are the production defaults. Legacy
+`daily_daily` is still accepted as an alias for `basic_daily`.)
 
 In `/create`, we validate that `amount` (sent by Uzum in tiyin) equals the configured
 plan price × 100. Mismatch → errorCode `10007`.
@@ -110,10 +119,17 @@ Response 200 OK:
   "status": "OK",
   "data": {
     "account": { "value": "1163985408800857144" },
-    "tariff":  { "value": "standard_monthly" }
+    "tariff":  { "value": "standard_monthly" },
+    "amount":  { "value": "300000" }
   }
 }
 ```
+
+> **Note on `data.amount.value`:** This is the price for the chosen `planId`, in
+> **sums** (not tiyin), serialized as a string. Uzum displays this to the
+> customer for confirmation; the customer does not type an amount themselves.
+> Every other `amount` field in this protocol (in `/create`, `/confirm`,
+> `/reverse`, `/status`) is in tiyin per spec — `/check` is the only exception.
 
 Response 400 (example — unknown plan):
 
@@ -280,6 +296,6 @@ Negative tests worth running:
    accept `userId` / `user_id` / `account` for the user id and `planId` / `plan_id` /
    `tariff` for the plan — whichever Uzum's catalog uses will work without code
    changes.
-4. Whether Uzum supports a deep link / QR code we can render on the wakil.ai web UI
-   to launch the Uzum Bank app with `serviceId` / `params` pre-filled. If not, the
-   wakil.ai web UI will show a textual instruction modal with the values to type in.
+4. Deeplink / QR support — Uzum confirmed (2026-06-15) that deeplinks exist and can
+   be tested on production. Exact URL format / parameters still to be shared by
+   Uzum before we wire up the frontend "Pay with Uzum" button.
