@@ -1,5 +1,5 @@
 # Multi-stage build for optimized image size
-FROM python:3.10-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 # Runtime stage
-FROM python:3.10-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
