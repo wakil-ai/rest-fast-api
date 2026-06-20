@@ -24,7 +24,7 @@ twilio>=9.0.0,<10
 # HTTP / utils
 httpx==0.28.1
 httptools==0.6.4
-requests==2.32.5
+requests==2.34.2
 python-dotenv==1.1.1
 loguru==0.7.3
 tqdm==4.65.0
