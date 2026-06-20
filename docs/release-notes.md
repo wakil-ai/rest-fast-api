@@ -6,6 +6,14 @@ hide:
 
 # 📌 Release Notes
 
+## v5.0.2-260620 (2026-06-20)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.2-260620 -->
+
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.1-260620...v5.0.2-260620
+
 ## v5.0.1-260620 (2026-06-20)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.1-260620 -->
@@ -67,5 +75,3 @@ hide:
 * @akbarhbai made their first contribution in https://github.com/wakil-ai/rest-fast-api/pull/113
 
 **Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v2.3.1...v5.0.1-260620
-
-
