@@ -1,0 +1,42 @@
+name: 1. Bump Version
+
+# Auto-bumps the patch version on merge to main, or a chosen type via manual dispatch.
+# The bump commit + tag chains into 2. Build and Publish -> 3. Create Release ->
+# 4. Update Changelog (each via workflow_run).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        type: choice
+        description: "Version bump type"
+        required: true
+        default: patch
+        options: [patch, minor, major]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bump_version:
+    name: Bump Version
+    runs-on: ubuntu-24.04
+    # Skip runs caused by the bot's own bump/changelog commits (GITHUB_TOKEN pushes
+    # don't re-trigger workflows anyway — this is belt-and-suspenders).
+    if: "${{ github.event_name == 'workflow_dispatch' || (!startsWith(github.event.head_commit.message, ':bookmark: Bump version') && !startsWith(github.event.head_commit.message, 'docs: update changelog')) }}"
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Bump version (${{ github.event.inputs.bump_type || 'patch' }})
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          ./scripts/bump-version.sh -b="${{ github.event.inputs.bump_type || 'patch' }}" -c -t -p

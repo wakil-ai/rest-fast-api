@@ -1,0 +1,27 @@
+name: 3. Create Release
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["2. Build and Publish"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  create_release:
+    name: Create Release
+    runs-on: ubuntu-24.04
+    if: "${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}"
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Sync main + tags
+        run: git pull origin main && git fetch --tags --force
+      - name: Create release
+        run: ./scripts/release.sh
