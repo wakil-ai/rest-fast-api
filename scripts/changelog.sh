@@ -18,16 +18,15 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 
 if ! gh auth status >/dev/null 2>&1; then
-    echo "[ERROR]: You need to login: 'gh auth login'!" >&2
-    exit 1
+	echo "[ERROR]: You need to login: 'gh auth login'!" >&2
+	exit 1
 fi
 ## --- Base --- ##
 
 
 ## --- Variables --- ##
-# Load from envrionment variables:
+# Load from environment variables:
 CHANGELOG_FILE_PATH="${CHANGELOG_FILE_PATH:-./CHANGELOG.md}"
-RELEASE_NOTES_FILE_PATH="${RELEASE_NOTES_FILE_PATH:-./docs/release-notes.md}"
 
 # Flags:
 _IS_COMMIT=false
@@ -89,7 +88,7 @@ main()
 	_release_entry="## ${_release_tag} ($(date '+%Y-%m-%d'))\n\n${_release_notes}"
 
 	echo "[INFO]: Updating changelog..."
-	if ! grep -q "^${_changelog_title}" "${CHANGELOG_FILE_PATH}"; then
+	if [ ! -f "${CHANGELOG_FILE_PATH}" ] || ! grep -q "^${_changelog_title}" "${CHANGELOG_FILE_PATH}"; then
 		echo -e "${_changelog_title}\n\n" > "${CHANGELOG_FILE_PATH}"
 	fi
 
@@ -98,22 +97,9 @@ main()
 	echo -e "${_changelog_title}\n\n${_release_entry}\n\n${_tail_changelog}" > "${CHANGELOG_FILE_PATH}"
 	echo "[OK]: Updated changelog version: '${_release_tag}'"
 
-
-	echo "[INFO]: Updating release notes..."
-	local _release_notes_header="---\ntitle: Release Notes\nhide:\n  - navigation\n---\n\n# 📌 Release Notes"
-	if ! grep -q "^# 📌 Release Notes" "${RELEASE_NOTES_FILE_PATH}"; then
-		echo -e "${_release_notes_header}\n\n" > "${RELEASE_NOTES_FILE_PATH}"
-	fi
-
-	local _tail_notes
-	_tail_notes=$(tail -n +9 "${RELEASE_NOTES_FILE_PATH}")
-	echo -e "${_release_notes_header}\n\n${_release_entry}\n\n${_tail_notes}" > "${RELEASE_NOTES_FILE_PATH}"
-	echo "[OK]: Updated release notes with version: '${_release_tag}'"
-
 	if [ "${_IS_COMMIT}" == true ]; then
 		echo "[INFO]: Committing changelog version '${_release_tag}'..."
 		git add "${CHANGELOG_FILE_PATH}" || exit 2
-		git add "${RELEASE_NOTES_FILE_PATH}" || exit 2
 		git commit -m "docs: update changelog version '${_release_tag}'." || exit 2
 		echo "[OK]: Done."
 
