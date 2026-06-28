@@ -178,6 +178,7 @@ class BasePaymentService:
         sub = await self.subscription_storage.get_subscription(user_id)
         daily_pass = await self.subscription_storage.get_daily_subscription(user_id)
         credit_status = await self.rate_limit_service.get_credit_status(user_id)
+        can_upload = await self.rate_limit_service.can_upload_files(user_id)
 
         now_ms = int(time.time() * 1000)
 
@@ -212,6 +213,7 @@ class BasePaymentService:
                 "today_credits_used": credit_status["today_credits_used"],
                 "today_remaining_credits": credit_status["remaining_credits"],
                 "uses_combined_credit_pool": credit_status["uses_combined_credit_pool"],
+                "can_upload": can_upload,
             }
 
         end_ms = int(sub.get("end_ms") or 0)
@@ -255,6 +257,7 @@ class BasePaymentService:
             "today_credits_used": credit_status["today_credits_used"],
             "today_remaining_credits": credit_status["remaining_credits"],
             "uses_combined_credit_pool": credit_status["uses_combined_credit_pool"],
+            "can_upload": can_upload,
         }
 
     def _resolve_purpose(self, quote: dict | None) -> str:

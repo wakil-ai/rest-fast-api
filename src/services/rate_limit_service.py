@@ -152,9 +152,7 @@ class RateLimitService:
 
     def _ms_to_date(self, ms: int) -> str:
         """Convert epoch milliseconds to a UTC YYYY-MM-DD string."""
-        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime(
-            "%Y-%m-%d"
-        )
+        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
     async def _get_subscription_period_credits_used(
         self, user_id: str, start_ms: int, end_ms: int
@@ -254,9 +252,7 @@ class RateLimitService:
                 else daily_pass.get("daily_credits") or 0
             )
             total = int(
-                daily_pass.get("total_credits")
-                or daily_pass.get("daily_credits")
-                or 0
+                daily_pass.get("total_credits") or daily_pass.get("daily_credits") or 0
             )
             end_ms = int(daily_pass.get("end_ms") or 0)
             if end_ms > self._now_ms() and remaining > 0:
@@ -302,9 +298,7 @@ class RateLimitService:
             )
             return None
 
-    async def _sync_pool_credits_remaining(
-        self, user_id: str, remaining: int
-    ) -> None:
+    async def _sync_pool_credits_remaining(self, user_id: str, remaining: int) -> None:
         """Keep ``subscriptions.credits_remaining`` aligned with creditusage totals."""
         try:
             await self.mongo_handler.db[settings.SUBSCRIPTIONS_COLLECTION].update_one(
@@ -558,9 +552,10 @@ class RateLimitService:
         user = await self._fetch_user(user_id)
         daily_pass_summary = await self._get_daily_pass_summary(user_id)
         daily_pass_remaining = int(daily_pass_summary.get("remaining") or 0)
-        has_promo, _promo_credit_limit = (
-            await self.promo_code_service.get_user_promo_status(user_id)
-        )
+        (
+            has_promo,
+            _promo_credit_limit,
+        ) = await self.promo_code_service.get_user_promo_status(user_id)
         if (
             user
             and self._is_on_signup_bonus(user)
@@ -632,12 +627,13 @@ class RateLimitService:
     async def can_upload_files(self, user_id: str) -> bool:
         """Return True if the user is entitled to upload files.
 
-        File upload is a paid-plan *tier* entitlement, so a paid subscriber
-        qualifies while their subscription is within its active window —
-        regardless of how much of the credit pool is left. A user qualifies if
-        they have:
+        File upload is available to paid plans and to new users still within
+        their first 100 signup bonus credits. A paid subscriber qualifies while
+        their subscription is within its active window — regardless of how much
+        of the credit pool is left. A user qualifies if they have:
           * an active paid subscription (``tier`` in ``POOL_TIERS`` and
             ``end_ms`` in the future), OR
+          * a free signup bonus, OR
           * an active daily pass, OR
           * an unlimited promo code.
 
@@ -659,11 +655,17 @@ class RateLimitService:
             if daily_pass_bonus > 0:
                 return True
 
-            has_promo, promo_credit_limit = (
-                await self.promo_code_service.get_user_promo_status(user_id)
-            )
+            (
+                has_promo,
+                promo_credit_limit,
+            ) = await self.promo_code_service.get_user_promo_status(user_id)
             # promo_credit_limit is None => unlimited promo access.
             if has_promo and promo_credit_limit is None:
+                return True
+
+            # Still on the one-time signup welcome pool (first 100 credits)
+            user = await self._fetch_user(user_id)
+            if user and self._is_on_signup_bonus(user):
                 return True
 
             return False
@@ -700,3 +702,4 @@ class RateLimitService:
                 f"[RateLimitService] Error resetting limit for user {user_id}: {str(e)}"
             )
             return False
+

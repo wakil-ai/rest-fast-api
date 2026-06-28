@@ -113,6 +113,21 @@ async def test_fails_closed_on_lookup_error():
     assert await service.can_upload_files("u1") is False
 
 
+async def test_signup_bonus_allows_upload():
+    # No paid entitlement, but a fresh user still inside their first 100
+    # signup credits may upload.
+    service = _make_service()
+    service._fetch_user = AsyncMock(return_value={"signup_credits_used": 10})
+    assert await service.can_upload_files("u1") is True
+
+
+async def test_exhausted_signup_bonus_denied():
+    # Welcome pool spent (>= 100) and no paid plan => not entitled.
+    service = _make_service()
+    service._fetch_user = AsyncMock(return_value={"signup_credits_used": 100})
+    assert await service.can_upload_files("u1") is False
+
+
 # --- ensure_can_upload_files guard -------------------------------------------
 
 
