@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.0.3-260630 (2026-06-30)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.3-260630 -->
+
+## What's Changed
+### 💬 Other
+* file upload permission as first time signup bonus 100 credits by @akbarhbai in https://github.com/wakil-ai/rest-fast-api/pull/142
+* Dev by @mirsaidl in https://github.com/wakil-ai/rest-fast-api/pull/143
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.2-260620...v5.0.3-260630
+
 ## v5.0.2-260620 (2026-06-20)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.2-260620 -->
