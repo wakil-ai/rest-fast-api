@@ -101,6 +101,36 @@ async def test_credit_status_signup_bonus_true_for_legacy_today_user():
 
 
 @pytest.mark.asyncio
+async def test_credit_status_flags_limited_active_promo():
+    service = _make_service(
+        user={"_id": "u1", "signup_bonus_exhausted": True},
+        promo=(True, 500),
+    )
+    status = await service.get_credit_status("u1")
+    assert status["has_active_promo"] is True
+
+
+@pytest.mark.asyncio
+async def test_credit_status_flags_unlimited_active_promo():
+    service = _make_service(
+        user={"_id": "u1", "signup_bonus_exhausted": True},
+        promo=(True, None),
+    )
+    status = await service.get_credit_status("u1")
+    assert status["has_active_promo"] is True
+
+
+@pytest.mark.asyncio
+async def test_credit_status_no_promo_has_active_promo_false():
+    service = _make_service(
+        user={"_id": "u1", "signup_bonus_exhausted": True},
+        promo=(False, None),
+    )
+    status = await service.get_credit_status("u1")
+    assert status["has_active_promo"] is False
+
+
+@pytest.mark.asyncio
 async def test_credit_status_flags_daily_pass_with_credits():
     service = _make_service(
         user={"_id": "u1", "signup_bonus_exhausted": True},

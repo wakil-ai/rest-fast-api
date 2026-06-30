@@ -544,9 +544,10 @@ class RateLimitService:
                 "period_credits_used": period_used,
                 "uses_combined_credit_pool": True,
                 "on_signup_bonus": False,
-                # Pool subscription already grants upload; the daily-pass signal
-                # is only consulted on non-subscription paths.
+                # Pool subscription already grants upload; the daily-pass and
+                # promo signals are only consulted on non-subscription paths.
                 "has_daily_pass_credits": False,
+                "has_active_promo": False,
             }
 
         user = await self._fetch_user(user_id)
@@ -569,6 +570,7 @@ class RateLimitService:
                 "uses_combined_credit_pool": True,
                 "on_signup_bonus": True,
                 "has_daily_pass_credits": False,
+                "has_active_promo": False,
             }
 
         daily_limit = await self.get_daily_credit_limit(user_id)
@@ -580,6 +582,7 @@ class RateLimitService:
                 "uses_combined_credit_pool": True,
                 "on_signup_bonus": on_signup_bonus,
                 "has_daily_pass_credits": has_daily_pass_credits,
+                "has_active_promo": has_promo,
             }
 
         credits_used = await self._get_today_credits_used(user_id)
@@ -592,6 +595,7 @@ class RateLimitService:
             "uses_combined_credit_pool": True,
             "on_signup_bonus": on_signup_bonus,
             "has_daily_pass_credits": has_daily_pass_credits,
+            "has_active_promo": has_promo,
         }
 
     async def get_daily_credit_limit(self, user_id: str) -> int:
@@ -649,7 +653,7 @@ class RateLimitService:
         *,
         subscription: Optional[dict[str, Any]],
         has_daily_pass_credits: bool,
-        unlimited_promo: bool,
+        has_active_promo: bool,
         on_signup_bonus: bool,
     ) -> bool:
         """Pure upload-entitlement rule (no I/O), shared by every consumer.
@@ -657,7 +661,7 @@ class RateLimitService:
         A user may upload when ANY of these hold:
           * an active paid pool subscription, OR
           * an active daily pass with credits remaining, OR
-          * an unlimited promo code, OR
+          * an active (non-expired) promo code, limited or unlimited, OR
           * they are still on the one-time signup welcome pool
           (`SIGNUP_DAY_CREDITS_LIMIT` credits, e.g, first 100 credits).
 
@@ -672,7 +676,7 @@ class RateLimitService:
         return bool(
             self._is_active_pool_subscription(subscription)
             or has_daily_pass_credits
-            or unlimited_promo
+            or has_active_promo
             or on_signup_bonus
         )
 
@@ -696,12 +700,13 @@ class RateLimitService:
             if int(daily_pass_summary.get("remaining") or 0) > 0:
                 return True
 
+            # Any active (non-expired) promo grants upload — has_promo is already
+            # gated on validity/expiry by get_user_promo_status.
             (
                 has_promo,
-                promo_credit_limit,
+                _promo_credit_limit,
             ) = await self.promo_code_service.get_user_promo_status(user_id)
-            # promo_credit_limit is None => unlimited promo access.
-            if has_promo and promo_credit_limit is None:
+            if has_promo:
                 return True
 
             user = await self._fetch_user(user_id)

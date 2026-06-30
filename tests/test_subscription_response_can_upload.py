@@ -22,6 +22,7 @@ def _credit_status(
     *,
     on_signup_bonus=False,
     has_daily_pass_credits=False,
+    has_active_promo=False,
     effective_daily_credit_limit=100,
 ):
     return {
@@ -31,6 +32,7 @@ def _credit_status(
         "uses_combined_credit_pool": True,
         "on_signup_bonus": on_signup_bonus,
         "has_daily_pass_credits": has_daily_pass_credits,
+        "has_active_promo": has_active_promo,
     }
 
 
@@ -118,13 +120,11 @@ async def test_exhausted_daily_pass_cannot_upload():
     assert data["can_upload"] is False  # but no credits left to spend
 
 
-async def test_unlimited_promo_user_can_upload():
-    # get_credit_status encodes unlimited promo as effective_daily_credit_limit == -1.
+async def test_active_promo_user_can_upload():
+    # Any active (non-expired) promo grants upload, surfaced via has_active_promo.
     service = _make_payment_service(
         subscription=None,
-        credit_status=_credit_status(
-            on_signup_bonus=False, effective_daily_credit_limit=-1
-        ),
+        credit_status=_credit_status(on_signup_bonus=False, has_active_promo=True),
     )
     data = await service.get_user_subscription("u1")
 

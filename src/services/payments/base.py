@@ -197,13 +197,11 @@ class BasePaymentService:
 
         # Derive upload entitlement inline from data already loaded above — no
         # extra DB round-trips. Daily-pass eligibility tracks remaining credits
-        # (``has_daily_pass_credits``), not just the open window, to match the
-        # gate; ``effective_daily_credit_limit == -1`` encodes unlimited promo.
+        # (``has_daily_pass_credits``), not just the open window, to match the gate.
         can_upload = self.rate_limit_service.is_upload_entitled(
             subscription=sub,
             has_daily_pass_credits=bool(credit_status.get("has_daily_pass_credits")),
-            unlimited_promo=int(credit_status.get("effective_daily_credit_limit") or 0)
-            == -1,
+            has_active_promo=bool(credit_status.get("has_active_promo")),
             on_signup_bonus=bool(credit_status.get("on_signup_bonus")),
         )
 

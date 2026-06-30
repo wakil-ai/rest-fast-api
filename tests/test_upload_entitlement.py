@@ -83,6 +83,12 @@ async def test_unlimited_promo_allows_upload():
     assert await service.can_upload_files("u1") is True
 
 
+async def test_limited_promo_allows_upload():
+    # Any active (non-expired) promo grants upload, not just unlimited ones.
+    service = _make_service(promo=(True, 500))
+    assert await service.can_upload_files("u1") is True
+
+
 async def test_free_user_denied():
     service = _make_service()
     assert await service.can_upload_files("u1") is False
@@ -100,12 +106,6 @@ async def test_non_paid_tier_subscription_denied():
     service = _make_service(
         subscription={"tier": "daily", "end_ms": _FUTURE_MS, "credits_remaining": 50},
     )
-    assert await service.can_upload_files("u1") is False
-
-
-async def test_limited_promo_does_not_grant_upload():
-    # Promo with a finite credit limit is still a free-tier user, not paid.
-    service = _make_service(promo=(True, 500))
     assert await service.can_upload_files("u1") is False
 
 
@@ -167,7 +167,7 @@ def _entitled(**overrides) -> bool:
     facts = dict(
         subscription=None,
         has_daily_pass_credits=False,
-        unlimited_promo=False,
+        has_active_promo=False,
         on_signup_bonus=False,
     )
     facts.update(overrides)
@@ -191,8 +191,8 @@ def test_predicate_active_daily_pass_allows():
     assert _entitled(has_daily_pass_credits=True) is True
 
 
-def test_predicate_unlimited_promo_allows():
-    assert _entitled(unlimited_promo=True) is True
+def test_predicate_active_promo_allows():
+    assert _entitled(has_active_promo=True) is True
 
 
 def test_predicate_signup_bonus_allows():
