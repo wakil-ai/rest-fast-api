@@ -255,13 +255,8 @@ class PaymeInitRequest(BaseModel):
     user_id: str
     callback_url: str
     order_id: str | None = None  # If not provided, server generates a new one
-    subscription_tier: SubscriptionTier | None = Field(
-        default=None
-    )
-    subscription_period: SubscriptionPeriod | None = Field(
-        default=None
-    )
-    order_id: str | None = None  # Optional order/invoice id to include in `ac.order_id`
+    subscription_tier: SubscriptionTier | None = Field(default=None)
+    subscription_period: SubscriptionPeriod | None = Field(default=None)
 
 
 class PaymeInitResponse(BaseModel):
@@ -304,6 +299,7 @@ class UserSubscriptionResponse(BaseModel):
     today_credits_used: int | None = None
     today_remaining_credits: int | None = None
     uses_combined_credit_pool: bool = True
+    can_upload: bool = False
 
 
 class FiscalData(BaseModel):

@@ -195,6 +195,16 @@ class BasePaymentService:
                 int(daily_pass_end_ms or 0) > now_ms and daily_pass_daily > 0
             )
 
+        # Derive upload entitlement inline from data already loaded above — no
+        # extra DB round-trips. Daily-pass eligibility tracks remaining credits
+        # (``has_daily_pass_credits``), not just the open window, to match the gate.
+        can_upload = self.rate_limit_service.is_upload_entitled(
+            subscription=sub,
+            has_daily_pass_credits=bool(credit_status.get("has_daily_pass_credits")),
+            has_active_promo=bool(credit_status.get("has_active_promo")),
+            on_signup_bonus=bool(credit_status.get("on_signup_bonus")),
+        )
+
         if not isinstance(sub, dict):
             combined = (daily_pass_daily or 0) if daily_pass_active else 0
             return {
@@ -212,6 +222,7 @@ class BasePaymentService:
                 "today_credits_used": credit_status["today_credits_used"],
                 "today_remaining_credits": credit_status["remaining_credits"],
                 "uses_combined_credit_pool": credit_status["uses_combined_credit_pool"],
+                "can_upload": can_upload,
             }
 
         end_ms = int(sub.get("end_ms") or 0)
@@ -255,6 +266,7 @@ class BasePaymentService:
             "today_credits_used": credit_status["today_credits_used"],
             "today_remaining_credits": credit_status["remaining_credits"],
             "uses_combined_credit_pool": credit_status["uses_combined_credit_pool"],
+            "can_upload": can_upload,
         }
 
     def _resolve_purpose(self, quote: dict | None) -> str:

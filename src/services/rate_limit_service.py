@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any, Optional
 
 from core.assistants import AssistantConfig
 from core.config import settings
@@ -152,9 +153,7 @@ class RateLimitService:
 
     def _ms_to_date(self, ms: int) -> str:
         """Convert epoch milliseconds to a UTC YYYY-MM-DD string."""
-        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime(
-            "%Y-%m-%d"
-        )
+        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
     async def _get_subscription_period_credits_used(
         self, user_id: str, start_ms: int, end_ms: int
@@ -221,11 +220,6 @@ class RateLimitService:
 
         return sub
 
-    async def _get_active_daily_pass_bonus(self, user_id: str) -> int:
-        """Return active paid daily-pass credits remaining."""
-        summary = await self._get_daily_pass_summary(user_id)
-        return int(summary.get("remaining") or 0)
-
     async def _get_daily_pass_summary(self, user_id: str) -> dict:
         """Aggregate active paid daily credit lots."""
         try:
@@ -254,9 +248,7 @@ class RateLimitService:
                 else daily_pass.get("daily_credits") or 0
             )
             total = int(
-                daily_pass.get("total_credits")
-                or daily_pass.get("daily_credits")
-                or 0
+                daily_pass.get("total_credits") or daily_pass.get("daily_credits") or 0
             )
             end_ms = int(daily_pass.get("end_ms") or 0)
             if end_ms > self._now_ms() and remaining > 0:
@@ -302,9 +294,7 @@ class RateLimitService:
             )
             return None
 
-    async def _sync_pool_credits_remaining(
-        self, user_id: str, remaining: int
-    ) -> None:
+    async def _sync_pool_credits_remaining(self, user_id: str, remaining: int) -> None:
         """Keep ``subscriptions.credits_remaining`` aligned with creditusage totals."""
         try:
             await self.mongo_handler.db[settings.SUBSCRIPTIONS_COLLECTION].update_one(
@@ -553,24 +543,34 @@ class RateLimitService:
                 "today_credits_used": await self._get_today_credits_used(user_id),
                 "period_credits_used": period_used,
                 "uses_combined_credit_pool": True,
+                "on_signup_bonus": False,
+                # Pool subscription already grants upload; the daily-pass and
+                # promo signals are only consulted on non-subscription paths.
+                "has_daily_pass_credits": False,
+                "has_active_promo": False,
             }
 
         user = await self._fetch_user(user_id)
+        # Pure welcome-pool signal (independent of daily-pass/promo precedence) so
+        # the subscription view can derive upload entitlement from this dict.
+        on_signup_bonus = bool(user and self._is_on_signup_bonus(user))
         daily_pass_summary = await self._get_daily_pass_summary(user_id)
         daily_pass_remaining = int(daily_pass_summary.get("remaining") or 0)
-        has_promo, _promo_credit_limit = (
-            await self.promo_code_service.get_user_promo_status(user_id)
-        )
-        if (
-            user
-            and self._is_on_signup_bonus(user)
-            and daily_pass_remaining <= 0
-            and not has_promo
-        ):
+        # Upload entitlement via a daily pass tracks remaining credits, not just
+        # an open window — mirrors the gate in ``can_upload_files``.
+        has_daily_pass_credits = daily_pass_remaining > 0
+        (
+            has_promo,
+            _promo_credit_limit,
+        ) = await self.promo_code_service.get_user_promo_status(user_id)
+        if on_signup_bonus and daily_pass_remaining <= 0 and not has_promo:
             status = self._signup_bonus_status(user)
             return {
                 **status,
                 "uses_combined_credit_pool": True,
+                "on_signup_bonus": True,
+                "has_daily_pass_credits": False,
+                "has_active_promo": False,
             }
 
         daily_limit = await self.get_daily_credit_limit(user_id)
@@ -580,6 +580,9 @@ class RateLimitService:
                 "effective_daily_credit_limit": -1,
                 "today_credits_used": await self._get_today_credits_used(user_id),
                 "uses_combined_credit_pool": True,
+                "on_signup_bonus": on_signup_bonus,
+                "has_daily_pass_credits": has_daily_pass_credits,
+                "has_active_promo": has_promo,
             }
 
         credits_used = await self._get_today_credits_used(user_id)
@@ -590,6 +593,9 @@ class RateLimitService:
             "effective_daily_credit_limit": daily_limit,
             "today_credits_used": credits_used,
             "uses_combined_credit_pool": True,
+            "on_signup_bonus": on_signup_bonus,
+            "has_daily_pass_credits": has_daily_pass_credits,
+            "has_active_promo": has_promo,
         }
 
     async def get_daily_credit_limit(self, user_id: str) -> int:
@@ -629,44 +635,82 @@ class RateLimitService:
 
         return daily_limit
 
+    def _is_active_pool_subscription(self, subscription: Any) -> bool:
+        """True for a paid pool subscription inside its active window.
+
+        Entitlement is by tier + window, *not* credit balance: a paid subscriber
+        keeps the entitlement while the subscription is active even if the pool
+        is exhausted. Shared by the upload gate and ``is_upload_entitled``.
+        """
+        return bool(
+            isinstance(subscription, dict)
+            and subscription.get("tier") in self.POOL_TIERS
+            and int(subscription.get("end_ms") or 0) > self._now_ms()
+        )
+
+    def is_upload_entitled(
+        self,
+        *,
+        subscription: Optional[dict[str, Any]],
+        has_daily_pass_credits: bool,
+        has_active_promo: bool,
+        on_signup_bonus: bool,
+    ) -> bool:
+        """Pure upload-entitlement rule (no I/O), shared by every consumer.
+
+        A user may upload when ANY of these hold:
+          * an active paid pool subscription, OR
+          * an active daily pass with credits remaining, OR
+          * an active (non-expired) promo code, limited or unlimited, OR
+          * they are still on the one-time signup welcome pool
+          (`SIGNUP_DAY_CREDITS_LIMIT` credits, e.g, first 100 credits).
+
+        ``has_daily_pass_credits`` tracks *remaining* daily-pass credits, not just
+        an open pass window — the named contract that keeps callers from feeding a
+        window-only flag and reintroducing exhausted-pass drift.
+
+        Callers resolve the four facts however is cheapest for them (the gate
+        loads them lazily; the subscription view derives them from data it already
+        holds) and delegate the decision here so the rule lives in one place.
+        """
+        return bool(
+            self._is_active_pool_subscription(subscription)
+            or has_daily_pass_credits
+            or has_active_promo
+            or on_signup_bonus
+        )
+
     async def can_upload_files(self, user_id: str) -> bool:
         """Return True if the user is entitled to upload files.
 
-        File upload is a paid-plan *tier* entitlement, so a paid subscriber
-        qualifies while their subscription is within its active window —
-        regardless of how much of the credit pool is left. A user qualifies if
-        they have:
-          * an active paid subscription (``tier`` in ``POOL_TIERS`` and
-            ``end_ms`` in the future), OR
-          * an active daily pass, OR
-          * an unlimited promo code.
+        Self-loading gate used by the API entitlement guard. Resolves the four
+        eligibility facts cheapest-first (short-circuiting so a paid subscriber
+        only pays a single lookup) and defers the decision to
+        :meth:`is_upload_entitled`.
 
         This is a paywall check, so it fails *closed* (returns ``False``) on any
         lookup error, unlike the credit check which fails open.
         """
         try:
-            # Active paid subscription, by tier + window (not credit balance).
             sub = await self.subscription_storage.get_subscription(user_id)
-            if (
-                isinstance(sub, dict)
-                and sub.get("tier") in self.POOL_TIERS
-                and int(sub.get("end_ms") or 0) > self._now_ms()
-            ):
+            if self._is_active_pool_subscription(sub):
                 return True
 
-            # Active daily pass.
-            daily_pass_bonus = await self._get_active_daily_pass_bonus(user_id)
-            if daily_pass_bonus > 0:
+            daily_pass_summary = await self._get_daily_pass_summary(user_id)
+            if int(daily_pass_summary.get("remaining") or 0) > 0:
                 return True
 
-            has_promo, promo_credit_limit = (
-                await self.promo_code_service.get_user_promo_status(user_id)
-            )
-            # promo_credit_limit is None => unlimited promo access.
-            if has_promo and promo_credit_limit is None:
+            # Any active (non-expired) promo grants upload — has_promo is already
+            # gated on validity/expiry by get_user_promo_status.
+            (
+                has_promo,
+                _promo_credit_limit,
+            ) = await self.promo_code_service.get_user_promo_status(user_id)
+            if has_promo:
                 return True
 
-            return False
+            user = await self._fetch_user(user_id)
+            return bool(user and self._is_on_signup_bonus(user))
         except Exception as e:
             logger.error(
                 f"[RateLimitService] Error checking upload entitlement for user "
