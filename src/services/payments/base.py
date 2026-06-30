@@ -178,7 +178,6 @@ class BasePaymentService:
         sub = await self.subscription_storage.get_subscription(user_id)
         daily_pass = await self.subscription_storage.get_daily_subscription(user_id)
         credit_status = await self.rate_limit_service.get_credit_status(user_id)
-        can_upload = await self.rate_limit_service.can_upload_files(user_id)
 
         now_ms = int(time.time() * 1000)
 
@@ -195,6 +194,18 @@ class BasePaymentService:
             daily_pass_active = bool(
                 int(daily_pass_end_ms or 0) > now_ms and daily_pass_daily > 0
             )
+
+        # Derive upload entitlement inline from data already loaded above — no
+        # extra DB round-trips. Daily-pass eligibility tracks remaining credits
+        # (``has_daily_pass_credits``), not just the open window, to match the
+        # gate; ``effective_daily_credit_limit == -1`` encodes unlimited promo.
+        can_upload = self.rate_limit_service.is_upload_entitled(
+            subscription=sub,
+            has_daily_pass_credits=bool(credit_status.get("has_daily_pass_credits")),
+            unlimited_promo=int(credit_status.get("effective_daily_credit_limit") or 0)
+            == -1,
+            on_signup_bonus=bool(credit_status.get("on_signup_bonus")),
+        )
 
         if not isinstance(sub, dict):
             combined = (daily_pass_daily or 0) if daily_pass_active else 0

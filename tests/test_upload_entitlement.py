@@ -9,6 +9,7 @@ Covers:
 """
 
 import time
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -44,6 +45,9 @@ def _make_service(
 
     service.promo_code_service = AsyncMock()
     service.promo_code_service.get_user_promo_status = AsyncMock(return_value=promo)
+
+    # No welcome-pool user by default; signup-bonus tests override this.
+    service._fetch_user = AsyncMock(return_value=None)
     return service
 
 
@@ -126,6 +130,77 @@ async def test_exhausted_signup_bonus_denied():
     service = _make_service()
     service._fetch_user = AsyncMock(return_value={"signup_credits_used": 100})
     assert await service.can_upload_files("u1") is False
+
+
+async def test_signup_bonus_exhausted_flag_denied():
+    # The latch flag (set once the pool is spent) denies upload regardless of count.
+    service = _make_service()
+    service._fetch_user = AsyncMock(return_value={"signup_bonus_exhausted": True})
+    assert await service.can_upload_files("u1") is False
+
+
+async def test_legacy_user_created_before_today_denied():
+    # Legacy user (neither signup field tracked) created before today is past the
+    # one-day welcome window => not on the bonus.
+    service = _make_service()
+    service._fetch_user = AsyncMock(
+        return_value={"created_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}
+    )
+    assert await service.can_upload_files("u1") is False
+
+
+async def test_legacy_user_created_today_allowed():
+    # Counterpart: a legacy user created today is still inside the welcome window.
+    service = _make_service()
+    service._fetch_user = AsyncMock(
+        return_value={"created_at": datetime.now(timezone.utc)}
+    )
+    assert await service.can_upload_files("u1") is True
+
+
+# --- is_upload_entitled (pure predicate) -------------------------------------
+
+
+def _entitled(**overrides) -> bool:
+    """Call the pure predicate with all-False defaults plus overrides."""
+    service = _make_service()
+    facts = dict(
+        subscription=None,
+        has_daily_pass_credits=False,
+        unlimited_promo=False,
+        on_signup_bonus=False,
+    )
+    facts.update(overrides)
+    return service.is_upload_entitled(**facts)
+
+
+def test_predicate_active_pool_subscription_allows():
+    assert _entitled(subscription={"tier": "pro", "end_ms": _FUTURE_MS}) is True
+
+
+def test_predicate_expired_pool_subscription_denied():
+    assert _entitled(subscription={"tier": "pro", "end_ms": _PAST_MS}) is False
+
+
+def test_predicate_non_pool_tier_denied():
+    # A daily-tier doc is not a pool subscription; entitlement comes via the pass.
+    assert _entitled(subscription={"tier": "daily", "end_ms": _FUTURE_MS}) is False
+
+
+def test_predicate_active_daily_pass_allows():
+    assert _entitled(has_daily_pass_credits=True) is True
+
+
+def test_predicate_unlimited_promo_allows():
+    assert _entitled(unlimited_promo=True) is True
+
+
+def test_predicate_signup_bonus_allows():
+    assert _entitled(on_signup_bonus=True) is True
+
+
+def test_predicate_no_entitlement_denied():
+    assert _entitled() is False
 
 
 # --- ensure_can_upload_files guard -------------------------------------------

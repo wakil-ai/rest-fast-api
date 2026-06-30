@@ -1,10 +1,11 @@
-"""Tests that ``BasePaymentService.get_user_subscription`` surfaces ``can_upload``.
+"""``BasePaymentService.get_user_subscription`` surfaces ``can_upload``.
 
 The subscription endpoint (``GET /payme/subscriptions/{user_id}``) is the
-frontend's source of upload eligibility. The decision must mirror the backend
-gate (``RateLimitService.can_upload_files``) and be present on BOTH response
-paths: the no-subscription path (where first-time signup-bonus users land) and
-the active-subscription path.
+frontend's source of upload eligibility. To avoid extra DB round-trips it derives
+``can_upload`` *inline* from data it already holds — the subscription doc, the
+daily-pass doc, and the ``credit_status`` dict — via the shared pure predicate
+``RateLimitService.is_upload_entitled``. The decision must match that gate and be
+present on BOTH response paths (no-subscription and active-subscription).
 """
 
 import time
@@ -12,19 +13,33 @@ from unittest.mock import AsyncMock
 
 from models.payment import UserSubscriptionResponse
 from services.payments.base import BasePaymentService
+from services.rate_limit_service import RateLimitService
 
 _FUTURE_MS = int(time.time() * 1000) + 7 * 24 * 60 * 60 * 1000  # +7 days
 
-_CREDIT_STATUS = {
-    "effective_daily_credit_limit": 100,
-    "today_credits_used": 10,
-    "remaining_credits": 90,
-    "uses_combined_credit_pool": True,
-}
+
+def _credit_status(
+    *,
+    on_signup_bonus=False,
+    has_daily_pass_credits=False,
+    effective_daily_credit_limit=100,
+):
+    return {
+        "effective_daily_credit_limit": effective_daily_credit_limit,
+        "today_credits_used": 10,
+        "remaining_credits": 90,
+        "uses_combined_credit_pool": True,
+        "on_signup_bonus": on_signup_bonus,
+        "has_daily_pass_credits": has_daily_pass_credits,
+    }
 
 
-def _make_payment_service(*, subscription, can_upload, daily_pass=None):
-    """Build a BasePaymentService with mocked storage/rate-limit deps."""
+def _make_payment_service(*, subscription, credit_status, daily_pass=None):
+    """BasePaymentService whose rate_limit_service uses the REAL pure predicate.
+
+    Only ``get_credit_status`` is mocked; ``is_upload_entitled`` runs for real so
+    the test exercises the actual eligibility derivation, not a stub.
+    """
     service = BasePaymentService.__new__(BasePaymentService)
 
     service.subscription_storage = AsyncMock()
@@ -33,36 +48,90 @@ def _make_payment_service(*, subscription, can_upload, daily_pass=None):
         return_value=daily_pass
     )
 
-    service.rate_limit_service = AsyncMock()
-    service.rate_limit_service.get_credit_status = AsyncMock(
-        return_value=dict(_CREDIT_STATUS)
-    )
-    service.rate_limit_service.can_upload_files = AsyncMock(return_value=can_upload)
+    rls = RateLimitService.__new__(RateLimitService)
+    rls.get_credit_status = AsyncMock(return_value=credit_status)
+    service.rate_limit_service = rls
     return service
 
 
-async def test_no_subscription_user_can_upload_true():
-    # First-time signup-bonus user: no subscription, gate says yes.
-    service = _make_payment_service(subscription=None, can_upload=True)
+async def test_no_subscription_signup_bonus_user_can_upload():
+    # First-time user: no subscription, still on the welcome pool.
+    service = _make_payment_service(
+        subscription=None,
+        credit_status=_credit_status(on_signup_bonus=True),
+    )
     data = await service.get_user_subscription("u1")
 
-    assert data["active"] is False  # confirms we took the no-subscription path
+    assert data["active"] is False  # confirms the no-subscription path
     assert data["can_upload"] is True
-    # And it flows through the response model (the **data splat).
-    assert UserSubscriptionResponse(**data).can_upload is True
+    assert UserSubscriptionResponse(**data).can_upload is True  # flows through **data
 
 
-async def test_no_subscription_user_can_upload_false():
-    # Exhausted bonus, no paid plan: gate says no.
-    service = _make_payment_service(subscription=None, can_upload=False)
+async def test_no_subscription_exhausted_bonus_cannot_upload():
+    service = _make_payment_service(
+        subscription=None,
+        credit_status=_credit_status(on_signup_bonus=False),
+    )
     data = await service.get_user_subscription("u1")
 
     assert data["active"] is False
     assert data["can_upload"] is False
 
 
+def _daily_pass_doc():
+    return {
+        "tier": "basic",
+        "period": "daily",
+        "daily_credits": 200,
+        "start_ms": _FUTURE_MS - 24 * 60 * 60 * 1000,
+        "end_ms": _FUTURE_MS,
+    }
+
+
+async def test_daily_pass_with_credits_can_upload():
+    # A user whose only entitlement is a daily pass *with credits remaining*
+    # may upload. Eligibility tracks remaining credits, not just an open window.
+    service = _make_payment_service(
+        subscription=None,
+        credit_status=_credit_status(has_daily_pass_credits=True),
+        daily_pass=_daily_pass_doc(),
+    )
+    data = await service.get_user_subscription("u1")
+
+    assert data["active"] is False
+    assert data["daily_pass_active"] is True
+    assert data["can_upload"] is True
+
+
+async def test_exhausted_daily_pass_cannot_upload():
+    # Regression: active daily-pass window but today's credits are spent. The
+    # gate (can_upload_files) denies on remaining == 0, so the endpoint must too —
+    # even though daily_pass_active (the window) is still True.
+    service = _make_payment_service(
+        subscription=None,
+        credit_status=_credit_status(has_daily_pass_credits=False),
+        daily_pass=_daily_pass_doc(),
+    )
+    data = await service.get_user_subscription("u1")
+
+    assert data["daily_pass_active"] is True  # window still open
+    assert data["can_upload"] is False  # but no credits left to spend
+
+
+async def test_unlimited_promo_user_can_upload():
+    # get_credit_status encodes unlimited promo as effective_daily_credit_limit == -1.
+    service = _make_payment_service(
+        subscription=None,
+        credit_status=_credit_status(
+            on_signup_bonus=False, effective_daily_credit_limit=-1
+        ),
+    )
+    data = await service.get_user_subscription("u1")
+
+    assert data["can_upload"] is True
+
+
 async def test_active_subscription_includes_can_upload():
-    # Active pool subscription path (the second return dict) carries the field too.
     sub = {
         "tier": "pro",
         "period": "monthly",
@@ -72,16 +141,21 @@ async def test_active_subscription_includes_can_upload():
         "credits_remaining": 90,
         "daily_credits": 0,
     }
-    service = _make_payment_service(subscription=sub, can_upload=True)
+    service = _make_payment_service(
+        subscription=sub,
+        credit_status=_credit_status(on_signup_bonus=False),
+    )
     data = await service.get_user_subscription("u1")
 
-    assert data["active"] is True  # confirms we took the active-subscription path
+    assert data["active"] is True  # confirms the active-subscription path
     assert data["can_upload"] is True
 
 
-async def test_can_upload_mirrors_the_gate():
-    # The field is whatever can_upload_files returns — single source of truth.
-    service = _make_payment_service(subscription=None, can_upload=False)
-    data = await service.get_user_subscription("u1")
-    service.rate_limit_service.can_upload_files.assert_awaited_once_with("u1")
-    assert data["can_upload"] is False
+async def test_can_upload_reuses_single_credit_status_call():
+    # Single source of truth: derivation reuses the one get_credit_status call.
+    service = _make_payment_service(
+        subscription=None,
+        credit_status=_credit_status(on_signup_bonus=True),
+    )
+    await service.get_user_subscription("u1")
+    service.rate_limit_service.get_credit_status.assert_awaited_once_with("u1")

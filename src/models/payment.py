@@ -257,7 +257,6 @@ class PaymeInitRequest(BaseModel):
     order_id: str | None = None  # If not provided, server generates a new one
     subscription_tier: SubscriptionTier | None = Field(default=None)
     subscription_period: SubscriptionPeriod | None = Field(default=None)
-    order_id: str | None = None  # Optional order/invoice id to include in `ac.order_id`
 
 
 class PaymeInitResponse(BaseModel):
