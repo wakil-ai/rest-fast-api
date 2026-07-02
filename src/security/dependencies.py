@@ -156,6 +156,69 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
     )
 
 
+async def assert_not_archived(user_id: str | None) -> None:
+    """Raise 403 if ``user_id`` belongs to an archived (deleted) account.
+
+    Explicit form for handlers that receive ``user_id`` in a shape the router-level
+    guard can't see (e.g. multipart form uploads). No-op when ``user_id`` is falsy.
+    """
+    if not user_id or user_id.strip():
+        return
+    if await chat_history_service.is_user_archived(str(user_id)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been deleted and cannot be used.",
+        )
+
+
+# Route path suffixes exempt from the archive guard. The delete-account endpoint must
+# stay reachable by an already-archived user so the request remains idempotent.
+_ARCHIVE_GUARD_EXEMPT_SUFFIXES = ("/delete-account",)
+
+# Request fields that name the *acting* user (the caller on whose behalf the request is
+# made). ``owner_id`` is the actor on project routes (e.g. GET /projects/{id}?owner_id=).
+# Fields that name a *different* user (e.g. ``member_user_id`` being removed) are
+# intentionally excluded — we block archived callers, not archived referents.
+_ARCHIVE_GUARD_ACTOR_FIELDS = ("user_id", "owner_id")
+
+
+async def verify_not_archived(request: Request) -> bool:
+    """Router-level guard: block requests made on behalf of an archived account.
+
+    Resolves the acting user id from the path, query, then a JSON body (Starlette
+    caches the body, so re-reading it here does not consume it for the handler).
+    Multipart/form routes carry the id in a shape this can't see — those call
+    ``assert_not_archived`` explicitly instead. Routes without any actor id (e.g.
+    session-id/message-id-only routes) are covered by read-filtering (Step 5).
+    """
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", "") or ""
+    if any(route_path.endswith(suffix) for suffix in _ARCHIVE_GUARD_EXEMPT_SUFFIXES):
+        return True
+
+    actor_id: str | None = None
+    for field in _ARCHIVE_GUARD_ACTOR_FIELDS:
+        actor_id = request.path_params.get(field) or request.query_params.get(field)
+        if actor_id:
+            break
+
+    if not actor_id and request.method in {"POST", "PUT", "PATCH"}:
+        content_type = request.headers.get("content-type", "")
+        if content_type.startswith("application/json"):
+            try:
+                body = await request.json()
+            except Exception:
+                body = None
+            if isinstance(body, dict):
+                for field in _ARCHIVE_GUARD_ACTOR_FIELDS:
+                    if body.get(field):
+                        actor_id = body.get(field)
+                        break
+
+    await assert_not_archived(actor_id)
+    return True
+
+
 async def verify_dt_user_web_client(user_id: str) -> bool:
     """Verify that a user belongs to DT client (birdarcha).
 

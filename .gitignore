@@ -16,5 +16,6 @@ docker/
 *.json
 
 .vscode/
+.idea/
 scratch/
 pentagi/

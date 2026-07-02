@@ -44,6 +44,7 @@ from core.logger import logger
 from security import (
     get_current_username,
     verify_api_key_or_dt_key,
+    verify_not_archived,
 )
 
 
@@ -72,9 +73,7 @@ def create_app() -> FastAPI:
     # Add CORS middleware first
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=(
-            settings.ALLOWED_ORIGINS if not settings.DEBUG else ["*"]
-        ),
+        allow_origins=(settings.ALLOWED_ORIGINS if not settings.DEBUG else ["*"]),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -91,31 +90,33 @@ def create_app() -> FastAPI:
         max_age=3600,  # 1 hour session timeout
     )
 
-    # Mount routers with API key authentication
+    # Mount routers with API key authentication.
+    # `verify_not_archived` blocks any request made on behalf of a soft-deleted
+    # (archived) account across the user-facing surface.
     app.include_router(
         chat.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key_or_dt_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
     )
     app.include_router(
         v3_chat.router,
         prefix="/api/v3",
-        dependencies=[Depends(verify_api_key_or_dt_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
     )
     app.include_router(
         chat_history,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key_or_dt_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
     )
     app.include_router(
         speech_to_text.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key_or_dt_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
     )
     app.include_router(
         memory.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key_or_dt_key)],
+        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
     )
     app.include_router(
         fingerprint.router,

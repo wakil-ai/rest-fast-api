@@ -4,12 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from core.config import settings
 from core.dependencies import (
+    get_account_archive_service,
     get_chat_history_service,
     get_rate_limit_service,
     get_redis_service,
 )
 from core.logger import logger
 from models.chat_history import (
+    AccountDeletionRequest,
+    AccountDeletionResponse,
     UserCreateRequest,
     UserCreateResponse,
     UserPhoneUpdateRequest,
@@ -24,6 +27,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 chat_history_service = get_chat_history_service()
 redis_service = get_redis_service()
 rate_limit_service = get_rate_limit_service()
+account_archive_service = get_account_archive_service()
 
 
 def create_response(data: dict, message: str) -> dict:
@@ -132,6 +136,51 @@ async def get_user(user_id: str, request: Request):
     # Cache the user with 1 day TTL (cache_set handles datetime serialization)
     redis_service.cache_set(cache_key, user, ttl_seconds=86400)
     return create_response(user, "User retrieved")
+
+
+@router.post(
+    "/{user_id}/delete-account",
+    status_code=status.HTTP_200_OK,
+    response_model=AccountDeletionResponse,
+    summary="Request account deletion (soft-delete / archive)",
+    responses={
+        200: {"description": "Account archived (or already archived — idempotent)."},
+        400: {"description": "Missing or blank user_id."},
+        404: {"description": "No user exists with that user_id."},
+    },
+)
+@handle_service_error
+async def delete_account(user_id: str, request: AccountDeletionRequest | None = None):
+    """Archive a user account and all owned data for a deletion request.
+
+    Backs the Google Play "delete my account" URL. This is a soft-delete: the user
+    and all owned data are stamped ``archived`` in place (see
+    ``AccountArchiveService``); financial/tax records follow a separate 1-year
+    retention job. Deletion is permanent for that login identity — an archived
+    account can no longer log in or sign up.
+
+    Idempotent: repeating the call on an already-archived account returns 200 with
+    ``already_archived=True`` rather than an error. Not guarded by
+    ``verify_not_archived`` so an already-archived user still gets this answer.
+    """
+    reason = request.reason if request and request.reason else "user_request"
+    result = await account_archive_service.archive_user_account(user_id, reason=reason)
+
+    # Drop any cached copy so subsequent reads don't serve the pre-archive doc.
+    redis_service.invalidate_cache(f"user:{user_id}")
+
+    already = result["already_archived"]
+    return AccountDeletionResponse(
+        user_id=result["user_id"],
+        status="archived",
+        already_archived=already,
+        archived_at=result.get("archived_at"),
+        message=(
+            "Account was already archived"
+            if already
+            else "Account archived successfully"
+        ),
+    )
 
 
 @router.patch(

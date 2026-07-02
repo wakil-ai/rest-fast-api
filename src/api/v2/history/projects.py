@@ -18,6 +18,7 @@ from models.projects import (
     ProjectStatus,
     ProjectUpdateRequest,
 )
+from security import assert_not_archived
 from utils.entitlements import ensure_can_upload_files
 from utils.user_management import handle_service_error, serialize_mongo_id
 
@@ -160,6 +161,10 @@ async def upload_project_file(
     webhook_url: str | None = Form(default=None),
     session_id: str | None = Form(default=None),
 ):
+    # `user_id` arrives as multipart form data, invisible to the router-level
+    # `verify_not_archived` guard — check explicitly here.
+    await assert_not_archived(user_id)
+
     # Paid-plan entitlement gate — block before any file read/processing.
     await ensure_can_upload_files(
         user_id, endpoint=f"POST /projects/{project_id}/files"
