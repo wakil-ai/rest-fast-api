@@ -87,7 +87,13 @@ class Settings(BaseSettings):
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
-    STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0
+    # Keep this well below the idle-connection timeout of every proxy/LB in the
+    # path (browser -> nuxt -> fast-api -> llm). A long time-to-first-token on a
+    # heavy RAG query leaves the stream silent; without a frequent-enough
+    # heartbeat an intermediary closes the idle socket and the user sees a bogus
+    # "connection lost" even though the answer is still being generated and gets
+    # persisted. 15s matches the Nuxt SSE proxy heartbeat.
+    STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 15.0
     STREAM_SSE_MAX_RESPONSE_CHARS: int = 200
     TOP_K: int = 10
     CHAT_HISTORY_LIMIT: int = 3
@@ -98,6 +104,9 @@ class Settings(BaseSettings):
     LLM_SERVICE_INTERNAL_TOKEN: str | None = None
     LLM_SERVICE_INTERNAL_HEADER: str = "x-internal-token"
     LLM_SERVICE_TIMEOUT_SECONDS: float = 600.0
+
+    # File processing
+    DOCUMENT_PROCESSING_POLL_TIMEOUT_SECONDS: int = 900
 
     # Auth (For Telegram Login)
     TELEGRAM_BOT_TOKEN: str = None
