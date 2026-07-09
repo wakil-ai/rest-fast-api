@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.5-260709 (2026-07-09)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.5-260709 -->
+
+## What's Changed
+### 💬 Other
+* chore: update GCS credentials path and add keys directory to .dockeri… by @BaratovSokhibjon in https://github.com/wakil-ai/rest-fast-api/pull/145
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.4-260708...v5.0.5-260709
+
 ## v5.0.4-260708 (2026-07-08)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.4-260708 -->
