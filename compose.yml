@@ -10,6 +10,8 @@ services:
       - REDIS_PORT=6379
       - PYTHONUNBUFFERED=1
       - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    volumes:
+      - ./keys/gcs_creds.json:/app/keys/gcs_creds.json:ro
     networks:
       - wakilai-bridge
       - rest-api-ai_wakil-network

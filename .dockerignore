@@ -37,6 +37,9 @@ build/
 .env.*
 !.env.example
 
+# Credentials
+keys/
+
 # IDEs
 .vscode/
 .idea/
@@ -67,4 +70,3 @@ temp/
 # Data files (if you don't need them in the container)
 data/
 !data/.gitkeep
-
