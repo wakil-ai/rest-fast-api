@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
-    GCS_CREDENTIALS_PATH: str | None = None  # Path to service account JSON file
+    GCS_CREDENTIALS_PATH: str | None = "keys/gcs_creds.json"  # Path to service account JSON file
     GCS_PROJECT_ID: str | None = None
 
     # Assistant compatibility names owned by public routes/credits.
