@@ -1,3 +1,4 @@
+from services.account_archive_service import AccountArchiveService
 from services.bitrix24_service import Bitrix24Service
 from services.auth_service import validate_telegram_data
 from services.chat_history_service import ChatHistoryService
@@ -24,6 +25,7 @@ __all__ = [
     # Auth
     "validate_telegram_data",
     # Services
+    "AccountArchiveService",
     "Bitrix24Service",
     "ChatHistoryService",
     "ChatService",

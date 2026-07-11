@@ -17,6 +17,7 @@ This documentation covers the public/core backend only. AI execution docs live w
 - [Referral tracking](referral-tracking.md)
 - [DT/Birdarcha team integration](dt-team-integration.md)
 - [Bitrix24 leads](bitrix24-leads.md)
+- [Account deletion (soft-delete)](account-deletion.md)
 
 ## Payments
 

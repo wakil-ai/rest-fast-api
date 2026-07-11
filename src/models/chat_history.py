@@ -52,6 +52,37 @@ class UserCreateResponse(BaseModel):
     message: str = Field(default="User operation successful")
 
 
+class AccountDeletionRequest(BaseModel):
+    """Optional body for the account-deletion (archive) endpoint."""
+
+    reason: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Optional free-text reason for the deletion request",
+    )
+
+
+class AccountDeletionResponse(BaseModel):
+    """Result of an account-deletion (archive) request.
+
+    Idempotent: a repeat call on an already-archived account returns 200 with
+    ``already_archived=True`` rather than an error.
+    """
+
+    user_id: str = Field(..., description="The archived user's ID")
+    status: str = Field(
+        default="archived", description="Account status after the request"
+    )
+    already_archived: bool = Field(
+        ...,
+        description="True if the account was already archived before this request",
+    )
+    archived_at: datetime | None = Field(
+        None, description="When the account was archived (UTC)"
+    )
+    message: str = Field(default="Account archived successfully")
+
+
 # Session Models
 class SessionStatus(str, Enum):
     draft = "draft"
