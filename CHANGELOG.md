@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.0.6-260711 (2026-07-11)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.6-260711 -->
+
+## What's Changed
+### 💬 Other
+* user archive for delete account request (for google play) by @akbarhbai in https://github.com/wakil-ai/rest-fast-api/pull/144
+* Dev by @mirsaidl in https://github.com/wakil-ai/rest-fast-api/pull/147
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.5-260709...v5.0.6-260711
+
 ## v5.0.5-260709 (2026-07-09)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.5-260709 -->
