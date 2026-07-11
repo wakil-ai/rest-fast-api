@@ -162,7 +162,7 @@ async def assert_not_archived(user_id: str | None) -> None:
     Explicit form for handlers that receive ``user_id`` in a shape the router-level
     guard can't see (e.g. multipart form uploads). No-op when ``user_id`` is falsy.
     """
-    if not user_id or user_id.strip():
+    if not user_id or not user_id.strip():
         return
     if await chat_history_service.is_user_archived(str(user_id)):
         raise HTTPException(
