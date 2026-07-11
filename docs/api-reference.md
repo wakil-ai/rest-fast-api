@@ -64,6 +64,7 @@ Base path: `/api/v2/history`
 | --- | --- | --- |
 | POST | `/api/v2/history/users` | Create or return user (super admin key) |
 | GET | `/api/v2/history/users/{user_id}` | Get user profile |
+| POST | `/api/v2/history/users/{user_id}/delete-account` | Request account deletion (soft-delete / archive). Idempotent. See [account deletion](account-deletion.md) |
 | PATCH | `/api/v2/history/users/phone-number` | Update user phone number |
 | PATCH | `/api/v2/history/users/change/info/{user_id}` | Update a single user field |
 | PATCH | `/api/v2/history/users/block/{user_id}` | Block a user (super admin key) |

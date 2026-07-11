@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from db import DBManager, MongoHandler
     from services import (
+        AccountArchiveService,
         ChatHistoryService,
         ChatService,
         Bitrix24Service,
@@ -19,7 +20,9 @@ if TYPE_CHECKING:
         StorageService,
         SubscriptionStorage,
         TransactionService,
+        UzumService,
     )
+    from services.project_member_service import ProjectMemberService
 
 
 # DB
@@ -50,6 +53,13 @@ def get_chat_history_service() -> "ChatHistoryService":
     from services import ChatHistoryService
 
     return ChatHistoryService()
+
+
+@lru_cache
+def get_account_archive_service() -> "AccountArchiveService":
+    from services import AccountArchiveService
+
+    return AccountArchiveService()
 
 
 @lru_cache

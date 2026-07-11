@@ -9,6 +9,7 @@ from core.dependencies import (
 )
 from core.logger import logger
 from models.chat_history import FilePublicMetadataResponse, FileUploadResponse
+from security import assert_not_archived
 from utils.entitlements import ensure_can_upload_files
 from utils.user_management import handle_service_error, serialize_mongo_id
 
@@ -35,6 +36,10 @@ async def upload_file_for_message(
     file: UploadFile = File(...),
     user_id: str = Form(...),
 ):
+    # `user_id` arrives as multipart form data, which the router-level
+    # `verify_not_archived` guard can't inspect — check explicitly here.
+    await assert_not_archived(user_id)
+
     # Paid-plan entitlement gate — block before any file read/processing.
     await ensure_can_upload_files(user_id, endpoint="POST /files")
 

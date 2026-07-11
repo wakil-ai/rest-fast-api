@@ -9,7 +9,6 @@ from fastapi.responses import RedirectResponse
 
 from core.config import settings
 from core.dependencies import get_chat_history_service
-from core.exceptions import UserAlreadyExistsException
 from core.logger import logger
 from models.auth import DTUserCreateRequest, DTUserCreateResponse, TelegramAuth
 from security.dependencies import verify_dt_api_key
@@ -242,6 +241,13 @@ async def auth_callback(request: Request):
                 status_code=403,
                 detail="User is blocked. Please contact support to unblock your account.",
             )
+        # Archived accounts are permanently retired for this identity. Block before
+        # create_user so the login=signup upsert can't revive an archived doc.
+        if existing and existing.get("archived"):
+            raise HTTPException(
+                status_code=403,
+                detail="This account has been deleted and cannot be used.",
+            )
 
         user = await chat_history_service.create_user(
             user_id=internal_user_id,
@@ -313,6 +319,14 @@ async def telegram_login(query_params: TelegramAuth = Depends(TelegramAuth)):
                 raise HTTPException(
                     status_code=403,
                     detail="User is blocked. Please contact support to unblock your account.",
+                )
+            # Archived accounts are permanently retired for this identity. Block
+            # before create_user so the login=signup upsert can't revive an
+            # archived doc.
+            if existing and existing.get("archived"):
+                raise HTTPException(
+                    status_code=403,
+                    detail="This account has been deleted and cannot be used.",
                 )
 
             user = await chat_history_service.create_user(

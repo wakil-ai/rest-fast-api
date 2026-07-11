@@ -4,8 +4,11 @@ from typing import Any
 
 from pydantic import BaseModel
 
+
 async def delete_agent_thread(*, user_id: str, session_id: str) -> bool:
     return False
+
+
 from core.config import settings
 from core.dependencies import get_bitrix24_service, get_db_manager
 from core.exceptions import (
@@ -17,6 +20,14 @@ from core.exceptions import (
 from core.logger import logger
 from models.chat_history import SessionStatus, ShareResponse
 from utils.user_management import clean_for_mongodb, generate_short_id
+
+# predicate that excludes soft-deleted (archived) documents from
+# user-facing reads. Merge into a query with ``{**_ACTIVE_ONLY, ...}``. Absence of the
+# field counts as active, so this is safe for pre-archive data. Deliberately NOT applied
+# to identity/raw lookups — ``get_user``, ``get_user_by_external_id``,
+# ``is_user_archived``, ``_ensure_user_exists`` — which auth and the archive
+# guard rely on seeing archived docs.
+_ACTIVE_ONLY: dict[str, Any] = {"archived": {"$ne": True}}
 
 
 class ChatHistoryService:
@@ -192,7 +203,7 @@ class ChatHistoryService:
             raise InvalidInputError("Session ID cannot be empty")
 
         session = await self.db_manager.find_documents(
-            self.sessions_collection, {"_id": session_id}
+            self.sessions_collection, {"_id": session_id, **_ACTIVE_ONLY}
         )
         if not session:
             raise SessionNotFoundError(session_id)
@@ -204,7 +215,7 @@ class ChatHistoryService:
             raise InvalidInputError("Message ID cannot be empty")
 
         message = await self.db_manager.find_documents(
-            self.messages_collection, {"_id": message_id}
+            self.messages_collection, {"_id": message_id, **_ACTIVE_ONLY}
         )
         if not message:
             raise MessageNotFoundError(message_id)
@@ -221,7 +232,7 @@ class ChatHistoryService:
 
         files = await self.db_manager.find_documents(
             self.files_collection,
-            {"_id": {"$in": unique_file_ids}},
+            {"_id": {"$in": unique_file_ids}, **_ACTIVE_ONLY},
             limit=len(unique_file_ids),
         )
         files_by_id = {file["_id"]: file for file in files}
@@ -328,6 +339,21 @@ class ChatHistoryService:
             self.users_collection, {"_id": user_id}
         )
         return users[0] if users else None
+
+    async def is_user_archived(self, user_id: str) -> bool:
+        """Return True if the user exists and is archived (soft-deleted).
+
+        Purpose-built for the runtime archive guard. Queries the users collection
+        directly with a minimal projection, so it is NOT affected by any archived
+        filtering applied to normal reads. Unknown users return
+        False (nothing to block; not-found is handled by the read path itself).
+        """
+        if not user_id:
+            return False
+        doc = await self.db_manager.mongo_handler.db[self.users_collection].find_one(
+            {"_id": user_id}, {"archived": 1}
+        )
+        return bool(doc and doc.get("archived"))
 
     async def get_user_by_external_id(self, external_id: str) -> dict | None:
         """Get user by external_id (for DT integration)."""
@@ -499,6 +525,7 @@ class ChatHistoryService:
                     {"project_id": {"$exists": False}},
                     {"project_id": None},
                 ],
+                **_ACTIVE_ONLY,
             },
             limit=limit,
             skip=skip,
@@ -519,6 +546,7 @@ class ChatHistoryService:
                 "$match": {
                     "project_id": project_id,
                     "status": SessionStatus.active.value,
+                    **_ACTIVE_ONLY,
                 }
             },
             {
@@ -548,7 +576,7 @@ class ChatHistoryService:
             raise InvalidInputError("Session ID cannot be empty")
 
         sessions = await self.db_manager.find_documents(
-            self.sessions_collection, {"_id": session_id}
+            self.sessions_collection, {"_id": session_id, **_ACTIVE_ONLY}
         )
         return sessions[0] if sessions else None
 
@@ -736,6 +764,7 @@ class ChatHistoryService:
         query = {
             "session_id": session_id,
             "content": {"$exists": True},  # Ensure it's a message
+            **_ACTIVE_ONLY,
         }
 
         messages = await self.db_manager.find_documents(
@@ -759,7 +788,7 @@ class ChatHistoryService:
             raise InvalidInputError("Message ID cannot be empty")
 
         messages = await self.db_manager.find_documents(
-            self.messages_collection, {"_id": message_id}
+            self.messages_collection, {"_id": message_id, **_ACTIVE_ONLY}
         )
         return messages[0] if messages else None
 
@@ -822,7 +851,7 @@ class ChatHistoryService:
             raise InvalidInputError("Share ID cannot be empty")
 
         message = await self.db_manager.find_documents(
-            self.messages_collection, {"share_id": share_id}
+            self.messages_collection, {"share_id": share_id, **_ACTIVE_ONLY}
         )
         message = message[0] if message else None
         if not message:
@@ -980,6 +1009,7 @@ class ChatHistoryService:
         query = {
             "message_id": {"$in": message_ids},
             "scope": "message",
+            **_ACTIVE_ONLY,
         }
 
         files = await self.db_manager.find_documents(
@@ -993,7 +1023,7 @@ class ChatHistoryService:
 
         await self._ensure_user_exists(user_id)
 
-        query = {"user_id": user_id, "scope": "message"}
+        query = {"user_id": user_id, "scope": "message", **_ACTIVE_ONLY}
         files = await self.db_manager.find_documents(
             self.files_collection, query, limit=limit
         )
@@ -1008,7 +1038,7 @@ class ChatHistoryService:
         if not message_id or not message_id.strip():
             raise InvalidInputError("Message ID cannot be empty")
 
-        query = {"message_id": message_id}
+        query = {"message_id": message_id, **_ACTIVE_ONLY}
         files = await self.db_manager.find_documents(
             self.files_collection, query, limit=limit
         )
@@ -1022,7 +1052,7 @@ class ChatHistoryService:
             raise InvalidInputError("File ID cannot be empty")
 
         files = await self.db_manager.find_documents(
-            self.files_collection, {"_id": file_id}
+            self.files_collection, {"_id": file_id, **_ACTIVE_ONLY}
         )
 
         if files:
