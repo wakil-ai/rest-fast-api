@@ -6,7 +6,9 @@ from pydantic_settings import BaseSettings
 
 # Manually load the .env file from the root project directory
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", ".env"))
-load_dotenv(dotenv_path=env_path, override=True)
+# Real process variables (GitHub Actions, Docker, Cloud Run, etc.) must win over
+# local .env defaults.
+load_dotenv(dotenv_path=env_path, override=False)
 
 
 class Settings(BaseSettings):
@@ -52,8 +54,12 @@ class Settings(BaseSettings):
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
-    GCS_CREDENTIALS_PATH: str | None = "keys/gcs_creds.json"  # Path to service account JSON file
+    GCS_CREDENTIALS_PATH: str | None = None  # Optional local service account JSON file
     GCS_PROJECT_ID: str | None = None
+    GCS_CLIENT_EMAIL: str | None = None
+    GCS_PRIVATE_KEY: str | None = None
+    GCS_PRIVATE_KEY_ID: str | None = None
+    GCS_CLIENT_ID: str | None = None
 
     # Assistant compatibility names owned by public routes/credits.
     ASSISTANT_MAIN_COLLECTION: str = "lexuz"
