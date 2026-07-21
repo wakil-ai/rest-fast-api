@@ -163,6 +163,9 @@ class Settings(BaseSettings):
 
     # Apple App Store (StoreKit 2) In-App Purchases
     APPSTORE_BUNDLE_ID: str = "ai.humblebee.wakil"
+    # Xcode Debug build's bundle id, trusted only while DEBUG is on.
+    # Defaults to "<APPSTORE_BUNDLE_ID>-debug".
+    APPSTORE_DEBUG_BUNDLE_ID: str | None = None
     # Numeric App Store app id ("Apple ID" in App Store Connect → App Information).
     # REQUIRED before production JWS verification will work.
     APPSTORE_APP_APPLE_ID: int | None = None

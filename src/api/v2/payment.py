@@ -44,7 +44,6 @@ from security import (
     verify_uzum_authorization,
 )
 from services import (
-    AppStoreError,
     AppStoreService,
     ClickService,
     TransactionService,
@@ -309,15 +308,13 @@ async def verify_appstore_transaction(
         result = await appstore_service.verify_transaction(
             user_id=request.user_id,
             jws=request.jws,
-            app_account_token=request.app_account_token,
             environment=request.environment,
             bundle_id=request.bundle_id,
         )
         return AppStoreVerifyResponse(**result)
-    except AppStoreError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # AppStoreError is an HTTPException; FastAPI renders it as-is.
+        raise
     except Exception as e:
         logger.exception(f"Error verifying App Store transaction: {e}")
         raise HTTPException(
@@ -348,8 +345,9 @@ async def appstore_notifications(
     try:
         result = await appstore_service.handle_notification(signed_payload)
         return JSONResponse(status_code=200, content=result)
-    except AppStoreError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except HTTPException:
+        # AppStoreError is an HTTPException; FastAPI renders it as-is.
+        raise
     except Exception as e:
         logger.exception(f"Error handling App Store notification: {e}")
         raise HTTPException(

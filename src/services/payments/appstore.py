@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import time
@@ -14,19 +15,8 @@ from appstoreserverlibrary.signed_data_verifier import (
 
 from core.config import settings
 from core.logger import logger
+from models.payment import AppStoreError
 from services.payments.base import BasePaymentService
-
-# Only standard/pro monthly/yearly have StoreKit products; daily passes and
-# basic/premium stay Payme/Click-only.
-_APPSTORE_TIERS = {"standard", "pro"}
-_APPSTORE_PERIODS = {"monthly", "yearly"}
-
-_ENVIRONMENT_BY_NAME = {
-    "Production": Environment.PRODUCTION,
-    "Sandbox": Environment.SANDBOX,
-    "Xcode": Environment.XCODE,
-    "LocalTesting": Environment.LOCAL_TESTING,
-}
 
 # Notification types that (re)grant access.
 _GRANT_NOTIFICATIONS = {
@@ -42,14 +32,6 @@ _REVOKE_NOTIFICATIONS = {
     "REFUND",
     "REVOKE",
 }
-
-
-class AppStoreError(ValueError):
-    """Client-facing App Store error carrying an HTTP status code."""
-
-    def __init__(self, message: str, *, status_code: int = 400):
-        super().__init__(message)
-        self.status_code = status_code
 
 
 class AppStoreService(BasePaymentService):
@@ -95,20 +77,18 @@ class AppStoreService(BasePaymentService):
         return certs
 
     def _environment_from_str(self, value: str) -> Environment:
-        env = _ENVIRONMENT_BY_NAME.get(value)
-        if env is None:
-            raise AppStoreError(f"Unknown environment: {value}", status_code=422)
-        return env
+        try:
+            return Environment(value)
+        except ValueError:
+            raise AppStoreError(
+                f"Unknown environment: {value}", status_code=422
+            ) from None
 
-    def _get_verifier(
-        self, environment: Environment, bundle_id: str
-    ) -> SignedDataVerifier:
-        cache_key = environment.value
-        cached = self._verifier_cache.get(cache_key)
+    def _get_verifier(self, environment: Environment) -> SignedDataVerifier:
+        cached = self._verifier_cache.get(environment.value)
         if cached is not None:
             return cached
 
-        root_certs = self._load_root_certificates()
         app_apple_id = settings.APPSTORE_APP_APPLE_ID
         if environment == Environment.PRODUCTION and not app_apple_id:
             raise AppStoreError(
@@ -118,63 +98,63 @@ class AppStoreService(BasePaymentService):
             )
 
         verifier = SignedDataVerifier(
-            root_certs,
+            self._load_root_certificates(),
             settings.APPSTORE_ENABLE_ONLINE_CHECKS,
             environment,
-            bundle_id,
-            int(app_apple_id) if app_apple_id else None,
+            settings.APPSTORE_BUNDLE_ID,
+            app_apple_id or None,
         )
-        self._verifier_cache[cache_key] = verifier
+        self._verifier_cache[environment.value] = verifier
         return verifier
 
     # MARK: bundle id
 
     def _bundle_matches(self, candidate: str | None) -> bool:
-        """True if ``candidate`` matches the configured bundle id.
+        """True if ``candidate`` is a bundle id this deployment trusts.
 
-        In DEBUG, also accepts the Xcode Debug build's ``…-debug`` bundle id so
-        local StoreKit testing works without a separate env var. Production
-        (DEBUG off) requires an exact match.
+        In DEBUG the Xcode Debug build's bundle id (``APPSTORE_DEBUG_BUNDLE_ID``,
+        defaulting to ``<APPSTORE_BUNDLE_ID>-debug``) is trusted too so local
+        StoreKit testing works. Production (DEBUG off) requires an exact match.
         """
         expected = settings.APPSTORE_BUNDLE_ID
         if not candidate or not expected:
             return True
-        if candidate == expected:
-            return True
+        allowed = {expected}
         if settings.DEBUG:
-            def _norm(value: str) -> str:
-                return value[:-6] if value.endswith("-debug") else value
-
-            return _norm(candidate) == _norm(expected)
-        return False
+            allowed.add(settings.APPSTORE_DEBUG_BUNDLE_ID or f"{expected}-debug")
+        return candidate in allowed
 
     # MARK: product mapping
 
     def _map_product(self, product_id: str) -> tuple[str, str]:
-        """``ai.humblebee.wakil.ios.sub.<tier>.<period>`` -> (tier, period)."""
-        tail = product_id.rsplit(".sub.", 1)[-1]
-        parts = tail.split(".")
+        """``ai.humblebee.wakil.ios.sub.<tier>.<period>`` -> (tier, period).
+
+        Validated against the shared subscription catalog so App Store products
+        track exactly what Payme/Click sell. Daily passes are not StoreKit
+        products and are always rejected.
+        """
+        parts = product_id.rsplit(".sub.", 1)[-1].split(".")
         if len(parts) != 2:
             raise AppStoreError(
                 f"Unrecognized product id: {product_id}", status_code=422
             )
-        tier, period = parts[0], parts[1]
-        if tier not in _APPSTORE_TIERS or period not in _APPSTORE_PERIODS:
+        tier, period = parts
+        if period == "daily":
             raise AppStoreError(
                 f"Unsupported App Store product id: {product_id}", status_code=422
             )
+        try:
+            self._get_subscription_quote(tier, period)
+        except ValueError:
+            raise AppStoreError(
+                f"Unsupported App Store product id: {product_id}", status_code=422
+            ) from None
         return tier, period
 
     # MARK: decode
 
-    def _decode_transaction(
-        self, jws: str, environment_str: str, bundle_id: str
-    ) -> SimpleNamespace:
-        environment = self._environment_from_str(environment_str)
-        return self._decode_transaction_env(jws, environment, bundle_id)
-
-    def _decode_transaction_env(
-        self, jws: str, environment: Environment, bundle_id: str
+    async def _decode_transaction(
+        self, jws: str, environment: Environment
     ) -> SimpleNamespace:
         # Xcode / local StoreKit test transactions are signed by a local test cert
         # that does not chain to Apple's roots, so real verification is impossible.
@@ -188,9 +168,14 @@ class AppStoreService(BasePaymentService):
                 )
             return self._decode_unverified(jws)
 
-        verifier = self._get_verifier(environment, bundle_id)
+        verifier = self._get_verifier(environment)
         try:
-            return verifier.verify_and_decode_signed_transaction(jws)
+            # The library's verification is synchronous (X.509 chain + ECDSA, plus
+            # blocking OCSP calls when online checks are on) — keep it off the
+            # event loop.
+            return await asyncio.to_thread(
+                verifier.verify_and_decode_signed_transaction, jws
+            )
         except VerificationException as exc:
             logger.warning(f"[AppStore] JWS verification failed: {exc}")
             raise AppStoreError(
@@ -198,21 +183,22 @@ class AppStoreService(BasePaymentService):
             ) from exc
 
     @staticmethod
-    def _decode_unverified(jws: str) -> SimpleNamespace:
+    def _decode_jws_payload(jws: str) -> dict:
+        """Decode a JWS payload segment WITHOUT verifying its signature."""
+        try:
+            payload_segment = jws.split(".")[1]
+            padding = "=" * (-len(payload_segment) % 4)
+            return json.loads(base64.urlsafe_b64decode(payload_segment + padding))
+        except Exception as exc:
+            raise AppStoreError("Malformed JWS payload", status_code=422) from exc
+
+    def _decode_unverified(self, jws: str) -> SimpleNamespace:
         """DEBUG-only: decode a JWS payload WITHOUT verifying its signature.
 
         Only reached for Xcode/LocalTesting environments (never Production/Sandbox),
         and only when ``settings.DEBUG`` is true.
         """
-        try:
-            payload_segment = jws.split(".")[1]
-            padding = "=" * (-len(payload_segment) % 4)
-            decoded = json.loads(
-                base64.urlsafe_b64decode(payload_segment + padding)
-            )
-        except Exception as exc:
-            raise AppStoreError("Malformed transaction JWS", status_code=422) from exc
-        return SimpleNamespace(**decoded)
+        return SimpleNamespace(**self._decode_jws_payload(jws))
 
     # MARK: idempotency store
 
@@ -240,10 +226,10 @@ class AppStoreService(BasePaymentService):
         )
 
     async def _mark_granted(self, transaction_id: str, now_ms: int) -> None:
-        collection = self.db_handler.db[self.transactions_collection]
-        await collection.update_one(
+        await self.db_handler.update_one(
+            self.transactions_collection,
             {"transaction_id": transaction_id},
-            {"$set": {"granted": True, "granted_at_ms": now_ms}},
+            {"granted": True, "granted_at_ms": now_ms},
         )
 
     # MARK: shared grant
@@ -279,7 +265,14 @@ class AppStoreService(BasePaymentService):
 
         tier, period = self._map_product(product_id)
 
-        collection = self.db_handler.db[self.transactions_collection]
+        # Common fields of every result this method returns; each exit adds its
+        # own granted/revoked/expired flags.
+        summary = {
+            "tier": tier,
+            "period": period,
+            "original_transaction_id": original_transaction_id,
+            "expires_ms": expires_ms,
+        }
 
         # Shared record for this transaction; all skip/grant paths reuse it.
         base_claim = {
@@ -301,11 +294,12 @@ class AppStoreService(BasePaymentService):
         # Ownership: an originalTransactionId already bound to a different user is a
         # hard conflict (transferred device, shared Apple ID being abused, etc.).
         if original_transaction_id:
-            conflict = await collection.find_one(
+            conflict = await self.db_handler.find_one(
+                self.transactions_collection,
                 {
                     "original_transaction_id": original_transaction_id,
                     "user_id": {"$ne": user_id},
-                }
+                },
             )
             if conflict:
                 raise AppStoreError(
@@ -319,14 +313,7 @@ class AppStoreService(BasePaymentService):
             await self._claim_transaction(
                 {**base_claim, "revocation_date_ms": revocation_ms}
             )
-            return {
-                "tier": tier,
-                "period": period,
-                "original_transaction_id": original_transaction_id,
-                "expires_ms": expires_ms,
-                "granted": False,
-                "revoked": True,
-            }
+            return {**summary, "granted": False, "revoked": True}
 
         # Already-expired transaction — almost always a stale one redelivered by the
         # StoreKit transaction listener (e.g. old sandbox purchases from earlier tests).
@@ -340,14 +327,7 @@ class AppStoreService(BasePaymentService):
                 f"[AppStore] Skipping expired transaction {transaction_id} "
                 f"(expired_ms={expires_ms} <= now_ms={now_ms}) for user {user_id}"
             )
-            return {
-                "tier": tier,
-                "period": period,
-                "original_transaction_id": original_transaction_id,
-                "expires_ms": expires_ms,
-                "granted": False,
-                "expired": True,
-            }
+            return {**summary, "granted": False, "expired": True}
 
         # Claim the transaction id. If someone already claimed it, don't re-grant.
         existing = await self._claim_transaction(base_claim)
@@ -362,10 +342,7 @@ class AppStoreService(BasePaymentService):
                     "(concurrent duplicate verify); skipping to avoid double-grant."
                 )
             return {
-                "tier": tier,
-                "period": period,
-                "original_transaction_id": original_transaction_id,
-                "expires_ms": expires_ms,
+                **summary,
                 "granted": bool(existing.get("granted")),
                 "already_processed": True,
             }
@@ -386,7 +363,7 @@ class AppStoreService(BasePaymentService):
         except Exception:
             # Only removes our own uncommitted claim; a claim another request has
             # already granted (granted=True) is left untouched.
-            await collection.delete_one(
+            await self.db_handler.db[self.transactions_collection].delete_one(
                 {"transaction_id": transaction_id, "granted": False}
             )
             raise
@@ -395,13 +372,7 @@ class AppStoreService(BasePaymentService):
             f"[AppStore] Granted {tier}/{period} to user {user_id} "
             f"(tx={transaction_id}, source={source})"
         )
-        return {
-            "tier": tier,
-            "period": period,
-            "original_transaction_id": original_transaction_id,
-            "expires_ms": expires_ms,
-            "granted": True,
-        }
+        return {**summary, "granted": True}
 
     async def _revoke_subscription(self, user_id: str, now_ms: int) -> None:
         """Expire the user's App Store subscription in place (refund/revoke/expiry).
@@ -409,16 +380,14 @@ class AppStoreService(BasePaymentService):
         Only touches subscriptions granted by this provider so a web (Payme/Click)
         subscription is never clobbered by an Apple notification.
         """
-        collection = self.db_handler.db[settings.SUBSCRIPTIONS_COLLECTION]
-        await collection.update_one(
+        await self.db_handler.update_one(
+            settings.SUBSCRIPTIONS_COLLECTION,
             {"user_id": user_id, "provider": self.provider},
             {
-                "$set": {
-                    "end_ms": now_ms,
-                    "credits_remaining": 0,
-                    "updated_at_ms": now_ms,
-                    "revoked_at_ms": now_ms,
-                }
+                "end_ms": now_ms,
+                "credits_remaining": 0,
+                "updated_at_ms": now_ms,
+                "revoked_at_ms": now_ms,
             },
         )
 
@@ -429,7 +398,6 @@ class AppStoreService(BasePaymentService):
         *,
         user_id: str,
         jws: str,
-        app_account_token: str | None,
         environment: str,
         bundle_id: str,
     ) -> dict:
@@ -448,8 +416,8 @@ class AppStoreService(BasePaymentService):
         if not user:
             raise AppStoreError("User not found", status_code=404)
 
-        payload = self._decode_transaction(
-            jws, environment, bundle_id or expected_bundle
+        payload = await self._decode_transaction(
+            jws, self._environment_from_str(environment)
         )
         now_ms = int(time.time() * 1000)
         result = await self._grant_from_payload(
@@ -481,28 +449,30 @@ class AppStoreService(BasePaymentService):
 
     # MARK: public — notifications (called by Apple)
 
-    def _verify_notification_any_env(self, signed_payload: str):
-        """Apple signs sandbox and production notifications with their respective
-        cert chains. Try production first (if configured), then sandbox."""
-        environments = []
-        if settings.APPSTORE_APP_APPLE_ID:
-            environments.append(Environment.PRODUCTION)
-        environments.append(Environment.SANDBOX)
+    async def _verify_notification(self, signed_payload: str):
+        """Apple signs notifications with the cert chain of the environment they
+        came from. The environment is inside the signed payload — peek at it
+        without verifying to pick the right verifier (a forged claim just makes
+        the real verification below fail), then verify for real."""
+        body = self._decode_jws_payload(signed_payload)
+        env_name = (body.get("data") or {}).get("environment") or (
+            body.get("summary") or {}
+        ).get("environment")
+        if not env_name:
+            raise AppStoreError(
+                "Notification payload missing environment", status_code=422
+            )
 
-        errors: list[str] = []
-        for environment in environments:
-            try:
-                verifier = self._get_verifier(
-                    environment, settings.APPSTORE_BUNDLE_ID
-                )
-                return verifier.verify_and_decode_notification(signed_payload)
-            except (VerificationException, AppStoreError) as exc:
-                errors.append(f"{environment.value}: {exc}")
-                continue
-        raise AppStoreError(
-            f"Notification could not be verified ({'; '.join(errors)})",
-            status_code=422,
-        )
+        verifier = self._get_verifier(self._environment_from_str(env_name))
+        try:
+            return await asyncio.to_thread(
+                verifier.verify_and_decode_notification, signed_payload
+            )
+        except VerificationException as exc:
+            logger.warning(f"[AppStore] Notification verification failed: {exc}")
+            raise AppStoreError(
+                "Notification could not be verified", status_code=422
+            ) from exc
 
     async def handle_notification(self, signed_payload: str) -> dict:
         """handle_notification called by Apple's App Store Server Notifications V2
@@ -511,7 +481,7 @@ class AppStoreService(BasePaymentService):
 
         await self._ensure_appstore_indexes()
 
-        notification = self._verify_notification_any_env(signed_payload)
+        notification = await self._verify_notification(signed_payload)
         notification_type = getattr(notification, "rawNotificationType", None) or str(
             getattr(notification, "notificationType", "") or ""
         )
@@ -528,28 +498,22 @@ class AppStoreService(BasePaymentService):
             return {"handled": False, "type": notification_type}
 
         # Decode the inner transaction with a verifier for the notification's env.
-        try:
-            env_enum = (
-                environment
-                if isinstance(environment, Environment)
-                else self._environment_from_str(environment_str)
-            )
-            payload = self._decode_transaction_env(
-                signed_transaction, env_enum, settings.APPSTORE_BUNDLE_ID
-            )
-        except AppStoreError:
-            # Fall back to any-env transaction decode is not worth it; re-raise.
-            raise
+        env_enum = (
+            environment
+            if isinstance(environment, Environment)
+            else self._environment_from_str(environment_str)
+        )
+        payload = await self._decode_transaction(signed_transaction, env_enum)
 
         original_transaction_id = getattr(payload, "originalTransactionId", None)
         transaction_id = getattr(payload, "transactionId", None)
 
         # Attribute the notification to a user via a prior verify record.
-        collection = self.db_handler.db[self.transactions_collection]
         record = None
         if original_transaction_id:
-            record = await collection.find_one(
-                {"original_transaction_id": original_transaction_id}
+            record = await self.db_handler.find_one(
+                self.transactions_collection,
+                {"original_transaction_id": original_transaction_id},
             )
         if record is None:
             logger.warning(

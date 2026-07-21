@@ -5,6 +5,8 @@ from typing import Literal
 from bson import ObjectId
 from pydantic import BaseModel, Field
 
+from core.exceptions import ChatException
+
 
 SubscriptionTier = Literal["basic", "standard", "premium", "pro", "test"]
 SubscriptionPeriod = Literal["daily", "monthly", "yearly"]
@@ -305,11 +307,19 @@ class UserSubscriptionResponse(BaseModel):
 
 
 # Apple App Store (StoreKit 2) Models
+class AppStoreError(ChatException):
+    """Raised inside AppStoreService; rendered by FastAPI as its status code."""
+
+    def __init__(self, detail: str, *, status_code: int = 400):
+        super().__init__(detail=detail, status_code=status_code)
+
+
 class AppStoreVerifyRequest(BaseModel):
     user_id: str
     # StoreKit Transaction.jwsRepresentation — signed by Apple, verified server-side.
     jws: str
-    # UUIDv5 derived from user_id on the client; used to cross-check ownership.
+    # UUIDv5 derived from user_id on the client. Not used server-side yet (ownership
+    # is pinned via the signed payload's appAccountToken); accepted for forward compat.
     app_account_token: str | None = None
     # "Production" | "Sandbox" | "Xcode"
     environment: str
