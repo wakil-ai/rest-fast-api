@@ -210,6 +210,7 @@ class BasePaymentService:
             return {
                 "user_id": user_id,
                 "active": False,
+                "source": daily_pass.get("provider") if daily_pass_active and isinstance(daily_pass, dict) else None,
                 "daily_pass_active": daily_pass_active,
                 "daily_pass_tier": daily_pass_tier if daily_pass_active else None,
                 "daily_pass_daily_credits": daily_pass_daily,
@@ -244,9 +245,15 @@ class BasePaymentService:
             (daily_pass_daily or 0) if daily_pass_active else 0
         )
 
+        # Prefer the paid subscription's provider; fall back to the daily pass's.
+        source = sub.get("provider")
+        if not source and daily_pass_active and isinstance(daily_pass, dict):
+            source = daily_pass.get("provider")
+
         return {
             "user_id": user_id,
             "active": active,
+            "source": source,
             "tier": sub.get("tier"),
             "period": sub.get("period"),
             "daily_credits": sub_daily,
