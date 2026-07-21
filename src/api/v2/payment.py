@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from core.config import settings
 from core.dependencies import (
+    get_appstore_service,
     get_click_service,
     get_subscription_storage,
     get_transaction_service,
@@ -14,6 +15,8 @@ from core.dependencies import (
 )
 from core.logger import logger
 from models.payment import (
+    AppStoreVerifyRequest,
+    AppStoreVerifyResponse,
     ClickInitRequest,
     ClickInitResponse,
     DTInitRequest,
@@ -40,7 +43,13 @@ from security import (
     verify_payme_authorization,
     verify_uzum_authorization,
 )
-from services import ClickService, TransactionService, UzumService
+from services import (
+    AppStoreError,
+    AppStoreService,
+    ClickService,
+    TransactionService,
+    UzumService,
+)
 from services.subscription_storage import SubscriptionStorage
 
 router = APIRouter(prefix="/transaction", tags=["Payme"])
@@ -280,6 +289,72 @@ async def click_complete(
     payload = await _parse_click_payload(request)
     result = await click_service.complete(payload)
     return JSONResponse(status_code=200, content=result)
+
+
+# MARK: App Store (StoreKit 2)
+@router.post("/appstore/verify", response_model=AppStoreVerifyResponse)
+async def verify_appstore_transaction(
+    request: AppStoreVerifyRequest,
+    _auth: bool = Depends(verify_api_key),
+    appstore_service: AppStoreService = Depends(get_appstore_service),
+):
+    """Verify a StoreKit 2 signed transaction and grant the subscription.
+
+    Called by the iOS app right after an In-App Purchase or restore. The JWS is
+    verified against Apple's certificate chain server-side; on success the
+    subscription is granted through the same path Payme/Click use. Idempotent per
+    Apple transaction id.
+    """
+    try:
+        result = await appstore_service.verify_transaction(
+            user_id=request.user_id,
+            jws=request.jws,
+            app_account_token=request.app_account_token,
+            environment=request.environment,
+            bundle_id=request.bundle_id,
+        )
+        return AppStoreVerifyResponse(**result)
+    except AppStoreError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error verifying App Store transaction: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to verify App Store transaction"
+        )
+
+
+@router.post("/appstore/notifications")
+async def appstore_notifications(
+    request: Request,
+    appstore_service: AppStoreService = Depends(get_appstore_service),
+):
+    """App Store Server Notifications V2 webhook.
+
+    Apple POSTs ``{"signedPayload": "<JWS>"}`` on renewal/expiry/refund/etc.
+    Authentication is the JWS signature itself (no API key), matching how the
+    Payme/Uzum webhooks authenticate.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    signed_payload = body.get("signedPayload") if isinstance(body, dict) else None
+    if not signed_payload:
+        raise HTTPException(status_code=400, detail="Missing signedPayload")
+
+    try:
+        result = await appstore_service.handle_notification(signed_payload)
+        return JSONResponse(status_code=200, content=result)
+    except AppStoreError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error handling App Store notification: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to handle App Store notification"
+        )
 
 
 # MARK: Uzum Merchant API

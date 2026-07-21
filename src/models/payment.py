@@ -300,6 +300,29 @@ class UserSubscriptionResponse(BaseModel):
     today_remaining_credits: int | None = None
     uses_combined_credit_pool: bool = True
     can_upload: bool = False
+    # Which rail granted the active subscription: "appstore" | "payme" | "click" | "uzum".
+    source: str | None = None
+
+
+# Apple App Store (StoreKit 2) Models
+class AppStoreVerifyRequest(BaseModel):
+    user_id: str
+    # StoreKit Transaction.jwsRepresentation — signed by Apple, verified server-side.
+    jws: str
+    # UUIDv5 derived from user_id on the client; used to cross-check ownership.
+    app_account_token: str | None = None
+    # "Production" | "Sandbox" | "Xcode"
+    environment: str
+    bundle_id: str
+
+
+class AppStoreVerifyResponse(BaseModel):
+    status: str  # "active" | "inactive" | "revoked"
+    tier: str | None = None
+    period: str | None = None
+    original_transaction_id: str | None = None
+    expires_ms: int | None = None
+    daily_credits: int | None = None
 
 
 class FiscalData(BaseModel):
