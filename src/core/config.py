@@ -161,6 +161,18 @@ class Settings(BaseSettings):
     UZUM_SERVICE_ID: int | None = None  # Single service id assigned to wakil.ai in Uzum catalog
     UZUM_TRANSACTIONS_COLLECTION: str = "uzum_transactions"
 
+    # Apple App Store (StoreKit 2) In-App Purchases
+    APPSTORE_BUNDLE_ID: str = "ai.humblebee.wakil"
+    # Numeric App Store app id ("Apple ID" in App Store Connect → App Information).
+    # REQUIRED before production JWS verification will work.
+    APPSTORE_APP_APPLE_ID: int | None = None
+    # OCSP revocation checks during Apple cert-chain verification. Needs outbound
+    # network to Apple; disable only if the deploy env can't reach Apple's OCSP.
+    APPSTORE_ENABLE_ONLINE_CHECKS: bool = True
+    # Directory of Apple root CA .cer/.der files. Defaults to src/resources/certs/apple.
+    APPSTORE_ROOT_CERTS_DIR: str | None = None
+    APPSTORE_TRANSACTIONS_COLLECTION: str = "appstore_transactions"
+
     # Payme Subscriptions — daily passes (stack on free quota; credits per pass tier)
     PAYME_SUBSCRIPTION_BASIC_DAILY_PRICE_SUM: int = 15_000
     PAYME_SUBSCRIPTION_STANDARD_DAILY_PRICE_SUM: int = 30_000
