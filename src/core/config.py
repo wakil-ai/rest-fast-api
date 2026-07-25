@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 # Manually load the .env file from the root project directory
@@ -179,6 +179,10 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str | None = None
     GOOGLE_REDIRECT_URI: str | None = None
     AUTH_SECRET_KEY: str = "secret-key-change-me"
+    JWT_SECRET_KEY: str | None = Field(default=None, min_length=32)
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ISSUER: str = "wakilai-frontend"
+    JWT_AUDIENCE: str = "wakilai-rest-api"
 
     # Twilio Verify (OTP)
     TWILIO_ACCOUNT_SID: str | None = None

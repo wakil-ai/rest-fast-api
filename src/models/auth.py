@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -36,3 +39,13 @@ class DTUserCreateResponse(BaseModel):
     user_id: str = Field(
         ..., description="The ID of the created user (internal user ID)"
     )
+
+
+class JWTPayload(BaseModel):
+    sub: str = Field(..., min_length=1)
+    exp: datetime
+    iat: datetime
+    jti: str = Field(..., min_length=1)
+    typ: Literal["access_token"]
+    iss: str = Field(..., min_length=1)
+    aud: str = Field(..., min_length=1)

@@ -10,8 +10,12 @@ from fastapi.responses import RedirectResponse
 from core.config import settings
 from core.dependencies import get_chat_history_service
 from core.logger import logger
-from models.auth import DTUserCreateRequest, DTUserCreateResponse, TelegramAuth
-from security.dependencies import verify_dt_api_key
+from models.auth import (
+    DTUserCreateRequest,
+    DTUserCreateResponse,
+    TelegramAuth,
+)
+from security.dependencies import get_current_user_id, verify_dt_api_key
 from services import validate_telegram_data
 from utils.user_management import generate_short_id
 
@@ -101,6 +105,20 @@ def _build_frontend_redirect_response(
     return RedirectResponse(url=redirect_target, status_code=302)
 
 
+@router.get("/me")
+async def get_authenticated_user(user_id: str = Depends(get_current_user_id)):
+    user = await chat_history_service.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    public_user = {
+        key: value
+        for key, value in user.items()
+        if key not in {"_id", "blocked_reason", "external_id"}
+    }
+    public_user["user_id"] = user_id
+    return {"user": public_user}
+
+
 @router.get("/google/login")
 async def login(request: Request):
     """
@@ -178,8 +196,6 @@ async def auth_callback(request: Request):
                 f"[GoogleAuth] Token response status: {token_response.status_code}"
             )
             response_text = token_response.text
-            logger.info(f"[GoogleAuth] Token response body: {response_text}")
-
             if token_response.status_code != 200:
                 try:
                     error_json = token_response.json()
