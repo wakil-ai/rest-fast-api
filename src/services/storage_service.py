@@ -21,10 +21,15 @@ class StorageService:
     def __init__(self):
         """Initialize Google Cloud Storage client."""
         try:
-            if settings.GCS_CREDENTIALS_PATH and os.path.exists(
+            credentials = self._credentials_from_environment()
+            if credentials is not None:
+                self.client = storage.Client(
+                    credentials=credentials, project=settings.GCS_PROJECT_ID
+                )
+            elif settings.GCS_CREDENTIALS_PATH and os.path.exists(
                 settings.GCS_CREDENTIALS_PATH
             ):
-                # Use service account credentials
+                # Optional compatibility mode for local development.
                 credentials = service_account.Credentials.from_service_account_file(
                     settings.GCS_CREDENTIALS_PATH
                 )
@@ -43,6 +48,51 @@ class StorageService:
         except Exception as e:
             logger.error(f"[StorageService] Failed to initialize GCS client: {str(e)}")
             raise
+
+    @staticmethod
+    def _credentials_from_environment():
+        """Build credentials from separately injected environment variables.
+
+        Keeping each value in its own variable avoids serializing a complete JSON
+        document into GitHub Actions and container environment configuration.
+        """
+        required = {
+            "project_id": settings.GCS_PROJECT_ID,
+            "private_key_id": settings.GCS_PRIVATE_KEY_ID,
+            "private_key": settings.GCS_PRIVATE_KEY,
+            "client_email": settings.GCS_CLIENT_EMAIL,
+            "client_id": settings.GCS_CLIENT_ID,
+        }
+        credential_fields = set(required) - {"project_id"}
+        configured_credentials = {
+            name for name in credential_fields if required[name]
+        }
+        if not configured_credentials:
+            return None
+
+        missing = sorted(name for name, value in required.items() if not value)
+        if missing:
+            raise ValueError(
+                "Incomplete GCS service account configuration; missing: "
+                + ", ".join(f"GCS_{name.upper()}" for name in missing)
+            )
+
+        service_account_info = {
+            "type": "service_account",
+            **required,
+            "private_key": required["private_key"].replace("\\n", "\n"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": (
+                "https://www.googleapis.com/robot/v1/metadata/x509/"
+                + required["client_email"].replace("@", "%40")
+            ),
+            "universe_domain": "googleapis.com",
+        }
+        return service_account.Credentials.from_service_account_info(
+            service_account_info
+        )
 
     def upload_file(
         self,

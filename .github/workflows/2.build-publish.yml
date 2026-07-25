@@ -1,0 +1,64 @@
+name: 2. Build and Publish
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["1. Bump Version"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: humblebeeai/wakil-ai-api
+
+jobs:
+  build_publish:
+    name: Build and Publish ARM64
+    runs-on: ubuntu-24.04
+
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          github.event.workflow_run.conclusion == 'success' }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        run: |
+          git pull origin main
+          echo "_VERSION=$(./scripts/get-version.sh)" >> "$GITHUB_ENV"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push ARM64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64, linux/arm64
+          cache-from: type=registry,ref=${{ env.IMAGE }}:cache-arm64
+          cache-to: type=registry,ref=${{ env.IMAGE }}:cache-arm64,mode=max
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ env._VERSION }}
+          push: true

@@ -13,6 +13,9 @@ from core.dependencies import get_db_manager
 from core.exceptions import InvalidInputError, UserNotFoundError
 from core.logger import logger
 
+_BSON_INT64_MIN = -(2**63)
+_BSON_INT64_MAX = 2**63 - 1
+
 
 class AccountArchiveService:
     """Archive a user account and all owned data, idempotently and safe to retry."""
@@ -53,7 +56,12 @@ class AccountArchiveService:
         """
         values: list[Any] = [user_id]
         if isinstance(user_id, str) and user_id.isdigit():
-            values.append(int(user_id))
+            numeric_user_id = int(user_id)
+            # PyMongo encodes Python ints as signed BSON int64 values. Some identity
+            # providers issue digit-only IDs that exceed that range; those IDs are
+            # stored and matched as strings and must not be included as Python ints.
+            if _BSON_INT64_MIN <= numeric_user_id <= _BSON_INT64_MAX:
+                values.append(numeric_user_id)
         return values
 
     async def archive_user_account(

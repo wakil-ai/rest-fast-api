@@ -137,7 +137,7 @@ class LlmServiceClient:
                 self._url("/api/v1/speech-to-text/transcribe"),
                 files=files,
                 data=data,
-                headers=self._headers(json_conftent=False),
+                headers=self._headers(json_content=False),
             )
             response.raise_for_status()
             body = response.json()

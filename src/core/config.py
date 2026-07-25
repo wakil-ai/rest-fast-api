@@ -6,7 +6,9 @@ from pydantic_settings import BaseSettings
 
 # Manually load the .env file from the root project directory
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", ".env"))
-load_dotenv(dotenv_path=env_path, override=True)
+# Real process variables (GitHub Actions, Docker, Cloud Run, etc.) must win over
+# local .env defaults.
+load_dotenv(dotenv_path=env_path, override=False)
 
 
 class Settings(BaseSettings):
@@ -52,8 +54,12 @@ class Settings(BaseSettings):
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
-    GCS_CREDENTIALS_PATH: str | None = "keys/gcs_creds.json"  # Path to service account JSON file
+    GCS_CREDENTIALS_PATH: str | None = None  # Optional local service account JSON file
     GCS_PROJECT_ID: str | None = None
+    GCS_CLIENT_EMAIL: str | None = None
+    GCS_PRIVATE_KEY: str | None = None
+    GCS_PRIVATE_KEY_ID: str | None = None
+    GCS_CLIENT_ID: str | None = None
 
     # Assistant compatibility names owned by public routes/credits.
     ASSISTANT_MAIN_COLLECTION: str = "lexuz"
@@ -87,7 +93,13 @@ class Settings(BaseSettings):
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
-    STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 60.0
+    # Keep this well below the idle-connection timeout of every proxy/LB in the
+    # path (browser -> nuxt -> fast-api -> llm). A long time-to-first-token on a
+    # heavy RAG query leaves the stream silent; without a frequent-enough
+    # heartbeat an intermediary closes the idle socket and the user sees a bogus
+    # "connection lost" even though the answer is still being generated and gets
+    # persisted. 15s matches the Nuxt SSE proxy heartbeat.
+    STREAM_KEEPALIVE_INTERVAL_SECONDS: float = 15.0
     STREAM_SSE_MAX_RESPONSE_CHARS: int = 200
     TOP_K: int = 10
     CHAT_HISTORY_LIMIT: int = 3
@@ -98,6 +110,9 @@ class Settings(BaseSettings):
     LLM_SERVICE_INTERNAL_TOKEN: str | None = None
     LLM_SERVICE_INTERNAL_HEADER: str = "x-internal-token"
     LLM_SERVICE_TIMEOUT_SECONDS: float = 600.0
+
+    # File processing
+    DOCUMENT_PROCESSING_POLL_TIMEOUT_SECONDS: int = 900
 
     # Auth (For Telegram Login)
     TELEGRAM_BOT_TOKEN: str = None

@@ -104,8 +104,12 @@ Source of truth: [`src/core/config.py`](../src/core/config.py).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `GCS_BUCKET_NAME` | `null` | GCS bucket |
-| `GCS_CREDENTIALS_PATH` | `null` | Service account JSON path |
 | `GCS_PROJECT_ID` | `null` | GCP project ID |
+| `GCS_CLIENT_EMAIL` | `null` | Service account email |
+| `GCS_PRIVATE_KEY_ID` | `null` | Service account private-key ID |
+| `GCS_PRIVATE_KEY` | `null` | PEM private key; literal `\\n` sequences are supported |
+| `GCS_CLIENT_ID` | `null` | Service account client ID |
+| `GCS_CREDENTIALS_PATH` | `null` | Optional local JSON path fallback |
 
 ## Redis
 

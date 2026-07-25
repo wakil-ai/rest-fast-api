@@ -157,6 +157,12 @@ def test_owner_values_digit_and_non_digit():
 
     assert AccountArchiveService._owner_values("999") == ["999", 999]
     assert AccountArchiveService._owner_values("abc") == ["abc"]
+    assert AccountArchiveService._owner_values(str(2**63 - 1)) == [
+        str(2**63 - 1),
+        2**63 - 1,
+    ]
+    assert AccountArchiveService._owner_values(str(2**63)) == [str(2**63)]
+    assert AccountArchiveService._owner_values("9" * 100) == ["9" * 100]
 
 
 # --------------------------------------------------------------------------- #
