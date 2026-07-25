@@ -182,7 +182,7 @@ async def upload_project_file(
     return resp
 
 
-@router.get("/{project_id}/files")
+@router.get("/{project_id}/files", response_model=list[FileUploadResponse])
 @handle_service_error
 async def list_project_files(project_id: str, user_id: str, limit: int = 100):
     files = await project_service.list_project_files(project_id, user_id, limit=limit)

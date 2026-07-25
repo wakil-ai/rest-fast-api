@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # User Models
@@ -260,6 +260,33 @@ class FileUploadResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def shape_file_metadata(cls, data: Any) -> Any:
+        """Derive readiness from the Milvus index, then drop indexing internals.
+
+        The stored ``status`` is unreliable: rest-api-llm writes ingestion
+        results into the same Mongo record and leaves ``status`` at its own
+        value. ``milvus_file_index.enabled`` is what actually decides whether
+        chat can retrieve the file (see ``chat_service._build_file_context``),
+        so it is the readiness signal here too.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        metadata = data.get("file_metadata")
+        if not isinstance(metadata, dict):
+            return data
+
+        metadata = dict(metadata)  # never mutate the caller's Mongo record
+        indexed = bool((metadata.pop("milvus_file_index", None) or {}).get("enabled"))
+        metadata.pop("ocr_token_count", None)
+        return {
+            **data,
+            "file_metadata": metadata,
+            "status": "completed" if indexed else data.get("status"),
+        }
 
 
 class FileStatusUpdateRequest(BaseModel):
