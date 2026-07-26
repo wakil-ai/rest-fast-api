@@ -1,6 +1,6 @@
 """Legal project workspace: Mongo projects + LLM-service file ingestion."""
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 
 from core.dependencies import (
     get_file_manager,
@@ -18,7 +18,7 @@ from models.projects import (
     ProjectStatus,
     ProjectUpdateRequest,
 )
-from security import assert_not_archived
+from security import assert_authenticated_user_id, assert_not_archived
 from utils.entitlements import ensure_can_upload_files
 from utils.user_management import handle_service_error, serialize_mongo_id
 
@@ -156,11 +156,13 @@ async def list_project_sessions(
 @handle_service_error
 async def upload_project_file(
     project_id: str,
+    request: Request,
     file: UploadFile = File(...),
     user_id: str = Form(...),
     webhook_url: str | None = Form(default=None),
     session_id: str | None = Form(default=None),
 ):
+    assert_authenticated_user_id(request, user_id)
     # `user_id` arrives as multipart form data, invisible to the router-level
     # `verify_not_archived` guard — check explicitly here.
     await assert_not_archived(user_id)

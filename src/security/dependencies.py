@@ -2,7 +2,14 @@ import base64
 import secrets
 
 from fastapi import Depends, HTTPException, Request, Security, status
-from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
+from fastapi.security import (
+    APIKeyHeader,
+    HTTPAuthorizationCredentials,
+    HTTPBasic,
+    HTTPBasicCredentials,
+    HTTPBearer,
+)
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from core.config import settings
 from core.dependencies import get_chat_history_service
@@ -34,8 +41,146 @@ dt_team_key_header = APIKeyHeader(
     description="DT Team API Key — required for DT team backend access",
 )
 
+user_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="BearerAuth",
+    description="WakilAI JWT access token",
+)
+
 
 # Verification functions
+
+
+async def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Security(user_bearer),
+) -> str:
+    """Validate a JWT bearer token and return its user subject."""
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Bearer token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    from services.jwt_service import JWTService
+
+    try:
+        payload = JWTService().verify(credentials.credentials)
+    except ExpiredSignatureError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token has expired",
+            headers={"WWW-Authenticate": 'Bearer error="expired_token"'},
+        ) from exc
+    except (InvalidTokenError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid access token",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        ) from exc
+
+    user = await chat_history_service.get_user(payload.sub)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User does not exist",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
+    if user.get("is_blocked"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is blocked",
+        )
+    if user.get("archived"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is archived",
+        )
+    return payload.sub
+
+
+async def verify_user_or_service_auth(request: Request) -> bool:
+    """Authenticate the caller and reject archived acting users.
+
+    Service API keys retain their existing behavior for backend integrations.
+    A bearer-authenticated request records its subject on ``request.state`` so
+    handlers can bind operations to that user. The archive guard is composed
+    here so protected routes only need one dependency.
+    """
+    authorization = request.headers.get("authorization", "")
+    if authorization:
+        try:
+            scheme, token = authorization.split(" ", 1)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+        if scheme.lower() != "bearer":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Bearer token required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        user_id = await get_current_user_id(
+            HTTPAuthorizationCredentials(scheme=scheme, credentials=token)
+        )
+        request.state.authenticated_user_id = user_id
+        await verify_authenticated_actor(request)
+        await verify_not_archived(request)
+        return True
+
+    verify_api_key_or_dt_key(request)
+    await verify_not_archived(request)
+    return True
+
+
+async def verify_authenticated_actor(request: Request) -> bool:
+    """Prevent a JWT user from submitting another user's actor ID."""
+    authenticated_user_id = getattr(request.state, "authenticated_user_id", None)
+    if not authenticated_user_id:
+        return True
+
+    actor_id = None
+    for field in _ARCHIVE_GUARD_ACTOR_FIELDS:
+        actor_id = request.path_params.get(field) or request.query_params.get(field)
+        if actor_id:
+            break
+
+    if not actor_id and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        content_type = request.headers.get("content-type", "")
+        if content_type.startswith("application/json"):
+            try:
+                body = await request.json()
+            except Exception:
+                body = None
+            if isinstance(body, dict):
+                for field in _ARCHIVE_GUARD_ACTOR_FIELDS:
+                    if body.get(field):
+                        actor_id = str(body[field])
+                        break
+
+    if actor_id and not secrets.compare_digest(
+        str(actor_id), str(authenticated_user_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token subject does not match the requested user",
+        )
+    return True
+
+
+def assert_authenticated_user_id(request: Request, user_id: str) -> None:
+    """Bind multipart/form user IDs to the authenticated JWT subject."""
+    authenticated_user_id = getattr(request.state, "authenticated_user_id", None)
+    if authenticated_user_id and not secrets.compare_digest(
+        str(user_id), str(authenticated_user_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token subject does not match the requested user",
+        )
 
 
 # Docs Basic Auth

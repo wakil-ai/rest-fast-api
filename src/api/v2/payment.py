@@ -34,7 +34,7 @@ from models.payment import (
 )
 from security import (
     verify_api_key,
-    verify_api_key_or_dt_key,
+    verify_user_or_service_auth,
     verify_dt_api_key,
     verify_dt_user_web_client,
     verify_payme_authorization,
@@ -400,7 +400,7 @@ async def uzum_status(
 @router.get(
     "/payme/subscriptions/catalog",
     response_model=SubscriptionCatalogResponse,
-    dependencies=[Depends(verify_api_key_or_dt_key)],
+    dependencies=[Depends(verify_user_or_service_auth)],
 )
 async def get_subscription_catalog(
     transaction_service: TransactionService = Depends(get_transaction_service),
@@ -412,7 +412,7 @@ async def get_subscription_catalog(
 @router.get(
     "/payme/subscriptions/{user_id}",
     response_model=UserSubscriptionResponse,
-    dependencies=[Depends(verify_api_key_or_dt_key)],
+    dependencies=[Depends(verify_user_or_service_auth)],
 )
 async def get_user_subscription(
     user_id: str,
