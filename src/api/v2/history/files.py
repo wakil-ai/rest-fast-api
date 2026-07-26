@@ -1,5 +1,14 @@
 # app/routers/history/files.py
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Body,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import RedirectResponse
 
 from core.dependencies import (
@@ -9,7 +18,7 @@ from core.dependencies import (
 )
 from core.logger import logger
 from models.chat_history import FilePublicMetadataResponse, FileUploadResponse
-from security import assert_not_archived
+from security import assert_authenticated_user_id, assert_not_archived
 from utils.entitlements import ensure_can_upload_files
 from utils.user_management import handle_service_error, serialize_mongo_id
 
@@ -33,9 +42,11 @@ async def list_user_files(user_id: str, limit: int = 100):
     summary="Upload file for future message",
 )
 async def upload_file_for_message(
+    request: Request,
     file: UploadFile = File(...),
     user_id: str = Form(...),
 ):
+    assert_authenticated_user_id(request, user_id)
     # `user_id` arrives as multipart form data, which the router-level
     # `verify_not_archived` guard can't inspect — check explicitly here.
     await assert_not_archived(user_id)

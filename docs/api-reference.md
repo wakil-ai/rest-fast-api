@@ -10,6 +10,15 @@ For feature-specific flows, see the docs index in [docs/README.md](README.md).
 
 ## Authentication & Access
 
+- **User JWT**: the authenticated Nuxt server signs a short-lived access token
+  from its server-side user session and sends it as
+  `Authorization: Bearer <access_token>`. The backend validates the signature,
+  issuer, audience, expiry, token type, and `sub` user ID; it does not perform the
+  primary login or issue these tokens.
+
+The frontend-signed JWT payload must contain `sub` (the Nuxt session's
+`backendUserId`), `iat`, `exp`, a unique `jti`, `typ: "access_token"`,
+`iss: "wakilai-frontend"`, and `aud: "wakilai-rest-api"`.
 - **Default API key**: sent via the header configured as `API_KEY_NAME` (default: `x-api-key`).
 - **DT team API key**: sent via `DT_API_KEY_NAME` (default: `x-dt-team-api-key`).
 - **Super admin key**: header `x-super-admin-key` for sensitive ops (user create/block, Telegram admin). See [updates-v2.md](updates-v2.md) for recent route moves.
@@ -41,6 +50,7 @@ Base path: `/api/v2/auth`
 | GET | `/api/v2/auth/google/login` | Start Google OAuth login |
 | GET | `/api/v2/auth/google/callback` | Google OAuth callback |
 | GET | `/api/v2/auth/telegram/login` | Telegram login validation |
+| GET | `/api/v2/auth/me` | Get the current bearer-authenticated user |
 | POST | `/api/v2/auth/dt` | Create DT user (DT API key required) |
 
 ## Chat (v2)

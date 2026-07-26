@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 # Manually load the .env file from the root project directory
@@ -161,6 +161,21 @@ class Settings(BaseSettings):
     UZUM_SERVICE_ID: int | None = None  # Single service id assigned to wakil.ai in Uzum catalog
     UZUM_TRANSACTIONS_COLLECTION: str = "uzum_transactions"
 
+    # Apple App Store (StoreKit 2) In-App Purchases
+    APPSTORE_BUNDLE_ID: str = "ai.humblebee.wakil"
+    # Xcode Debug build's bundle id, trusted only while DEBUG is on.
+    # Defaults to "<APPSTORE_BUNDLE_ID>-debug".
+    APPSTORE_DEBUG_BUNDLE_ID: str | None = None
+    # Numeric App Store app id ("Apple ID" in App Store Connect → App Information).
+    # REQUIRED before production JWS verification will work.
+    APPSTORE_APP_APPLE_ID: int | None = None
+    # OCSP revocation checks during Apple cert-chain verification. Needs outbound
+    # network to Apple; disable only if the deploy env can't reach Apple's OCSP.
+    APPSTORE_ENABLE_ONLINE_CHECKS: bool = True
+    # Directory of Apple root CA .cer/.der files. Defaults to src/resources/certs/apple.
+    APPSTORE_ROOT_CERTS_DIR: str | None = None
+    APPSTORE_TRANSACTIONS_COLLECTION: str = "appstore_transactions"
+
     # Payme Subscriptions — daily passes (stack on free quota; credits per pass tier)
     PAYME_SUBSCRIPTION_BASIC_DAILY_PRICE_SUM: int = 15_000
     PAYME_SUBSCRIPTION_STANDARD_DAILY_PRICE_SUM: int = 30_000
@@ -179,6 +194,11 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str | None = None
     GOOGLE_REDIRECT_URI: str | None = None
     AUTH_SECRET_KEY: str = "secret-key-change-me"
+    JWT_SECRET_KEY: str | None = Field(default=None, min_length=32)
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ISSUER: str = "wakilai-frontend"
+    JWT_AUDIENCE: str = "wakilai-rest-api"
+    AUTH_USER_STATUS_CACHE_TTL_SECONDS: int = Field(default=60, ge=1)
 
     # Twilio Verify (OTP)
     TWILIO_ACCOUNT_SID: str | None = None

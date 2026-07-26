@@ -43,8 +43,7 @@ from core.config import settings
 from core.logger import logger
 from security import (
     get_current_username,
-    verify_api_key_or_dt_key,
-    verify_not_archived,
+    verify_user_or_service_auth,
 )
 
 
@@ -90,33 +89,33 @@ def create_app() -> FastAPI:
         max_age=3600,  # 1 hour session timeout
     )
 
-    # Mount routers with API key authentication.
+    # Mount user-facing routers with JWT or trusted service-key authentication.
     # `verify_not_archived` blocks any request made on behalf of a soft-deleted
     # (archived) account across the user-facing surface.
     app.include_router(
         chat.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
+        dependencies=[Depends(verify_user_or_service_auth)],
     )
     app.include_router(
         v3_chat.router,
         prefix="/api/v3",
-        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
+        dependencies=[Depends(verify_user_or_service_auth)],
     )
     app.include_router(
         chat_history,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
+        dependencies=[Depends(verify_user_or_service_auth)],
     )
     app.include_router(
         speech_to_text.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
+        dependencies=[Depends(verify_user_or_service_auth)],
     )
     app.include_router(
         memory.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
+        dependencies=[Depends(verify_user_or_service_auth)],
     )
     app.include_router(
         fingerprint.router,

@@ -5,6 +5,8 @@ from typing import Literal
 from bson import ObjectId
 from pydantic import BaseModel, Field
 
+from core.exceptions import ChatException
+
 
 SubscriptionTier = Literal["basic", "standard", "premium", "pro", "test"]
 SubscriptionPeriod = Literal["daily", "monthly", "yearly"]
@@ -300,6 +302,37 @@ class UserSubscriptionResponse(BaseModel):
     today_remaining_credits: int | None = None
     uses_combined_credit_pool: bool = True
     can_upload: bool = False
+    # Which rail granted the active subscription: "appstore" | "payme" | "click" | "uzum".
+    source: str | None = None
+
+
+# Apple App Store (StoreKit 2) Models
+class AppStoreError(ChatException):
+    """Raised inside AppStoreService; rendered by FastAPI as its status code."""
+
+    def __init__(self, detail: str, *, status_code: int = 400):
+        super().__init__(detail=detail, status_code=status_code)
+
+
+class AppStoreVerifyRequest(BaseModel):
+    user_id: str
+    # StoreKit Transaction.jwsRepresentation — signed by Apple, verified server-side.
+    jws: str
+    # UUIDv5 derived from user_id on the client. Not used server-side yet (ownership
+    # is pinned via the signed payload's appAccountToken); accepted for forward compat.
+    app_account_token: str | None = None
+    # "Production" | "Sandbox" | "Xcode"
+    environment: str
+    bundle_id: str
+
+
+class AppStoreVerifyResponse(BaseModel):
+    status: str  # "active" | "inactive" | "revoked"
+    tier: str | None = None
+    period: str | None = None
+    original_transaction_id: str | None = None
+    expires_ms: int | None = None
+    daily_credits: int | None = None
 
 
 class FiscalData(BaseModel):

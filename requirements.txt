@@ -8,6 +8,7 @@ python-multipart==0.0.20
 websockets==15.0.1
 Authlib==1.5.0
 itsdangerous==2.2.0
+PyJWT==2.10.1
 
 # Data stores
 pymongo==4.12.0
@@ -17,6 +18,9 @@ redis==7.1.0
 # Storage / documents
 google-cloud-storage>=2.10.0
 python-docx==1.2.0
+
+# Apple App Store Server (StoreKit 2 JWS verification + Server Notifications V2)
+app-store-server-library==3.1.2
 
 # OTP / SMS
 twilio>=9.0.0,<10

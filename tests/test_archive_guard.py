@@ -9,7 +9,7 @@ The guard reads the JSON body inside a dependency; this must NOT consume the bod
 the route handler (Starlette caches it). That invariant is asserted here.
 """
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
@@ -23,12 +23,24 @@ ARCHIVED_ID = "ARCHIVED"
 
 
 @pytest.fixture(autouse=True)
-def _stub_archived_check():
+def _stub_archived_check(monkeypatch):
     """Only ``ARCHIVED_ID`` is treated as archived for these tests."""
     stub = AsyncMock()
-    stub.is_user_archived = AsyncMock(side_effect=lambda uid: uid == ARCHIVED_ID)
+    stub.get_user_auth_status = AsyncMock(
+        side_effect=lambda uid: {
+            "exists": True,
+            "is_blocked": False,
+            "archived": uid == ARCHIVED_ID,
+        }
+    )
     original = secdeps.chat_history_service
     secdeps.chat_history_service = stub
+    monkeypatch.setattr(
+        secdeps.redis_service, "cache_get", MagicMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        secdeps.redis_service, "cache_set", MagicMock(return_value=True)
+    )
     yield
     secdeps.chat_history_service = original
 
