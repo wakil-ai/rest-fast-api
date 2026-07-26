@@ -7,6 +7,7 @@ from services.file_management import FileManager
 from services.llm_service_client import LlmServiceClient
 from services.otp_service import OTPService
 from services.payments import (
+    AppStoreService,
     BasePaymentService,
     ClickService,
     TransactionService,
@@ -32,6 +33,7 @@ __all__ = [
     "FileManager",
     "LlmServiceClient",
     "OTPService",
+    "AppStoreService",
     "BasePaymentService",
     "ClickService",
     "TransactionService",

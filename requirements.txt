@@ -19,6 +19,9 @@ redis==7.1.0
 google-cloud-storage>=2.10.0
 python-docx==1.2.0
 
+# Apple App Store Server (StoreKit 2 JWS verification + Server Notifications V2)
+app-store-server-library==3.1.2
+
 # OTP / SMS
 twilio>=9.0.0,<10
 

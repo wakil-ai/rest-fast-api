@@ -95,6 +95,7 @@ class SubscriptionStorage:
             return {
                 "user_id": user_id,
                 "tier": summary["tier"],
+                "provider": summary["provider"],
                 "period": "daily",
                 "daily_credits": summary["remaining"],
                 "total_credits": summary["total"],
@@ -155,6 +156,7 @@ class SubscriptionStorage:
                 "latest_end_ms": None,
                 "start_ms": None,
                 "tier": None,
+                "provider": None,
                 "active_lot_count": 0,
             }
 
@@ -173,6 +175,7 @@ class SubscriptionStorage:
             "latest_end_ms": int(latest_lot.get("end_ms") or 0),
             "start_ms": min(int(lot.get("start_ms") or now_ms) for lot in lots),
             "tier": latest_lot.get("tier"),
+            "provider": latest_lot.get("provider"),
             "active_lot_count": len(lots),
         }
 
