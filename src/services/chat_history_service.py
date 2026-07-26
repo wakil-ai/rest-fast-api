@@ -340,6 +340,24 @@ class ChatHistoryService:
         )
         return users[0] if users else None
 
+    async def get_user_auth_status(self, user_id: str) -> dict | None:
+        """Return only the user fields required by request authentication."""
+        if not user_id:
+            return None
+        user = await self.db_manager.mongo_handler.db[
+            self.users_collection
+        ].find_one(
+            {"_id": user_id},
+            {"is_blocked": 1, "archived": 1},
+        )
+        if not user:
+            return None
+        return {
+            "exists": True,
+            "is_blocked": bool(user.get("is_blocked")),
+            "archived": bool(user.get("archived")),
+        }
+
     async def is_user_archived(self, user_id: str) -> bool:
         """Return True if the user exists and is archived (soft-deleted).
 

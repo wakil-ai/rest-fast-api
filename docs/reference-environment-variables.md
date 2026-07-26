@@ -84,6 +84,7 @@ Source of truth: [`src/core/config.py`](../src/core/config.py).
 | `JWT_ALGORITHM` | `HS256` | JWT signing algorithm (`HS256`, `HS384`, or `HS512`) |
 | `JWT_ISSUER` | `wakilai-frontend` | Required issuer for frontend-signed JWTs |
 | `JWT_AUDIENCE` | `wakilai-rest-api` | Required backend audience claim |
+| `AUTH_USER_STATUS_CACHE_TTL_SECONDS` | `60` | Redis TTL for cached user authentication status |
 
 ## Login And OTP
 

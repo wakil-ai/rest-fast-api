@@ -183,6 +183,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "wakilai-frontend"
     JWT_AUDIENCE: str = "wakilai-rest-api"
+    AUTH_USER_STATUS_CACHE_TTL_SECONDS: int = Field(default=60, ge=1)
 
     # Twilio Verify (OTP)
     TWILIO_ACCOUNT_SID: str | None = None

@@ -19,7 +19,7 @@ from models.chat_history import (
     UserUpdateRequest,
 )
 from models.rate_limit import RateLimitResponse
-from security import verify_super_admin_key
+from security import invalidate_user_auth_cache, verify_super_admin_key
 from utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -45,6 +45,7 @@ async def create_or_get_user(request: UserCreateRequest, response: Response):
     """Create a new user or return existing one (idempotent)"""
     existing = await chat_history_service.get_user(user_id=request.user_id)
     if existing:
+        invalidate_user_auth_cache(request.user_id)
         return create_response(existing, "User already exists")
 
     user = await chat_history_service.create_user(
@@ -56,6 +57,7 @@ async def create_or_get_user(request: UserCreateRequest, response: Response):
         picture=request.picture,
         web_client=settings.WAKILAI_WEB_CLIENT_NAME,
     )
+    invalidate_user_auth_cache(request.user_id)
     response.status_code = status.HTTP_201_CREATED
     return create_response(user, "User created successfully")
 
@@ -168,6 +170,7 @@ async def delete_account(user_id: str, request: AccountDeletionRequest | None = 
 
     # Drop any cached copy so subsequent reads don't serve the pre-archive doc.
     redis_service.invalidate_cache(f"user:{user_id}")
+    invalidate_user_auth_cache(user_id)
 
     already = result["already_archived"]
     return AccountDeletionResponse(
@@ -218,6 +221,7 @@ async def update_user_info(user_id: str, request: UserUpdateRequest):
 
     # Invalidate cache
     redis_service.invalidate_cache(f"user:{user_id}")
+    invalidate_user_auth_cache(user_id)
     return create_response(user, "User information updated")
 
 
@@ -236,6 +240,7 @@ async def block_user(user_id: str, reason: str | None = None):
 
     # Invalidate cache
     redis_service.invalidate_cache(f"user:{user_id}")
+    invalidate_user_auth_cache(user_id)
     return create_response(user, "User blocked successfully")
 
 
@@ -253,4 +258,5 @@ async def unblock_user(user_id: str):
 
     # Invalidate cache
     redis_service.invalidate_cache(f"user:{user_id}")
+    invalidate_user_auth_cache(user_id)
     return create_response(user, "User unblocked successfully")

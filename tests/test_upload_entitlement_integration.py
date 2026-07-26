@@ -44,10 +44,15 @@ def _build_client(*, can_upload: bool):
     rate_limit_stub = MagicMock()
     rate_limit_stub.can_upload_files = AsyncMock(return_value=can_upload)
 
-    # The upload handler now calls assert_not_archived -> is_user_archived on the
-    # security module's chat_history_service singleton; treat the test user as active.
+    # The upload handler checks the cached auth status; treat the test user as active.
     archive_stub = MagicMock()
-    archive_stub.is_user_archived = AsyncMock(return_value=False)
+    archive_stub.get_user_auth_status = AsyncMock(
+        return_value={
+            "exists": True,
+            "is_blocked": False,
+            "archived": False,
+        }
+    )
 
     with (
         patch(
@@ -65,6 +70,14 @@ def _build_client(*, can_upload: bool):
         patch(
             "security.dependencies.chat_history_service",
             archive_stub,
+        ),
+        patch(
+            "security.dependencies.redis_service.cache_get",
+            return_value=None,
+        ),
+        patch(
+            "security.dependencies.redis_service.cache_set",
+            return_value=True,
         ),
     ):
         import api.v2.history.files as files_module

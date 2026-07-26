@@ -1,4 +1,5 @@
 import base64
+import json
 import secrets
 
 from fastapi import Depends, HTTPException, Request, Security, status
@@ -12,11 +13,55 @@ from fastapi.security import (
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from core.config import settings
-from core.dependencies import get_chat_history_service
+from core.dependencies import get_chat_history_service, get_redis_service
 
 # HTTP Basic (docs)
 security = HTTPBasic()
 chat_history_service = get_chat_history_service()
+redis_service = get_redis_service()
+
+_AUTH_USER_STATUS_CACHE_PREFIX = "auth:user-status:"
+
+
+def _auth_user_status_cache_key(user_id: str) -> str:
+    return f"{_AUTH_USER_STATUS_CACHE_PREFIX}{user_id}"
+
+
+def invalidate_user_auth_cache(user_id: str) -> bool:
+    """Invalidate cached authentication status after a user state change."""
+    return redis_service.invalidate_cache(_auth_user_status_cache_key(user_id))
+
+
+async def get_cached_user_auth_status(user_id: str) -> dict:
+    """Return minimal user auth status from Redis, falling back to MongoDB."""
+    cache_key = _auth_user_status_cache_key(user_id)
+    cached = redis_service.cache_get(cache_key)
+    if cached is not None:
+        try:
+            status_data = json.loads(cached)
+            status_fields = ("exists", "is_blocked", "archived")
+            if isinstance(status_data, dict) and all(
+                type(status_data.get(field)) is bool for field in status_fields
+            ):
+                return {
+                    field: status_data[field] for field in status_fields
+                }
+        except (TypeError, ValueError):
+            pass
+
+    user_status = await chat_history_service.get_user_auth_status(user_id)
+    status_data = user_status or {
+        "exists": False,
+        "is_blocked": False,
+        "archived": False,
+    }
+    redis_service.cache_set(
+        cache_key,
+        status_data,
+        ttl_seconds=settings.AUTH_USER_STATUS_CACHE_TTL_SECONDS,
+    )
+    return status_data
+
 
 # Key Headers
 
@@ -79,19 +124,19 @@ async def get_current_user_id(
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         ) from exc
 
-    user = await chat_history_service.get_user(payload.sub)
-    if not user:
+    user_status = await get_cached_user_auth_status(payload.sub)
+    if not user_status["exists"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User does not exist",
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         )
-    if user.get("is_blocked"):
+    if user_status["is_blocked"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is blocked",
         )
-    if user.get("archived"):
+    if user_status["archived"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is archived",
@@ -128,7 +173,6 @@ async def verify_user_or_service_auth(request: Request) -> bool:
         )
         request.state.authenticated_user_id = user_id
         await verify_authenticated_actor(request)
-        await verify_not_archived(request)
         return True
 
     verify_api_key_or_dt_key(request)
@@ -309,7 +353,8 @@ async def assert_not_archived(user_id: str | None) -> None:
     """
     if not user_id or not user_id.strip():
         return
-    if await chat_history_service.is_user_archived(str(user_id)):
+    user_status = await get_cached_user_auth_status(str(user_id))
+    if user_status["archived"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account has been deleted and cannot be used.",

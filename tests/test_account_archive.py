@@ -195,6 +195,24 @@ async def test_is_user_archived_true_and_projection():
     assert proj == {"archived": 1}
 
 
+async def test_get_user_auth_status_uses_minimal_projection():
+    svc = _make_history_service()
+    db = _FakeDB()
+    db[settings.USERS_COLLECTION].find_one = AsyncMock(
+        return_value={"_id": "u1", "is_blocked": True, "archived": False}
+    )
+    svc.db_manager.mongo_handler.db = db
+
+    assert await svc.get_user_auth_status("u1") == {
+        "exists": True,
+        "is_blocked": True,
+        "archived": False,
+    }
+    query, projection = db[settings.USERS_COLLECTION].find_one.await_args.args
+    assert query == {"_id": "u1"}
+    assert projection == {"is_blocked": 1, "archived": 1}
+
+
 async def test_is_user_archived_false_for_missing_or_active():
     svc = _make_history_service()
     db = _FakeDB()

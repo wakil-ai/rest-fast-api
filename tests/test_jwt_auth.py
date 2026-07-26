@@ -1,6 +1,7 @@
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import jwt
 import pytest
@@ -20,6 +21,25 @@ def jwt_settings(monkeypatch):
     monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
     monkeypatch.setattr(settings, "JWT_ISSUER", "test-issuer")
     monkeypatch.setattr(settings, "JWT_AUDIENCE", "test-audience")
+
+
+@pytest.fixture(autouse=True)
+def auth_status_cache(monkeypatch):
+    monkeypatch.setattr(
+        security_dependencies.redis_service,
+        "cache_get",
+        MagicMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        security_dependencies.redis_service,
+        "cache_set",
+        MagicMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        security_dependencies.redis_service,
+        "invalidate_cache",
+        MagicMock(return_value=True),
+    )
 
 
 def frontend_token(user_id: str = "user-123", **overrides) -> str:
@@ -98,8 +118,14 @@ def test_bearer_dependency_returns_existing_active_user(jwt_settings, monkeypatc
     token = frontend_token()
     monkeypatch.setattr(
         security_dependencies.chat_history_service,
-        "get_user",
-        AsyncMock(return_value={"_id": "user-123", "is_blocked": False}),
+        "get_user_auth_status",
+        AsyncMock(
+            return_value={
+                "exists": True,
+                "is_blocked": False,
+                "archived": False,
+            }
+        ),
     )
 
     app = FastAPI()
@@ -132,8 +158,14 @@ def test_bearer_dependency_rejects_missing_and_blocked_user(
 
     monkeypatch.setattr(
         security_dependencies.chat_history_service,
-        "get_user",
-        AsyncMock(return_value={"_id": "user-123", "is_blocked": True}),
+        "get_user_auth_status",
+        AsyncMock(
+            return_value={
+                "exists": True,
+                "is_blocked": True,
+                "archived": False,
+            }
+        ),
     )
     response = client.get(
         "/protected", headers={"Authorization": f"Bearer {token}"}
@@ -145,8 +177,14 @@ def test_bearer_subject_must_match_request_user(jwt_settings, monkeypatch):
     token = frontend_token()
     monkeypatch.setattr(
         security_dependencies.chat_history_service,
-        "get_user",
-        AsyncMock(return_value={"_id": "user-123", "is_blocked": False}),
+        "get_user_auth_status",
+        AsyncMock(
+            return_value={
+                "exists": True,
+                "is_blocked": False,
+                "archived": False,
+            }
+        ),
     )
 
     app = FastAPI()
@@ -167,4 +205,102 @@ def test_bearer_subject_must_match_request_user(jwt_settings, monkeypatch):
     assert (
         response.json()["detail"]
         == "Token subject does not match the requested user"
+    )
+
+
+async def test_auth_status_cache_hit_avoids_database(monkeypatch):
+    cached_status = {
+        "exists": True,
+        "is_blocked": False,
+        "archived": False,
+    }
+    security_dependencies.redis_service.cache_get.return_value = json.dumps(
+        cached_status
+    )
+    database_lookup = AsyncMock()
+    monkeypatch.setattr(
+        security_dependencies.chat_history_service,
+        "get_user_auth_status",
+        database_lookup,
+    )
+
+    result = await security_dependencies.get_cached_user_auth_status("user-123")
+
+    assert result == cached_status
+    database_lookup.assert_not_awaited()
+    security_dependencies.redis_service.cache_set.assert_not_called()
+
+
+async def test_auth_status_cache_miss_queries_and_caches_minimal_status(monkeypatch):
+    database_status = {
+        "exists": True,
+        "is_blocked": False,
+        "archived": False,
+    }
+    database_lookup = AsyncMock(return_value=database_status)
+    monkeypatch.setattr(
+        security_dependencies.chat_history_service,
+        "get_user_auth_status",
+        database_lookup,
+    )
+
+    result = await security_dependencies.get_cached_user_auth_status("user-123")
+
+    assert result == database_status
+    database_lookup.assert_awaited_once_with("user-123")
+    security_dependencies.redis_service.cache_set.assert_called_once_with(
+        "auth:user-status:user-123",
+        database_status,
+        ttl_seconds=settings.AUTH_USER_STATUS_CACHE_TTL_SECONDS,
+    )
+
+
+async def test_malformed_cached_status_falls_back_to_database(monkeypatch):
+    security_dependencies.redis_service.cache_get.return_value = json.dumps(
+        {
+            "exists": "true",
+            "is_blocked": False,
+            "archived": False,
+        }
+    )
+    database_status = {
+        "exists": True,
+        "is_blocked": False,
+        "archived": False,
+    }
+    database_lookup = AsyncMock(return_value=database_status)
+    monkeypatch.setattr(
+        security_dependencies.chat_history_service,
+        "get_user_auth_status",
+        database_lookup,
+    )
+
+    assert (
+        await security_dependencies.get_cached_user_auth_status("user-123")
+        == database_status
+    )
+    database_lookup.assert_awaited_once_with("user-123")
+
+
+async def test_missing_user_status_is_negative_cached(monkeypatch):
+    monkeypatch.setattr(
+        security_dependencies.chat_history_service,
+        "get_user_auth_status",
+        AsyncMock(return_value=None),
+    )
+
+    result = await security_dependencies.get_cached_user_auth_status("missing")
+
+    assert result == {
+        "exists": False,
+        "is_blocked": False,
+        "archived": False,
+    }
+    security_dependencies.redis_service.cache_set.assert_called_once()
+
+
+def test_invalidate_user_auth_cache_uses_dedicated_key():
+    assert security_dependencies.invalidate_user_auth_cache("user-123") is True
+    security_dependencies.redis_service.invalidate_cache.assert_called_once_with(
+        "auth:user-status:user-123"
     )
