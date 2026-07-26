@@ -102,9 +102,9 @@ async def get_user(user_id: str, request: Request):
     default_api_key = request.headers.get(settings.API_KEY_NAME.lower())
     dt_api_key = request.headers.get(settings.DT_API_KEY_NAME.lower())
 
-    if default_api_key:
-        requested_web_client = settings.WAKILAI_WEB_CLIENT_NAME
-    elif dt_api_key:
+    requested_web_client = settings.WAKILAI_WEB_CLIENT_NAME  # Default to WAKILAI_WEB_CLIENT_NAME
+
+    if dt_api_key:
         requested_web_client = settings.DT_WEB_CLIENT_NAME
 
     cache_key = f"user:{user_id}"
