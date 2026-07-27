@@ -189,7 +189,7 @@ async def create_payment_link(
 @router.post("/payme/init", response_model=PaymeInitResponse)
 async def init_payme_payment(
     request: PaymeInitRequest,
-    _auth: bool = Depends(verify_api_key),
+    _auth: bool = Depends(verify_user_or_service_auth),
     transaction_service: TransactionService = Depends(get_transaction_service),
 ):
     """Create a local invoice and return a Payme checkout link.
@@ -248,7 +248,7 @@ async def _parse_click_payload(request: Request) -> dict:
 @router.post("/click/init", response_model=ClickInitResponse)
 async def init_click_payment(
     request: ClickInitRequest,
-    _auth: bool = Depends(verify_api_key),
+    _auth: bool = Depends(verify_user_or_service_auth),
     click_service: ClickService = Depends(get_click_service),
 ):
     try:
