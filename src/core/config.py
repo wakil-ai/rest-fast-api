@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     PROJECT_MEMBERS_COLLECTION: str = "project_members"
     PROJECT_INVITES_COLLECTION: str = "project_invites"
     PROJECT_INVITE_TTL_HOURS: int = 168
+    ORGANIZATIONS_COLLECTION: str = "organizations"
+    ORGANIZATION_MEMBERS_COLLECTION: str = "organization_members"
+    ORGANIZATION_INVITES_COLLECTION: str = "organization_invites"
+    ORG_INVITE_TTL_HOURS: int = 168
+    # Head + 5 staff members. Defaulted onto each org document as `seat_limit`, so
+    # raising the cap for one customer is a data change, not a code change.
+    ORG_SEAT_LIMIT: int = 6
     PROMO_CODE_COLLECTION: str = "promos"
     USER_PROMO_CODE_COLLECTION: str = "user-promos"
     TRANSACTION_COLLECTION: str = "transactions"

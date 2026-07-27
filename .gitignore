@@ -19,3 +19,5 @@ docker/
 .idea/
 scratch/
 pentagi/
+http/
+docs/superpowers/

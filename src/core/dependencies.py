@@ -22,6 +22,8 @@ if TYPE_CHECKING:
         TransactionService,
         UzumService,
     )
+    from services.organization_member_service import OrganizationMemberService
+    from services.organization_service import OrganizationService
     from services.project_member_service import ProjectMemberService
 
 
@@ -109,6 +111,20 @@ def get_project_member_service() -> "ProjectMemberService":
     from services.project_member_service import ProjectMemberService
 
     return ProjectMemberService()
+
+
+@lru_cache
+def get_organization_service() -> "OrganizationService":
+    from services.organization_service import OrganizationService
+
+    return OrganizationService()
+
+
+@lru_cache
+def get_organization_member_service() -> "OrganizationMemberService":
+    from services.organization_member_service import OrganizationMemberService
+
+    return OrganizationMemberService()
 
 
 @lru_cache
