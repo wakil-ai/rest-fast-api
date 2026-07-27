@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     from db import DBManager, MongoHandler
     from services import (
         AccountArchiveService,
+        AppStoreService,
         ChatHistoryService,
         ChatService,
         Bitrix24Service,
@@ -174,6 +175,13 @@ def get_uzum_service() -> "UzumService":
     from services import UzumService
 
     return UzumService()
+
+
+@lru_cache
+def get_appstore_service() -> "AppStoreService":
+    from services import AppStoreService
+
+    return AppStoreService()
 
 
 @lru_cache

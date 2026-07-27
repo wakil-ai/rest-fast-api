@@ -15,7 +15,7 @@ from models.fingerprint import (
     UserFingerprintsResponse,
     VisitorFingerprintDetailResponse,
 )
-from security import verify_api_key_or_dt_key, verify_super_admin_key
+from security import verify_super_admin_key, verify_user_or_service_auth
 from services.fingerprint_service import FingerprintService
 
 router = APIRouter(prefix="/fingerprint", tags=["Fingerprint"])
@@ -34,7 +34,7 @@ def _client_ip(request: Request) -> str | None:
     "/collect",
     response_model=FingerprintCollectResponse,
     summary="Record a device fingerprint for a user session",
-    dependencies=[Depends(verify_api_key_or_dt_key)],
+    dependencies=[Depends(verify_user_or_service_auth)],
 )
 async def collect_fingerprint(
     body: FingerprintCollectRequest,

@@ -80,6 +80,11 @@ Source of truth: [`src/core/config.py`](../src/core/config.py).
 | `DOCS_USER` | `admin` | Docs basic-auth username |
 | `DOCS_PASSWORD` | `admin` | Docs basic-auth password |
 | `AUTH_SECRET_KEY` | `secret-key-change-me` | Session cookie signing secret |
+| `JWT_SECRET_KEY` | no default | JWT signing secret; must be at least 32 characters |
+| `JWT_ALGORITHM` | `HS256` | JWT signing algorithm (`HS256`, `HS384`, or `HS512`) |
+| `JWT_ISSUER` | `wakilai-frontend` | Required issuer for frontend-signed JWTs |
+| `JWT_AUDIENCE` | `wakilai-rest-api` | Required backend audience claim |
+| `AUTH_USER_STATUS_CACHE_TTL_SECONDS` | `60` | Redis TTL for cached user authentication status |
 
 ## Login And OTP
 

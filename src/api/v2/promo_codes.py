@@ -5,12 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.dependencies import get_promo_code_service
 from core.logger import logger
 from models.promo_code import PromoCodeCreate, UserPromoCode
-from security import verify_api_key, verify_api_key_or_dt_key
+from security import verify_api_key, verify_user_or_service_auth
 
 router = APIRouter(prefix="/promo-codes", tags=["Promo Codes"])
 
 admin_only = [Depends(verify_api_key)]
-shared_api_access = [Depends(verify_api_key_or_dt_key)]
+shared_api_access = [Depends(verify_user_or_service_auth)]
 
 promo_code_service = get_promo_code_service()
 
