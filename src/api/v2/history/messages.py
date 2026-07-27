@@ -1,5 +1,8 @@
 # app/routers/history/messages.py
-from fastapi import APIRouter, HTTPException, status
+import secrets
+
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import Response
 
 from core.dependencies import get_chat_history_service
 from models.chat_history import (
@@ -8,6 +11,7 @@ from models.chat_history import (
     MessageSharedRequest,
     MessageSharedResponse,
 )
+from utils.message_export import build_message_docx
 from utils.user_management import (
     handle_service_error,
     sanitize_message_for_response,
@@ -15,6 +19,10 @@ from utils.user_management import (
 )
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
+
+# Only DOCX is available for now; the query param is already shaped for a
+# future `format=pdf` so the frontend contract won't need to change later.
+_SUPPORTED_DOWNLOAD_FORMATS = {"docx"}
 
 chat_history_service = get_chat_history_service()
 
@@ -37,6 +45,44 @@ async def create_message(request: MessageCreateRequest):
 async def list_messages(session_id: str, limit: int = 50):
     msgs = await chat_history_service.get_messages(session_id, limit)
     return [sanitize_message_for_response(serialize_mongo_id(m)) for m in msgs]
+
+
+@router.get("/{message_id}/download")
+@handle_service_error
+async def download_message(
+    request: Request,
+    message_id: str,
+    format: str = Query("docx", description="Download format (only 'docx' for now)"),
+):
+    """Download a message's query + response as a rendered document."""
+    if format not in _SUPPORTED_DOWNLOAD_FORMATS:
+        raise HTTPException(
+            400,
+            f"Unsupported format '{format}'. Supported formats: "
+            f"{sorted(_SUPPORTED_DOWNLOAD_FORMATS)}",
+        )
+
+    msg = await chat_history_service.get_message(message_id)
+    if not msg:
+        raise HTTPException(404, "Message not found")
+
+    authenticated_user_id = getattr(request.state, "authenticated_user_id", None)
+    message_owner_id = msg.get("user_id")
+    if (
+        authenticated_user_id
+        and message_owner_id
+        and not secrets.compare_digest(
+            str(authenticated_user_id), str(message_owner_id)
+        )
+    ):
+        raise HTTPException(403, "Message does not belong to this user")
+
+    file_bytes, content_type, filename = build_message_docx(msg)
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{session_id}/{message_id}", response_model=MessageResponse)

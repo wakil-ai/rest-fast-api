@@ -97,6 +97,7 @@ Base path: `/api/v2/history`
 | --- | --- | --- |
 | POST | `/api/v2/history/messages` | Create a message |
 | GET | `/api/v2/history/messages/{session_id}` | List messages in a session |
+| GET | `/api/v2/history/messages/{message_id}/download` | Download a message as DOCX. See [message-download.md](message-download.md) |
 | GET | `/api/v2/history/messages/{session_id}/{message_id}` | Get a message |
 | POST | `/api/v2/history/messages/{message_id}/share` | Create a share link for a message |
 
