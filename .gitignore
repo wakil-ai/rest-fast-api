@@ -19,5 +19,6 @@ docker/
 .idea/
 scratch/
 pentagi/
-http/
 docs/superpowers/
+scripts/mint_jwt.py
+http/

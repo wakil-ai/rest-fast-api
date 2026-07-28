@@ -5,7 +5,6 @@ the Mongo layer is a fake that records writes.
 """
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -56,9 +55,6 @@ def _make_org_service():
 
     svc = OrganizationService.__new__(OrganizationService)
     svc.db = _FakeDBManager()
-    svc.history = MagicMock()
-    svc.history.get_user = AsyncMock(return_value={"_id": "u1", "first_name": "Ada"})
-    svc.history._ensure_user_exists = AsyncMock(return_value=None)
     svc.orgs_collection = settings.ORGANIZATIONS_COLLECTION
     svc.members_collection = settings.ORGANIZATION_MEMBERS_COLLECTION
     svc.org_prefix = "org-"
@@ -96,18 +92,6 @@ async def test_create_organization_rejects_blank_name():
         await svc.create_organization(user_id="u1", name="   ")
 
     assert exc.value.status_code == 400
-
-
-async def test_create_organization_rejects_unknown_user():
-    from core.exceptions import UserNotFoundError
-
-    svc = _make_org_service()
-    svc.history._ensure_user_exists = AsyncMock(side_effect=UserNotFoundError("ghost"))
-
-    with pytest.raises(UserNotFoundError):
-        await svc.create_organization(user_id="ghost", name="Legal Dept")
-
-    assert svc.db.docs.get(settings.ORGANIZATIONS_COLLECTION, []) == []
 
 
 async def test_assert_org_admin_allows_admin_and_rejects_member():

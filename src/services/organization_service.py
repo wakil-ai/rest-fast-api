@@ -7,11 +7,11 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from core.config import settings
-from core.dependencies import get_chat_history_service, get_db_manager
+from core.dependencies import get_db_manager
 from core.logger import logger
 from models.organizations import (
-    OrganizationMemberStatus,
     OrganizationMembershipRole,
+    OrganizationMemberStatus,
     OrganizationStatus,
 )
 from utils.user_management import clean_for_mongodb, generate_short_id
@@ -25,7 +25,6 @@ class OrganizationService:
 
     def __init__(self) -> None:
         self.db = get_db_manager()
-        self.history = get_chat_history_service()
         self.orgs_collection = settings.ORGANIZATIONS_COLLECTION
         self.members_collection = settings.ORGANIZATION_MEMBERS_COLLECTION
         self.org_prefix = "org-"
@@ -45,9 +44,11 @@ class OrganizationService:
         await members.create_index(
             [("org_id", 1), ("user_id", 1)], unique=True, name="org_user_unique"
         )
-        await members.create_index([("user_id", 1), ("joined_at", -1)], name="user_orgs")
+        await members.create_index(
+            [("user_id", 1), ("joined_at", -1)], name="user_orgs"
+        )
 
-    async def _load_org_row(self, org_id: str) -> dict[str, Any]:
+    async def load_org_row(self, org_id: str) -> dict[str, Any]:
         rows = await self.db.find_documents(
             self.orgs_collection, {"_id": org_id, **_ACTIVE_ONLY}, limit=1
         )
@@ -78,7 +79,7 @@ class OrganizationService:
         return len(rows)
 
     async def assert_org_member(self, org_id: str, user_id: str) -> dict[str, Any]:
-        org = await self._load_org_row(org_id)
+        org = await self.load_org_row(org_id)
         if not await self.get_membership(org_id, user_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -87,7 +88,7 @@ class OrganizationService:
         return org
 
     async def assert_org_admin(self, org_id: str, user_id: str) -> dict[str, Any]:
-        org = await self._load_org_row(org_id)
+        org = await self.load_org_row(org_id)
         membership = await self.get_membership(org_id, user_id)
         if not membership or membership.get("role") != (
             OrganizationMembershipRole.admin.value
@@ -112,9 +113,6 @@ class OrganizationService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Organization name is required",
             )
-        # user_id arrives as an unvalidated query param; make sure it resolves to a
-        # real account before minting an org that names it as the Head.
-        await self.history._ensure_user_exists(user_id)
 
         now = datetime.now(timezone.utc)
         org_id = generate_short_id(prefix=self.org_prefix, type="uuid7")
@@ -136,8 +134,8 @@ class OrganizationService:
         )
         await self.db.insert_documents(self.orgs_collection, [org_doc])
 
-        # Decision #3: the user->org relationship is created AFTER the org, as a
-        # membership row. Unlike projects, the admin is a real member row here.
+        # the user->org relationship is created AFTER the org, as a membership row.
+        # Unlike projects, the admin is a real member row here.
         member_doc = clean_for_mongodb(
             {
                 "_id": generate_short_id(prefix=self.member_prefix, type="uuid7"),

@@ -18,8 +18,8 @@ from core.dependencies import (
 )
 from models.organizations import (
     OrganizationInviteStatus,
-    OrganizationMemberStatus,
     OrganizationMembershipRole,
+    OrganizationMemberStatus,
     OrganizationStatus,
 )
 from utils.user_management import clean_for_mongodb, generate_short_id
@@ -49,7 +49,7 @@ class OrganizationMemberService:
         invites = self.db.mongo_handler.db[self.invites_collection]
         await invites.create_index([("org_id", 1), ("status", 1)], name="org_invites")
 
-    def _invite_join_path(self, invite_id: str) -> str:
+    def invite_join_path(self, invite_id: str) -> str:
         return f"organizations/join/{invite_id}"
 
     async def _load_invite_row(self, invite_id: str) -> dict[str, Any]:
@@ -111,7 +111,7 @@ class OrganizationMemberService:
             }
         )
         await self.db.insert_documents(self.invites_collection, [doc])
-        doc["join_path"] = self._invite_join_path(invite_id)
+        doc["join_path"] = self.invite_join_path(invite_id)
         return doc
 
     async def list_pending_invites(
@@ -131,7 +131,7 @@ class OrganizationMemberService:
             ):
                 continue
             d = dict(row)
-            d["join_path"] = self._invite_join_path(row["_id"])
+            d["join_path"] = self.invite_join_path(row["_id"])
             out.append(d)
         return out
 
@@ -260,7 +260,7 @@ class OrganizationMemberService:
     async def get_invite_preview(self, invite_id: str, user_id: str) -> dict[str, Any]:
         invite = await self._load_invite_row(invite_id)
         org_id = invite["org_id"]
-        org = await self.orgs._load_org_row(org_id)
+        org = await self.orgs.load_org_row(org_id)
         membership = await self.orgs.get_membership(org_id, user_id)
         member_count = await self.orgs.active_member_count(org_id)
         seat_limit = org.get("seat_limit", settings.ORG_SEAT_LIMIT)
@@ -278,13 +278,10 @@ class OrganizationMemberService:
         }
 
     async def accept_invite(self, invite_id: str, user_id: str) -> dict[str, Any]:
-        await self.history._ensure_user_exists(user_id)
+        # Existence and blocked/archived status are settled by get_current_user_id
+        # before any handler runs. Loaded here only for the web_client comparison
+        # in the cross-tenant guard below.
         invitee = await self.history.get_user(user_id)
-        if invitee and invitee.get("is_blocked"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User account is blocked",
-            )
 
         invite = await self._load_invite_row(invite_id)
         eff_status = self._effective_invite_status(invite)
@@ -320,7 +317,7 @@ class OrganizationMemberService:
                 detail="Invite is not available",
             )
 
-        org = await self.orgs._load_org_row(org_id)
+        org = await self.orgs.load_org_row(org_id)
         if org.get("status") != OrganizationStatus.active.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

@@ -22,6 +22,8 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from starlette.middleware.sessions import SessionMiddleware
 
+from api.internal import router as internal_router
+
 # Internal imports
 from api.v2 import (
     admin,
@@ -39,18 +41,25 @@ from api.v2 import (
 from api.v2.history.router import router as chat_history
 from api.v2.history.share import router as share_router
 from api.v3 import chat as v3_chat
-from api.internal import router as internal_router
 from core.config import settings
 from core.logger import logger
 from security import (
     get_current_username,
     verify_user_or_service_auth,
 )
+from services.jwt_service import JWTService
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup actions
+
+    # Fail fast on a missing or malformed JWT secret. Constructing the service
+    # runs the same secret and algorithm checks the verifier does, so a bad
+    # config stops the boot instead of surfacing as an opaque 500 from inside
+    # an auth dependency on the first authenticated request.
+    JWTService()
+
     logger.info("Started WakilAI API application")
 
     # No OpenTelemetry exporters are wired up in this service.
@@ -122,10 +131,11 @@ def create_app() -> FastAPI:
         fingerprint.router,
         prefix=settings.API_PREFIX,
     )
+    # JWT only: each organizations route depends on `get_current_user_id`, which
+    # authenticates and yields the acting user. No service-key path onto it.
     app.include_router(
         organizations.router,
         prefix=settings.API_PREFIX,
-        dependencies=[Depends(verify_api_key_or_dt_key), Depends(verify_not_archived)],
     )
     app.include_router(admin.router, prefix=settings.API_PREFIX)
     app.include_router(promo_codes.router, prefix=settings.API_PREFIX)

@@ -85,10 +85,6 @@ class OrganizationInvitePreviewResponse(BaseModel):
     seats_remaining: int = 0
 
 
-class OrganizationInviteAcceptRequest(BaseModel):
-    user_id: str = Field(..., description="User accepting the invite")
-
-
 class OrganizationInviteAcceptResponse(BaseModel):
     org_id: str
     user_id: str

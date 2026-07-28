@@ -21,7 +21,6 @@ def _make_member_service(org_svc):
     svc.db = org_svc.db
     svc.history = MagicMock()
     svc.history.get_user = AsyncMock(return_value={"_id": "u2", "first_name": "Bob"})
-    svc.history._ensure_user_exists = AsyncMock(return_value=None)
     svc.orgs = org_svc
     svc.members_collection = settings.ORGANIZATION_MEMBERS_COLLECTION
     svc.invites_collection = settings.ORGANIZATION_INVITES_COLLECTION
@@ -276,18 +275,6 @@ async def test_accept_rejected_when_seat_limit_reached():
     with pytest.raises(HTTPException) as exc:
         await svc.accept_invite(invite["_id"], "u2")
     assert exc.value.status_code == 409
-
-
-async def test_accept_rejects_blocked_user():
-    org_svc = _make_org_service()
-    org = await org_svc.create_organization(user_id="u1", name="Legal Dept")
-    svc = _make_member_service(org_svc)
-    svc.history.get_user = AsyncMock(return_value={"_id": "u2", "is_blocked": True})
-    invite = await svc.create_invite(org["_id"], "u1")
-
-    with pytest.raises(HTTPException) as exc:
-        await svc.accept_invite(invite["_id"], "u2")
-    assert exc.value.status_code == 403
 
 
 async def test_invite_preview_exposes_org_name_without_membership():
