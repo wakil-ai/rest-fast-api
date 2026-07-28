@@ -12,6 +12,7 @@ from core.config import settings
 from core.dependencies import (
     get_chat_history_service,
     get_llm_service_client,
+    get_organization_service,
     get_project_service,
     get_rate_limit_service,
     get_storage_service,
@@ -163,6 +164,13 @@ class ChatService:
         resolved_session_id = session.get("session_id") or session.get("_id")
         if not resolved_session_id:
             raise ChatGenerationException("Failed to resolve chat session.")
+
+        # Scope comes from the session, never from the request: session_id is already
+        # required and ownership-checked above, so there is nothing left to spoof.
+        # Re-checked every turn because membership can be revoked mid-session.
+        org_id = session.get("org_id")
+        if org_id:
+            await get_organization_service().assert_org_member(org_id, user_id)
 
         resolved_project_id = project_id or session.get("project_id")
         if resolved_project_id:
@@ -723,6 +731,18 @@ class ChatService:
 
             credit_cost, _ = self.extract_assistant_config(assistant_name)
 
+            # Validate before charging: prepare_chat_request rejects revoked org
+            # membership and unauthorized projects, and credits have no refund path.
+            (
+                session_id,
+                message_id,
+                resolved_project_id,
+            ) = await self.prepare_chat_request(
+                user_id=request.user_id,
+                session_id=request.session_id,
+                project_id=request.project_id,
+            )
+
             await self.verify_user_credits(
                 user_id=request.user_id,
                 assistant_type=assistant_name,
@@ -733,16 +753,6 @@ class ChatService:
                 settings.STREAM if request.stream is None else request.stream
             )
             is_dt = self.is_dt_team_request(raw_request)
-
-            (
-                session_id,
-                message_id,
-                resolved_project_id,
-            ) = await self.prepare_chat_request(
-                user_id=request.user_id,
-                session_id=request.session_id,
-                project_id=request.project_id,
-            )
 
             if should_stream:
                 started_stream = perf_counter()
@@ -842,12 +852,7 @@ class ChatService:
             assistant_name = "deepresearch"
             credit_cost, _ = self.extract_assistant_config(assistant_name)
 
-            await self.verify_user_credits(
-                user_id=request.user_id,
-                assistant_type=assistant_name,
-                required_credits=credit_cost,
-            )
-
+            # Validate before charging — see handle_chat_ask.
             (
                 session_id,
                 message_id,
@@ -856,6 +861,12 @@ class ChatService:
                 user_id=request.user_id,
                 session_id=request.session_id,
                 project_id=request.project_id,
+            )
+
+            await self.verify_user_credits(
+                user_id=request.user_id,
+                assistant_type=assistant_name,
+                required_credits=credit_cost,
             )
 
             started_at = perf_counter()
@@ -875,6 +886,11 @@ class ChatService:
             )
 
         except ChatException:
+            raise
+        except HTTPException:
+            # Access denials from prepare_chat_request (org membership, project
+            # access) are deliberate status codes, not stream failures. Same clause
+            # handle_chat_ask already has.
             raise
         except Exception as e:
             logger.error(

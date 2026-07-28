@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
+from fastapi import HTTPException, status
 from pydantic import BaseModel
 
 
@@ -10,7 +11,11 @@ async def delete_agent_thread(*, user_id: str, session_id: str) -> bool:
 
 
 from core.config import settings
-from core.dependencies import get_bitrix24_service, get_db_manager
+from core.dependencies import (
+    get_bitrix24_service,
+    get_db_manager,
+    get_organization_service,
+)
 from core.exceptions import (
     InvalidInputError,
     MessageNotFoundError,
@@ -28,6 +33,16 @@ from utils.user_management import clean_for_mongodb, generate_short_id
 # ``is_user_archived``, ``_ensure_user_exists`` — which auth and the archive
 # guard rely on seeing archived docs.
 _ACTIVE_ONLY: dict[str, Any] = {"archived": {"$ne": True}}
+
+
+def _normalize_org_scope(org_id: str | None) -> str | None:
+    """Blank org_id means the personal profile.
+
+    Without this an empty string is falsy enough to skip the membership check but
+    still gets stored, and then matches neither the personal filter (absent/null)
+    nor any org filter — the session becomes permanently invisible.
+    """
+    return (org_id or "").strip() or None
 
 
 class ChatHistoryService:
@@ -72,10 +87,12 @@ class ChatHistoryService:
     async def _create_indexes(self):
         """Create necessary indexes for collections (async)."""
         try:
-            # Sessions - query by user
+            # Sessions - query by user within one org scope
             await self.db_manager.mongo_handler.db[
                 self.sessions_collection
-            ].create_index([("user_id", 1), ("status", 1), ("updated_at", -1)])
+            ].create_index(
+                [("user_id", 1), ("org_id", 1), ("status", 1), ("updated_at", -1)]
+            )
 
             # Messages - query by session
             await self.db_manager.mongo_handler.db[
@@ -182,6 +199,23 @@ class ChatHistoryService:
         session = await self._ensure_session_exists(session_id)
         if session.get("user_id") != user_id:
             raise InvalidInputError("Session does not belong to the provided user")
+        return session
+
+    async def assert_session_access(self, session_id: str, user_id: str) -> dict:
+        """The single gate for reaching a session directly by id.
+
+        Existence, ownership, and — for an org session — live membership. Scoping
+        the list endpoint is not enough on its own: without this, anyone holding a
+        session id keeps access after being removed from the organization.
+        """
+        session = await self._ensure_session_exists(session_id)
+        if session.get("user_id") != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
+        org_id = session.get("org_id")
+        if org_id:
+            await get_organization_service().assert_org_member(org_id, user_id)
         return session
 
     # Validation and existence checks
@@ -499,10 +533,17 @@ class ChatHistoryService:
         title: str | None = None,
         tags: list[str] | None = None,
         project_id: str | None = None,
+        org_id: str | None = None,
     ) -> dict:
         """Create or retrieve an existing session. Uses session_id as _id."""
 
         await self._ensure_user_exists(user_id)
+
+        # The scope is stamped once here and never changed: moving a personal
+        # session into an org later would leak its history across that boundary.
+        org_id = _normalize_org_scope(org_id)
+        if org_id:
+            await get_organization_service().assert_org_member(org_id, user_id)
 
         # Generate session ID using uuid7 with 'ses-' prefix
         session_id = generate_short_id("ses-", type="uuid7")
@@ -513,6 +554,7 @@ class ChatHistoryService:
             "user_id": user_id,
             "session_id": session_id,  # Ensure session_id field is set to match _id
             "project_id": project_id,
+            "org_id": org_id,
             "title": title or "New Chat",
             "tags": tags or [],
             "status": SessionStatus.draft.value,
@@ -528,20 +570,55 @@ class ChatHistoryService:
         except Exception as e:
             raise InvalidInputError(f"Failed to create session: {str(e)}")
 
+    # org_id needs no separate proof of who is asking: verify_user_or_service_auth
+    # (security/dependencies.py) cross-checks any user_id in the path, query or body
+    # against the JWT subject before the handler runs, so a bearer caller cannot name
+    # someone else's user_id here. Service-key callers are trusted server-to-server
+    # (docs/dt-team-integration.md) and send no org_id. assert_org_member is the real
+    # gate on both paths — it demands a live membership row either way.
     async def get_sessions(
-        self, user_id: str, limit: int = 50, skip: int = 0
+        self,
+        user_id: str,
+        org_id: str | None = None,
+        limit: int = 50,
+        skip: int = 0,
     ) -> list[dict]:
-        """Retrieve active non-project sessions for a user."""
+        """Active non-project sessions for a user, within one scope.
+
+        ``org_id=None`` means the personal profile and excludes every org session,
+        so switching scope in the frontend never mixes the two.
+        """
         await self._ensure_user_exists(user_id)
+
+        # Checked here rather than in the route so every caller is covered — this
+        # function owns the query, so it owns the guard. Mirrors create_session.
+        org_id = _normalize_org_scope(org_id)
+        if org_id:
+            await get_organization_service().assert_org_member(org_id, user_id)
+
+        # ponytail: sessions created before org scoping have no org_id key at all,
+        # so "personal" must match absent as well as null. Same trick as project_id.
+        scope = (
+            {"org_id": org_id}
+            if org_id
+            else {"$or": [{"org_id": {"$exists": False}}, {"org_id": None}]}
+        )
 
         sessions = await self.db_manager.find_documents(
             self.sessions_collection,
             {
                 "user_id": user_id,
                 "status": SessionStatus.active.value,
-                "$or": [
-                    {"project_id": {"$exists": False}},
-                    {"project_id": None},
+                # Two scope predicates, so both live under $and — a query dict
+                # cannot carry two top-level $or keys.
+                "$and": [
+                    {
+                        "$or": [
+                            {"project_id": {"$exists": False}},
+                            {"project_id": None},
+                        ]
+                    },
+                    scope,
                 ],
                 **_ACTIVE_ONLY,
             },
