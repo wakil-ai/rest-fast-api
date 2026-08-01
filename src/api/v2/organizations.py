@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 
 from core.dependencies import (
     get_organization_member_service,
@@ -18,8 +18,10 @@ from models.organizations import (
     OrganizationMemberResponse,
     OrganizationMembersListResponse,
     OrganizationResponse,
+    OrganizationUpdateRequest,
 )
 from security import get_current_user_id
+from services.organization_service import assert_avatar_size
 from utils.user_management import handle_service_error
 
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
@@ -36,7 +38,7 @@ def _org_to_response(doc: dict[str, Any]) -> OrganizationResponse:
     return OrganizationResponse(
         org_id=str(doc["_id"]),
         name=doc["name"],
-        icon=doc.get("icon"),
+        avatar_url=doc.get("avatar_url"),
         created_by=doc["created_by"],
         status=doc["status"],
         seat_limit=doc["seat_limit"],
@@ -60,9 +62,56 @@ async def create_organization(
     doc = await org_service.create_organization(
         user_id=user_id,
         name=body.name,
-        icon=body.icon,
         settings_obj=body.settings,
     )
+    return _org_to_response(doc)
+
+
+@router.put("/{org_id}/avatar", response_model=OrganizationResponse)
+@handle_service_error
+async def upload_organization_avatar(
+    org_id: str, file: UploadFile = File(...), user_id: str = CurrentUser
+):
+    """Upload or replace the organization's picture. Admin only.
+
+    Separate from create because the object path is keyed by ``org_id``, which does
+    not exist until the organization has been inserted. A failure here leaves the
+    organization intact and the client free to retry.
+    """
+    # Size is checked here, not only in the service: the body is a route argument, so
+    # it would otherwise be read into memory in full before anyone checks who is asking.
+    assert_avatar_size(file.size)
+    doc = await org_service.set_organization_avatar(
+        org_id=org_id,
+        user_id=user_id,
+        data=await file.read(),
+        content_type=file.content_type,
+    )
+    return _org_to_response(doc)
+
+
+@router.patch("/{org_id}", response_model=OrganizationResponse)
+@handle_service_error
+async def update_organization(
+    org_id: str, body: OrganizationUpdateRequest, user_id: str = CurrentUser
+):
+    """Rename an organization or edit its settings. Admin only.
+
+    The picture is not editable here — it is written only by the avatar endpoints.
+    """
+    doc = await org_service.update_organization(
+        org_id=org_id,
+        user_id=user_id,
+        updates=body.model_dump(exclude_unset=True),
+    )
+    return _org_to_response(doc)
+
+
+@router.delete("/{org_id}/avatar", response_model=OrganizationResponse)
+@handle_service_error
+async def delete_organization_avatar(org_id: str, user_id: str = CurrentUser):
+    """Remove the organization's picture, deleting the stored object. Admin only."""
+    doc = await org_service.clear_organization_avatar(org_id=org_id, user_id=user_id)
     return _org_to_response(doc)
 
 

@@ -269,7 +269,7 @@ class OrganizationMemberService:
             "invite_id": invite_id,
             "org_id": org_id,
             "org_name": org.get("name", ""),
-            "org_icon": org.get("icon"),
+            "org_avatar_url": org.get("avatar_url"),
             "org_status": org.get("status", OrganizationStatus.active.value),
             "status": self._effective_invite_status(invite),
             "expires_at": invite.get("expires_at"),

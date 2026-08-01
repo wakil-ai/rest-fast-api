@@ -30,14 +30,30 @@ class OrganizationInviteStatus(str, Enum):
 
 class OrganizationCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
-    icon: str | None = Field(None, max_length=512, description="Icon URL or emoji")
     settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class OrganizationUpdateRequest(BaseModel):
+    """Partial edit. Omitted keys are left alone; an explicit null resets the field.
+
+    The route sends ``model_dump(exclude_unset=True)``, which is the only thing that
+    tells an omitted ``settings`` apart from one the caller means to reset. The
+    picture is absent by design: it is written only by the avatar endpoints, so no
+    caller can point an organization at an arbitrary URL.
+    """
+
+    name: str | None = Field(None, min_length=1, max_length=120)
+    settings: dict[str, Any] | None = None
 
 
 class OrganizationResponse(BaseModel):
     org_id: str
     name: str
-    icon: str | None = None
+    avatar_url: str | None = Field(
+        None,
+        description="Permanent public URL of the organization's picture, or null. "
+        "Written only by the avatar upload endpoint.",
+    )
     created_by: str
     status: OrganizationStatus
     seat_limit: int
@@ -77,7 +93,7 @@ class OrganizationInvitePreviewResponse(BaseModel):
     invite_id: str
     org_id: str
     org_name: str
-    org_icon: str | None = None
+    org_avatar_url: str | None = None
     org_status: OrganizationStatus
     status: OrganizationInviteStatus
     expires_at: datetime

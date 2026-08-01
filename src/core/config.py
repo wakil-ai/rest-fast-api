@@ -61,6 +61,10 @@ class Settings(BaseSettings):
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
+    # Objects here are world-readable, so nothing private may be written to it.
+    # Must be a different bucket from GCS_BUCKET_NAME; leaving it unset disables
+    # organization avatar uploads rather than silently using the private bucket.
+    GCS_PUBLIC_BUCKET_NAME: str | None = None
     GCS_CREDENTIALS_PATH: str | None = None  # Optional local service account JSON file
     GCS_PROJECT_ID: str | None = None
     GCS_CLIENT_EMAIL: str | None = None
@@ -128,7 +132,9 @@ class Settings(BaseSettings):
 
     # Credit System Configuration
     DAILY_CREDITS_LIMIT: int = 30  # Daily credits after the welcome pool is exhausted
-    SIGNUP_DAY_CREDITS_LIMIT: int = 100  # One-time welcome pool for new users (persists until used)
+    SIGNUP_DAY_CREDITS_LIMIT: int = (
+        100  # One-time welcome pool for new users (persists until used)
+    )
     CREDIT_COST_MAIN_ASSISTANT: int = 10  # Credits for main assistant (umumiy)
     CREDIT_COST_SOLIQ_ASSISTANT: int = 20  # Credits for tax specialized assistant
     CREDIT_COST_SUD_ASSISTANT: int = 25  # Credits for sud specialized assistant
@@ -165,7 +171,9 @@ class Settings(BaseSettings):
     # Uzum Merchant API Configuration (webhooks: /check /create /confirm /reverse /status)
     UZUM_USERNAME: str | None = None  # Basic Auth username Uzum will send
     UZUM_PASSWORD: str | None = None  # Basic Auth password Uzum will send
-    UZUM_SERVICE_ID: int | None = None  # Single service id assigned to wakil.ai in Uzum catalog
+    UZUM_SERVICE_ID: int | None = (
+        None  # Single service id assigned to wakil.ai in Uzum catalog
+    )
     UZUM_TRANSACTIONS_COLLECTION: str = "uzum_transactions"
 
     # Apple App Store (StoreKit 2) In-App Purchases

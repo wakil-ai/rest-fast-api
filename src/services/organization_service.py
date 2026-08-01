@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from core.config import settings
-from core.dependencies import get_db_manager
+from core.dependencies import get_db_manager, get_storage_service
 from core.logger import logger
 from models.organizations import (
     OrganizationMembershipRole,
@@ -18,6 +18,59 @@ from utils.user_management import clean_for_mongodb, generate_short_id
 
 # Reads exclude soft-deleted docs, mirroring chat_history_service._ACTIVE_ONLY.
 _ACTIVE_ONLY: dict[str, Any] = {"archived": {"$ne": True}}
+
+# Browser-renderable raster formats only. SVG is deliberately absent: it can carry
+# script, and these objects are served from a world-readable bucket.
+AVATAR_CONTENT_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
+MAX_AVATAR_BYTES = 2 * 1024 * 1024
+
+
+def _avatar_path(org_id: str) -> str:
+    """One object per organization, overwritten in place by every upload."""
+    return f"organizations/{org_id}/avatar"
+
+
+def _public_bucket() -> str:
+    """The world-readable bucket avatars live in, or a loud failure.
+
+    Never the private document bucket, whether it was left unset or pointed at the
+    same name: an object written there is unreachable through the public URL handed
+    to the browser, so the upload would report success and the picture would render
+    as broken with nothing to explain it.
+    """
+    bucket = (settings.GCS_PUBLIC_BUCKET_NAME or "").strip()
+    if not bucket:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Organization avatars are unavailable: GCS_PUBLIC_BUCKET_NAME is "
+                "not configured."
+            ),
+        )
+    if bucket == (settings.GCS_BUCKET_NAME or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Organization avatars are unavailable: GCS_PUBLIC_BUCKET_NAME must "
+                "name a different bucket from GCS_BUCKET_NAME."
+            ),
+        )
+    return bucket
+
+
+def assert_avatar_size(size: int | None) -> None:
+    """Reject an oversized image, by declared size before it is read or real length after.
+
+    The route calls this with ``UploadFile.size`` so a multi-gigabyte body is refused
+    before being materialized in memory — which happens ahead of the admin check,
+    since the bytes are a route argument. A declared size is client-supplied, so the
+    service still checks the length it actually received.
+    """
+    if size is not None and size > MAX_AVATAR_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Image exceeds {MAX_AVATAR_BYTES // (1024 * 1024)} MB",
+        )
 
 
 class OrganizationService:
@@ -104,7 +157,6 @@ class OrganizationService:
         *,
         user_id: str,
         name: str,
-        icon: str | None = None,
         settings_obj: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         clean_name = (name or "").strip()
@@ -120,7 +172,8 @@ class OrganizationService:
             {
                 "_id": org_id,
                 "name": clean_name,
-                "icon": icon,
+                # Set only by set_organization_avatar; there is no client-supplied URL.
+                "avatar_url": None,
                 "created_by": user_id,
                 "status": OrganizationStatus.active.value,
                 "seat_limit": settings.ORG_SEAT_LIMIT,
@@ -153,6 +206,117 @@ class OrganizationService:
         out["role"] = OrganizationMembershipRole.admin.value
         out["member_count"] = 1
         return out
+
+    async def update_organization(
+        self, *, org_id: str, user_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Admin-only edit of an organization's own fields.
+
+        Every key is unpacked by hand rather than passed to ``$set`` as a block:
+        the body model already limits the shape, but building the update explicitly
+        is what keeps status, seat_limit and archived out of reach for good.
+        """
+        org = await self.assert_org_admin(org_id, user_id)
+
+        set_fields: dict[str, Any] = {}
+        if "name" in updates:
+            clean_name = (updates["name"] or "").strip()
+            if not clean_name:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Organization name is required",
+                )
+            set_fields["name"] = clean_name
+        if "settings" in updates:
+            set_fields["settings"] = updates["settings"] or {}
+
+        return await self._apply_admin_update(org, set_fields)
+
+    async def set_organization_avatar(
+        self, *, org_id: str, user_id: str, data: bytes, content_type: str | None
+    ) -> dict[str, Any]:
+        """Store an organization's picture and record its permanent public URL.
+
+        One fixed object per organization, overwritten on every upload, so there is
+        never a second blob to garbage-collect. Because the path never changes, the
+        stored URL carries a ``?v=`` stamp — without it browsers would keep serving
+        the previous picture from cache after a change. GCS ignores the parameter.
+        """
+        org = await self.assert_org_admin(org_id, user_id)
+
+        media_type = (content_type or "").split(";")[0].strip().lower()
+        if media_type not in AVATAR_CONTENT_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=(
+                    "Unsupported image type. Allowed: "
+                    + ", ".join(sorted(AVATAR_CONTENT_TYPES))
+                ),
+            )
+        if not data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty"
+            )
+        assert_avatar_size(len(data))
+
+        public_url = get_storage_service().upload_file(
+            data=data,
+            destination_path=_avatar_path(org_id),
+            content_type=media_type,
+            return_signed_url=False,
+            bucket_name=_public_bucket(),
+        )
+        stamp = int(datetime.now(timezone.utc).timestamp())
+        return await self._apply_admin_update(
+            org, {"avatar_url": f"{public_url}?v={stamp}"}
+        )
+
+    async def clear_organization_avatar(
+        self, *, org_id: str, user_id: str
+    ) -> dict[str, Any]:
+        """Remove an organization's picture. Admin only.
+
+        The blob is deleted rather than just unlinked: it sits in a world-readable
+        bucket, so anyone who saw the URL earlier would otherwise keep it. A storage
+        failure is logged but does not block the removal — leaving an admin unable to
+        drop a picture because GCS is having a moment is the worse outcome.
+        """
+        org = await self.assert_org_admin(org_id, user_id)
+
+        if org.get("avatar_url"):
+            deleted = get_storage_service().permanently_delete_file(
+                _avatar_path(org_id), bucket_name=_public_bucket()
+            )
+            if not deleted:
+                logger.warning(
+                    f"Avatar object for {org_id} outlived its document; "
+                    "the public URL stays reachable until it is removed by hand"
+                )
+
+        return await self._apply_admin_update(org, {"avatar_url": None})
+
+    async def _apply_admin_update(
+        self, org: dict[str, Any], set_fields: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Persist an already-authorized ``$set`` and shape the response row.
+
+        Callers must have passed assert_org_admin, which is also why the role is
+        filled in from that fact rather than read back.
+        """
+        org_id = org["_id"]
+        row = dict(org)
+        if set_fields:
+            set_fields = {**set_fields, "updated_at": datetime.now(timezone.utc)}
+            await self.db.update_documents(
+                self.orgs_collection,
+                {"_id": org_id, **_ACTIVE_ONLY},
+                {"$set": clean_for_mongodb(set_fields)},
+            )
+            row.update(set_fields)
+
+        row["role"] = OrganizationMembershipRole.admin.value
+        row["member_count"] = await self.active_member_count(org_id)
+        return row
 
     async def list_user_organizations(self, user_id: str) -> list[dict[str, Any]]:
         """Every active organization the user belongs to, with their role.
