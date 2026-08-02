@@ -201,6 +201,11 @@ class OrganizationService:
         )
         await self.db.insert_documents(self.members_collection, [member_doc])
 
+        # Workflow states are deliberately NOT seeded here. list_states seeds any
+        # board that reads back empty, which covers organizations created before
+        # that feature existed — so seeding on creation too would be a second path
+        # to the same outcome, and would couple org creation to a collaborator it
+        # otherwise has no reason to hold.
         logger.info(f"Created organization {org_id} for user {user_id}")
         out = dict(org_doc)
         out["role"] = OrganizationMembershipRole.admin.value

@@ -26,6 +26,10 @@ if TYPE_CHECKING:
     from services.organization_member_service import OrganizationMemberService
     from services.organization_service import OrganizationService
     from services.project_member_service import ProjectMemberService
+    from services.activity_log_service import ActivityLogService
+    from services.case_service import CaseService
+    from services.task_service import TaskService
+    from services.workflow_state_service import WorkflowStateService
 
 
 # DB
@@ -126,6 +130,34 @@ def get_organization_member_service() -> "OrganizationMemberService":
     from services.organization_member_service import OrganizationMemberService
 
     return OrganizationMemberService()
+
+
+@lru_cache
+def get_activity_log_service() -> "ActivityLogService":
+    from services.activity_log_service import ActivityLogService
+
+    return ActivityLogService()
+
+
+@lru_cache
+def get_case_service() -> "CaseService":
+    from services.case_service import CaseService
+
+    return CaseService()
+
+
+@lru_cache
+def get_task_service() -> "TaskService":
+    from services.task_service import TaskService
+
+    return TaskService()
+
+
+@lru_cache
+def get_workflow_state_service() -> "WorkflowStateService":
+    from services.workflow_state_service import WorkflowStateService
+
+    return WorkflowStateService()
 
 
 @lru_cache

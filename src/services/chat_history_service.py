@@ -278,6 +278,27 @@ class ChatHistoryService:
             if file.get("user_id") != user_id:
                 raise InvalidInputError(f"File {file_id} does not belong to this user")
 
+    async def _inherit_session_org(
+        self, file_ids: list[str] | None, session: dict
+    ) -> str | None:
+        """Give the session's org to the message being written and its attachments.
+
+        A Case conversation belongs to the organization even though one member wrote
+        every line of it, so the account-archive sweep has to be able to tell it
+        apart from that member's personal chats — which means the org has to be on
+        the row.
+
+        Attachments are stamped here rather than at upload because this is where a
+        file becomes organization evidence: a message file has no session, and so no
+        org, until it is attached to one.
+        """
+        org_id = session.get("org_id")
+        if org_id and file_ids:
+            await self.db_manager.mongo_handler.db[self.files_collection].update_many(
+                {"_id": {"$in": file_ids}}, {"$set": {"org_id": org_id}}
+            )
+        return org_id
+
     # Users Management
     async def _create_bitrix_lead_if_needed(self, user: dict) -> dict:
         """Create one Bitrix24 lead for a user with a phone number."""
@@ -534,6 +555,7 @@ class ChatHistoryService:
         tags: list[str] | None = None,
         project_id: str | None = None,
         org_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict:
         """Create or retrieve an existing session. Uses session_id as _id."""
 
@@ -555,6 +577,9 @@ class ChatHistoryService:
             "session_id": session_id,  # Ensure session_id field is set to match _id
             "project_id": project_id,
             "org_id": org_id,
+            # A scope tag, not an access boundary: reaching a session is already
+            # gated by assert_session_access and organization membership.
+            "task_id": task_id,
             "title": title or "New Chat",
             "tags": tags or [],
             "status": SessionStatus.draft.value,
@@ -764,11 +789,13 @@ class ChatHistoryService:
             content = content.model_dump()
 
         await self._ensure_file_attachments_for_user(file_ids, user_id)
+        org_id = await self._inherit_session_org(file_ids, session)
 
         message = {
             "_id": resolved_message_id,
             "user_id": user_id,  # Auto-populated from session
             "session_id": session_id,
+            "org_id": org_id,  # Inherited from the session, like user_id
             "message_id": resolved_message_id,  # Ensure message_id field is set to match _id
             "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "content": content,
@@ -814,6 +841,7 @@ class ChatHistoryService:
             content = content.model_dump()
 
         await self._ensure_file_attachments_for_user(file_ids, user_id)
+        org_id = await self._inherit_session_org(file_ids, session)
 
         now = datetime.now(timezone.utc)
         message_document = clean_for_mongodb(
@@ -821,6 +849,7 @@ class ChatHistoryService:
                 "message_id": message_id,
                 "user_id": user_id,
                 "session_id": session_id,
+                "org_id": org_id,
                 "file_ids": file_ids or [],
                 "content": content,
                 "metadata": metadata or {},
@@ -1038,7 +1067,15 @@ class ChatHistoryService:
         session_id: str | None = None,
         webhook_url: str | None = None,
     ) -> dict:
-        """Add a file upload record. Uses file_id as _id."""
+        """Add a file upload record. Uses file_id as _id.
+
+        A project-scoped file inherits its project's `org_id`, which marks a Case's
+        evidence as belonging to the organization rather than to whoever uploaded
+        it — so deleting that member's personal account does not archive it out from
+        under everyone else. Read here rather than passed in by the caller: the
+        upload path is long and every branch of it would have to remember, and one
+        that forgot would lose the org's evidence silently.
+        """
 
         await self._ensure_user_exists(user_id)
 
@@ -1079,6 +1116,13 @@ class ChatHistoryService:
         }
         if project_id:
             file_record["project_id"] = project_id
+            # Projected to the one field, on a path that has already spooled the
+            # upload to disk and pushed it to GCS — this read is noise beside it.
+            project = await self.db_manager.mongo_handler.db[
+                settings.PROJECTS_COLLECTION
+            ].find_one({"_id": project_id}, {"org_id": 1})
+            if project and project.get("org_id"):
+                file_record["org_id"] = project["org_id"]
         if session_id:
             file_record["session_id"] = session_id
         if webhook_url:

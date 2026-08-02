@@ -111,6 +111,9 @@ class SessionResponse(BaseModel):
     org_id: str | None = Field(
         default=None, description="Organization scope; None = personal profile"
     )
+    task_id: str | None = Field(
+        default=None, description="Task this chat belongs to, when it is Task work"
+    )
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
     status: SessionStatus = Field(default=SessionStatus.draft)

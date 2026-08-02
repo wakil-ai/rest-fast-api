@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     ORGANIZATIONS_COLLECTION: str = "organizations"
     ORGANIZATION_MEMBERS_COLLECTION: str = "organization_members"
     ORGANIZATION_INVITES_COLLECTION: str = "organization_invites"
+    WORKFLOW_STATES_COLLECTION: str = "workflow_states"
+    TASKS_COLLECTION: str = "tasks"
+    ACTIVITY_LOGS_COLLECTION: str = "activity_logs"
     ORG_INVITE_TTL_HOURS: int = 168
     # Head + 5 staff members. Defaulted onto each org document as `seat_limit`, so
     # raising the cap for one customer is a data change, not a code change.

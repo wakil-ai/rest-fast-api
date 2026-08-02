@@ -41,7 +41,9 @@ class ProjectMemberService:
         await members.create_index(
             [("user_id", 1), ("joined_at", -1)], name="user_projects"
         )
-        await invites.create_index([("project_id", 1), ("status", 1)], name="project_invites")
+        await invites.create_index(
+            [("project_id", 1), ("status", 1)], name="project_invites"
+        )
 
     async def is_member(self, project_id: str, user_id: str) -> bool:
         rows = await self.db.find_documents(
@@ -174,11 +176,18 @@ class ProjectMemberService:
                 return ProjectInviteStatus.expired.value
         return raw
 
-    async def _assert_invite_owner(self, project_id: str, user_id: str) -> dict[str, Any]:
+    async def _assert_invite_owner(
+        self, project_id: str, user_id: str
+    ) -> dict[str, Any]:
         """Invite links can only be created or managed by the project owner."""
         from services.project_service import ProjectService
 
-        project = await ProjectService()._load_project_row(project_id)
+        svc = ProjectService()
+        project = await svc._load_project_row(project_id)
+        # Cases never use project_members — it is reserved for the per-case access
+        # control customization. Without this a Case owner could mint an invite
+        # link that anyone outside the organization accepts.
+        svc.reject_if_case(project)
         if project.get("owner_id") != user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -186,9 +195,7 @@ class ProjectMemberService:
             )
         return project
 
-    async def create_invite(
-        self, project_id: str, user_id: str
-    ) -> dict[str, Any]:
+    async def create_invite(self, project_id: str, user_id: str) -> dict[str, Any]:
         project = await self._assert_invite_owner(project_id, user_id)
         if project.get("status") != ProjectStatus.active.value:
             raise HTTPException(
@@ -252,16 +259,10 @@ class ProjectMemberService:
         await self.db.update_documents(
             self.invites_collection,
             {"_id": invite_id},
-            {
-                "$set": clean_for_mongodb(
-                    {"status": ProjectInviteStatus.revoked.value}
-                )
-            },
+            {"$set": clean_for_mongodb({"status": ProjectInviteStatus.revoked.value})},
         )
 
-    async def get_invite_preview(
-        self, invite_id: str, user_id: str
-    ) -> dict[str, Any]:
+    async def get_invite_preview(self, invite_id: str, user_id: str) -> dict[str, Any]:
         from services.project_service import ProjectService
 
         invite = await self._load_invite_row(invite_id)
@@ -307,9 +308,7 @@ class ProjectMemberService:
             "is_owner": is_owner,
         }
 
-    async def accept_invite(
-        self, invite_id: str, user_id: str
-    ) -> dict[str, Any]:
+    async def accept_invite(self, invite_id: str, user_id: str) -> dict[str, Any]:
         await self.history._ensure_user_exists(user_id)
         invitee = await self.history.get_user(user_id)
         if invitee and invitee.get("is_blocked"):

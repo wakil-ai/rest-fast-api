@@ -26,8 +26,10 @@ from api.internal import router as internal_router
 
 # Internal imports
 from api.v2 import (
+    activity_logs,
     admin,
     auth,
+    cases,
     chat,
     fingerprint,
     memory,
@@ -37,11 +39,19 @@ from api.v2 import (
     promo_codes,
     referral,
     speech_to_text,
+    tasks,
+    workflow_states,
 )
 from api.v2.history.router import router as chat_history
 from api.v2.history.share import router as share_router
 from api.v3 import chat as v3_chat
 from core.config import settings
+from core.dependencies import (
+    get_activity_log_service,
+    get_case_service,
+    get_task_service,
+    get_workflow_state_service,
+)
 from core.logger import logger
 from security import (
     get_current_username,
@@ -59,6 +69,23 @@ async def lifespan(app: FastAPI):
     # config stops the boot instead of surfacing as an opaque 500 from inside
     # an auth dependency on the first authenticated request.
     JWTService()
+
+    # Index creation belongs here, not in a service constructor. Services are built
+    # at module import when no event loop is running, so the `loop.create_task`
+    # pattern the older services use never fires and their indexes are never made.
+    # Best-effort: a Mongo hiccup must not stop the app booting. One try per
+    # service, not one around all four — a single shared block meant a bad index
+    # spec in the first service silently skipped the rest.
+    for name, service in (
+        ("workflow_states", get_workflow_state_service()),
+        ("cases", get_case_service()),
+        ("tasks", get_task_service()),
+        ("activity_logs", get_activity_log_service()),
+    ):
+        try:
+            await service.ensure_indexes()
+        except Exception as exc:
+            logger.error(f"Failed to create {name} indexes: {exc}")
 
     logger.info("Started WakilAI API application")
 
@@ -135,6 +162,22 @@ def create_app() -> FastAPI:
     # authenticates and yields the acting user. No service-key path onto it.
     app.include_router(
         organizations.router,
+        prefix=settings.API_PREFIX,
+    )
+    app.include_router(
+        workflow_states.router,
+        prefix=settings.API_PREFIX,
+    )
+    app.include_router(
+        cases.router,
+        prefix=settings.API_PREFIX,
+    )
+    app.include_router(
+        tasks.router,
+        prefix=settings.API_PREFIX,
+    )
+    app.include_router(
+        activity_logs.router,
         prefix=settings.API_PREFIX,
     )
     app.include_router(admin.router, prefix=settings.API_PREFIX)

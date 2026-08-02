@@ -133,6 +133,108 @@ async def test_create_session_treats_blank_org_id_as_personal(
     assert mocks.inserted()["org_id"] is None
 
 
+# Org inheritance onto messages and attachments
+#
+# Without it the account-archive sweep cannot tell a Case transcript from the
+# author's personal chat, and archives the organization's evidence when that one
+# member deletes their WakilAI account. `get_messages` and `get_file_by_id` both
+# filter archived rows, so the Case keeps its session list while every transcript
+# reads empty and every file 404s on open.
+
+
+def _history_with_session(session: dict[str, Any]) -> HistoryMocks:
+    mocks = _make_history_service()
+    mocks.service.messages_collection = settings.MESSAGES_COLLECTION
+    mocks.service.files_collection = settings.FILES_COLLECTION
+    mocks.db.find_documents = AsyncMock(return_value=[session])
+    mocks.db.mongo_handler.db = {settings.FILES_COLLECTION: AsyncMock()}
+    return mocks
+
+
+async def test_a_message_inherits_its_sessions_org() -> None:
+    mocks = _history_with_session(
+        {"_id": "s1", "user_id": "u1", "org_id": "org-1", "status": "active"}
+    )
+
+    message = await mocks.service.add_message("s1", None, {"text": "hi"})
+
+    assert message["org_id"] == "org-1"
+    assert mocks.inserted()["org_id"] == "org-1"
+
+
+async def test_a_personal_message_carries_a_null_org() -> None:
+    mocks = _history_with_session({"_id": "s1", "user_id": "u1", "status": "active"})
+
+    message = await mocks.service.add_message("s1", None, {"text": "hi"})
+
+    assert message["org_id"] is None
+
+
+async def test_attaching_a_file_to_a_case_chat_hands_it_to_the_org() -> None:
+    """A file uploaded from the personal surface becomes organization evidence the
+    moment it is sent into a Case conversation — it has no session, and so no org,
+    until then."""
+    mocks = _history_with_session(
+        {"_id": "s1", "user_id": "u1", "org_id": "org-1", "status": "active"}
+    )
+    mocks.service._ensure_file_attachments_for_user = AsyncMock()  # type: ignore[method-assign]
+
+    await mocks.service.add_message("s1", ["f1", "f2"], {"text": "see attached"})
+
+    files = mocks.db.mongo_handler.db[settings.FILES_COLLECTION]
+    query, update = files.update_many.await_args.args
+    assert query == {"_id": {"$in": ["f1", "f2"]}}
+    assert update == {"$set": {"org_id": "org-1"}}
+
+
+async def test_a_personal_chats_attachments_are_left_alone() -> None:
+    """A stray org_id on a personal file would hide it from that user's own
+    account deletion — the scope cuts both ways."""
+    mocks = _history_with_session({"_id": "s1", "user_id": "u1", "status": "active"})
+    mocks.service._ensure_file_attachments_for_user = AsyncMock()  # type: ignore[method-assign]
+
+    await mocks.service.add_message("s1", ["f1"], {"text": "see attached"})
+
+    files = mocks.db.mongo_handler.db[settings.FILES_COLLECTION]
+    files.update_many.assert_not_awaited()
+
+
+async def _upload_project_file(project: dict[str, Any] | None) -> dict[str, Any]:
+    mocks = _make_history_service()
+    mocks.service.files_collection = settings.FILES_COLLECTION
+    mocks.service._ensure_user_exists = AsyncMock()  # type: ignore[method-assign]
+    mocks.db.find_documents = AsyncMock(return_value=[])
+    projects = AsyncMock()
+    projects.find_one = AsyncMock(return_value=project)
+    mocks.db.mongo_handler.db = {settings.PROJECTS_COLLECTION: projects}
+
+    return await mocks.service.add_file_upload(
+        user_id="u1",
+        file_id="f1",
+        file_url="https://x/f1",
+        ocr_result="",
+        file_metadata={"name": "contract.pdf"},
+        status="processing",
+        scope="project",
+        project_id="proj-1",
+    )
+
+
+async def test_a_case_file_inherits_the_org_from_its_project() -> None:
+    """Read here rather than passed down from the upload route: that path is long,
+    every branch of it would have to remember, and one that forgot would lose the
+    organization's evidence silently."""
+    record = await _upload_project_file({"_id": "proj-1", "org_id": "org-1"})
+
+    assert record["org_id"] == "org-1"
+
+
+async def test_a_personal_project_file_carries_no_org() -> None:
+    record = await _upload_project_file({"_id": "proj-1"})
+
+    assert "org_id" not in record
+
+
 # Read scoping
 #
 # These assert on the exact filter handed to Mongo rather than reimplementing a
