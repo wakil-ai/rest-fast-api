@@ -101,6 +101,40 @@ async def test_archive_fresh_user_marks_all_owned_collections():
     assert settings.USERS_COLLECTION in result["collections"]
 
 
+async def test_enterprise_rows_are_excluded_from_the_personal_sweep():
+    """A member deleting their own account must not take the organization's work.
+
+    Four collections hold enterprise rows keyed to the member who created them:
+    `projects` (Cases), `sessions` (Case conversations), `messages` (their
+    transcripts) and `files` (Case evidence). Unscoped, a personal deletion takes
+    all four out of the organization, and every one of those losses is visible —
+    `get_sessions_by_project`, `get_messages` and `get_file_by_id` all filter
+    archived rows, so the Case keeps its session list while the transcripts come
+    back empty and the files 404 on open.
+    """
+    from services.project_service import PERSONAL_SCOPE
+
+    svc, db = _make_archive_service({"_id": "u1"})
+
+    await svc.archive_user_account("u1")
+
+    for coll_name in (
+        settings.PROJECTS_COLLECTION,
+        settings.SESSIONS_COLLECTION,
+        settings.MESSAGES_COLLECTION,
+        settings.FILES_COLLECTION,
+    ):
+        query, _ = db[coll_name].update_many.await_args.args
+        assert query["$or"] == PERSONAL_SCOPE["$or"], (
+            f"{coll_name} is swept without the personal scope"
+        )
+
+    # Collections with no enterprise half must NOT carry it — a stray org_id
+    # predicate there would silently skip rows that should be archived.
+    query, _ = db[settings.SUBSCRIPTIONS_COLLECTION].update_many.await_args.args
+    assert "$or" not in query
+
+
 async def test_archive_is_idempotent_for_already_archived_user():
     prior = datetime(2026, 1, 1, tzinfo=timezone.utc)
     svc, db = _make_archive_service(

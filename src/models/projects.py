@@ -66,6 +66,10 @@ class ProjectSessionCreateRequest(BaseModel):
     user_id: str
     title: str | None = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
+    task_id: str | None = Field(
+        default=None,
+        description="Tag the chat to a Task of this Case. Case sessions only.",
+    )
 
 
 class ProjectFileSearchQuery(BaseModel):

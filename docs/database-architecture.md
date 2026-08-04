@@ -406,6 +406,259 @@ Single-use invitation links (`pinv-...`). Default TTL: `PROJECT_INVITE_TTL_HOURS
 
 ---
 
+### 18. **workflow_states** Collection (default: `workflow_states`)
+The board columns an organization defines, seeded with five defaults per board.
+
+`category` is the load-bearing field: `name` is user-typed in any language, so
+no system logic may branch on it. Closure checks, dashboards and reminders read
+`category` instead, which is what lets an org rename "Done" to "Yakunlandi" or add
+"Sudda" without breaking anything.
+
+**Schema:**
+```javascript
+{
+  "_id": String,              // wfst-...
+  "org_id": String,
+  "applies_to": String,       // case | task — separate boards
+  "name": String,             // user-editable label
+  "category": String,         // draft | in_progress | in_review | returned | closed
+  "order": Number,            // board position
+  "is_system": Boolean,       // seeded default: renameable, NOT deletable
+  "archived": Boolean,
+  "created_at": DateTime,
+  "updated_at": DateTime
+}
+```
+
+**Indexes:**
+- `(org_id, applies_to, name)` unique, partial on `archived != true`
+- `(org_id, applies_to, order)`
+
+Seeded lazily: `list_states` seeds any board that reads back empty, so
+organizations created before this feature heal on first read without a migration.
+Because seeding is lazy, two first-requests can race; the loser's upsert hits the
+unique index, and `DuplicateKeyError` is caught and skipped rather than surfacing
+as a 500.
+
+`assert_state_usable` — the one validator every member-supplied `state_id` passes
+through — **refuses a `closed`-category column**. `state_id` is otherwise an
+ordinary editable field, so without that refusal an assignee could `PATCH` a Case
+straight onto "Done": it would read as closed to every dashboard and reminder
+(they key on `category`) while `status` stayed `active` and no admin ever signed
+it off. The approval path reaches the closed column through `default_state_for`,
+not through this validator, so closure approval remains its only writer.
+
+Only a *change* to `state_id` is validated. A client that PATCHes a whole form
+back sends the state it just displayed, and on a closed item that value is the
+closed column — validating the no-op would make every other field of a closed
+Case or Task uneditable, and would log a `state_changed` event for a move that
+never happened.
+
+A **closed item's board position is frozen**: a `state_id` change on a Case or
+Task whose `closure.approved_at` is set returns 409. Since `assert_state_usable`
+refuses the closed column, allowing a move *off* it would be one-way — the item
+would show as in progress while `status` said closed, and neither a PATCH back
+nor `approve_closure` (which refuses to run twice) could restore it. The way out
+is `POST /closure/reopen`, admin only: it clears the closure block outright,
+returns `status` to `active`, and moves the item back to the board's draft
+column. `closure.requested_at` is cleared with the rest, so the next closure
+starts from a fresh request rather than letting an admin approve one nobody made.
+Reopening is recorded as `closure.reopened` — a new event, never an edit of the
+approval it undoes.
+
+`state_id` also cannot be cleared. A null would drop the item off every board and
+out of `count_using_state`, letting `archive_state` delete a column that still
+holds work.
+
+---
+
+### 19. **Cases (embedded in `projects`)**
+A **Case is a `projects` document with `org_id` set**. There is no `cases`
+collection. This reuses the whole existing pipeline — GCS upload, SHA-256 dedup,
+OCR, Milvus indexing, vector search, project-scoped sessions, per-project
+instructions — unchanged, including the parts that live in `rest-api-llm`, whose
+`POST /api/v1/project/search` is keyed on `project_id`.
+
+The id stays `proj-...`; only the API and UI say "case".
+
+**Additional fields on an enterprise Case:**
+```javascript
+{
+  "org_id": String,           // set => this project is a Case
+  "description": String,
+  "objective": String,        // success criteria, stays visible
+  "case_type": String,        // AssistantType key: main | tax | court | ...
+  "state_id": String,         // workflow_states, applies_to: case
+  "start_date": Date,
+  "deadline": Date,
+  "assignee_id": String,      // must be an active org member
+  "suspect": String,          // optional
+  "victim": String,           // optional
+  "updated_by": String,
+  "closure": {                // requested by owner/assignee, approved by admin
+    "requested_by": String, "requested_at": DateTime,
+    "approved_by": String,  "approved_at": DateTime
+  }
+}
+```
+
+**Separation rules — the price of the reuse, all three required:**
+- `list_projects` filters personal scope under `$and` (a dict cannot hold two
+  top-level `$or` keys). Rows predating Cases have no `org_id` key, so "personal"
+  matches absent as well as null.
+- `assert_project_access` resolves a Case through `organization_members`, never
+  `project_members` — which stays reserved for the per-Case access-control
+  customization.
+- `assert_project_owner` and the project-invite guard 404 on a Case, so the legacy
+  `/history/projects` surface cannot close, archive, or mint invites for one
+  behind the closure workflow. `assert_project_access` also 404s an **archived**
+  Case, or its files, sessions and instructions would stay live on that surface
+  after an admin archived it.
+
+A chat session opened on a Case carries the Case's `org_id`. Without it the row
+would be personal-scope, and `assert_session_access` only re-checks membership
+when `org_id` is set — so a member removed from the organization would keep read
+and write on every Case conversation they had opened.
+
+Archiving a Case archives its Tasks in the same call, and each one gets its own
+`task.archived` event carrying `{"cascade": "case.archived"}` — a bulk update
+alone would leave every Task's timeline silent at the moment it was archived.
+Left behind, the Tasks would keep appearing in the org-wide task list pointing at
+a Case that 404s, and would keep blocking `archive_state` with a count nobody
+could act on.
+
+Each Task is claimed with its own conditional write and logged only if that write
+is the one that archived it. A read-then-`update_many` would be shorter, but the
+read is a stale snapshot: an admin archiving a Task individually in that window
+would earn a second, misattributed event blaming the cascade. An evidence log may
+miss nothing, and may also invent nothing. The claim loop is batched, so a Case
+with any number of Tasks is covered.
+
+The Case is written before its Tasks, so `create_task`'s access check starts
+failing at once. That check and its insert are not one atomic step, so a create
+already in flight can still land after the cascade has drained the collection —
+`create_task` closes that window itself by re-reading the Case's `archived` flag
+after its insert and deleting the row if it lost the race (deleted, not archived:
+no event has been logged yet, so the Task never existed as far as the record is
+concerned). The ordering also means a failed cascade leaves the Case archived
+with live Tasks, so `archive_case` loads its row **without** the active-only
+filter: `DELETE` is idempotent, and repeating it finishes an interrupted cascade
+instead of 404ing. The second call logs no duplicate `case.archived` event.
+
+Archiving a Case that was already **closed** leaves `status: "closed"` alone and
+only sets `archived`. `archived` is the flag every read filters on; `status` is
+the lifecycle marker, and there is no un-archive route to recover it — overwriting
+it would erase the fact that the work was signed off, permanently.
+
+`start_date` and `deadline` are stored as **BSON dates, not strings**. BSON
+compares across types by type order rather than by value, so a string deadline
+would never match a `datetime` range bound and the `(org_id, deadline)` index
+would return nothing for every reminder query. `clean_for_mongodb` converts a
+`datetime.date` to midnight UTC on the way in.
+
+**Indexes** (on the shared `projects` collection): `(org_id, state_id,
+assignee_id)` and `(org_id, deadline)`, both partial on `org_id` **existing**.
+The partial filter keeps the rows predating Cases out. It deliberately uses
+`$exists` and not the tighter `$type: "string"` — MongoDB only uses a partial
+index when the query is provably a subset of the filter, and it does not infer
+"is a string" from an equality match, so a `$type` filter yields an index the
+planner refuses to touch and every Case query falls back to a collection scan
+over every personal project in the deployment. Confirm with `explain()` after
+changing these.
+
+This is also why `create_project` writes **no `org_id` key at all** for a personal
+project rather than an explicit `null`. A null is a value, `$exists` matches it,
+and every personal project in the deployment would land back in both Case indexes
+— the exact write cost the partial filter exists to avoid. `is_case` and
+`PERSONAL_SCOPE` both already read absence as personal, so nothing is lost.
+
+`AccountArchiveService` scopes **four** sweeps to personal rows — `projects`,
+`sessions`, `messages` and `files`. Unscoped, a member deleting their own account
+takes the whole organization's data with them: the Cases they opened off the
+board, the Case conversations they started, those conversations' transcripts, and
+the evidence files they uploaded. Every one of those losses is visible, because
+`get_sessions_by_project`, `get_messages` and `get_file_by_id` all filter archived
+rows — the Case would keep its session list while every transcript came back empty
+and every file 404'd on open.
+
+One predicate separates all four because all four carry `org_id`. Sessions get it
+at creation; messages inherit it from their session, and a message's attachments
+are stamped at the same moment (a file has no session, and so no org, until it is
+attached); a project-scoped file reads it from its project row inside
+`add_file_upload` rather than taking it from the caller, because the upload path
+is long and a branch that forgot to pass it would lose the org's evidence
+silently. Rows written before this stamp existed have no `org_id` and read as
+personal, which is what they were.
+
+---
+
+### 20. **tasks** Collection (default: `tasks`)
+Assignments within a Case. `org_id` is copied from the parent Case, never taken
+from the request, so the two cannot disagree.
+
+**Schema:**
+```javascript
+{
+  "_id": String,              // task-...
+  "case_id": String,          // a proj-... id (the Case)
+  "org_id": String,           // denormalized for org-wide queries
+  "title": String,
+  "description": String,
+  "objective": String,
+  "task_type": String,        // AssistantType key
+  "state_id": String,         // workflow_states, applies_to: task
+  "start_date": Date,
+  "deadline": Date,
+  "assignee_id": String,
+  "created_by": String,
+  "updated_by": String,
+  "closure": Object,          // same shape as a Case's
+  "archived": Boolean,
+  "created_at": DateTime,
+  "updated_at": DateTime
+}
+```
+
+**Indexes:** `(case_id)`, `(org_id, assignee_id, state_id)`, `(org_id, deadline)`
+
+---
+
+### 21. **activity_logs** Collection (default: `activity_logs`)
+Append-only record of who did what. Evidence under Law ZRU-1115, not application
+state: **no updates, no deletes, no `archived` flag.** Corrections are new events.
+
+`actor.role` and `actor.name` are snapshots taken at write time — roles change and
+members leave, and the log must stay readable years later without a join.
+
+**Schema:**
+```javascript
+{
+  "_id": String,              // alog-... (uuid7: sorts chronologically)
+  "org_id": String,
+  "occurred_at": DateTime,
+  "event_type": String,       // object.verb, closed set
+  "actor": {
+    "id": String,
+    "type": String,           // user | agent | system
+    "role": String,           // SNAPSHOT at event time
+    "name": String            // SNAPSHOT at event time
+  },
+  "on_behalf_of": String,     // the human behind an agent action
+  "object": { "type": String, "id": String, "label": String },
+  "case_id": String,          // nullable, for case timeline queries
+  "task_id": String,          // nullable
+  "payload": Object           // {from, to} on state changes, {fields} on edits
+}
+```
+
+**Indexes:** `(org_id, _id desc)`, `(org_id, case_id, _id desc)`, `(actor.id, _id desc)`
+
+Pagination is a `$lt` cursor on `_id`. Note that `db.find_documents` always applies
+`.sort("created_at", -1)`, and these rows have no `created_at`, so reads go through
+the collection directly.
+
+---
+
 ## System Architecture & Data Flow
 
 ### Access & User Initialization Flow

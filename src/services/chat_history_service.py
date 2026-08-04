@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
+from fastapi import HTTPException, status
 from pydantic import BaseModel
 
 
@@ -10,7 +11,11 @@ async def delete_agent_thread(*, user_id: str, session_id: str) -> bool:
 
 
 from core.config import settings
-from core.dependencies import get_bitrix24_service, get_db_manager
+from core.dependencies import (
+    get_bitrix24_service,
+    get_db_manager,
+    get_organization_service,
+)
 from core.exceptions import (
     InvalidInputError,
     MessageNotFoundError,
@@ -28,6 +33,16 @@ from utils.user_management import clean_for_mongodb, generate_short_id
 # ``is_user_archived``, ``_ensure_user_exists`` — which auth and the archive
 # guard rely on seeing archived docs.
 _ACTIVE_ONLY: dict[str, Any] = {"archived": {"$ne": True}}
+
+
+def _normalize_org_scope(org_id: str | None) -> str | None:
+    """Blank org_id means the personal profile.
+
+    Without this an empty string is falsy enough to skip the membership check but
+    still gets stored, and then matches neither the personal filter (absent/null)
+    nor any org filter — the session becomes permanently invisible.
+    """
+    return (org_id or "").strip() or None
 
 
 class ChatHistoryService:
@@ -72,10 +87,12 @@ class ChatHistoryService:
     async def _create_indexes(self):
         """Create necessary indexes for collections (async)."""
         try:
-            # Sessions - query by user
+            # Sessions - query by user within one org scope
             await self.db_manager.mongo_handler.db[
                 self.sessions_collection
-            ].create_index([("user_id", 1), ("status", 1), ("updated_at", -1)])
+            ].create_index(
+                [("user_id", 1), ("org_id", 1), ("status", 1), ("updated_at", -1)]
+            )
 
             # Messages - query by session
             await self.db_manager.mongo_handler.db[
@@ -184,6 +201,23 @@ class ChatHistoryService:
             raise InvalidInputError("Session does not belong to the provided user")
         return session
 
+    async def assert_session_access(self, session_id: str, user_id: str) -> dict:
+        """The single gate for reaching a session directly by id.
+
+        Existence, ownership, and — for an org session — live membership. Scoping
+        the list endpoint is not enough on its own: without this, anyone holding a
+        session id keeps access after being removed from the organization.
+        """
+        session = await self._ensure_session_exists(session_id)
+        if session.get("user_id") != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
+        org_id = session.get("org_id")
+        if org_id:
+            await get_organization_service().assert_org_member(org_id, user_id)
+        return session
+
     # Validation and existence checks
     async def _ensure_user_exists(self, user_id: str) -> dict:
         """Ensure user exists in database, raise UserNotFoundError if not."""
@@ -243,6 +277,27 @@ class ChatHistoryService:
                 raise InvalidInputError(f"File {file_id} not found")
             if file.get("user_id") != user_id:
                 raise InvalidInputError(f"File {file_id} does not belong to this user")
+
+    async def _inherit_session_org(
+        self, file_ids: list[str] | None, session: dict
+    ) -> str | None:
+        """Give the session's org to the message being written and its attachments.
+
+        A Case conversation belongs to the organization even though one member wrote
+        every line of it, so the account-archive sweep has to be able to tell it
+        apart from that member's personal chats — which means the org has to be on
+        the row.
+
+        Attachments are stamped here rather than at upload because this is where a
+        file becomes organization evidence: a message file has no session, and so no
+        org, until it is attached to one.
+        """
+        org_id = session.get("org_id")
+        if org_id and file_ids:
+            await self.db_manager.mongo_handler.db[self.files_collection].update_many(
+                {"_id": {"$in": file_ids}}, {"$set": {"org_id": org_id}}
+            )
+        return org_id
 
     # Users Management
     async def _create_bitrix_lead_if_needed(self, user: dict) -> dict:
@@ -499,10 +554,18 @@ class ChatHistoryService:
         title: str | None = None,
         tags: list[str] | None = None,
         project_id: str | None = None,
+        org_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict:
         """Create or retrieve an existing session. Uses session_id as _id."""
 
         await self._ensure_user_exists(user_id)
+
+        # The scope is stamped once here and never changed: moving a personal
+        # session into an org later would leak its history across that boundary.
+        org_id = _normalize_org_scope(org_id)
+        if org_id:
+            await get_organization_service().assert_org_member(org_id, user_id)
 
         # Generate session ID using uuid7 with 'ses-' prefix
         session_id = generate_short_id("ses-", type="uuid7")
@@ -513,6 +576,10 @@ class ChatHistoryService:
             "user_id": user_id,
             "session_id": session_id,  # Ensure session_id field is set to match _id
             "project_id": project_id,
+            "org_id": org_id,
+            # A scope tag, not an access boundary: reaching a session is already
+            # gated by assert_session_access and organization membership.
+            "task_id": task_id,
             "title": title or "New Chat",
             "tags": tags or [],
             "status": SessionStatus.draft.value,
@@ -528,20 +595,55 @@ class ChatHistoryService:
         except Exception as e:
             raise InvalidInputError(f"Failed to create session: {str(e)}")
 
+    # org_id needs no separate proof of who is asking: verify_user_or_service_auth
+    # (security/dependencies.py) cross-checks any user_id in the path, query or body
+    # against the JWT subject before the handler runs, so a bearer caller cannot name
+    # someone else's user_id here. Service-key callers are trusted server-to-server
+    # (docs/dt-team-integration.md) and send no org_id. assert_org_member is the real
+    # gate on both paths — it demands a live membership row either way.
     async def get_sessions(
-        self, user_id: str, limit: int = 50, skip: int = 0
+        self,
+        user_id: str,
+        org_id: str | None = None,
+        limit: int = 50,
+        skip: int = 0,
     ) -> list[dict]:
-        """Retrieve active non-project sessions for a user."""
+        """Active non-project sessions for a user, within one scope.
+
+        ``org_id=None`` means the personal profile and excludes every org session,
+        so switching scope in the frontend never mixes the two.
+        """
         await self._ensure_user_exists(user_id)
+
+        # Checked here rather than in the route so every caller is covered — this
+        # function owns the query, so it owns the guard. Mirrors create_session.
+        org_id = _normalize_org_scope(org_id)
+        if org_id:
+            await get_organization_service().assert_org_member(org_id, user_id)
+
+        # ponytail: sessions created before org scoping have no org_id key at all,
+        # so "personal" must match absent as well as null. Same trick as project_id.
+        scope = (
+            {"org_id": org_id}
+            if org_id
+            else {"$or": [{"org_id": {"$exists": False}}, {"org_id": None}]}
+        )
 
         sessions = await self.db_manager.find_documents(
             self.sessions_collection,
             {
                 "user_id": user_id,
                 "status": SessionStatus.active.value,
-                "$or": [
-                    {"project_id": {"$exists": False}},
-                    {"project_id": None},
+                # Two scope predicates, so both live under $and — a query dict
+                # cannot carry two top-level $or keys.
+                "$and": [
+                    {
+                        "$or": [
+                            {"project_id": {"$exists": False}},
+                            {"project_id": None},
+                        ]
+                    },
+                    scope,
                 ],
                 **_ACTIVE_ONLY,
             },
@@ -687,11 +789,13 @@ class ChatHistoryService:
             content = content.model_dump()
 
         await self._ensure_file_attachments_for_user(file_ids, user_id)
+        org_id = await self._inherit_session_org(file_ids, session)
 
         message = {
             "_id": resolved_message_id,
             "user_id": user_id,  # Auto-populated from session
             "session_id": session_id,
+            "org_id": org_id,  # Inherited from the session, like user_id
             "message_id": resolved_message_id,  # Ensure message_id field is set to match _id
             "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "content": content,
@@ -737,6 +841,7 @@ class ChatHistoryService:
             content = content.model_dump()
 
         await self._ensure_file_attachments_for_user(file_ids, user_id)
+        org_id = await self._inherit_session_org(file_ids, session)
 
         now = datetime.now(timezone.utc)
         message_document = clean_for_mongodb(
@@ -744,6 +849,7 @@ class ChatHistoryService:
                 "message_id": message_id,
                 "user_id": user_id,
                 "session_id": session_id,
+                "org_id": org_id,
                 "file_ids": file_ids or [],
                 "content": content,
                 "metadata": metadata or {},
@@ -961,7 +1067,15 @@ class ChatHistoryService:
         session_id: str | None = None,
         webhook_url: str | None = None,
     ) -> dict:
-        """Add a file upload record. Uses file_id as _id."""
+        """Add a file upload record. Uses file_id as _id.
+
+        A project-scoped file inherits its project's `org_id`, which marks a Case's
+        evidence as belonging to the organization rather than to whoever uploaded
+        it — so deleting that member's personal account does not archive it out from
+        under everyone else. Read here rather than passed in by the caller: the
+        upload path is long and every branch of it would have to remember, and one
+        that forgot would lose the org's evidence silently.
+        """
 
         await self._ensure_user_exists(user_id)
 
@@ -1002,6 +1116,13 @@ class ChatHistoryService:
         }
         if project_id:
             file_record["project_id"] = project_id
+            # Projected to the one field, on a path that has already spooled the
+            # upload to disk and pushed it to GCS — this read is noise beside it.
+            project = await self.db_manager.mongo_handler.db[
+                settings.PROJECTS_COLLECTION
+            ].find_one({"_id": project_id}, {"org_id": 1})
+            if project and project.get("org_id"):
+                file_record["org_id"] = project["org_id"]
         if session_id:
             file_record["session_id"] = session_id
         if webhook_url:

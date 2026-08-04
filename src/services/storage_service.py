@@ -64,9 +64,7 @@ class StorageService:
             "client_id": settings.GCS_CLIENT_ID,
         }
         credential_fields = set(required) - {"project_id"}
-        configured_credentials = {
-            name for name in credential_fields if required[name]
-        }
+        configured_credentials = {name for name in credential_fields if required[name]}
         if not configured_credentials:
             return None
 
@@ -94,6 +92,16 @@ class StorageService:
             service_account_info
         )
 
+    def _bucket_for(self, bucket_name: str | None):
+        """The default bucket, or a named one for objects that live elsewhere.
+
+        Avatars are served from a world-readable bucket. Chat documents must never
+        share it, so the caller names the target instead of it being global state.
+        """
+        if bucket_name and bucket_name != self.bucket_name:
+            return self.client.bucket(bucket_name)
+        return self.bucket
+
     def upload_file(
         self,
         data: bytes,
@@ -101,6 +109,7 @@ class StorageService:
         content_type: str = "application/octet-stream",
         return_signed_url: bool = True,
         expiration_minutes: int = 60,
+        bucket_name: str | None = None,
     ) -> str:
         """
         Upload a file to Google Cloud Storage.
@@ -111,12 +120,13 @@ class StorageService:
             content_type: MIME type of the file
             return_signed_url: If True, returns a signed URL (recommended). If False, returns public URL
             expiration_minutes: How long the signed URL should be valid (default: 60 minutes)
+            bucket_name: Target bucket; defaults to the configured private bucket
 
         Returns:
             Signed URL (private, temporary) or public URL (permanent) based on return_signed_url parameter
         """
         try:
-            blob = self.bucket.blob(destination_path)
+            blob = self._bucket_for(bucket_name).blob(destination_path)
             blob.upload_from_string(data, content_type=content_type)
 
             logger.info(f"[StorageService] Uploaded file to: {destination_path}")
@@ -145,7 +155,9 @@ class StorageService:
             raise
 
     @staticmethod
-    def _build_access_url(blob, return_signed_url: bool, expiration_minutes: int) -> str:
+    def _build_access_url(
+        blob, return_signed_url: bool, expiration_minutes: int
+    ) -> str:
         """Return either a signed URL or public URL for an uploaded blob."""
         if return_signed_url:
             signed_url = blob.generate_signed_url(
@@ -230,19 +242,22 @@ class StorageService:
             logger.error(f"[StorageService] Failed to archive file: {str(e)}")
             return False
 
-    def permanently_delete_file(self, file_path: str) -> bool:
+    def permanently_delete_file(
+        self, file_path: str, bucket_name: str | None = None
+    ) -> bool:
         """
         Permanently delete a file from Google Cloud Storage without archiving.
         Use with caution - this action cannot be undone.
 
         Args:
             file_path: Path to the file in the bucket
+            bucket_name: Target bucket; defaults to the configured private bucket
 
         Returns:
             True if deleted successfully, False otherwise
         """
         try:
-            blob = self.bucket.blob(file_path)
+            blob = self._bucket_for(bucket_name).blob(file_path)
             blob.delete()
             logger.info(f"[StorageService] Permanently deleted file: {file_path}")
             return True
