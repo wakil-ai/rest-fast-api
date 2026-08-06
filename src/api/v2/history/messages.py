@@ -1,11 +1,10 @@
 # app/routers/history/messages.py
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from core.dependencies import get_chat_history_service
 from models.chat_history import (
     MessageCreateRequest,
     MessageResponse,
-    MessageSharedRequest,
     MessageSharedResponse,
 )
 from utils.user_management import (
@@ -19,10 +18,39 @@ router = APIRouter(prefix="/messages", tags=["Messages"])
 chat_history_service = get_chat_history_service()
 
 
+async def current_actor(request: Request) -> str | None:
+    """The bearer subject, or None when the caller used a service API key.
+
+    verify_user_or_service_auth records the JWT subject on request.state
+    (security/dependencies.py:174) and records nothing for an API key (:178-180).
+    Depends(get_current_user_id) would 401 the latter, and DT reads sessions it
+    does not own with only x-dt-team-api-key (docs/dt-team-integration.md:210).
+    """
+    return getattr(request.state, "authenticated_user_id", None)
+
+
+CurrentActor = Depends(current_actor)
+
+
+async def _assert_access(session_id: str, actor: str | None) -> None:
+    """Ownership applies to users, not to trusted backends — see current_actor.
+
+    These handlers carry no user_id in the path, query or body, so the router-level
+    actor cross-check (security/dependencies.py:183) has nothing to compare and
+    waves them through. This is the only guard they get.
+    """
+    if actor:
+        await chat_history_service.assert_session_access(session_id, actor)
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=MessageResponse)
 @handle_service_error
-async def create_message(request: MessageCreateRequest):
+async def create_message(
+    request: MessageCreateRequest, actor: str | None = CurrentActor
+):
     """Create a new message. Message ID is auto-generated (client-provided ID is ignored)."""
+    # Before the write, so a refused request never reaches add_message.
+    await _assert_access(request.session_id, actor)
     msg = await chat_history_service.add_message(
         session_id=request.session_id,
         file_ids=request.file_ids,
@@ -34,17 +62,25 @@ async def create_message(request: MessageCreateRequest):
 
 @router.get("/{session_id}", response_model=list[MessageResponse])
 @handle_service_error
-async def list_messages(session_id: str, limit: int = 50):
+async def list_messages(
+    session_id: str, limit: int = 50, actor: str | None = CurrentActor
+):
+    await _assert_access(session_id, actor)
     msgs = await chat_history_service.get_messages(session_id, limit)
     return [sanitize_message_for_response(serialize_mongo_id(m)) for m in msgs]
 
 
 @router.get("/{session_id}/{message_id}", response_model=MessageResponse)
 @handle_service_error
-async def get_message(session_id: str, message_id: str):
+async def get_message(
+    session_id: str, message_id: str, actor: str | None = CurrentActor
+):
+    await _assert_access(session_id, actor)
     msg = await chat_history_service.get_message(message_id)
     if not msg:
         raise HTTPException(404, "Message not found")
+    # Belt to the braces above: the session is the caller's, but this confirms the
+    # message is that session's rather than one borrowed from elsewhere.
     if msg["session_id"] != session_id:
         raise HTTPException(403, "Message does not belong to this session")
     return sanitize_message_for_response(serialize_mongo_id(msg))
@@ -52,8 +88,24 @@ async def get_message(session_id: str, message_id: str):
 
 @router.post("/{message_id}/share", response_model=MessageSharedResponse)
 @handle_service_error
-async def share_message(message_id: str, request: MessageSharedRequest):
+async def share_message(message_id: str, actor: str | None = CurrentActor):
+    """Mint a share link for a message. Only for a message the caller can read.
+
+    The share is served by GET /api/v2/share/{share_id} with no authentication, so
+    this is the one endpoint here that turns a private message into a public URL —
+    the session check is what stops that being anyone's message.
+    """
+    msg = await chat_history_service.get_message(message_id)
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    # The session comes from the message, never from a caller-supplied value, so
+    # there is nothing here to point at a session the caller does have access to.
+    await _assert_access(msg["session_id"], actor)
+    # A service-key caller records shared_by: None. The removed request body used
+    # to let one name an arbitrary user, which no integration does and which no
+    # bearer caller could ever do (verify_authenticated_actor pinned it to the
+    # token). Attribution is deliberately unavailable to callers without identity.
     share = await chat_history_service.share_message(
-        message_id=message_id, user_id=request.user_id
+        message_id=message_id, user_id=actor
     )
     return serialize_mongo_id(share)

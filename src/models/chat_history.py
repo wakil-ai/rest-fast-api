@@ -186,10 +186,6 @@ class MessageSharedResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class MessageSharedRequest(BaseModel):
-    user_id: str = Field(..., description="User ID who is sharing the message")
-
-
 class ShareResponse(BaseModel):
     """Response model for shared message data"""
 

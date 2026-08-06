@@ -11,7 +11,7 @@ from typing import Any, NamedTuple, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 import api.v2.history.sessions as sessions_api
@@ -493,3 +493,263 @@ async def test_get_session_checks_access(session_routes: Routes) -> None:
 
     assert response.status_code == 200
     service.assert_session_access.assert_awaited_once_with("ses-1", "u1")
+
+
+# --- messages router --------------------------------------------------------
+# The messages router mounts under verify_user_or_service_auth, which establishes
+# THAT a caller is authenticated and nothing about which sessions they may touch.
+# These tests pin the missing half. They override current_actor rather than
+# get_current_user_id: these handlers resolve the actor from request.state, so
+# Routes.as_user would override a dependency they never call and prove nothing.
+
+MESSAGE_DOC: dict[str, Any] = {
+    "_id": "msg-1",
+    "session_id": "ses-1",
+    "user_id": "u1",
+    "content": {"query": "hi", "response": "hello"},
+    "created_at": NOW,
+    "updated_at": NOW,
+}
+
+
+@pytest.fixture
+def message_routes(monkeypatch: pytest.MonkeyPatch) -> Routes:
+    """Messages router on a bare app, with the module-level service stubbed."""
+    import api.v2.history.messages as messages_api
+
+    service = AsyncMock(unsafe=True)  # assert_session_access starts with "assert"
+    service.assert_session_access.return_value = {"_id": "ses-1", "user_id": "u1"}
+    service.get_messages.return_value = [MESSAGE_DOC]
+    service.get_message.return_value = MESSAGE_DOC
+    service.add_message.return_value = MESSAGE_DOC
+    monkeypatch.setattr(messages_api, "chat_history_service", service)
+
+    app = FastAPI()
+    app.include_router(messages_api.router)
+    return Routes(TestClient(app), service, app)
+
+
+def _as_actor(routes: Routes, actor: str | None) -> None:
+    """None means a service-key caller: authenticated, but with no user identity."""
+    import api.v2.history.messages as messages_api
+
+    routes.app.dependency_overrides[messages_api.current_actor] = lambda: actor
+
+
+def _refuse_access(service: AsyncMock) -> None:
+    service.assert_session_access.side_effect = HTTPException(
+        status_code=403, detail="Access denied"
+    )
+
+
+async def test_listing_messages_asserts_session_access(message_routes: Routes) -> None:
+    client, service, _ = message_routes
+    _as_actor(message_routes, "u1")
+
+    client.get("/messages/ses-1")
+
+    service.assert_session_access.assert_awaited_once_with("ses-1", "u1")
+
+
+async def test_listing_another_users_session_is_refused(message_routes: Routes) -> None:
+    """The whole point: a valid token is not authorization for an arbitrary id."""
+    client, service, _ = message_routes
+    _as_actor(message_routes, "stranger")
+    _refuse_access(service)
+
+    response = client.get("/messages/ses-1")
+
+    assert response.status_code == 403
+    service.get_messages.assert_not_awaited()
+
+
+async def test_reading_one_message_asserts_session_access(
+    message_routes: Routes,
+) -> None:
+    client, service, _ = message_routes
+    _as_actor(message_routes, "stranger")
+    _refuse_access(service)
+
+    response = client.get("/messages/ses-1/msg-1")
+
+    assert response.status_code == 403
+    service.get_message.assert_not_awaited()
+
+
+async def test_posting_into_another_users_session_writes_nothing(
+    message_routes: Routes,
+) -> None:
+    """A refused write must be refused before the insert, not after."""
+    client, service, _ = message_routes
+    _as_actor(message_routes, "stranger")
+    _refuse_access(service)
+
+    response = client.post(
+        "/messages",
+        json={
+            "session_id": "ses-1",
+            "content": {"query": "forged", "response": "forged"},
+        },
+    )
+
+    assert response.status_code == 403
+    service.add_message.assert_not_awaited()
+
+
+async def test_the_session_owner_is_unaffected(message_routes: Routes) -> None:
+    """All four endpoints. A guard that refuses the owner is as broken as one
+    that admits a stranger, and only the stranger half is covered above."""
+    client, service, _ = message_routes
+    _as_actor(message_routes, "u1")
+    service.share_message.return_value = SHARE_DOC
+
+    assert client.get("/messages/ses-1").status_code == 200
+    assert client.get("/messages/ses-1/msg-1").status_code == 200
+    assert (
+        client.post(
+            "/messages",
+            json={"session_id": "ses-1", "content": {"query": "hi", "response": "yo"}},
+        ).status_code
+        == 201
+    )
+    assert client.post("/messages/msg-1/share").status_code == 200
+
+
+async def test_a_service_key_caller_is_not_ownership_checked(
+    message_routes: Routes,
+) -> None:
+    """Regression guard for docs/dt-team-integration.md:210, which reads sessions
+    it does not own using only x-dt-team-api-key. No bearer subject exists to
+    check against; the API key is the trust boundary."""
+    client, service, _ = message_routes
+    _as_actor(message_routes, None)
+
+    assert client.get("/messages/ses-1").status_code == 200
+    service.assert_session_access.assert_not_awaited()
+
+
+SHARE_DOC: dict[str, Any] = {
+    "share_id": "share-1",
+    "message_id": "msg-1",
+    "url": "share/share-1",
+    "created_at": NOW,
+}
+
+
+async def test_sharing_someone_elses_message_is_refused(
+    message_routes: Routes,
+) -> None:
+    """The severe one: GET /share/{share_id} needs no auth, so an unguarded share
+    publishes another tenant's message permanently."""
+    client, service, _ = message_routes
+    _as_actor(message_routes, "stranger")
+    _refuse_access(service)
+
+    response = client.post("/messages/msg-1/share")
+
+    assert response.status_code == 403
+    service.share_message.assert_not_awaited()
+
+
+async def test_sharing_asserts_the_messages_own_session(
+    message_routes: Routes,
+) -> None:
+    """Resolved from the message, not from anything the caller supplied."""
+    client, service, _ = message_routes
+    _as_actor(message_routes, "u1")
+    service.share_message.return_value = SHARE_DOC
+
+    client.post("/messages/msg-1/share")
+
+    service.assert_session_access.assert_awaited_once_with("ses-1", "u1")
+    assert service.share_message.await_args.kwargs["user_id"] == "u1"
+
+
+async def test_sharing_a_missing_message_is_404(message_routes: Routes) -> None:
+    client, service, _ = message_routes
+    _as_actor(message_routes, "u1")
+    service.get_message.return_value = None
+
+    assert client.post("/messages/msg-1/share").status_code == 404
+    service.share_message.assert_not_awaited()
+
+
+# --- the wiring the guard depends on ----------------------------------------
+# Every test above overrides current_actor, so none of them exercise the chain
+# that makes it work in the real app: verify_user_or_service_auth writes the JWT
+# subject to request.state, and only then does current_actor read it. Break that
+# ordering, or mount this router without that dependency, and current_actor
+# returns None for everyone — _assert_access becomes a no-op and the whole guard
+# evaporates with the suite still green. These three pin it.
+
+
+def _wired_app(monkeypatch: pytest.MonkeyPatch, service: AsyncMock) -> TestClient:
+    """The messages router mounted the way main.py mounts it (:142-146)."""
+    import api.v2.history.messages as messages_api
+    import security.dependencies as deps
+
+    monkeypatch.setattr(messages_api, "chat_history_service", service)
+    # Only token *validation* is stubbed. verify_user_or_service_auth itself runs
+    # for real — its request.state write is the thing under test.
+    monkeypatch.setattr(deps, "get_current_user_id", AsyncMock(return_value="u1"))
+    def _accept_any_key(request_: Request) -> bool:
+        return True
+
+    monkeypatch.setattr(deps, "verify_api_key_or_dt_key", _accept_any_key)
+    monkeypatch.setattr(deps, "verify_not_archived", AsyncMock(return_value=True))
+
+    app = FastAPI()
+    app.include_router(
+        messages_api.router,
+        dependencies=[Depends(deps.verify_user_or_service_auth)],
+    )
+    return TestClient(app)
+
+
+async def test_a_bearer_subject_reaches_the_ownership_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End to end: header -> verify_user_or_service_auth -> request.state ->
+    current_actor -> assert_session_access. No dependency_overrides anywhere."""
+    service = AsyncMock(unsafe=True)
+    service.assert_session_access.return_value = {"_id": "ses-1", "user_id": "u1"}
+    service.get_messages.return_value = [MESSAGE_DOC]
+    client = _wired_app(monkeypatch, service)
+
+    response = client.get("/messages/ses-1", headers={"Authorization": "Bearer tok"})
+
+    assert response.status_code == 200
+    service.assert_session_access.assert_awaited_once_with("ses-1", "u1")
+
+
+async def test_an_api_key_caller_reaches_no_ownership_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other branch, for real: no Authorization header means no subject on
+    request.state, so there is nobody to check ownership against."""
+    service = AsyncMock(unsafe=True)
+    service.get_messages.return_value = [MESSAGE_DOC]
+    client = _wired_app(monkeypatch, service)
+
+    response = client.get("/messages/ses-1", headers={"x-api-key": "svc"})
+
+    assert response.status_code == 200
+    service.assert_session_access.assert_not_awaited()
+
+
+def test_the_history_router_is_mounted_behind_the_auth_dependency() -> None:
+    """Guards against the refactor the two tests above cannot see: they mount the
+    router themselves, so neither would notice main.py dropping the dependency."""
+    from main import create_app
+    from security.dependencies import verify_user_or_service_auth
+
+    app = create_app()
+    routes = [
+        r
+        for r in app.routes
+        if getattr(r, "path", "") == "/api/v2/history/messages/{session_id}"
+    ]
+
+    assert routes, "messages route is not mounted at the expected path"
+    calls = [d.call for d in routes[0].dependant.dependencies]  # type: ignore[attr-defined]
+    assert verify_user_or_service_auth in calls

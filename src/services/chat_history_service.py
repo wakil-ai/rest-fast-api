@@ -917,9 +917,13 @@ class ChatHistoryService:
         return messages[0] if messages else None
 
     async def share_message(
-        self, user_id: str, message_id: str, id_length: int = 32
+        self, user_id: str | None, message_id: str, id_length: int = 32
     ) -> dict:
-        """Share a message with another user."""
+        """Share a message with another user.
+
+        ``user_id`` is recorded as ``shared_by`` and is None for a service-key
+        caller, which establishes no user identity (see messages.current_actor).
+        """
 
         # Get message to share
         message = await self.get_message(message_id)
