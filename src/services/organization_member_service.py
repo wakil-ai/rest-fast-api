@@ -15,13 +15,16 @@ from core.dependencies import (
     get_chat_history_service,
     get_db_manager,
     get_organization_service,
+    get_storage_service,
 )
+from core.logger import logger
 from models.organizations import (
     OrganizationInviteStatus,
     OrganizationMembershipRole,
     OrganizationMemberStatus,
     OrganizationStatus,
 )
+from services.organization_service import avatar_blob_key
 from utils.user_management import clean_for_mongodb, generate_short_id
 
 
@@ -265,11 +268,28 @@ class OrganizationMemberService:
         member_count = await self.orgs.active_member_count(org_id)
         seat_limit = org.get("seat_limit", settings.ORG_SEAT_LIMIT)
 
+        # Signed here rather than pointing at GET /{org_id}/avatar: that endpoint is
+        # membership-gated, and the whole audience for a preview is people who are
+        # not members yet. The invite id is what gates this, as it already gates the
+        # org name. A signing failure costs the picture, not the preview.
+        org_avatar_url = None
+        if org.get("avatar_path"):
+            try:
+                org_avatar_url = get_storage_service().get_signed_url(
+                    avatar_blob_key(org_id),
+                    expiration_minutes=settings.ORG_AVATAR_SIGNED_URL_MINUTES,
+                )
+            except Exception:  # noqa: BLE001 — a picture is not worth a failed preview
+                logger.warning(
+                    f"Avatar signing failed for {org_id}; preview returns no picture",
+                    exc_info=True,
+                )
+
         return {
             "invite_id": invite_id,
             "org_id": org_id,
             "org_name": org.get("name", ""),
-            "org_avatar_url": org.get("avatar_url"),
+            "org_avatar_url": org_avatar_url,
             "org_status": org.get("status", OrganizationStatus.active.value),
             "status": self._effective_invite_status(invite),
             "expires_at": invite.get("expires_at"),

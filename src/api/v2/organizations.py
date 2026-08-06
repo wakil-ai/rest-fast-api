@@ -2,13 +2,15 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 
+from core.config import settings
 from core.dependencies import (
     get_organization_member_service,
     get_organization_service,
 )
 from models.organizations import (
+    AvatarUrlResponse,
     OrganizationCreateRequest,
     OrganizationInviteAcceptResponse,
     OrganizationInviteListResponse,
@@ -35,10 +37,19 @@ member_service = get_organization_member_service()
 
 
 def _org_to_response(doc: dict[str, Any]) -> OrganizationResponse:
+    org_id = str(doc["_id"])
+    # Rebuilt from the live prefix rather than served from Mongo: the stored value
+    # is only a presence flag, and a row written under an older API_PREFIX would
+    # otherwise keep handing out a path that no longer routes.
+    avatar_path = (
+        f"{settings.API_PREFIX}/organizations/{org_id}/avatar"
+        if doc.get("avatar_path")
+        else None
+    )
     return OrganizationResponse(
-        org_id=str(doc["_id"]),
+        org_id=org_id,
         name=doc["name"],
-        avatar_url=doc.get("avatar_url"),
+        avatar_path=avatar_path,
         created_by=doc["created_by"],
         status=doc["status"],
         seat_limit=doc["seat_limit"],
@@ -105,6 +116,21 @@ async def update_organization(
         updates=body.model_dump(exclude_unset=True),
     )
     return _org_to_response(doc)
+
+
+@router.get("/{org_id}/avatar", response_model=AvatarUrlResponse)
+@handle_service_error
+async def get_organization_avatar(
+    org_id: str, response: Response, user_id: str = CurrentUser
+):
+    """A short-lived signed URL for the organization's picture. Any member.
+
+    Not a redirect: a browser `<img>` cannot send the bearer token this API
+    requires, so the client fetches this and sets `src` from the result.
+    """
+    # The body outlives nothing — a cached copy would hand out a dead signature.
+    response.headers["Cache-Control"] = "private, no-store"
+    return await org_service.get_organization_avatar_url(org_id=org_id, user_id=user_id)
 
 
 @router.delete("/{org_id}/avatar", response_model=OrganizationResponse)

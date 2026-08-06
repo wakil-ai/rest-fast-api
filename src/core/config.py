@@ -64,15 +64,15 @@ class Settings(BaseSettings):
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
-    # Objects here are world-readable, so nothing private may be written to it.
-    # Must be a different bucket from GCS_BUCKET_NAME; leaving it unset disables
-    # organization avatar uploads rather than silently using the private bucket.
-    GCS_PUBLIC_BUCKET_NAME: str | None = None
     GCS_CREDENTIALS_PATH: str | None = None  # Optional local service account JSON file
     GCS_PROJECT_ID: str | None = None
     GCS_CLIENT_EMAIL: str | None = None
     GCS_PRIVATE_KEY: str | None = None
     GCS_PRIVATE_KEY_ID: str | None = None
+    # Shorter than the 60-minute storage default: an avatar is fetched immediately
+    # after the JSON response and never re-fetched from the same URL, so a longer
+    # window only widens the period in which a leaked URL still works.
+    ORG_AVATAR_SIGNED_URL_MINUTES: int = 15
     GCS_CLIENT_ID: str | None = None
 
     # Assistant compatibility names owned by public routes/credits.

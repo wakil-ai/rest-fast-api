@@ -291,6 +291,70 @@ async def test_invite_preview_exposes_org_name_without_membership():
     assert preview["seats_remaining"] == settings.ORG_SEAT_LIMIT - 1
 
 
+async def _give_the_org_an_avatar(org_svc, org_id: str) -> None:
+    await org_svc.db.update_documents(
+        org_svc.orgs_collection,
+        {"_id": org_id},
+        {"$set": {"avatar_path": f"/api/v2/organizations/{org_id}/avatar"}},
+    )
+
+
+def _stub_storage(monkeypatch, **attrs) -> MagicMock:
+    storage = MagicMock(**attrs)
+    monkeypatch.setattr(
+        "services.organization_member_service.get_storage_service", lambda: storage
+    )
+    return storage
+
+
+async def test_invite_preview_signs_the_avatar_for_a_non_member(monkeypatch):
+    """The preview audience is people who cannot use the membership-gated route."""
+    storage = _stub_storage(monkeypatch)
+    storage.get_signed_url.return_value = "https://storage/signed?sig=x"
+    org_svc = _make_org_service()
+    org = await org_svc.create_organization(user_id="u1", name="Legal Dept")
+    await _give_the_org_an_avatar(org_svc, org["_id"])
+    svc = _make_member_service(org_svc)
+    invite = await svc.create_invite(org["_id"], "u1")
+
+    preview = await svc.get_invite_preview(invite["_id"], "outsider")
+
+    assert preview["org_avatar_url"] == "https://storage/signed?sig=x"
+    assert (
+        storage.get_signed_url.call_args.args[0]
+        == f"organizations/{org['_id']}/avatar"
+    )
+
+
+async def test_invite_preview_survives_a_signing_failure(monkeypatch):
+    """A picture that cannot be signed is not a failed preview."""
+    storage = _stub_storage(monkeypatch)
+    storage.get_signed_url.side_effect = RuntimeError("gcs down")
+    org_svc = _make_org_service()
+    org = await org_svc.create_organization(user_id="u1", name="Legal Dept")
+    await _give_the_org_an_avatar(org_svc, org["_id"])
+    svc = _make_member_service(org_svc)
+    invite = await svc.create_invite(org["_id"], "u1")
+
+    preview = await svc.get_invite_preview(invite["_id"], "outsider")
+
+    assert preview["org_avatar_url"] is None
+    assert preview["org_name"] == "Legal Dept"
+
+
+async def test_invite_preview_does_not_sign_when_the_org_has_no_picture(monkeypatch):
+    storage = _stub_storage(monkeypatch)
+    org_svc = _make_org_service()
+    org = await org_svc.create_organization(user_id="u1", name="Legal Dept")
+    svc = _make_member_service(org_svc)
+    invite = await svc.create_invite(org["_id"], "u1")
+
+    preview = await svc.get_invite_preview(invite["_id"], "outsider")
+
+    assert preview["org_avatar_url"] is None
+    storage.get_signed_url.assert_not_called()
+
+
 async def test_list_members_returns_admin_first_with_profile_fields():
     org_svc = _make_org_service()
     org = await org_svc.create_organization(user_id="u1", name="Legal Dept")

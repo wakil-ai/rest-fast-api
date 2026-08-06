@@ -1,7 +1,7 @@
 """Organizations: creation and the caller's organization list."""
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -20,42 +20,18 @@ from utils.user_management import clean_for_mongodb, generate_short_id
 _ACTIVE_ONLY: dict[str, Any] = {"archived": {"$ne": True}}
 
 # Browser-renderable raster formats only. SVG is deliberately absent: it can carry
-# script, and these objects are served from a world-readable bucket.
+# script, and the app hands the browser a URL that renders in the user's session.
 AVATAR_CONTENT_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
 
 
-def _avatar_path(org_id: str) -> str:
-    """One object per organization, overwritten in place by every upload."""
-    return f"organizations/{org_id}/avatar"
+def avatar_blob_key(org_id: str) -> str:
+    """The GCS object key. One object per organization, overwritten by every upload.
 
-
-def _public_bucket() -> str:
-    """The world-readable bucket avatars live in, or a loud failure.
-
-    Never the private document bucket, whether it was left unset or pointed at the
-    same name: an object written there is unreachable through the public URL handed
-    to the browser, so the upload would report success and the picture would render
-    as broken with nothing to explain it.
+    Not to be confused with ``avatar_path`` on the document, which is an API path —
+    different string, different purpose.
     """
-    bucket = (settings.GCS_PUBLIC_BUCKET_NAME or "").strip()
-    if not bucket:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                "Organization avatars are unavailable: GCS_PUBLIC_BUCKET_NAME is "
-                "not configured."
-            ),
-        )
-    if bucket == (settings.GCS_BUCKET_NAME or "").strip():
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                "Organization avatars are unavailable: GCS_PUBLIC_BUCKET_NAME must "
-                "name a different bucket from GCS_BUCKET_NAME."
-            ),
-        )
-    return bucket
+    return f"organizations/{org_id}/avatar"
 
 
 def assert_avatar_size(size: int | None) -> None:
@@ -172,8 +148,8 @@ class OrganizationService:
             {
                 "_id": org_id,
                 "name": clean_name,
-                # Set only by set_organization_avatar; there is no client-supplied URL.
-                "avatar_url": None,
+                # Set only by set_organization_avatar; there is no client-supplied value.
+                "avatar_path": None,
                 "created_by": user_id,
                 "status": OrganizationStatus.active.value,
                 "seat_limit": settings.ORG_SEAT_LIMIT,
@@ -240,12 +216,13 @@ class OrganizationService:
     async def set_organization_avatar(
         self, *, org_id: str, user_id: str, data: bytes, content_type: str | None
     ) -> dict[str, Any]:
-        """Store an organization's picture and record its permanent public URL.
+        """Store an organization's picture. Admin only.
+
+        The object goes to the private bucket and the document records only a path.
+        Nothing here is renderable on its own — a URL is minted per read.
 
         One fixed object per organization, overwritten on every upload, so there is
-        never a second blob to garbage-collect. Because the path never changes, the
-        stored URL carries a ``?v=`` stamp — without it browsers would keep serving
-        the previous picture from cache after a change. GCS ignores the parameter.
+        never a second blob to garbage-collect.
         """
         org = await self.assert_org_admin(org_id, user_id)
 
@@ -264,16 +241,23 @@ class OrganizationService:
             )
         assert_avatar_size(len(data))
 
-        public_url = get_storage_service().upload_file(
+        # Default bucket: the private one. Reachability now comes from a signed URL
+        # minted on read, not from the object being world-readable. The return value
+        # is a public URL nobody can use, so it is discarded — which also makes
+        # upload_file's "Ensure proper permissions are set" warning noise here.
+        get_storage_service().upload_file(
             data=data,
-            destination_path=_avatar_path(org_id),
+            destination_path=avatar_blob_key(org_id),
             content_type=media_type,
             return_signed_url=False,
-            bucket_name=_public_bucket(),
         )
-        stamp = int(datetime.now(timezone.utc).timestamp())
+        # A path, not a URL: the API host differs per environment, and this value
+        # never expires. It is the presence flag — the renderable URL is minted on
+        # read by GET /{org_id}/avatar, and the path itself is rebuilt from the
+        # live prefix in _org_to_response, so what lands here is never served raw.
         return await self._apply_admin_update(
-            org, {"avatar_url": f"{public_url}?v={stamp}"}
+            org,
+            {"avatar_path": f"{settings.API_PREFIX}/organizations/{org_id}/avatar"},
         )
 
     async def clear_organization_avatar(
@@ -281,24 +265,59 @@ class OrganizationService:
     ) -> dict[str, Any]:
         """Remove an organization's picture. Admin only.
 
-        The blob is deleted rather than just unlinked: it sits in a world-readable
-        bucket, so anyone who saw the URL earlier would otherwise keep it. A storage
-        failure is logged but does not block the removal — leaving an admin unable to
-        drop a picture because GCS is having a moment is the worse outcome.
+        The blob is deleted rather than just unlinked: an unreferenced object has no
+        reason to linger, and any signed URL already handed out dies with its own
+        expiry rather than outliving the picture indefinitely. A storage failure is
+        logged but does not block the removal — leaving an admin unable to drop a
+        picture because GCS is having a moment is the worse outcome.
         """
         org = await self.assert_org_admin(org_id, user_id)
 
-        if org.get("avatar_url"):
+        if org.get("avatar_path"):
             deleted = get_storage_service().permanently_delete_file(
-                _avatar_path(org_id), bucket_name=_public_bucket()
+                avatar_blob_key(org_id)
             )
             if not deleted:
                 logger.warning(
                     f"Avatar object for {org_id} outlived its document; "
-                    "the public URL stays reachable until it is removed by hand"
+                    "it stays signable until it is removed by hand"
                 )
 
-        return await self._apply_admin_update(org, {"avatar_url": None})
+        return await self._apply_admin_update(org, {"avatar_path": None})
+
+    async def get_organization_avatar_url(
+        self, *, org_id: str, user_id: str
+    ) -> dict[str, Any]:
+        """Mint a short-lived URL for the organization's picture. Members only.
+
+        Signed on demand rather than stored: the object lives in the private
+        bucket, so reachability has to expire.
+        """
+        org = await self.assert_org_member(org_id, user_id)
+        if not org.get("avatar_path"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="This organization has no avatar",
+            )
+
+        minutes = settings.ORG_AVATAR_SIGNED_URL_MINUTES
+        try:
+            url = get_storage_service().get_signed_url(
+                avatar_blob_key(org_id), expiration_minutes=minutes
+            )
+        except Exception:  # noqa: BLE001 — signing raises from google-auth, GCS and
+            # the network; anything that escapes here becomes a bare 500 on the one
+            # endpoint this migration exists to add, via handle_service_error.
+            logger.error(f"Avatar signing failed for {org_id}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Avatar service is temporarily unavailable",
+            )
+
+        return {
+            "url": url,
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=minutes),
+        }
 
     async def _apply_admin_update(
         self, org: dict[str, Any], set_fields: dict[str, Any]
