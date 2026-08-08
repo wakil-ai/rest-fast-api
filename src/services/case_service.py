@@ -14,12 +14,13 @@ from core.config import settings
 from core.dependencies import (
     get_activity_log_service,
     get_db_manager,
+    get_draft_service,
     get_organization_service,
     get_workflow_state_service,
 )
 from core.logger import logger
 from models.activity_logs import EventType
-from models.projects import ProjectStatus
+from models.projects import ProjectStatus, is_closed
 from models.workflow_states import StateAppliesTo, StateCategory
 from utils.user_management import clean_for_mongodb, generate_short_id
 
@@ -59,6 +60,9 @@ class CaseService:
 
     def _logs(self):
         return get_activity_log_service()
+
+    def _drafts(self):
+        return get_draft_service()
 
     def _tasks(self):
         # Imported here, not at module scope: TaskService imports this module.
@@ -299,7 +303,7 @@ class CaseService:
                     # refuses the closed column, so allowing a move *off* it would be
                     # one-way: the Case would show as in progress while `status` said
                     # closed, and nothing could put it back. Reopening is the way out.
-                    if (case.get("closure") or {}).get("approved_at"):
+                    if is_closed(case):
                         raise HTTPException(
                             status_code=status.HTTP_409_CONFLICT,
                             detail=(
@@ -358,7 +362,7 @@ class CaseService:
         # work was signed off, and there is no un-archive route to recover it —
         # `_load_case` filters archived rows, so `reopen` 404s. Archiving a closed
         # Case is filing it away, not undoing the closure.
-        if not (case.get("closure") or {}).get("approved_at"):
+        if not is_closed(case):
             set_fields["status"] = ProjectStatus.archived.value
         row = await self._apply(case, set_fields, user_id)
         # Logged before the cascade, not after. The guard below keys off the
@@ -378,8 +382,12 @@ class CaseService:
     ) -> dict[str, Any]:
         case = await self.assert_case_access(org_id, case_id, user_id)
         await self._assert_can_edit(org_id, case, user_id)
+        # Nothing closes over unconfirmed AI work. No task_id, so a draft on any
+        # child Task blocks the parent Case too — which is why Task draft rows
+        # carry case_id.
+        await self._drafts().assert_no_active_draft(org_id, case_id)
 
-        if (case.get("closure") or {}).get("approved_at"):
+        if is_closed(case):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="Case is already closed"
             )
@@ -402,6 +410,9 @@ class CaseService:
         """
         await self._orgs().assert_org_admin(org_id, user_id)
         case = await self._load_case(org_id, case_id)
+        # Nothing closes over unconfirmed AI work — a draft on any child Task
+        # blocks the parent Case too.
+        await self._drafts().assert_no_active_draft(org_id, case_id)
 
         closure = dict(case.get("closure") or {})
         if not closure.get("requested_at"):
@@ -490,6 +501,34 @@ class CaseService:
         return await self.db.mongo_handler.db[self.collection].count_documents(
             {"org_id": org_id, "state_id": state_id, **_ACTIVE_ONLY}
         )
+
+    async def set_state(
+        self, org_id: str, case_id: str, state_id: str, user_id: str
+    ) -> dict[str, Any]:
+        """Move a Case to a state, for callers outside this service.
+
+        Exists so DraftService's board move does not have to reach into
+        ``_load_case`` and ``_apply`` — private access that duplicated this
+        service's update rules in a third place and would break silently the
+        moment they changed. Deliberately does no *permission* check: the caller
+        has already authorized the action that triggers the move.
+
+        The closure freeze is not a permission, so it is enforced here. A closed
+        Case's column is one-way — `assert_state_usable` refuses the closed
+        column, so anything moved off it can never go back, and only an admin
+        `reopen` can repair the record. That has to hold for every caller, not
+        just the ones that happen to route through `update_case`.
+        """
+        case = await self._load_case(org_id, case_id)
+        if is_closed(case):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "A closed Case stays on the closed column. Reopen it "
+                    "first if its work is not finished after all."
+                ),
+            )
+        return await self._apply(case, {"state_id": state_id}, user_id)
 
     async def _apply(
         self, case: dict[str, Any], set_fields: dict[str, Any], user_id: str

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from services.project_member_service import ProjectMemberService
     from services.activity_log_service import ActivityLogService
     from services.case_service import CaseService
+    from services.draft_service import DraftService
     from services.task_service import TaskService
     from services.workflow_state_service import WorkflowStateService
 
@@ -144,6 +145,13 @@ def get_case_service() -> "CaseService":
     from services.case_service import CaseService
 
     return CaseService()
+
+
+@lru_cache
+def get_draft_service() -> "DraftService":
+    from services.draft_service import DraftService
+
+    return DraftService()
 
 
 @lru_cache

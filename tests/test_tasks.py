@@ -135,6 +135,10 @@ class Svc:
         self.svc._orgs = lambda: self.orgs  # type: ignore[method-assign]
         self.svc._states = lambda: self.states  # type: ignore[method-assign]
         self.svc._cases = lambda: self.cases  # type: ignore[method-assign]
+        # The closure guard's collaborator: nothing holds a draft slot by default.
+        self.drafts = AsyncMock(unsafe=True)
+        self.drafts.assert_no_active_draft = AsyncMock(return_value=None)
+        self.svc._drafts = lambda: self.drafts  # type: ignore[method-assign]
 
     def sent(self) -> dict[str, Any]:
         return self.db.update_documents.await_args.args[2]["$set"]
@@ -398,6 +402,33 @@ async def test_a_closed_task_cannot_be_moved_off_the_closed_column(svc: Svc) -> 
         )
 
     assert exc.value.status_code == 409
+
+
+async def test_set_state_will_not_move_a_closed_task_either(svc: Svc) -> None:
+    """Same freeze as `update_task`, on the door other services use. DraftService's
+    board move goes through here and would otherwise skip the rule entirely."""
+    svc.db.find_documents = AsyncMock(
+        return_value=[
+            task_doc(
+                state_id="wfst-done",
+                closure={"approved_by": "head", "approved_at": "t"},
+            )
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.svc.set_state("org-1", "task-1", "wfst-review", "assignee")
+
+    assert exc.value.status_code == 409
+    svc.db.update_documents.assert_not_awaited()
+
+
+async def test_set_state_moves_an_open_task(svc: Svc) -> None:
+    svc.db.find_documents = AsyncMock(return_value=[task_doc(state_id="wfst-todo")])
+
+    row = await svc.svc.set_state("org-1", "task-1", "wfst-review", "assignee")
+
+    assert row["state_id"] == "wfst-review"
 
 
 async def test_reopening_a_task_clears_the_closure(svc: Svc) -> None:

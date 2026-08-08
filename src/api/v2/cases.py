@@ -1,10 +1,10 @@
-"""Cases: the enterprise unit of work, scoped to an organization."""
+"""Cases: the enterprise unit of work (project), scoped to an organization."""
 
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
 
-from core.dependencies import get_case_service
+from core.dependencies import get_case_service, get_draft_service
 from models.cases import (
     CaseClosure,
     CaseCreateRequest,
@@ -12,6 +12,7 @@ from models.cases import (
     CaseResponse,
     CaseUpdateRequest,
 )
+from models.drafts import DelegateRequest
 from models.projects import ProjectStatus
 from security import get_current_user_id
 from utils.user_management import handle_service_error
@@ -145,3 +146,25 @@ async def reopen_case(org_id: str, case_id: str, user_id: str = CurrentUser):
     """
     doc = await case_service.reopen(org_id, case_id, user_id)
     return _to_response(doc)
+
+
+@router.post("/{org_id}/cases/{case_id}/delegate")
+@handle_service_error
+async def delegate_case(
+    org_id: str,
+    case_id: str,
+    body: DelegateRequest,
+    user_id: str = CurrentUser,
+):
+    """Hand this Case to its agent. The answer is a draft until a human confirms.
+
+    Streams SSE. Everything that can refuse — membership, a slot already held,
+    credits — runs before the first byte, so a refusal is ordinary JSON.
+    """
+    return await get_draft_service().delegate(
+        org_id=org_id,
+        case_id=case_id,
+        task_id=None,
+        user_id=user_id,
+        instruction=body.instruction,
+    )

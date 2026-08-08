@@ -31,6 +31,7 @@ from api.v2 import (
     auth,
     cases,
     chat,
+    drafts,
     fingerprint,
     memory,
     organizations,
@@ -49,6 +50,7 @@ from core.config import settings
 from core.dependencies import (
     get_activity_log_service,
     get_case_service,
+    get_draft_service,
     get_task_service,
     get_workflow_state_service,
 )
@@ -81,6 +83,7 @@ async def lifespan(app: FastAPI):
         ("cases", get_case_service()),
         ("tasks", get_task_service()),
         ("activity_logs", get_activity_log_service()),
+        ("drafts", get_draft_service()),
     ):
         try:
             await service.ensure_indexes()
@@ -174,6 +177,13 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         tasks.router,
+        prefix=settings.API_PREFIX,
+    )
+    # JWT only, like cases and tasks — deliberately NOT the chat pattern with
+    # verify_user_or_service_auth, which admits a service key. A machine must
+    # never be able to approve a draft; that is the whole point of the gate.
+    app.include_router(
+        drafts.router,
         prefix=settings.API_PREFIX,
     )
     app.include_router(

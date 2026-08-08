@@ -10,11 +10,13 @@ from core.dependencies import (
     get_activity_log_service,
     get_case_service,
     get_db_manager,
+    get_draft_service,
     get_organization_service,
     get_workflow_state_service,
 )
 from core.logger import logger
 from models.activity_logs import EventType
+from models.projects import is_closed
 from models.workflow_states import StateAppliesTo, StateCategory
 from utils.user_management import clean_for_mongodb, generate_short_id
 
@@ -53,6 +55,9 @@ class TaskService:
 
     def _logs(self):
         return get_activity_log_service()
+
+    def _drafts(self):
+        return get_draft_service()
 
     async def _log(
         self,
@@ -265,7 +270,7 @@ class TaskService:
                 if value != task.get("state_id"):
                     # See CaseService.update_case — moving off the closed column
                     # would be one-way, so a closed Task is frozen until reopened.
-                    if (task.get("closure") or {}).get("approved_at"):
+                    if is_closed(task):
                         raise HTTPException(
                             status_code=status.HTTP_409_CONFLICT,
                             detail=(
@@ -381,8 +386,12 @@ class TaskService:
     ) -> dict[str, Any]:
         task = await self.get_task(org_id, task_id, user_id)
         await self._assert_can_edit(org_id, task, user_id)
+        # Scoped to this Task: a sibling's draft must not block it.
+        await self._drafts().assert_no_active_draft(
+            org_id, task["case_id"], task_id=task_id
+        )
 
-        if (task.get("closure") or {}).get("approved_at"):
+        if is_closed(task):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="Task is already closed"
             )
@@ -401,6 +410,10 @@ class TaskService:
         """Single writer of the closed lifecycle: closure and state move together."""
         await self._orgs().assert_org_admin(org_id, user_id)
         task = await self._load_task(org_id, task_id)
+        # Scoped to this Task: a sibling's draft must not block it.
+        await self._drafts().assert_no_active_draft(
+            org_id, task["case_id"], task_id=task_id
+        )
 
         closure = dict(task.get("closure") or {})
         if not closure.get("requested_at"):
@@ -437,6 +450,26 @@ class TaskService:
         return await self.db.mongo_handler.db[self.collection].count_documents(
             {"org_id": org_id, "state_id": state_id, **_ACTIVE_ONLY}
         )
+
+    async def set_state(
+        self, org_id: str, task_id: str, state_id: str, user_id: str
+    ) -> dict[str, Any]:
+        """Move a Task to a state, for callers outside this service.
+
+        See CaseService.set_state — same reason, same contract: no permission
+        check, because the caller has already authorized the triggering action,
+        but the closure freeze is enforced for every caller.
+        """
+        task = await self._load_task(org_id, task_id)
+        if is_closed(task):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "A closed Task stays on the closed column. Reopen it "
+                    "first if its work is not finished after all."
+                ),
+            )
+        return await self._apply(task, {"state_id": state_id}, user_id)
 
     async def _apply(
         self, task: dict[str, Any], set_fields: dict[str, Any], user_id: str

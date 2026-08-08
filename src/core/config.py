@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     WORKFLOW_STATES_COLLECTION: str = "workflow_states"
     TASKS_COLLECTION: str = "tasks"
     ACTIVITY_LOGS_COLLECTION: str = "activity_logs"
+    # Not "ai_outputs": only version 1 of a chain is the agent's work — a human
+    # edit inserts a further row with source=human. `source` carries that.
+    DRAFTS_COLLECTION: str = "drafts"
     ORG_INVITE_TTL_HOURS: int = 168
     # Head + 5 staff members. Defaulted onto each org document as `seat_limit`, so
     # raising the cap for one customer is a data change, not a code change.
@@ -124,6 +127,10 @@ class Settings(BaseSettings):
     LLM_SERVICE_INTERNAL_TOKEN: str | None = None
     LLM_SERVICE_INTERNAL_HEADER: str = "x-internal-token"
     LLM_SERVICE_TIMEOUT_SECONDS: float = 600.0
+    # Delegation only. Ordinary chat keeps its unlimited stream: this bound exists
+    # so an abandoned draft's slot can be reclaimed once its generation is
+    # guaranteed dead, not to make chat stricter.
+    AI_DELEGATION_TIMEOUT_SECONDS: int = 900
 
     # File processing
     DOCUMENT_PROCESSING_POLL_TIMEOUT_SECONDS: int = 900

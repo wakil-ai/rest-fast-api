@@ -430,12 +430,15 @@ class Routes(NamedTuple):
 def session_routes(monkeypatch: pytest.MonkeyPatch) -> Routes:
     """Sessions router on a bare app, with the module-level service stubbed."""
     service = AsyncMock(unsafe=True)  # assert_session_access starts with "assert"
-    service.assert_session_access.return_value = {
+    owned = {
         "_id": "ses-1",
         "user_id": "u1",
         "created_at": NOW,
         "updated_at": NOW,
     }
+    service.assert_session_access.return_value = owned
+    # PATCH and DELETE go through the strict helper; GET still uses access.
+    service.assert_session_owner.return_value = owned
     service.edit_session.return_value = {
         "_id": "ses-1",
         "user_id": "u1",
@@ -463,20 +466,25 @@ async def test_patch_and_delete_require_a_token(session_routes: Routes) -> None:
     service.assert_session_access.assert_not_awaited()
 
 
-async def test_patch_checks_access_as_the_token_subject(session_routes: Routes) -> None:
+async def test_patch_checks_ownership_as_the_token_subject(
+    session_routes: Routes,
+) -> None:
+    """assert_session_owner, not assert_session_access: the latter admits any
+    member of an org-shared transcript, who must not be able to rename it."""
     client, service, _ = session_routes
     session_routes.as_user("u1")
 
     response = client.patch("/sessions/ses-1", json={"title": "renamed"})
 
     assert response.status_code == 200
-    service.assert_session_access.assert_awaited_once_with("ses-1", "u1")
+    service.assert_session_owner.assert_awaited_once_with("ses-1", "u1")
+    service.assert_session_access.assert_not_awaited()
 
 
-async def test_delete_checks_access_before_deleting(session_routes: Routes) -> None:
+async def test_delete_checks_ownership_before_deleting(session_routes: Routes) -> None:
     client, service, _ = session_routes
     session_routes.as_user("u1")
-    service.assert_session_access.side_effect = HTTPException(
+    service.assert_session_owner.side_effect = HTTPException(
         status_code=403, detail="Access denied"
     )
 

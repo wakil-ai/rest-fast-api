@@ -54,6 +54,9 @@ class AccountArchiveService:
         #     and assignments with them. The same reasoning that scopes `projects`
         #     above, taken to its conclusion: these have no personal half at all.
         #   activity_logs — ZRU-1115 evidence. Append-only, never archived.
+        #   drafts — the same. A member deleting their personal account must not
+        #     archive the drafts their organization approved; `created_by`
+        #     pointing at a departed member is the intended state, not a leak.
         #
         # A departed member leaves rows referencing their id. That is intended:
         # the log has to stay readable, and the org still needs the work.
