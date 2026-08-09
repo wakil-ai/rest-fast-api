@@ -37,6 +37,15 @@ class EventType(str, Enum):
     # Reopening is a new event, never an edit of the approval it undoes — the
     # closure that happened stays on the record.
     closure_reopened = "closure.reopened"
+    # The Non-Substitution Gate. `ai.draft_generated` is the only event in this
+    # enum written by ActorType.agent — with on_behalf_of naming the human who
+    # asked, because a machine acts for someone, never on its own account.
+    ai_request_submitted = "ai.request_submitted"
+    ai_draft_generated = "ai.draft_generated"
+    ai_draft_edited = "ai.draft_edited"
+    ai_draft_approved = "ai.draft_approved"
+    ai_draft_rejected = "ai.draft_rejected"
+    ai_generation_failed = "ai.generation_failed"
 
 
 class ActivityActor(BaseModel):

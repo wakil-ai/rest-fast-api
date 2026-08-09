@@ -328,7 +328,10 @@ class WorkflowStateService:
             await self.db.update_documents(
                 self.collection,
                 {"_id": state_id, "org_id": org_id},
-                {"$set": {"archived": False, "updated_at": now}, "$unset": {"archived_at": ""}},
+                {
+                    "$set": {"archived": False, "updated_at": now},
+                    "$unset": {"archived_at": ""},
+                },
             )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

@@ -46,13 +46,25 @@ class OrganizationUpdateRequest(BaseModel):
     settings: dict[str, Any] | None = None
 
 
+class AvatarUrlResponse(BaseModel):
+    """A rendering URL for an organization's picture, valid until ``expires_at``.
+
+    Deliberately not stored anywhere: it is minted per read and must not be put in
+    a long-lived cache.
+    """
+
+    url: str = Field(..., description="Signed GCS URL, usable directly as `<img src>`")
+    expires_at: datetime = Field(..., description="When the URL stops working (UTC)")
+
+
 class OrganizationResponse(BaseModel):
     org_id: str
     name: str
-    avatar_url: str | None = Field(
+    avatar_path: str | None = Field(
         None,
-        description="Permanent public URL of the organization's picture, or null. "
-        "Written only by the avatar upload endpoint.",
+        description="Relative API path to fetch a short-lived signed avatar URL, "
+        "or null when the organization has no picture. Not an image URL: GET it "
+        "with an authenticated client and use the `url` it returns.",
     )
     created_by: str
     status: OrganizationStatus
@@ -93,7 +105,11 @@ class OrganizationInvitePreviewResponse(BaseModel):
     invite_id: str
     org_id: str
     org_name: str
-    org_avatar_url: str | None = None
+    org_avatar_url: str | None = Field(
+        None,
+        description="Directly renderable signed image URL, or null. Unlike the rest "
+        "of this payload it expires — do not cache or persist it.",
+    )
     org_status: OrganizationStatus
     status: OrganizationInviteStatus
     expires_at: datetime

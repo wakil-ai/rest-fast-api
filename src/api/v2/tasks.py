@@ -4,8 +4,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
 
-from core.dependencies import get_task_service
+from core.dependencies import get_draft_service, get_task_service
 from models.cases import CaseClosure
+from models.drafts import DelegateRequest
 from models.tasks import (
     TaskCreateRequest,
     TaskListResponse,
@@ -154,3 +155,25 @@ async def approve_task_closure(org_id: str, task_id: str, user_id: str = Current
 async def reopen_task(org_id: str, task_id: str, user_id: str = CurrentUser):
     """Undo a closure and put the Task back on the draft column. Admin only."""
     return _to_response(await task_service.reopen(org_id, task_id, user_id))
+
+
+@router.post("/{org_id}/tasks/{task_id}/delegate")
+@handle_service_error
+async def delegate_task(
+    org_id: str,
+    task_id: str,
+    body: DelegateRequest,
+    user_id: str = CurrentUser,
+):
+    """Hand this Task to its agent. The answer is a draft until a human confirms.
+
+    `case_id` is resolved from the Task row inside delegate(), never taken from
+    the caller — the two can then never disagree.
+    """
+    return await get_draft_service().delegate(
+        org_id=org_id,
+        case_id="",
+        task_id=task_id,
+        user_id=user_id,
+        instruction=body.instruction,
+    )

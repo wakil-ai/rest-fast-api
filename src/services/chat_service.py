@@ -528,6 +528,8 @@ class ChatService:
         project_id: str | None = None,
         file_context: str | None = None,
         stream_endpoint: str = "/api/v1/chat/ask/stream",
+        # None keeps chat's unlimited stream. Delegation passes a real bound.
+        timeout: float | None = None,
     ) -> AsyncGenerator[Any, None]:
         yield {
             "type": "metadata",
@@ -553,6 +555,7 @@ class ChatService:
             async for item in get_llm_service_client().stream_json(
                 stream_endpoint,
                 payload,
+                timeout=timeout,
             ):
                 if isinstance(item, str):
                     answer_chunks.append(item)

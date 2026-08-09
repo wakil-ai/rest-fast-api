@@ -93,34 +93,39 @@ class LlmServiceClient:
         return data if isinstance(data, dict) else {}
 
     async def stream_json(
-        self, path: str, payload: dict[str, Any]
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        timeout: float | None = None,
     ) -> AsyncGenerator[Any, None]:
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream(
-                "POST",
-                self._url(path),
-                json=payload,
-                headers=self._headers(),
-            ) as response:
-                if not response.is_success:
-                    # Streaming responses are lazy: read the body so the
-                    # upstream error detail (e.g. a 422 validation error) is
-                    # available before we raise.
-                    body_bytes = await response.aread()
-                    self._raise_for_status(
-                        response,
-                        path=path,
-                        body_text=body_bytes.decode(errors="replace"),
-                    )
-                async for line in response.aiter_lines():
-                    line = line.strip()
-                    if not line or not line.startswith("data: "):
-                        continue
-                    raw = line.removeprefix("data: ").strip()
-                    try:
-                        yield json.loads(raw)
-                    except json.JSONDecodeError:
-                        yield raw
+        # Chat passes nothing and keeps its unlimited stream. Delegation passes a
+        # real bound so an abandoned draft's slot can eventually be reclaimed.
+        async with httpx.AsyncClient(timeout=timeout) as client, client.stream(
+            "POST",
+            self._url(path),
+            json=payload,
+            headers=self._headers(),
+        ) as response:
+            if not response.is_success:
+                # Streaming responses are lazy: read the body so the
+                # upstream error detail (e.g. a 422 validation error) is
+                # available before we raise.
+                body_bytes = await response.aread()
+                self._raise_for_status(
+                    response,
+                    path=path,
+                    body_text=body_bytes.decode(errors="replace"),
+                )
+            async for line in response.aiter_lines():
+                line = line.strip()
+                if not line or not line.startswith("data: "):
+                    continue
+                raw = line.removeprefix("data: ").strip()
+                try:
+                    yield json.loads(raw)
+                except json.JSONDecodeError:
+                    yield raw
 
     async def transcribe_audio(
         self,

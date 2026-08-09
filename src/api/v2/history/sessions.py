@@ -62,7 +62,9 @@ async def update_session(
 ):
     """Rename or retag a session. Only its owner, and only while they still
     belong to the organization it was created under."""
-    await chat_history_service.assert_session_access(session_id, user_id)
+    # assert_session_owner, not assert_session_access: the latter now admits any
+    # member of an org-shared transcript, who must not be able to rename it.
+    await chat_history_service.assert_session_owner(session_id, user_id)
     session = await chat_history_service.edit_session(
         session_id, title=request.title, tags=request.tags
     )
@@ -73,5 +75,5 @@ async def update_session(
 @handle_service_error
 async def delete_session(session_id: str, user_id: str = CurrentUser):
     """Delete a session and its messages. Owner only — see update_session."""
-    await chat_history_service.assert_session_access(session_id, user_id)
+    await chat_history_service.assert_session_owner(session_id, user_id)
     await chat_history_service.delete_session(session_id)

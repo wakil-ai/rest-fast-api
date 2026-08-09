@@ -78,7 +78,7 @@ def org_doc(**overrides: Any) -> dict[str, Any]:
     doc: dict[str, Any] = {
         "_id": "org-1",
         "name": "Acme",
-        "avatar_url": None,
+        "avatar_path": None,
         "created_by": "user-a",
         "status": "active",
         "seat_limit": 10,
@@ -152,6 +152,24 @@ def test_patch_ignores_a_user_id_in_the_body(
     )
 
 
+def test_avatar_path_is_built_from_the_configured_api_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Derived on read, so a row stored under an older prefix cannot serve a stale
+    path. The stored string is only a presence flag."""
+    monkeypatch.setattr(settings, "API_PREFIX", "/api/v9")
+
+    response = organizations_api._org_to_response(
+        org_doc(avatar_path="/api/v2/organizations/org-1/avatar")
+    )
+
+    assert response.avatar_path == "/api/v9/organizations/org-1/avatar"
+
+
+def test_avatar_path_stays_null_when_there_is_no_picture() -> None:
+    assert organizations_api._org_to_response(org_doc()).avatar_path is None
+
+
 # --- avatar route wiring ----------------------------------------------------
 
 
@@ -168,7 +186,9 @@ def test_avatar_upload_rejects_requests_without_a_bearer_token(
 def test_avatar_upload_forwards_the_bytes_and_the_token_subject(
     jwt_settings: None, monkeypatch: pytest.MonkeyPatch, client: TestClient
 ) -> None:
-    setter = AsyncMock(return_value=org_doc(avatar_url="https://cdn/a.png?v=1"))
+    setter = AsyncMock(
+        return_value=org_doc(avatar_path="/api/v2/organizations/org-1/avatar")
+    )
     monkeypatch.setattr(
         organizations_api.org_service, "set_organization_avatar", setter
     )
@@ -180,7 +200,7 @@ def test_avatar_upload_forwards_the_bytes_and_the_token_subject(
     )
 
     assert response.status_code == 200
-    assert response.json()["avatar_url"] == "https://cdn/a.png?v=1"
+    assert response.json()["avatar_path"] == "/api/v2/organizations/org-1/avatar"
     setter.assert_awaited_once_with(
         org_id="org-1",
         user_id="user-a",
@@ -208,7 +228,7 @@ def test_avatar_delete_uses_the_token_subject(
     )
 
     assert response.status_code == 200
-    assert response.json()["avatar_url"] is None
+    assert response.json()["avatar_path"] is None
     clearer.assert_awaited_once_with(org_id="org-1", user_id="user-a")
 
 
@@ -276,9 +296,9 @@ async def test_update_cannot_write_privileged_fields_or_the_avatar() -> None:
         user_id="user-a",
         updates={
             "name": "New",
-            # avatar_url is written by the upload path only; a URL supplied here
-            # would point members' browsers at a host we never validated.
-            "avatar_url": "https://attacker/pixel.gif",
+            # avatar_path is written by the upload path only; a value supplied
+            # here would point members' clients at a route we never validated.
+            "avatar_path": "https://attacker/pixel.gif",
             "status": "suspended",
             "seat_limit": 9999,
             "archived": True,
@@ -342,18 +362,16 @@ async def test_update_with_an_empty_body_touches_nothing() -> None:
 
 @pytest.fixture
 def storage(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    # No return_value: upload_file's return is discarded now that the stored
+    # value is an API path rather than anything storage hands back.
     stub = MagicMock()
-    stub.upload_file.return_value = "https://storage.googleapis.com/pub/o/avatar"
     monkeypatch.setattr(
         organization_service_module, "get_storage_service", lambda: stub
     )
-    monkeypatch.setattr(settings, "GCS_PUBLIC_BUCKET_NAME", "pub")
     return stub
 
 
-async def test_avatar_upload_stores_a_cache_busted_public_url(
-    storage: MagicMock,
-) -> None:
+async def test_avatar_upload_stores_the_api_path(storage: MagicMock) -> None:
     svc, db = build_service()
 
     result = await svc.set_organization_avatar(
@@ -365,13 +383,26 @@ async def test_avatar_upload_stores_a_cache_busted_public_url(
         destination_path="organizations/org-1/avatar",
         content_type="image/png",
         return_signed_url=False,
-        bucket_name="pub",
     )
-    stored = sent_update(db)["avatar_url"]
-    # A signed URL would expire; the ?v= stamp is what makes a replacement visible
-    # even though the object path never changes.
-    assert stored.startswith("https://storage.googleapis.com/pub/o/avatar?v=")
-    assert result["avatar_url"] == stored
+    update = sent_update(db)
+    # No ?v= stamp: the value is not a URL a browser caches. It never expires and
+    # never changes, so a replacement upload needs nothing written here at all.
+    assert update["avatar_path"] == "/api/v2/organizations/org-1/avatar"
+    assert "avatar_url" not in update
+    assert result["avatar_path"] == update["avatar_path"]
+
+
+async def test_avatar_upload_stores_the_path_under_the_configured_prefix(
+    storage: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "API_PREFIX", "/api/v9")
+    svc, db = build_service()
+
+    await svc.set_organization_avatar(
+        org_id="org-1", user_id="user-a", data=b"png", content_type="image/png"
+    )
+
+    assert sent_update(db)["avatar_path"] == "/api/v9/organizations/org-1/avatar"
 
 
 async def test_avatar_upload_accepts_a_charset_suffixed_content_type(
@@ -434,21 +465,22 @@ async def test_avatar_upload_rejects_an_oversized_file(storage: MagicMock) -> No
     storage.upload_file.assert_not_called()
 
 
-async def test_avatar_delete_removes_the_object_and_the_url(
+async def test_avatar_delete_removes_the_object_and_the_path(
     storage: MagicMock,
 ) -> None:
     svc, db = build_service()
     svc.assert_org_admin = AsyncMock(  # type: ignore[method-assign]
-        return_value=org_doc(avatar_url="https://cdn/a.png?v=1"), unsafe=True
+        return_value=org_doc(avatar_path="/api/v2/organizations/org-1/avatar"),
+        unsafe=True,
     )
 
     result = await svc.clear_organization_avatar(org_id="org-1", user_id="user-a")
 
     storage.permanently_delete_file.assert_called_once_with(
-        "organizations/org-1/avatar", bucket_name="pub"
+        "organizations/org-1/avatar"
     )
-    assert sent_update(db)["avatar_url"] is None
-    assert result["avatar_url"] is None
+    assert sent_update(db)["avatar_path"] is None
+    assert result["avatar_path"] is None
 
 
 async def test_avatar_delete_skips_storage_when_there_is_no_picture(
@@ -459,76 +491,23 @@ async def test_avatar_delete_skips_storage_when_there_is_no_picture(
     await svc.clear_organization_avatar(org_id="org-1", user_id="user-a")
 
     storage.permanently_delete_file.assert_not_called()
-    assert sent_update(db)["avatar_url"] is None
+    assert sent_update(db)["avatar_path"] is None
 
 
-async def test_avatar_delete_clears_the_url_even_if_storage_fails(
+async def test_avatar_delete_clears_the_path_even_if_storage_fails(
     storage: MagicMock,
 ) -> None:
     svc, db = build_service()
     svc.assert_org_admin = AsyncMock(  # type: ignore[method-assign]
-        return_value=org_doc(avatar_url="https://cdn/a.png?v=1"), unsafe=True
+        return_value=org_doc(avatar_path="/api/v2/organizations/org-1/avatar"),
+        unsafe=True,
     )
     storage.permanently_delete_file.return_value = False
 
     result = await svc.clear_organization_avatar(org_id="org-1", user_id="user-a")
 
-    assert sent_update(db)["avatar_url"] is None
-    assert result["avatar_url"] is None
-
-
-@pytest.mark.parametrize("configured", ["", "   ", None])
-async def test_avatar_upload_fails_loudly_when_no_public_bucket_is_configured(
-    storage: MagicMock, monkeypatch: pytest.MonkeyPatch, configured: str | None
-) -> None:
-    svc, db = build_service()
-    monkeypatch.setattr(settings, "GCS_PUBLIC_BUCKET_NAME", configured)
-
-    with pytest.raises(HTTPException) as exc:
-        await svc.set_organization_avatar(
-            org_id="org-1", user_id="user-a", data=b"png", content_type="image/png"
-        )
-
-    assert exc.value.status_code == 500
-    assert "GCS_PUBLIC_BUCKET_NAME" in str(exc.value.detail)
-    # The private document bucket must never receive an avatar as a fallback.
-    storage.upload_file.assert_not_called()
-    db.update_documents.assert_not_awaited()
-
-
-async def test_avatar_upload_refuses_to_write_into_the_private_document_bucket(
-    storage: MagicMock, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Both variables pointing at one bucket is a config error, not a fallback."""
-    svc, db = build_service()
-    monkeypatch.setattr(settings, "GCS_BUCKET_NAME", "wakilai")
-    monkeypatch.setattr(settings, "GCS_PUBLIC_BUCKET_NAME", "wakilai")
-
-    with pytest.raises(HTTPException) as exc:
-        await svc.set_organization_avatar(
-            org_id="org-1", user_id="user-a", data=b"png", content_type="image/png"
-        )
-
-    assert exc.value.status_code == 500
-    assert "different bucket" in str(exc.value.detail)
-    storage.upload_file.assert_not_called()
-    db.update_documents.assert_not_awaited()
-
-
-async def test_avatar_delete_fails_loudly_when_no_public_bucket_is_configured(
-    storage: MagicMock, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    svc, _ = build_service()
-    svc.assert_org_admin = AsyncMock(  # type: ignore[method-assign]
-        return_value=org_doc(avatar_url="https://cdn/a.png?v=1"), unsafe=True
-    )
-    monkeypatch.setattr(settings, "GCS_PUBLIC_BUCKET_NAME", None)
-
-    with pytest.raises(HTTPException) as exc:
-        await svc.clear_organization_avatar(org_id="org-1", user_id="user-a")
-
-    assert exc.value.status_code == 500
-    storage.permanently_delete_file.assert_not_called()
+    assert sent_update(db)["avatar_path"] is None
+    assert result["avatar_path"] is None
 
 
 async def test_avatar_delete_requires_admin(storage: MagicMock) -> None:
@@ -552,9 +531,10 @@ async def test_creating_an_organization_leaves_the_avatar_unset() -> None:
 
     result = await svc.create_organization(user_id="user-a", name="Acme")
 
-    assert result["avatar_url"] is None
+    assert result["avatar_path"] is None
     inserted = db.insert_documents.await_args_list[0].args[1][0]
-    assert inserted["avatar_url"] is None
+    assert inserted["avatar_path"] is None
+    assert "avatar_url" not in inserted
 
 
 async def test_avatar_upload_requires_admin_before_touching_storage(
@@ -574,3 +554,123 @@ async def test_avatar_upload_requires_admin_before_touching_storage(
     assert exc.value.status_code == 403
     storage.upload_file.assert_not_called()
     db.update_documents.assert_not_awaited()
+
+
+async def test_avatar_upload_targets_the_default_private_bucket(
+    storage: MagicMock,
+) -> None:
+    """No bucket_name argument at all — the default bucket is the private one."""
+    svc, _ = build_service()
+
+    await svc.set_organization_avatar(
+        org_id="org-1", user_id="user-a", data=b"png-bytes", content_type="image/png"
+    )
+
+    assert "bucket_name" not in storage.upload_file.call_args.kwargs
+
+
+async def test_avatar_delete_targets_the_default_private_bucket(
+    storage: MagicMock,
+) -> None:
+    svc, _ = build_service()
+    svc.assert_org_admin = AsyncMock(  # type: ignore[method-assign]
+        return_value=org_doc(avatar_path="/api/v2/organizations/org-1/avatar"),
+        unsafe=True,
+    )
+
+    await svc.clear_organization_avatar(org_id="org-1", user_id="user-a")
+
+    assert "bucket_name" not in storage.permanently_delete_file.call_args.kwargs
+
+
+def test_blob_key_helper_is_named_for_what_it_returns() -> None:
+    """``avatar_path`` on the document is an API path; this is the GCS object key."""
+    from services.organization_service import avatar_blob_key
+
+    assert avatar_blob_key("org-1") == "organizations/org-1/avatar"
+
+
+# --- avatar read endpoint ---------------------------------------------------
+
+
+def build_member_service(**org_overrides: Any) -> OrganizationService:
+    """A service whose membership check passes, for the read-only avatar route."""
+    svc, _ = build_service()
+    svc.assert_org_member = AsyncMock(  # type: ignore[method-assign]
+        return_value=org_doc(**org_overrides), unsafe=True
+    )
+    return svc
+
+
+async def test_avatar_url_endpoint_returns_a_signed_url(storage: MagicMock) -> None:
+    storage.get_signed_url.return_value = "https://storage/signed?sig=x"
+    svc = build_member_service(avatar_path="/api/v2/organizations/org-1/avatar")
+
+    result = await svc.get_organization_avatar_url(org_id="org-1", user_id="member")
+
+    assert result["url"] == "https://storage/signed?sig=x"
+    assert result["expires_at"] > datetime.now(timezone.utc)
+    # The blob key, not the API path stored on the document.
+    assert storage.get_signed_url.call_args.args[0] == "organizations/org-1/avatar"
+
+
+async def test_avatar_url_404s_when_the_org_has_no_picture(
+    storage: MagicMock,
+) -> None:
+    svc = build_member_service(avatar_path=None)
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.get_organization_avatar_url(org_id="org-1", user_id="member")
+
+    assert exc.value.status_code == 404
+    storage.get_signed_url.assert_not_called()
+
+
+async def test_avatar_url_signing_failure_is_503_not_500(storage: MagicMock) -> None:
+    """A GCS hiccup must not look like a broken endpoint."""
+    storage.get_signed_url.side_effect = RuntimeError("no credentials")
+    svc = build_member_service(avatar_path="/api/v2/organizations/org-1/avatar")
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.get_organization_avatar_url(org_id="org-1", user_id="member")
+
+    assert exc.value.status_code == 503
+
+
+async def test_avatar_url_refuses_a_non_member(storage: MagicMock) -> None:
+    svc, _ = build_service()
+    svc.assert_org_member = AsyncMock(  # type: ignore[method-assign]
+        side_effect=HTTPException(status_code=403, detail="not a member"), unsafe=True
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.get_organization_avatar_url(org_id="org-1", user_id="stranger")
+
+    assert exc.value.status_code == 403
+    storage.get_signed_url.assert_not_called()
+
+
+def test_avatar_url_route_is_not_cached(
+    jwt_settings: None, monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """A cached body would hand a later reader a signature that has since died."""
+    expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    monkeypatch.setattr(
+        organizations_api.org_service,
+        "get_organization_avatar_url",
+        AsyncMock(return_value={"url": "https://storage/signed", "expires_at": expires}),
+    )
+
+    response = client.get(
+        "/api/v2/organizations/org-1/avatar", headers=auth("user-a")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://storage/signed"
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_avatar_url_route_rejects_requests_without_a_bearer_token(
+    client: TestClient,
+) -> None:
+    assert client.get("/api/v2/organizations/org-1/avatar").status_code == 401

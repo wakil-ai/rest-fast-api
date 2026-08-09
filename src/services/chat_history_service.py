@@ -4,11 +4,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel
-
-
-async def delete_agent_thread(*, user_id: str, session_id: str) -> bool:
-    return False
-
+from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from core.config import settings
 from core.dependencies import (
@@ -35,6 +31,14 @@ from utils.user_management import clean_for_mongodb, generate_short_id
 _ACTIVE_ONLY: dict[str, Any] = {"archived": {"$ne": True}}
 
 
+async def delete_agent_thread(*, user_id: str, session_id: str) -> bool:
+    """Inert stub. Agent threads are not implemented; delete_session calls this so
+    the hook exists when they are. Sat between the import blocks until now, which
+    is what made every import below it an E402.
+    """
+    return False
+
+
 def _normalize_org_scope(org_id: str | None) -> str | None:
     """Blank org_id means the personal profile.
 
@@ -48,7 +52,7 @@ def _normalize_org_scope(org_id: str | None) -> str | None:
 class ChatHistoryService:
     """Service for managing chat history, sessions, and user data."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initialize ChatHistoryService with dependency injection.
         """
@@ -69,7 +73,7 @@ class ChatHistoryService:
         if loop is not None:
             loop.create_task(self._init_collections())
 
-    async def _init_collections(self):
+    async def _init_collections(self) -> None:
         """Initialize necessary database collections (async)."""
         for collection in [
             self.users_collection,
@@ -84,7 +88,7 @@ class ChatHistoryService:
         # Create indexes for better query performance
         await self._create_indexes()
 
-    async def _create_indexes(self):
+    async def _create_indexes(self) -> None:
         """Create necessary indexes for collections (async)."""
         try:
             # Sessions - query by user within one org scope
@@ -92,6 +96,16 @@ class ChatHistoryService:
                 self.sessions_collection
             ].create_index(
                 [("user_id", 1), ("org_id", 1), ("status", 1), ("updated_at", -1)]
+            )
+
+            # ensure_shared_session's find-or-create lookup. Not unique: this
+            # collection is too hot to risk a write failure over, and the method
+            # makes concurrent inserts converge on the oldest row instead.
+            await self.db_manager.mongo_handler.db[
+                self.sessions_collection
+            ].create_index(
+                [("org_id", 1), ("project_id", 1), ("task_id", 1), ("shared", 1)],
+                name="shared_case_session",
             )
 
             # Messages - query by session
@@ -125,57 +139,11 @@ class ChatHistoryService:
             await self.db_manager.mongo_handler.db[
                 self.token_counting_collection
             ].create_index([("user_id", 1), ("created_at", -1)])
-        except Exception as e:
-            logger.warning(f"Error creating indexes: {str(e)}")
-
-    async def upsert_token_stats(
-        self,
-        message_id: str,
-        *,
-        user_id: str | None = None,
-        session_id: str | None = None,
-        model: str | None = None,
-        input_token: int | None = None,
-        context_token: int | None = None,
-        output_token: int | None = None,
-        embedding_input_token: int | None = None,
-    ) -> None:
-        """Store per-message token stats inside message metadata."""
-        if not message_id or not message_id.strip():
-            return
-
-        message = await self.get_message(message_id)
-        if not message:
-            logger.warning(
-                f"Skipping token stats update because message {message_id} was not found"
-            )
-            return
-
-        now = datetime.now(timezone.utc)
-
-        update: dict = {"updated_at": now}
-        if user_id is not None:
-            update["user_id"] = user_id
-        if session_id is not None:
-            update["session_id"] = session_id
-        if model is not None:
-            update["metadata.model"] = model
-        if input_token is not None:
-            update["metadata.token_usage.input_token"] = int(input_token)
-        if context_token is not None:
-            update["metadata.token_usage.context_token"] = int(context_token)
-        if output_token is not None:
-            update["metadata.token_usage.output_token"] = int(output_token)
-        if embedding_input_token is not None:
-            update["metadata.token_usage.embedding_input_token"] = int(
-                embedding_input_token
-            )
-
-        await self.db_manager.update_documents(
-            self.messages_collection,
-            {"_id": message_id},
-            {"$set": update},
-        )
+        except Exception as e:  # noqa: BLE001 - best effort, must not stop startup
+            # Index creation runs in a background task at import. A bad spec or a
+            # Mongo hiccup here must degrade query speed, never prevent the app
+            # from serving.
+            logger.warning(f"Error creating indexes: {e!s}")
 
     @staticmethod
     def create_message_id() -> str:
@@ -183,8 +151,10 @@ class ChatHistoryService:
         return generate_short_id("msg-", type="uuid7")
 
     @staticmethod
-    def _build_session_activation_update(session: dict, now: datetime) -> dict:
-        update_fields: dict = {
+    def _build_session_activation_update(
+        session: dict[str, Any], now: datetime
+    ) -> dict[str, Any]:
+        update_fields: dict[str, Any] = {
             "updated_at": now,
             "status": SessionStatus.active.value,
         }
@@ -194,19 +164,117 @@ class ChatHistoryService:
             update_fields["activated_at"] = now
         return update_fields
 
-    async def ensure_session_for_user(self, user_id: str, session_id: str) -> dict:
-        """Validate that the provided session exists and belongs to the user."""
+    def _sessions_collection(self) -> Any:
+        # DBManager holds no .db of its own — the Motor database lives one hop
+        # further in, on the handler. Same path as _create_indexes (:91). `Any`
+        # because Motor's collection is an unparameterised generic.
+        return self.db_manager.mongo_handler.db[self.sessions_collection]
+
+    async def ensure_shared_session(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        project_id: str,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """The one shared transcript for a Case or Task, created on first use.
+
+        Two concurrent first-delegations can both miss and both insert, and there
+        is no unique index to stop them — this collection is far too hot to risk a
+        write failure over. So the oldest row is declared the winner and both the
+        lookup and the post-insert re-read sort the same way, which is what makes
+        the racers converge. ``_id`` breaks a same-microsecond tie: the ids are
+        uuid7, so they order by time too, and without it the two racers could sort
+        the tie differently and walk away holding different sessions.
+
+        Sorting the lookup alone would not be enough. The racer that inserted the
+        newer row would keep and generate into it while every later read resolved
+        to the older one, stranding a paid-for transcript where nothing can reach
+        it. The losing insert is then genuinely harmless: unreferenced, never
+        written to, and reachable only through this method, which never returns it.
+        """
+        query = {
+            "org_id": org_id,
+            "project_id": project_id,
+            "task_id": task_id,
+            "shared": True,
+        }
+        sort = [("created_at", 1), ("_id", 1)]
+        existing = await self._sessions_collection().find_one(query, sort=sort)
+        if existing:
+            await get_organization_service().assert_org_member(org_id, user_id)
+            return existing
+        created = await self.create_session(
+            user_id=user_id,
+            project_id=project_id,
+            org_id=org_id,
+            task_id=task_id,
+            shared=True,
+        )
+        settled = await self._sessions_collection().find_one(query, sort=sort)
+        return settled or created
+
+    @staticmethod
+    def _is_org_shared(session: dict[str, Any]) -> bool:
+        """A shared session belongs to the organization, not to its creator.
+
+        Both halves are required: a personal session that somehow acquired the
+        flag still falls through to the ownership check below.
+        """
+        return bool(session.get("shared")) and bool(session.get("org_id"))
+
+    async def ensure_session_for_user(
+        self, user_id: str, session_id: str
+    ) -> dict[str, Any]:
+        """Validate that the provided session is reachable by the user."""
         session = await self._ensure_session_exists(session_id)
+        if self._is_org_shared(session):
+            await get_organization_service().assert_org_member(
+                session["org_id"], user_id
+            )
+            return session
         if session.get("user_id") != user_id:
             raise InvalidInputError("Session does not belong to the provided user")
         return session
 
-    async def assert_session_access(self, session_id: str, user_id: str) -> dict:
+    async def assert_session_access(
+        self, session_id: str, user_id: str
+    ) -> dict[str, Any]:
         """The single gate for reaching a session directly by id.
 
         Existence, ownership, and — for an org session — live membership. Scoping
         the list endpoint is not enough on its own: without this, anyone holding a
         session id keeps access after being removed from the organization.
+
+        An org-shared session (one Case transcript, many members) checks membership
+        *instead of* ownership. Rename and delete deliberately do not come through
+        here — see assert_session_owner.
+        """
+        session = await self._ensure_session_exists(session_id)
+        org_id = session.get("org_id")
+        if self._is_org_shared(session):
+            # session["org_id"], not the local: _is_org_shared already proved it
+            # truthy, but only the subscript says so to a type checker.
+            await get_organization_service().assert_org_member(
+                session["org_id"], user_id
+            )
+            return session
+        if session.get("user_id") != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
+        if org_id:
+            await get_organization_service().assert_org_member(org_id, user_id)
+        return session
+
+    async def assert_session_owner(
+        self, session_id: str, user_id: str
+    ) -> dict[str, Any]:
+        """Strict ownership, for the operations that destroy or rename.
+
+        Sharing a Case transcript must not hand every member the ability to delete
+        it. This keeps the pre-sharing rule exactly as it was.
         """
         session = await self._ensure_session_exists(session_id)
         if session.get("user_id") != user_id:
@@ -219,7 +287,7 @@ class ChatHistoryService:
         return session
 
     # Validation and existence checks
-    async def _ensure_user_exists(self, user_id: str) -> dict:
+    async def _ensure_user_exists(self, user_id: str) -> dict[str, Any]:
         """Ensure user exists in database, raise UserNotFoundError if not."""
         if not user_id or not user_id.strip():
             raise InvalidInputError("User ID cannot be empty")
@@ -231,7 +299,7 @@ class ChatHistoryService:
             raise UserNotFoundError(user_id)
         return user[0]
 
-    async def _ensure_session_exists(self, session_id: str) -> dict:
+    async def _ensure_session_exists(self, session_id: str) -> dict[str, Any]:
         """Ensure session exists in database, raise SessionNotFoundError if not."""
         if not session_id or not session_id.strip():
             raise InvalidInputError("Session ID cannot be empty")
@@ -242,18 +310,6 @@ class ChatHistoryService:
         if not session:
             raise SessionNotFoundError(session_id)
         return session[0]
-
-    async def _ensure_message_exists(self, message_id: str) -> dict:
-        """Ensure message exists in database, raise MessageNotFoundError if not."""
-        if not message_id or not message_id.strip():
-            raise InvalidInputError("Message ID cannot be empty")
-
-        message = await self.db_manager.find_documents(
-            self.messages_collection, {"_id": message_id, **_ACTIVE_ONLY}
-        )
-        if not message:
-            raise MessageNotFoundError(message_id)
-        return message[0]
 
     async def _ensure_file_attachments_for_user(
         self, file_ids: list[str] | None, user_id: str
@@ -279,7 +335,7 @@ class ChatHistoryService:
                 raise InvalidInputError(f"File {file_id} does not belong to this user")
 
     async def _inherit_session_org(
-        self, file_ids: list[str] | None, session: dict
+        self, file_ids: list[str] | None, session: dict[str, Any]
     ) -> str | None:
         """Give the session's org to the message being written and its attachments.
 
@@ -300,7 +356,9 @@ class ChatHistoryService:
         return org_id
 
     # Users Management
-    async def _create_bitrix_lead_if_needed(self, user: dict) -> dict:
+    async def _create_bitrix_lead_if_needed(
+        self, user: dict[str, Any]
+    ) -> dict[str, Any]:
         """Create one Bitrix24 lead for a user with a phone number."""
         if not user or user.get("bitrix24_lead_id"):
             return user
@@ -311,8 +369,8 @@ class ChatHistoryService:
 
         lead_update = {
             "bitrix24_lead_id": str(lead_id),
-            "bitrix24_lead_created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "bitrix24_lead_created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
         try:
             await self.db_manager.update_documents(
@@ -321,7 +379,10 @@ class ChatHistoryService:
                 {"$set": lead_update},
             )
             user.update(lead_update)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - CRM write must not fail signup
+            # The lead already exists in Bitrix24 at this point; only our record of
+            # its id failed. Raising would fail the user's signup over a CRM
+            # bookkeeping problem.
             logger.error(
                 f"Failed to store Bitrix24 lead ID for user {user.get('_id')}: {exc}",
                 exc_info=True,
@@ -338,7 +399,7 @@ class ChatHistoryService:
         picture: str | None = None,
         web_client: str | None = None,
         external_id: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Create or retrieve an existing user. Uses user_id as _id."""
         # Check if user exists using _id
         existing_user = await self.db_manager.find_documents(
@@ -351,7 +412,8 @@ class ChatHistoryService:
 
         user = {
             "_id": user_id,  # Use user_id as _id
-            "user_id": user_id,  # Also store user_id in a separate field for easier querying
+            # Duplicated from _id so queries can filter on it without a $expr.
+            "user_id": user_id,
             "username": username,
             "first_name": first_name,
             "last_name": last_name,
@@ -375,33 +437,32 @@ class ChatHistoryService:
             logger.info(f"Created new user with user_id: {user_id}")
             await self._create_bitrix_lead_if_needed(user)
             return user
-        except Exception as e:
-            # Handle race condition: another request may have inserted the user
-            if "E11000" in str(e) or "duplicate key" in str(e).lower():
-                logger.info(
-                    f"User {user_id} was created by a concurrent request, returning existing user."
-                )
-                existing = await self.db_manager.find_documents(
-                    self.users_collection, {"_id": user_id}
-                )
-                if existing:
-                    return existing[0]
-            raise ValueError(f"Failed to create user: {str(e)}")
+        except (BulkWriteError, DuplicateKeyError) as e:
+            # A concurrent request inserted this user first. Matched by exception
+            # type, not by sniffing "E11000" out of the message — insert_documents
+            # goes through insert_many, so the driver raises BulkWriteError, and
+            # any other failure (a dropped connection mid-write) must not be
+            # mistaken for a duplicate and swallowed.
+            logger.info(f"User {user_id} was created concurrently, returning existing.")
+            existing = await self.db_manager.find_documents(
+                self.users_collection, {"_id": user_id}
+            )
+            if existing:
+                return existing[0]
+            raise ValueError(f"Failed to create user: {e!s}") from e
 
-    async def get_user(self, user_id: str) -> dict | None:
+    async def get_user(self, user_id: str) -> dict[str, Any] | None:
         """Get user by user_id."""
         users = await self.db_manager.find_documents(
             self.users_collection, {"_id": user_id}
         )
         return users[0] if users else None
 
-    async def get_user_auth_status(self, user_id: str) -> dict | None:
+    async def get_user_auth_status(self, user_id: str) -> dict[str, Any] | None:
         """Return only the user fields required by request authentication."""
         if not user_id:
             return None
-        user = await self.db_manager.mongo_handler.db[
-            self.users_collection
-        ].find_one(
+        user = await self.db_manager.mongo_handler.db[self.users_collection].find_one(
             {"_id": user_id},
             {"is_blocked": 1, "archived": 1},
         )
@@ -428,7 +489,7 @@ class ChatHistoryService:
         )
         return bool(doc and doc.get("archived"))
 
-    async def get_user_by_external_id(self, external_id: str) -> dict | None:
+    async def get_user_by_external_id(self, external_id: str) -> dict[str, Any] | None:
         """Get user by external_id (for DT integration)."""
         users = await self.db_manager.find_documents(
             self.users_collection, {"external_id": external_id}
@@ -437,7 +498,7 @@ class ChatHistoryService:
 
     async def update_user_info(
         self, user_id: str, field: str, value: str
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Update a user's information (username, first_name, last_name, picture)."""
         await self._ensure_user_exists(user_id)
 
@@ -449,7 +510,7 @@ class ChatHistoryService:
             "updated_at": datetime.now(timezone.utc),
         }
 
-        # Even if modified_count is 0 (e.g. same value), we still return the current document.
+        # modified_count 0 (e.g. same value) still returns the current document.
         await self.db_manager.update_documents(
             self.users_collection,
             {"_id": user_id},
@@ -460,7 +521,7 @@ class ChatHistoryService:
 
     async def update_user_phone_number(
         self, user_id: str, phone_number: str
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Update a user's phone number and return updated user."""
         await self._ensure_user_exists(user_id)
 
@@ -473,7 +534,7 @@ class ChatHistoryService:
             "updated_at": datetime.now(timezone.utc),
         }
 
-        # Even if modified_count is 0 (e.g. same value), we still return the current document.
+        # modified_count 0 (e.g. same value) still returns the current document.
         await self.db_manager.update_documents(
             self.users_collection,
             {"_id": user_id},
@@ -485,7 +546,9 @@ class ChatHistoryService:
             await self._create_bitrix_lead_if_needed(user)
         return user
 
-    async def block_user(self, user_id: str, reason: str | None = None) -> dict | None:
+    async def block_user(
+        self, user_id: str, reason: str | None = None
+    ) -> dict[str, Any] | None:
         """Block a user so they cannot log in until unblocked.
 
         If the user does not exist yet, a minimal user document is created.
@@ -522,7 +585,7 @@ class ChatHistoryService:
 
         return await self.get_user(user_id)
 
-    async def unblock_user(self, user_id: str) -> dict | None:
+    async def unblock_user(self, user_id: str) -> dict[str, Any] | None:
         """Unblock a previously blocked user."""
         await self._ensure_user_exists(user_id)
 
@@ -542,11 +605,6 @@ class ChatHistoryService:
 
         return await self.get_user(user_id)
 
-    async def is_user_blocked(self, user_id: str) -> bool:
-        """Return True if user exists and is blocked."""
-        user = await self.get_user(user_id)
-        return bool(user and user.get("is_blocked"))
-
     # Sessions Management
     async def create_session(
         self,
@@ -556,7 +614,8 @@ class ChatHistoryService:
         project_id: str | None = None,
         org_id: str | None = None,
         task_id: str | None = None,
-    ) -> dict:
+        shared: bool = False,
+    ) -> dict[str, Any]:
         """Create or retrieve an existing session. Uses session_id as _id."""
 
         await self._ensure_user_exists(user_id)
@@ -580,6 +639,9 @@ class ChatHistoryService:
             # A scope tag, not an access boundary: reaching a session is already
             # gated by assert_session_access and organization membership.
             "task_id": task_id,
+            # Org-shared: the whole organization reads and writes this transcript.
+            # Only the delegation path sets it; every personal chat stays owned.
+            "shared": shared,
             "title": title or "New Chat",
             "tags": tags or [],
             "status": SessionStatus.draft.value,
@@ -588,12 +650,9 @@ class ChatHistoryService:
             "updated_at": datetime.now(timezone.utc),
         }
 
-        try:
-            await self.db_manager.insert_documents(self.sessions_collection, [session])
-            logger.info(f"Created new session with session_id: {session_id}")
-            return session
-        except Exception as e:
-            raise InvalidInputError(f"Failed to create session: {str(e)}")
+        await self.db_manager.insert_documents(self.sessions_collection, [session])
+        logger.info(f"Created new session with session_id: {session_id}")
+        return session
 
     # org_id needs no separate proof of who is asking: verify_user_or_service_auth
     # (security/dependencies.py) cross-checks any user_id in the path, query or body
@@ -607,7 +666,7 @@ class ChatHistoryService:
         org_id: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Active non-project sessions for a user, within one scope.
 
         ``org_id=None`` means the personal profile and excludes every org session,
@@ -655,7 +714,7 @@ class ChatHistoryService:
 
     async def get_sessions_by_project(
         self, project_id: str, limit: int = 50, skip: int = 0
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Active project sessions that have at least one persisted message."""
         if not project_id or not project_id.strip():
             raise InvalidInputError("Project ID cannot be empty")
@@ -690,7 +749,7 @@ class ChatHistoryService:
         cursor = collection.aggregate(pipeline)
         return await cursor.to_list(length=limit)
 
-    async def get_session(self, session_id: str) -> dict | None:
+    async def get_session(self, session_id: str) -> dict[str, Any] | None:
         """Get session by session_id."""
         if not session_id or not session_id.strip():
             raise InvalidInputError("Session ID cannot be empty")
@@ -700,7 +759,9 @@ class ChatHistoryService:
         )
         return sessions[0] if sessions else None
 
-    async def attach_session_to_project(self, session_id: str, project_id: str) -> dict:
+    async def attach_session_to_project(
+        self, session_id: str, project_id: str
+    ) -> dict[str, Any]:
         """Set ``project_id`` on a session (e.g. first chat message in a project)."""
         await self._ensure_session_exists(session_id)
         if not project_id or not project_id.strip():
@@ -716,7 +777,7 @@ class ChatHistoryService:
 
     async def edit_session(
         self, session_id: str, title: str | None = None, tags: list[str] | None = None
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Edit a session's title or tags."""
 
         await self._ensure_session_exists(session_id)
@@ -774,10 +835,10 @@ class ChatHistoryService:
         self,
         session_id: str,
         file_ids: list[str] | None,
-        content: dict | BaseModel,
-        metadata: dict | None = None,
+        content: dict[str, Any] | BaseModel,
+        metadata: dict[str, Any] | None = None,
         message_id: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Add a message to a session. Uses message_id as _id."""
 
         session = await self._ensure_session_exists(session_id)
@@ -796,7 +857,8 @@ class ChatHistoryService:
             "user_id": user_id,  # Auto-populated from session
             "session_id": session_id,
             "org_id": org_id,  # Inherited from the session, like user_id
-            "message_id": resolved_message_id,  # Ensure message_id field is set to match _id
+            # Mirrors _id, like session_id and user_id above.
+            "message_id": resolved_message_id,
             "file_ids": file_ids or [],  # Can be empty list for non-file messages
             "content": content,
             "metadata": metadata or {},
@@ -804,22 +866,19 @@ class ChatHistoryService:
             "updated_at": datetime.now(timezone.utc),
         }
 
-        try:
-            await self.db_manager.insert_documents(self.messages_collection, [message])
+        await self.db_manager.insert_documents(self.messages_collection, [message])
 
-            now = datetime.now(timezone.utc)
-            session_update = self._build_session_activation_update(session, now)
+        now = datetime.now(timezone.utc)
+        session_update = self._build_session_activation_update(session, now)
 
-            # Update session timestamp
-            await self.db_manager.update_documents(
-                self.sessions_collection,
-                {"_id": session_id},
-                {"$set": session_update},
-            )
+        # Update session timestamp
+        await self.db_manager.update_documents(
+            self.sessions_collection,
+            {"_id": session_id},
+            {"$set": session_update},
+        )
 
-            return message
-        except Exception as e:
-            raise InvalidInputError(f"Failed to add message: {str(e)}")
+        return message
 
     async def upsert_message(
         self,
@@ -828,13 +887,13 @@ class ChatHistoryService:
         message_id: str,
         user_id: str,
         file_ids: list[str] | None,
-        content: dict | BaseModel,
-        metadata: dict | None = None,
-    ) -> dict:
+        content: dict[str, Any] | BaseModel,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Create or update a message using a pre-generated message ID."""
 
         session = await self._ensure_session_exists(session_id)
-        if session.get("user_id") != user_id:
+        if not self._is_org_shared(session) and session.get("user_id") != user_id:
             raise InvalidInputError("Session does not belong to the provided user")
 
         if isinstance(content, BaseModel):
@@ -883,7 +942,9 @@ class ChatHistoryService:
             "created_at": now,
         }
 
-    async def get_messages(self, session_id: str, limit: int = 100) -> list[dict]:
+    async def get_messages(
+        self, session_id: str, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Retrieve all messages for a session."""
         query = {
             "session_id": session_id,
@@ -897,15 +958,7 @@ class ChatHistoryService:
 
         return messages
 
-    async def get_recent_messages(self, session_id: str, limit: int = 5) -> list[dict]:
-        """Retrieve the latest messages for a session in chronological order."""
-        messages = await self.get_messages(session_id=session_id, limit=max(limit, 1))
-        messages.sort(key=lambda msg: msg.get("created_at") or datetime.min)
-        if limit <= 0:
-            return []
-        return messages[-limit:]
-
-    async def get_message(self, message_id: str) -> dict | None:
+    async def get_message(self, message_id: str) -> dict[str, Any] | None:
         """Get message by message_id (direct _id lookup - fastest)."""
 
         if not message_id or not message_id.strip():
@@ -917,9 +970,13 @@ class ChatHistoryService:
         return messages[0] if messages else None
 
     async def share_message(
-        self, user_id: str, message_id: str, id_length: int = 32
-    ) -> dict:
-        """Share a message with another user."""
+        self, user_id: str | None, message_id: str, id_length: int = 32
+    ) -> dict[str, Any]:
+        """Share a message with another user.
+
+        ``user_id`` is recorded as ``shared_by`` and is None for a service-key
+        caller, which establishes no user identity (see messages.current_actor).
+        """
 
         # Get message to share
         message = await self.get_message(message_id)
@@ -934,7 +991,7 @@ class ChatHistoryService:
                 "created_at": message.get("shared_at"),
             }
             logger.info(
-                f"Message {message_id} is already shared, returning existing share record."
+                f"Message {message_id} already shared, returning existing record."
             )
             return share_record
 
@@ -999,7 +1056,7 @@ class ChatHistoryService:
         message_id: str,
         feedback_type: str,
         feedback_content: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Embed feedback directly on the message document."""
 
         if not message_id or not message_id.strip():
@@ -1023,7 +1080,7 @@ class ChatHistoryService:
             "feedback_content": feedback_content,
         }
 
-    async def get_feedback(self, message_id: str) -> dict | None:
+    async def get_feedback(self, message_id: str) -> dict[str, Any] | None:
         """Retrieve feedback from the message document."""
 
         if not message_id or not message_id.strip():
@@ -1038,7 +1095,7 @@ class ChatHistoryService:
             "feedback_content": message.get("feedback_content"),
         }
 
-    async def delete_feedback(self, message_id: str) -> dict:
+    async def delete_feedback(self, message_id: str) -> dict[str, Any]:
         """Remove feedback fields from the message document."""
 
         if not message_id or not message_id.strip():
@@ -1059,14 +1116,14 @@ class ChatHistoryService:
         file_id: str,
         file_url: str,
         ocr_result: str,
-        file_metadata: dict,
+        file_metadata: dict[str, Any],
         status: str,
         scope: str,
         message_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
         webhook_url: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Add a file upload record. Uses file_id as _id.
 
         A project-scoped file inherits its project's `org_id`, which marks a Case's
@@ -1083,7 +1140,7 @@ class ChatHistoryService:
             raise InvalidInputError("File ID cannot be empty")
         if not file_url or not file_url.strip():
             raise InvalidInputError("File URL cannot be empty")
-        if not file_metadata or not isinstance(file_metadata, dict):
+        if not file_metadata:
             raise InvalidInputError("File metadata must be a valid dictionary")
         if scope not in ["message", "project"]:
             raise InvalidInputError("Scope must be 'message' or 'project'")
@@ -1128,36 +1185,13 @@ class ChatHistoryService:
         if webhook_url:
             file_record["webhook_url"] = webhook_url
 
-        try:
-            await self.db_manager.insert_documents(self.files_collection, [file_record])
-            logger.info(f"Added file upload record with file_id: {file_id}")
-            return file_record
-        except Exception as e:
-            raise InvalidInputError(f"Failed to add file upload record: {str(e)}")
+        await self.db_manager.insert_documents(self.files_collection, [file_record])
+        logger.info(f"Added file upload record with file_id: {file_id}")
+        return file_record
 
-    async def get_files_by_scope(
-        self,
-        message_ids: list[str] | None = None,
-        limit: int = 50,
-    ) -> list[dict]:
-        """Retrieve files by message scope."""
-
-        if not message_ids:
-            raise InvalidInputError("message_ids must be provided")
-
-        query = {
-            "message_id": {"$in": message_ids},
-            "scope": "message",
-            **_ACTIVE_ONLY,
-        }
-
-        files = await self.db_manager.find_documents(
-            self.files_collection, query, limit=limit
-        )
-        logger.info(f"Retrieved {len(files)} files")
-        return files
-
-    async def get_files_by_user(self, user_id: str, limit: int = 50) -> list[dict]:
+    async def get_files_by_user(
+        self, user_id: str, limit: int = 50
+    ) -> list[dict[str, Any]]:
         """Retrieve all message-scoped files for a user."""
 
         await self._ensure_user_exists(user_id)
@@ -1169,22 +1203,7 @@ class ChatHistoryService:
         logger.info(f"Retrieved {len(files)} message files for user {user_id}")
         return files
 
-    async def get_files_by_message(
-        self, message_id: str, limit: int = 50
-    ) -> list[dict]:
-        """Retrieve all files associated with a specific message."""
-
-        if not message_id or not message_id.strip():
-            raise InvalidInputError("Message ID cannot be empty")
-
-        query = {"message_id": message_id, **_ACTIVE_ONLY}
-        files = await self.db_manager.find_documents(
-            self.files_collection, query, limit=limit
-        )
-        logger.info(f"Retrieved {len(files)} files for message {message_id}")
-        return files
-
-    async def get_file_by_id(self, file_id: str) -> dict | None:
+    async def get_file_by_id(self, file_id: str) -> dict[str, Any] | None:
         """Retrieve a specific file by file_id (direct _id lookup - fastest)."""
 
         if not file_id or not file_id.strip():
@@ -1203,7 +1222,7 @@ class ChatHistoryService:
 
     async def get_file_by_content_hash(
         self, content_hash: str, user_id: str
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Retrieve a file by raw content hash scoped to a specific user."""
         if not content_hash or not content_hash.strip():
             raise InvalidInputError("Content hash cannot be empty")
@@ -1222,7 +1241,7 @@ class ChatHistoryService:
 
     async def get_file_by_content_hash_for_project(
         self, content_hash: str, user_id: str, project_id: str
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Same as get_file_by_content_hash but isolated per project."""
         if not project_id or not project_id.strip():
             raise InvalidInputError("Project ID cannot be empty")
@@ -1245,7 +1264,7 @@ class ChatHistoryService:
 
     async def get_files_by_project(
         self, project_id: str, limit: int = 100
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Project-scoped uploads (Mongo)."""
         if not project_id or not project_id.strip():
             raise InvalidInputError("Project ID cannot be empty")
@@ -1255,36 +1274,9 @@ class ChatHistoryService:
             limit=limit,
         )
 
-    async def update_file_status(
-        self, file_id: str, status: str, ocr_result: str | None = None
-    ) -> dict:
-        """Update file processing status and OCR result."""
-
-        if not file_id or not file_id.strip():
-            raise InvalidInputError("File ID cannot be empty")
-
-        update_fields = {"status": status, "updated_at": datetime.now(timezone.utc)}
-        if ocr_result is not None:
-            update_fields["ocr_result"] = ocr_result
-
-        updated_count = await self.db_manager.update_documents(
-            self.files_collection,
-            {"_id": file_id},
-            {"$set": update_fields},
-        )
-
-        if updated_count == 0:
-            raise InvalidInputError("File not found or no changes made")
-
-        file = await self.get_file_by_id(file_id)
-        logger.info(f"Updated file status for file_id: {file_id} to {status}")
-        if not file:
-            raise InvalidInputError("File not found after update")
-        return file
-
     async def update_file_metadata_fields(
         self, file_id: str, fields: dict[str, Any]
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Update selected top-level or dotted fields on a file record."""
 
         if not file_id or not file_id.strip():

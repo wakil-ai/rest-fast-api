@@ -57,3 +57,21 @@ def test_credentials_from_environment_rejects_partial_config(monkeypatch):
 
     with pytest.raises(ValueError, match="GCS_PRIVATE_KEY"):
         StorageService._credentials_from_environment()
+
+
+def test_public_bucket_setting_is_gone():
+    """Not hasattr(): extra="allow" on Settings keeps a stray env var alive as an
+    instance attribute long after the field is deleted, so the assertion has to be
+    on the class or it passes for the wrong reason in exactly the deployments that
+    still set the variable."""
+    from core.config import Settings
+
+    assert "GCS_PUBLIC_BUCKET_NAME" not in Settings.model_fields
+
+
+def test_uploads_and_deletes_take_no_bucket_argument():
+    """One bucket. A per-call target was only ever the public avatar bucket."""
+    import inspect
+
+    for method in (StorageService.upload_file, StorageService.permanently_delete_file):
+        assert "bucket_name" not in inspect.signature(method).parameters
