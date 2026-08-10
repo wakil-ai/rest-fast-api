@@ -457,23 +457,31 @@ class RateLimitService:
                 )
                 return True, credits_remaining - credit_cost, daily_limit
 
-            await collection.insert_one(
-                {
-                    "user_id": user_id,
-                    "date": today,
-                    "credits_used": credit_cost,
-                    "created_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
-                }
-            )
+            # No bucket for today yet: the user has spent nothing, so the whole
+            # daily limit is available. Still check it covers the cost — a limit
+            # below the cost (e.g. DAILY_CREDITS_LIMIT=0) must deny the very
+            # first request of the day, not just the ones after it.
+            if daily_limit < credit_cost:
+                logger.warning(
+                    f"[RateLimitService] User {user_id} has insufficient credits for {assistant_type}."
+                )
+                return False, daily_limit, daily_limit
+
+            await self._increment_today_credits_used(user_id, credit_cost)
             return True, daily_limit - credit_cost, daily_limit
 
         except Exception as e:
             logger.error(
                 f"[RateLimitService] Error checking credits for user {user_id}: {str(e)}"
             )
-            # On error, fail open with the free quota to avoid blocking traffic.
-            return True, settings.DAILY_CREDITS_LIMIT, settings.DAILY_CREDITS_LIMIT
+            # On error, fall back to the free quota to avoid blocking traffic —
+            # but only when that quota can actually cover the request.
+            fallback_limit = settings.DAILY_CREDITS_LIMIT
+            try:
+                fallback_cost = self._get_credit_cost(assistant_type)
+            except Exception:
+                fallback_cost = 0
+            return fallback_limit >= fallback_cost, fallback_limit, fallback_limit
 
     async def get_remaining_credits(self, user_id: str) -> int:
         """Remaining credits. For paid subs this is the pool; otherwise today's
