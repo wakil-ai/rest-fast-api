@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.13-260810 (2026-08-10)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.13-260810 -->
+
+## What's Changed
+### 💬 Other
+* hotfix: deny first request of the day when daily credit limit is below cost by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/156
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.12-260727...v5.0.13-260810
+
 ## v5.0.12-260727 (2026-07-27)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.12-260727 -->
