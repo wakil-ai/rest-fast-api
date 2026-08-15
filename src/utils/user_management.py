@@ -3,7 +3,7 @@ import random
 import string
 import uuid as uuid_module
 from copy import deepcopy
-from datetime import datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from functools import wraps
 from typing import Any
@@ -77,6 +77,7 @@ def clean_for_mongodb(data: Any) -> Any:
     Converts:
     - UUID objects to strings
     - Decimal objects to float
+    - date objects to midnight-UTC datetimes
     - Other non-serializable types to strings
     """
     if isinstance(data, dict):
@@ -89,6 +90,12 @@ def clean_for_mongodb(data: Any) -> Any:
         return float(data)
     elif isinstance(data, datetime):
         return data  # MongoDB handles datetime natively
+    elif isinstance(data, date):
+        # BSON has no date type. Stored as a real datetime rather than a string so
+        # deadline range queries hit the index — BSON compares across types by type
+        # order, so a string deadline would never match a datetime bound.
+        # Must stay below the datetime branch: datetime is a subclass of date.
+        return datetime(data.year, data.month, data.day, tzinfo=timezone.utc)
     return data
 
 

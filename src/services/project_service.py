@@ -14,6 +14,18 @@ from models.projects import (
 )
 from utils.user_management import clean_for_mongodb, generate_short_id
 
+# A project row with `org_id` set is an enterprise Case, not a personal project.
+# Rows created before Cases existed have no `org_id` key at all, so "personal"
+# must match absent as well as null — the same shape as the shipped `project_id`
+# filter on sessions.
+PERSONAL_SCOPE: dict[str, Any] = {
+    "$or": [{"org_id": {"$exists": False}}, {"org_id": None}]
+}
+
+
+def is_case(project: dict[str, Any]) -> bool:
+    return bool(project.get("org_id"))
+
 
 class ProjectService:
     """Mongo-backed legal projects: documents, sessions, and scoped file ingestion."""
@@ -49,26 +61,67 @@ class ProjectService:
             )
         return rows[0]
 
-    async def get_membership_role(
-        self, project_id: str, user_id: str
-    ) -> str | None:
+    async def get_membership_role(self, project_id: str, user_id: str) -> str | None:
         project = await self._load_project_row(project_id)
+        if is_case(project):
+            # Cases are reached through organization membership and leave
+            # project_members empty, so the lookup below can only ever answer None —
+            # reporting no role to a member who was just granted full access.
+            return "owner" if project.get("owner_id") == user_id else "member"
         if project.get("owner_id") == user_id:
             return "owner"
         if await self._member_service().is_member(project_id, user_id):
             return "member"
         return None
 
-    async def assert_project_access(self, project_id: str, user_id: str) -> dict[str, Any]:
+    async def assert_project_access(
+        self, project_id: str, user_id: str
+    ) -> dict[str, Any]:
+        project = await self._load_project_row(project_id)
+        if is_case(project):
+            # An archived Case 404s on the enterprise surface, so it must 404 here
+            # too — otherwise its files, sessions and instructions stay fully live on
+            # this route after an admin has archived it.
+            if project.get("archived"):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+                )
+            # An enterprise Case is reached through organization membership, not
+            # through project_members, which stays unused for Cases.
+            from core.dependencies import get_organization_service
+
+            await get_organization_service().assert_org_member(
+                project["org_id"], user_id
+            )
+            return project
+
         role = await self.get_membership_role(project_id, user_id)
         if role is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
             )
-        return await self._load_project_row(project_id)
+        return project
 
-    async def assert_project_owner(self, project_id: str, user_id: str) -> dict[str, Any]:
+    @staticmethod
+    def reject_if_case(project: dict[str, Any]) -> None:
+        """Keep enterprise Cases out of the personal project surface.
+
+        A Case's owner_id is an ordinary member, so an owner check alone would let
+        them PATCH `status` straight to closed or archived through
+        `/projects/{project_id}` — bypassing admin approval, the closure workflow
+        and the activity log, all of which live in CaseService. 404 rather than 403
+        because on this surface the row is not supposed to exist at all.
+        """
+        if is_case(project):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+            )
+
+    async def assert_project_owner(
+        self, project_id: str, user_id: str
+    ) -> dict[str, Any]:
         project = await self._load_project_row(project_id)
+        self.reject_if_case(project)
         if project.get("owner_id") != user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
@@ -93,6 +146,11 @@ class ProjectService:
                 "_id": project_id,
                 "owner_id": body.owner_id,
                 "title": body.title,
+                # No `org_id` key at all, deliberately. Writing an explicit null
+                # would put every personal project in the deployment into the Case
+                # partial indexes, which key on `org_id: {$exists: True}` precisely
+                # to stay out of them. `is_case` and PERSONAL_SCOPE both already
+                # read absence as personal, so the discriminator loses nothing.
                 "files": [],
                 "status": ProjectStatus.active.value,
                 "stats": {"docs": 0, "chats": 0, "reminders": 0},
@@ -121,7 +179,10 @@ class ProjectService:
         if member_ids:
             or_clauses.append({"_id": {"$in": member_ids}})
 
-        query: dict[str, Any] = {"$or": or_clauses}
+        # Both predicates are `$or`, and a dict cannot hold two of those keys —
+        # the second would silently replace the first and every org Case would
+        # show up in this user's personal project list. They go under `$and`.
+        query: dict[str, Any] = {"$and": [{"$or": or_clauses}, PERSONAL_SCOPE]}
         if status is not None:
             query["status"] = status.value
 
@@ -204,13 +265,32 @@ class ProjectService:
         user_id: str,
         title: str | None,
         tags: list[str] | None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
-        await self.assert_project_access(project_id, user_id)
+        project = await self.assert_project_access(project_id, user_id)
+        # A session on a Case carries the Case's org_id. Without it the row is
+        # personal-scope, and assert_session_access only re-checks membership when
+        # org_id is set — so a member removed from the organization would keep read
+        # and write on every Case conversation they had opened.
+        org_id = project.get("org_id")
+
+        if task_id:
+            if not org_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="task_id applies only to a Case",
+                )
+            from core.dependencies import get_task_service
+
+            await get_task_service().assert_task_in_case(org_id, project_id, task_id)
+
         return await self.history.create_session(
             user_id=user_id,
             title=title,
             tags=tags,
             project_id=project_id,
+            org_id=org_id,
+            task_id=task_id,
         )
 
     async def list_project_sessions(

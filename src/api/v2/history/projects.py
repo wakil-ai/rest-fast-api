@@ -134,6 +134,7 @@ async def create_project_session(project_id: str, body: ProjectSessionCreateRequ
         user_id=body.user_id,
         title=body.title,
         tags=body.tags,
+        task_id=body.task_id,
     )
     return SessionResponse(**serialize_mongo_id(session))
 

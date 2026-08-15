@@ -64,9 +64,7 @@ class StorageService:
             "client_id": settings.GCS_CLIENT_ID,
         }
         credential_fields = set(required) - {"project_id"}
-        configured_credentials = {
-            name for name in credential_fields if required[name]
-        }
+        configured_credentials = {name for name in credential_fields if required[name]}
         if not configured_credentials:
             return None
 
@@ -145,7 +143,9 @@ class StorageService:
             raise
 
     @staticmethod
-    def _build_access_url(blob, return_signed_url: bool, expiration_minutes: int) -> str:
+    def _build_access_url(
+        blob, return_signed_url: bool, expiration_minutes: int
+    ) -> str:
         """Return either a signed URL or public URL for an uploaded blob."""
         if return_signed_url:
             signed_url = blob.generate_signed_url(

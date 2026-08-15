@@ -46,6 +46,19 @@ class Settings(BaseSettings):
     PROJECT_MEMBERS_COLLECTION: str = "project_members"
     PROJECT_INVITES_COLLECTION: str = "project_invites"
     PROJECT_INVITE_TTL_HOURS: int = 168
+    ORGANIZATIONS_COLLECTION: str = "organizations"
+    ORGANIZATION_MEMBERS_COLLECTION: str = "organization_members"
+    ORGANIZATION_INVITES_COLLECTION: str = "organization_invites"
+    WORKFLOW_STATES_COLLECTION: str = "workflow_states"
+    TASKS_COLLECTION: str = "tasks"
+    ACTIVITY_LOGS_COLLECTION: str = "activity_logs"
+    # Not "ai_outputs": only version 1 of a chain is the agent's work — a human
+    # edit inserts a further row with source=human. `source` carries that.
+    DRAFTS_COLLECTION: str = "drafts"
+    ORG_INVITE_TTL_HOURS: int = 168
+    # Head + 5 staff members. Defaulted onto each org document as `seat_limit`, so
+    # raising the cap for one customer is a data change, not a code change.
+    ORG_SEAT_LIMIT: int = 6
     PROMO_CODE_COLLECTION: str = "promos"
     USER_PROMO_CODE_COLLECTION: str = "user-promos"
     TRANSACTION_COLLECTION: str = "transactions"
@@ -64,6 +77,10 @@ class Settings(BaseSettings):
     GCS_CLIENT_EMAIL: str | None = None
     GCS_PRIVATE_KEY: str | None = None
     GCS_PRIVATE_KEY_ID: str | None = None
+    # Shorter than the 60-minute storage default: an avatar is fetched immediately
+    # after the JSON response and never re-fetched from the same URL, so a longer
+    # window only widens the period in which a leaked URL still works.
+    ORG_AVATAR_SIGNED_URL_MINUTES: int = 15
     GCS_CLIENT_ID: str | None = None
 
     # Assistant compatibility names owned by public routes/credits.
@@ -115,6 +132,10 @@ class Settings(BaseSettings):
     LLM_SERVICE_INTERNAL_TOKEN: str | None = None
     LLM_SERVICE_INTERNAL_HEADER: str = "x-internal-token"
     LLM_SERVICE_TIMEOUT_SECONDS: float = 600.0
+    # Delegation only. Ordinary chat keeps its unlimited stream: this bound exists
+    # so an abandoned draft's slot can be reclaimed once its generation is
+    # guaranteed dead, not to make chat stricter.
+    AI_DELEGATION_TIMEOUT_SECONDS: int = 900
 
     # File processing
     DOCUMENT_PROCESSING_POLL_TIMEOUT_SECONDS: int = 900
@@ -126,7 +147,9 @@ class Settings(BaseSettings):
 
     # Credit System Configuration
     DAILY_CREDITS_LIMIT: int = 30  # Daily credits after the welcome pool is exhausted
-    SIGNUP_DAY_CREDITS_LIMIT: int = 100  # One-time welcome pool for new users (persists until used)
+    SIGNUP_DAY_CREDITS_LIMIT: int = (
+        100  # One-time welcome pool for new users (persists until used)
+    )
     CREDIT_COST_MAIN_ASSISTANT: int = 10  # Credits for main assistant (umumiy)
     CREDIT_COST_SOLIQ_ASSISTANT: int = 20  # Credits for tax specialized assistant
     CREDIT_COST_SUD_ASSISTANT: int = 25  # Credits for sud specialized assistant
@@ -163,7 +186,9 @@ class Settings(BaseSettings):
     # Uzum Merchant API Configuration (webhooks: /check /create /confirm /reverse /status)
     UZUM_USERNAME: str | None = None  # Basic Auth username Uzum will send
     UZUM_PASSWORD: str | None = None  # Basic Auth password Uzum will send
-    UZUM_SERVICE_ID: int | None = None  # Single service id assigned to wakil.ai in Uzum catalog
+    UZUM_SERVICE_ID: int | None = (
+        None  # Single service id assigned to wakil.ai in Uzum catalog
+    )
     UZUM_TRANSACTIONS_COLLECTION: str = "uzum_transactions"
 
     # Apple App Store (StoreKit 2) In-App Purchases
