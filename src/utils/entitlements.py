@@ -9,8 +9,11 @@ from core.dependencies import get_rate_limit_service
 from core.logger import logger
 
 # Machine-readable contract returned to clients when an upload is denied.
-# NOTE: FastAPI nests ``detail`` under the response body, so the wire shape is:
-#   {"detail": {"code": ..., "message": ..., "upgrade_required": true}}
+# Raised here with a dict `detail` for historical reasons; the global
+# handler in core.error_handlers unwraps this into the standard envelope
+# before it reaches the client — {"detail": "<message>", "error": {"code":
+# "FILE_UPLOAD_REQUIRES_PAID_PLAN", "message": ..., "params": {"upgrade_required": true}}}.
+# See docs/reference-error-codes.md.
 FILE_UPLOAD_REQUIRES_PAID_PLAN = "FILE_UPLOAD_REQUIRES_PAID_PLAN"
 
 _UPLOAD_DENIED_DETAIL = {

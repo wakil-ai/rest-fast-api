@@ -2,7 +2,50 @@
 
 All custom exceptions and HTTP error responses the WakilAI API can return.
 
-**Source:** [src/core/exceptions.py](../src/core/exceptions.py)
+**Source:** [src/core/exceptions.py](../src/core/exceptions.py),
+[src/core/error_codes.py](../src/core/error_codes.py),
+[src/core/error_handlers.py](../src/core/error_handlers.py)
+
+---
+
+## Wire contract
+
+Every error response — from a coded exception, an uncoded `HTTPException`, a
+422 validation failure, or an unhandled 500 — is normalized by a global
+handler into one envelope:
+
+```json
+{
+  "detail": "Insufficient credits. You have 0/30 credits remaining.",
+  "error": {
+    "code": "CREDITS_EXHAUSTED",
+    "message": "Daily credit limit reached.",
+    "params": { "remaining": 0, "limit": 30, "required": 1 }
+  }
+}
+```
+
+- **`detail` is always a plain string.** Both mobile clients decode it as
+  such; this is never changed, even for the legacy dict-`detail` codes below.
+- **`error.code`** is the stable, permanent machine-readable code. Once
+  shipped, a code is never renamed or removed — clients may already switch
+  on it. Prefer this over parsing `detail` text.
+- **`error.message`** is an English, developer-facing fallback. Product
+  surfaces should localize by `error.code`, not display this string.
+- **`error.params`** carries the structured values (counts, IDs, seat
+  limits, retry-after seconds, …) a client needs to render specific copy.
+
+Legacy exception sites that predate this contract (`FILE_UPLOAD_REQUIRES_PAID_PLAN`,
+`ACTIVE_SUBSCRIPTION_EXISTS`, `ACTIVE_DAILY_PASS_SAME_TIER`,
+`DAILY_PASS_DOWNGRADE_NOT_ALLOWED`) used to put the whole `{code, message,
+...}` object directly in `detail`. The handler now unwraps them into the
+same envelope, so `detail` is a string there too.
+
+Full code catalog — status, English fallback message, and expected `params`
+keys — lives in [`ERROR_CATALOG`](../src/core/error_codes.py). The
+per-exception sections below are kept for the narrative "when does this
+happen / what should I do" context; the code table there is the source of
+truth for the wire shape.
 
 ---
 
@@ -39,10 +82,11 @@ The user's daily credit pool is exhausted for the requested assistant type. Cred
 ```
 HTTP 402 Payment Required
 {
-  "detail": {
+  "detail": "File upload is available for paid plans only.",
+  "error": {
     "code": "FILE_UPLOAD_REQUIRES_PAID_PLAN",
     "message": "File upload is available for paid plans only.",
-    "upgrade_required": true
+    "params": { "upgrade_required": true }
   }
 }
 ```
@@ -54,10 +98,14 @@ subscription, an active daily pass, or an unlimited promo code.
 
 The check runs at the API layer **before** any file is read or processed, and the
 backend is the source of truth — it cannot be bypassed from the client. Clients
-should read the machine-readable `detail.code` (not the human message) and route
+should read the machine-readable `error.code` (not the human message) and route
 the user to the upgrade flow. See [Explanation: Credit System](explanation-credit-system.md)
 and the subscription status endpoint `GET /api/v2/transaction/payme/subscriptions/{user_id}`
 (`active` flag) for deriving upload eligibility ahead of time.
+
+> Historical note: before this contract existed, `detail` itself was the
+> `{code, message, upgrade_required}` object. It is now always a string —
+> see [Wire contract](#wire-contract) above.
 
 **Source:** [src/utils/entitlements.py](../src/utils/entitlements.py)
 
