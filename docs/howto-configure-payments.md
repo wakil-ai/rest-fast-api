@@ -44,7 +44,25 @@ PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM=600000
 PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM=6000000
 ```
 
-### 4. Register the callback URL in the Payme merchant cabinet
+### 4. Optional: run a time-boxed discount campaign
+
+Applies to every rail (Payme, Click, Uzum) — App Store pricing is set separately in App Store
+Connect and is not affected. Off by default; enable with:
+
+```env
+SUBSCRIPTION_PROMO_ENABLED=true
+SUBSCRIPTION_PROMO_PERCENT=35
+SUBSCRIPTION_PROMO_STARTS_AT=            # optional; omit to start immediately
+SUBSCRIPTION_PROMO_ENDS_AT=2026-09-01T00:00:00+05:00
+SUBSCRIPTION_PROMO_TIERS=standard,pro    # daily-pass tiers (basic/standard/premium) excluded by default
+SUBSCRIPTION_PROMO_PERIODS=monthly,yearly
+```
+
+The discount is evaluated live on every quote, so the campaign ends automatically once
+`SUBSCRIPTION_PROMO_ENDS_AT` passes — no deploy or restart needed to turn it off. Prices round
+down to the nearest 1,000 sum. See `src/core/subscription_promo.py`.
+
+### 5. Register the callback URL in the Payme merchant cabinet
 
 Payme will POST to `POST /api/v2/transaction/payme/` for all RPC calls (CheckPerformTransaction, CreateTransaction, PerformTransaction, CheckTransaction, SetFiscalData).
 
@@ -53,7 +71,7 @@ Set this in your Payme merchant dashboard:
 https://api.yourdomain.com/api/v2/transaction/payme/
 ```
 
-### 5. Test the integration
+### 6. Test the integration
 
 Initiate a checkout:
 

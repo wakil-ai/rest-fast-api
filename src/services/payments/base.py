@@ -3,6 +3,7 @@ import time
 from datetime import datetime, timezone
 
 from core.config import settings
+from core.subscription_promo import apply_discount
 from core.subscription_tiers import (
     daily_pass_rank,
     is_daily_pass_quote,
@@ -130,7 +131,7 @@ class BasePaymentService:
     def _get_today_date(self) -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    def _get_subscription_quote(self, tier: str, period: str) -> dict:
+    def _get_period_cfg(self, tier: str, period: str) -> dict:
         tier_cfg = self._subscription_catalog.get(tier)
         if not tier_cfg:
             raise ValueError("Invalid subscription tier")
@@ -139,11 +140,26 @@ class BasePaymentService:
         if not period_cfg:
             raise ValueError("Invalid subscription period")
 
+        return period_cfg
+
+    def _get_list_price_sum(self, tier: str, period: str) -> int:
+        """Undiscounted catalog price, ignoring any active promo campaign."""
+        return int(self._get_period_cfg(tier, period)["price_sum"])
+
+    def _get_subscription_quote(self, tier: str, period: str) -> dict:
+        period_cfg = self._get_period_cfg(tier, period)
+
         days = int(period_cfg["days"])
-        price_sum = int(period_cfg["price_sum"])
+        list_price_sum = int(period_cfg["price_sum"])
         total_credits = int(period_cfg["total_credits"])
         # Daily cap only applies to the legacy daily-pass tier; 0 means "no per-day cap".
         daily_credits = int(period_cfg.get("daily_credits") or 0)
+
+        now_ms = int(time.time() * 1000)
+        price_sum, promo_list_price_sum, discount_percent, promo_ends_at_ms = (
+            apply_discount(tier, period, list_price_sum, now_ms)
+        )
+
         return {
             "tier": tier,
             "period": period,
@@ -151,6 +167,9 @@ class BasePaymentService:
             "days": days,
             "total_credits": total_credits,
             "amount_sum": price_sum,
+            "list_price_sum": promo_list_price_sum,
+            "discount_percent": discount_percent,
+            "promo_ends_at_ms": promo_ends_at_ms,
         }
 
     def get_subscription_catalog(self) -> list[dict]:
@@ -168,6 +187,9 @@ class BasePaymentService:
                         "daily_credits": quote["daily_credits"],
                         "total_credits": quote["total_credits"],
                         "days": quote["days"],
+                        "list_price_sum": quote["list_price_sum"],
+                        "discount_percent": quote["discount_percent"],
+                        "promo_ends_at_ms": quote["promo_ends_at_ms"],
                     }
                 )
 
