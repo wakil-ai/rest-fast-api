@@ -54,6 +54,7 @@ from core.dependencies import (
     get_task_service,
     get_workflow_state_service,
 )
+from core.error_handlers import register_exception_handlers
 from core.logger import logger
 from security import (
     get_current_username,
@@ -128,6 +129,11 @@ def create_app() -> FastAPI:
         same_site="lax",  # Required for third-party redirects (Google)
         max_age=3600,  # 1 hour session timeout
     )
+
+    # Coded error envelope for every HTTPException, validation error, and
+    # unhandled exception. Must be registered before routers are mounted so
+    # it applies uniformly regardless of include_router order.
+    register_exception_handlers(app)
 
     # Mount user-facing routers with JWT or trusted service-key authentication.
     # `verify_not_archived` blocks any request made on behalf of a soft-deleted
