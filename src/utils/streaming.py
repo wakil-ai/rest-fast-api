@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from typing import Any, Optional
 
 from core.config import settings
+from core.error_codes import STATUS_FALLBACK_CODE, ErrorCode
 
 SUPPORTED_STREAM_EVENT_TYPES = {
     "progress",
@@ -94,8 +95,22 @@ async def format_streaming_response(
             yield _format_sse_message({"type": "end"})
 
     except Exception as e:
-        # Send error in streaming format
-        error_data = {"type": "error", "error": str(e)}
+        # Send error in streaming format. `error` stays a plain string for
+        # existing clients; `code`/`params` are additive, mirroring the HTTP
+        # envelope in core.error_handlers so the highest-value error path in
+        # the product (insufficient credits mid-chat) is machine-readable too.
+        code = getattr(e, "code", None)
+        if code is None:
+            status_code = getattr(e, "status_code", None)
+            code = STATUS_FALLBACK_CODE.get(status_code, ErrorCode.INTERNAL_ERROR)
+        params = getattr(e, "params", None) or {}
+
+        error_data = {
+            "type": "error",
+            "error": str(e),
+            "code": code.value if isinstance(code, ErrorCode) else code,
+            "params": params,
+        }
         yield _format_sse_message(error_data)
     finally:
         if not producer_task.done():
