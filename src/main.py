@@ -40,6 +40,7 @@ from api.v2.history.share import router as share_router
 from api.v3 import chat as v3_chat
 from api.internal import router as internal_router
 from core.config import settings
+from core.error_handlers import register_exception_handlers
 from core.logger import logger
 from security import (
     get_current_username,
@@ -88,6 +89,11 @@ def create_app() -> FastAPI:
         same_site="lax",  # Required for third-party redirects (Google)
         max_age=3600,  # 1 hour session timeout
     )
+
+    # Coded error envelope for every HTTPException, validation error, and
+    # unhandled exception. Must be registered before routers are mounted so
+    # it applies uniformly regardless of include_router order.
+    register_exception_handlers(app)
 
     # Mount user-facing routers with JWT or trusted service-key authentication.
     # `verify_not_archived` blocks any request made on behalf of a soft-deleted

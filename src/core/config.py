@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v2"
     VERSION: str = "3.0.0"
     DEBUG: bool = False
+    # Whether 5xx error responses may include the real exception detail.
+    # Deliberately separate from DEBUG (which also flips the CORS wildcard)
+    # so verbose 5xx bodies can never be switched on as a side effect of a
+    # CORS change. See core.error_handlers.
+    EXPOSE_ERROR_DETAIL: bool = False
     HOST_URL: str = "https://backend.wakil.ai"
     TRACING: bool = False  # Reserved for future OpenTelemetry wiring
 
