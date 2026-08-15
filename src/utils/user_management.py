@@ -11,6 +11,8 @@ from typing import Any
 import uuid6
 from fastapi import HTTPException, status
 
+from core.error_codes import ErrorCode
+from core.exceptions import ChatException
 from core.logger import logger
 
 
@@ -109,12 +111,15 @@ def handle_service_error(func):
             raise
         except ValueError as e:
             logger.warning(f"Validation error in {func.__name__}: {str(e)}")
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+            raise ChatException(
+                detail=str(e), status_code=status.HTTP_400_BAD_REQUEST, code=ErrorCode.BAD_REQUEST
+            )
         except Exception as e:
             logger.error(f"Error in {func.__name__}: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            raise ChatException(
                 detail="Internal Server Error",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code=ErrorCode.INTERNAL_ERROR,
             )
 
     return wrapper
