@@ -1,5 +1,46 @@
 # Changelog
 
+## v5.0.13-260810 (2026-08-10)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.13-260810 -->
+
+## What's Changed
+### 💬 Other
+* hotfix: deny first request of the day when daily credit limit is below cost by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/156
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.12-260727...v5.0.13-260810
+
+## v5.0.12-260727 (2026-07-27)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.12-260727 -->
+
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.11-260726...v5.0.12-260727
+
+## v5.0.11-260726 (2026-07-26)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.11-260726 -->
+
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.10-260726...v5.0.11-260726
+
+## v5.0.10-260726 (2026-07-26)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.10-260726 -->
+
+## What's Changed
+### 💬 Other
+* Hotfix/file done status by @akbarhbai in https://github.com/wakil-ai/rest-fast-api/pull/149
+* feat(auth): add JWT authentication for frontend user requests by @mirsaidl in https://github.com/wakil-ai/rest-fast-api/pull/150
+* feat: add Apple App Store IAP support and verification endpoints by @BaratovSokhibjon in https://github.com/wakil-ai/rest-fast-api/pull/148
+* Dev by @mirsaidl in https://github.com/wakil-ai/rest-fast-api/pull/151
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.9-260712...v5.0.10-260726
+
 ## v5.0.9-260712 (2026-07-12)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.9-260712 -->

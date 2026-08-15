@@ -10,7 +10,9 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from jwt.exceptions import InvalidTokenError
 
+from api.v2.payment import router as payment_router
 from core.config import settings
+from core.dependencies import get_click_service, get_transaction_service
 
 # Imported at module scope on purpose: importing `main` inside an async test
 # constructs the app's services while an event loop is running, which schedules
@@ -247,6 +249,142 @@ def test_bearer_subject_must_match_request_user(
     assert (
         response.json()["detail"] == "Token subject does not match the requested user"
     )
+
+
+def test_payme_init_accepts_frontend_jwt(jwt_settings, monkeypatch):
+    transaction_service = MagicMock()
+    transaction_service.init_payment = AsyncMock(
+        return_value={
+            "order_id": "order-123",
+            "link": "https://checkout.paycom.uz/example",
+        }
+    )
+    monkeypatch.setattr(
+        security_dependencies.chat_history_service,
+        "get_user_auth_status",
+        AsyncMock(
+            return_value={
+                "exists": True,
+                "is_blocked": False,
+                "archived": False,
+            }
+        ),
+    )
+
+    app = FastAPI()
+    app.include_router(payment_router)
+    app.dependency_overrides[get_transaction_service] = lambda: transaction_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/transaction/payme/init",
+        headers={"Authorization": f"Bearer {frontend_token()}"},
+        json={
+            "user_id": "user-123",
+            "callback_url": "https://wakil.ai/payment-result",
+            "subscription_tier": "basic",
+            "subscription_period": "daily",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "order_id": "order-123",
+        "link": "https://checkout.paycom.uz/example",
+    }
+    transaction_service.init_payment.assert_awaited_once_with(
+        amount_sum=None,
+        user_id="user-123",
+        callback_url="https://wakil.ai/payment-result",
+        order_id=None,
+        subscription_tier="basic",
+        subscription_period="daily",
+    )
+
+
+def test_payme_init_rejects_user_id_different_from_jwt_subject(
+    jwt_settings, monkeypatch
+):
+    transaction_service = MagicMock()
+    transaction_service.init_payment = AsyncMock()
+    monkeypatch.setattr(
+        security_dependencies.chat_history_service,
+        "get_user_auth_status",
+        AsyncMock(
+            return_value={
+                "exists": True,
+                "is_blocked": False,
+                "archived": False,
+            }
+        ),
+    )
+
+    app = FastAPI()
+    app.include_router(payment_router)
+    app.dependency_overrides[get_transaction_service] = lambda: transaction_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/transaction/payme/init",
+        headers={"Authorization": f"Bearer {frontend_token()}"},
+        json={
+            "user_id": "another-user",
+            "callback_url": "https://wakil.ai/payment-result",
+            "subscription_tier": "basic",
+            "subscription_period": "daily",
+        },
+    )
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "Token subject does not match the requested user"
+    )
+    transaction_service.init_payment.assert_not_awaited()
+
+
+def test_click_init_accepts_frontend_jwt(jwt_settings, monkeypatch):
+    click_service = MagicMock()
+    click_service.init_payment = AsyncMock(
+        return_value={
+            "order_id": "order-456",
+            "link": "https://my.click.uz/example",
+        }
+    )
+    monkeypatch.setattr(
+        security_dependencies.chat_history_service,
+        "get_user_auth_status",
+        AsyncMock(
+            return_value={
+                "exists": True,
+                "is_blocked": False,
+                "archived": False,
+            }
+        ),
+    )
+
+    app = FastAPI()
+    app.include_router(payment_router)
+    app.dependency_overrides[get_click_service] = lambda: click_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/transaction/click/init",
+        headers={"Authorization": f"Bearer {frontend_token()}"},
+        json={
+            "user_id": "user-123",
+            "callback_url": "https://wakil.ai/payment-result",
+            "subscription_tier": "basic",
+            "subscription_period": "daily",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "order_id": "order-456",
+        "link": "https://my.click.uz/example",
+    }
+    click_service.init_payment.assert_awaited_once()
 
 
 async def test_auth_status_cache_hit_avoids_database(
