@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.0.15-260816 (2026-08-16)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.15-260816 -->
+
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.14-260815...v5.0.15-260816
+
 ## v5.0.14-260815 (2026-08-15)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.14-260815 -->
