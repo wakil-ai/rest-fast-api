@@ -180,11 +180,26 @@ class UzumService(BasePaymentService):
 
         user_id, plan_id = self._extract_user_and_plan(params)
         quote = await self._resolve_quote(plan_id)
+        tier, period = self._parse_plan_id(plan_id)
 
         # Uzum sends amount in tiyin (1 sum = 100 tiyin); our catalog stores sum.
-        if amount_tiyin % 100 != 0 or (amount_tiyin // 100) != int(quote["amount_sum"]):
+        # Accept either the current effective price or the undiscounted list
+        # price: unlike Payme/Click (which compare against an already-created
+        # invoice's frozen amount), Uzum recomputes the quote fresh on every
+        # callback, so a promo expiring between /check and /create would
+        # otherwise reject a customer who paid the price they were just shown.
+        if amount_tiyin % 100 != 0:
             logger.warning(
-                f"[Uzum] /create amount mismatch: got {amount_tiyin} tiyin for plan {plan_id} (expected {quote['amount_sum'] * 100})"
+                f"[Uzum] /create amount mismatch: got {amount_tiyin} tiyin for plan {plan_id} (not a whole sum)"
+            )
+            raise UzumServiceError(UzumError.ADDITIONAL_PAYMENT_ATTRIBUTE_NOT_FOUND)
+
+        paid_sum = amount_tiyin // 100
+        list_price_sum = self._get_list_price_sum(tier, period)
+        if paid_sum != int(quote["amount_sum"]) and paid_sum != list_price_sum:
+            logger.warning(
+                f"[Uzum] /create amount mismatch: got {amount_tiyin} tiyin for plan {plan_id} "
+                f"(expected {quote['amount_sum'] * 100} or {list_price_sum * 100})"
             )
             raise UzumServiceError(UzumError.ADDITIONAL_PAYMENT_ATTRIBUTE_NOT_FOUND)
 

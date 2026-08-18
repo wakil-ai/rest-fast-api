@@ -1,7 +1,8 @@
 import os
+from datetime import datetime
 
 from dotenv import load_dotenv
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings
 
 # Manually load the .env file from the root project directory
@@ -218,6 +219,26 @@ class Settings(BaseSettings):
     # Testing plan
     PAYME_SUBSCRIPTION_TEST_MONTHLY_PRICE_SUM: int = 10_000
     PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM: int = 20_000
+
+    # Subscription promo campaign — off by default. Flip SUBSCRIPTION_PROMO_ENABLED
+    # + set percent/ends_at via env to run a time-boxed discount with no code
+    # change or restart-free rollback (see core.subscription_promo). Applies only
+    # to the tiers/periods listed below — daily passes are excluded by default.
+    SUBSCRIPTION_PROMO_ENABLED: bool = False
+    SUBSCRIPTION_PROMO_PERCENT: int = 0
+    SUBSCRIPTION_PROMO_STARTS_AT: datetime | None = None
+    SUBSCRIPTION_PROMO_ENDS_AT: datetime | None = None
+    SUBSCRIPTION_PROMO_TIERS: str = "standard,pro"
+    SUBSCRIPTION_PROMO_PERIODS: str = "monthly,yearly"
+
+    @field_validator("SUBSCRIPTION_PROMO_STARTS_AT", "SUBSCRIPTION_PROMO_ENDS_AT", mode="before")
+    @classmethod
+    def _blank_promo_datetime_to_none(cls, value):
+        # An env var present but left blank (`FOO=`) arrives as "", which pydantic
+        # won't parse as a datetime on its own — treat it the same as unset.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     # Google Auth
     GOOGLE_CLIENT_ID: str | None = None

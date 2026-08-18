@@ -1,5 +1,24 @@
 # Changelog
 
+## v5.0.15-260816 (2026-08-16)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.15-260816 -->
+
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.14-260815...v5.0.15-260816
+
+## v5.0.14-260815 (2026-08-15)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.14-260815 -->
+
+## What's Changed
+### 💬 Other
+* feat: add subscription promo campaign with configurable discounts by @BaratovSokhibjon in https://github.com/wakil-ai/rest-fast-api/pull/160
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.13-260810...v5.0.14-260815
+
 ## v5.0.13-260810 (2026-08-10)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.13-260810 -->

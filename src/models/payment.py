@@ -273,6 +273,11 @@ class SubscriptionPlan(BaseModel):
     daily_credits: int
     total_credits: int
     days: int
+    # Promo campaign fields — all None when no discount applies to this plan.
+    # See core.subscription_promo for how amount_sum gets discounted.
+    list_price_sum: int | None = None
+    discount_percent: int | None = None
+    promo_ends_at_ms: int | None = None
 
 
 class SubscriptionCatalogResponse(BaseModel):
