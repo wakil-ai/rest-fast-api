@@ -15,6 +15,8 @@ from services.payments import (
 )
 from services.project_service import ProjectService
 from services.promo_code_service import PromoCodeService
+from services.admin_audit_service import AdminAuditService
+from services.admin_subscription_service import AdminSubscriptionService
 from services.rate_limit_service import RateLimitService
 from services.redis_service import RedisService
 from services.referral_service import ReferralService
@@ -39,6 +41,8 @@ __all__ = [
     "TransactionService",
     "UzumService",
     "PromoCodeService",
+    "AdminAuditService",
+    "AdminSubscriptionService",
     "RateLimitService",
     "ReferralService",
     "FingerprintService",

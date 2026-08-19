@@ -297,6 +297,30 @@ Payme RPC error codes follow the Payme documentation.
 
 ---
 
+## Admin Subscription Errors
+
+Raised by `/api/v2/admin/subscriptions` (see
+[Admin Subscription Management](admin-subscription-management.md)). All use the
+standard coded envelope: `{"detail": "...", "error": {"code": ..., "params": {...}}}`.
+
+| Code | Status | Meaning |
+|---|---|---|
+| `ADMIN_OPERATOR_REQUIRED` | 400 | `x-admin-operator` missing or not 2–64 chars of `[A-Za-z0-9._@ -]` |
+| `ADMIN_REQUEST_ID_REQUIRED` | 400 | `x-admin-request-id` missing or not a UUID |
+| `INVALID_SUBSCRIPTION_PLAN` | 400 | tier/period pair is not in the catalog (note: `test` exists only when `DEBUG`) |
+| `EXTEND_TARGET_INVALID` | 400 | neither or both of `extend_days` / `new_end_ms` supplied |
+| `SUBSCRIPTION_NOT_FOUND` | 404 | no row in `subscriptions` for this user |
+| `DAILY_LOT_NOT_FOUND` | 404 | no daily lot with that `daily_lot_id` |
+| `SUBSCRIPTION_NOT_ACTIVE` | 409 | window already closed — grant or extend before adjusting credits |
+| `ADMIN_ACTION_DUPLICATE` | 409 | this `x-admin-request-id` was already used; `params.audit_id` names the original |
+| `ADMIN_SUBSCRIPTION_CONFLICT` | 409 | another writer moved the document mid-flight; re-read and retry |
+| `ADMIN_RECONCILE_FAILED` | 409 | the effective balance could not be made to match; `params` carries desired vs. actual |
+
+`ACTIVE_SUBSCRIPTION_EXISTS` (409) also surfaces here from the shared eligibility
+check. On the admin grant route it is bypassable with `override_eligibility: true`.
+
+---
+
 ## Debugging Errors
 
 1. **Check `rest-api-llm` traces** — LLM-call, retrieval, and timing observability lives in the `rest-api-llm` service.
@@ -309,5 +333,6 @@ Payme RPC error codes follow the Payme documentation.
 ## Related
 
 - [Explanation: Credit System](explanation-credit-system.md)
+- [Admin Subscription Management](admin-subscription-management.md)
 - [How-To: Monitor Usage](howto-monitor-usage.md)
 - [Onboarding Guide: Debugging Tips](onboarding.md#debugging-tips)

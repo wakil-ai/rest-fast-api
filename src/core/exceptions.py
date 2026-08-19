@@ -1,6 +1,6 @@
 from fastapi import HTTPException, status
 
-from core.error_codes import ErrorCode
+from core.error_codes import ERROR_CATALOG, ErrorCode
 
 
 class ChatException(HTTPException):
@@ -289,4 +289,21 @@ class OTPServiceNotConfiguredException(OTPException):
             detail="OTP service is not configured.",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             code=ErrorCode.OTP_SERVICE_UNAVAILABLE,
+        )
+
+
+class AdminActionError(ChatException):
+    """Coded failure on the admin subscription surface.
+
+    Status and developer-facing message come straight from ``ERROR_CATALOG``, so a
+    raise site only names the code and the structured params the panel branches on.
+    """
+
+    def __init__(self, code: ErrorCode, **params):
+        spec = ERROR_CATALOG[code]
+        super().__init__(
+            detail=spec.message,
+            status_code=spec.http_status,
+            code=code,
+            params=params,
         )

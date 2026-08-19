@@ -1,6 +1,8 @@
 import base64
 import json
+import re
 import secrets
+import uuid
 
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import (
@@ -14,6 +16,8 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from core.config import settings
 from core.dependencies import get_chat_history_service, get_redis_service
+from core.error_codes import ErrorCode
+from core.exceptions import AdminActionError
 
 # HTTP Basic (docs)
 security = HTTPBasic()
@@ -91,6 +95,25 @@ user_bearer = HTTPBearer(
     scheme_name="BearerAuth",
     description="WakilAI JWT access token",
 )
+
+# Admin action attribution. The super-admin key authorizes but does not identify,
+# so mutating admin routes also carry a self-reported operator label and a
+# client-minted idempotency key.
+admin_operator_header = APIKeyHeader(
+    name=settings.ADMIN_OPERATOR_HEADER_NAME.lower(),
+    auto_error=False,
+    description="Operator label recorded on the admin audit entry (a claim, not proof)",
+)
+
+admin_request_id_header = APIKeyHeader(
+    name=settings.ADMIN_REQUEST_ID_HEADER_NAME.lower(),
+    auto_error=False,
+    description="UUID idempotency key; replaying one returns the original result",
+)
+
+# Deliberately narrow: names, emails, and handles, but nothing that would let a
+# caller smuggle newlines or control characters into an audit record.
+_ADMIN_OPERATOR_PATTERN = re.compile(r"^[A-Za-z0-9._@ -]{2,64}$")
 
 
 # Verification functions
@@ -269,6 +292,36 @@ def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
             detail="Invalid Super Admin API Key",
         )
     return True
+
+
+def get_admin_operator(operator: str = Security(admin_operator_header)) -> str:
+    """The operator label recorded on an admin audit entry.
+
+    Anyone holding the super-admin key can write any name here, so this is a
+    *claim*. The audit record stores it next to a fingerprint of the key that was
+    actually used, which is what turns the claim into evidence once per-operator
+    keys exist.
+    """
+    candidate = (operator or "").strip()
+    if not _ADMIN_OPERATOR_PATTERN.fullmatch(candidate):
+        raise AdminActionError(
+            ErrorCode.ADMIN_OPERATOR_REQUIRED,
+            header=settings.ADMIN_OPERATOR_HEADER_NAME.lower(),
+        )
+    return candidate
+
+
+def get_admin_request_id(request_id: str = Security(admin_request_id_header)) -> str:
+    """Client-minted idempotency key for a mutating admin action."""
+    candidate = (request_id or "").strip()
+    try:
+        uuid.UUID(candidate)
+    except ValueError:
+        raise AdminActionError(
+            ErrorCode.ADMIN_REQUEST_ID_REQUIRED,
+            header=settings.ADMIN_REQUEST_ID_HEADER_NAME.lower(),
+        ) from None
+    return candidate
 
 
 def verify_dt_api_key(

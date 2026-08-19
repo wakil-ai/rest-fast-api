@@ -5,6 +5,8 @@ if TYPE_CHECKING:
     from db import DBManager, MongoHandler
     from services import (
         AccountArchiveService,
+        AdminAuditService,
+        AdminSubscriptionService,
         AppStoreService,
         ChatHistoryService,
         ChatService,
@@ -236,3 +238,22 @@ def get_otp_service() -> "OTPService":
     from services import OTPService
 
     return OTPService()
+
+
+@lru_cache
+def get_admin_audit_service() -> "AdminAuditService":
+    from services import AdminAuditService
+
+    return AdminAuditService()
+
+
+@lru_cache
+def get_admin_subscription_service() -> "AdminSubscriptionService":
+    from services import AdminSubscriptionService
+
+    return AdminSubscriptionService(
+        subscription_storage=get_subscription_storage(),
+        rate_limit_service=get_rate_limit_service(),
+        transaction_service=get_transaction_service(),
+        audit_service=get_admin_audit_service(),
+    )
