@@ -153,16 +153,10 @@ async def verify_user_or_service_auth(request: Request) -> bool:
     here so protected routes only need one dependency.
     """
     authorization = request.headers.get("authorization", "")
-    if authorization:
-        try:
-            scheme, token = authorization.split(" ", 1)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
-            ) from exc
-        if scheme.lower() != "bearer":
+    scheme, _, token = authorization.partition(" ")
+
+    if scheme.lower() == "bearer":
+        if not token.strip():
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Bearer token required",
@@ -175,6 +169,9 @@ async def verify_user_or_service_auth(request: Request) -> bool:
         await verify_authenticated_actor(request)
         return True
 
+    # A non-Bearer Authorization header (a proxy adding Basic, the docs page's own
+    # Basic credentials) must not shadow a valid service key: fall through instead
+    # of rejecting outright.
     verify_api_key_or_dt_key(request)
     await verify_not_archived(request)
     return True
@@ -247,7 +244,7 @@ def verify_api_key(api_key: str = Security(api_key_header)):
     if api_key is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API Key required",
+            detail=f"API Key required (use the {settings.API_KEY_NAME.lower()} header)",
             headers={"WWW-Authenticate": "ApiKey"},
         )
     if not secrets.compare_digest(api_key, settings.API_KEY):
@@ -341,7 +338,10 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
     # Neither key provided
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="API Key required (use either admin or x-dt-team-api-key header)",
+        detail=(
+            f"API Key required (use either {settings.API_KEY_NAME.lower()} "
+            f"or {settings.DT_API_KEY_NAME.lower()} header)"
+        ),
     )
 
 
