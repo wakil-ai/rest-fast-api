@@ -112,6 +112,18 @@ class ErrorCode(str, Enum):
     DAILY_PASS_DOWNGRADE_NOT_ALLOWED = "DAILY_PASS_DOWNGRADE_NOT_ALLOWED"
     PAYMENT_AMOUNT_MISMATCH = "PAYMENT_AMOUNT_MISMATCH"
 
+    # Admin subscription management
+    ADMIN_OPERATOR_REQUIRED = "ADMIN_OPERATOR_REQUIRED"
+    ADMIN_REQUEST_ID_REQUIRED = "ADMIN_REQUEST_ID_REQUIRED"
+    ADMIN_ACTION_DUPLICATE = "ADMIN_ACTION_DUPLICATE"
+    ADMIN_SUBSCRIPTION_CONFLICT = "ADMIN_SUBSCRIPTION_CONFLICT"
+    ADMIN_RECONCILE_FAILED = "ADMIN_RECONCILE_FAILED"
+    SUBSCRIPTION_NOT_FOUND = "SUBSCRIPTION_NOT_FOUND"
+    SUBSCRIPTION_NOT_ACTIVE = "SUBSCRIPTION_NOT_ACTIVE"
+    DAILY_LOT_NOT_FOUND = "DAILY_LOT_NOT_FOUND"
+    INVALID_SUBSCRIPTION_PLAN = "INVALID_SUBSCRIPTION_PLAN"
+    EXTEND_TARGET_INVALID = "EXTEND_TARGET_INVALID"
+
 
 @dataclass(frozen=True)
 class ErrorSpec:
@@ -268,6 +280,52 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
     ),
     ErrorCode.PAYMENT_AMOUNT_MISMATCH: ErrorSpec(
         status.HTTP_400_BAD_REQUEST, "Payment amount does not match the subscription price."
+    ),
+
+    ErrorCode.ADMIN_OPERATOR_REQUIRED: ErrorSpec(
+        status.HTTP_400_BAD_REQUEST,
+        "An operator label is required for admin subscription changes.",
+        ("header",),
+    ),
+    ErrorCode.ADMIN_REQUEST_ID_REQUIRED: ErrorSpec(
+        status.HTTP_400_BAD_REQUEST,
+        "A UUID idempotency key is required for admin subscription changes.",
+        ("header",),
+    ),
+    ErrorCode.ADMIN_ACTION_DUPLICATE: ErrorSpec(
+        status.HTTP_409_CONFLICT,
+        "This admin action was already submitted.",
+        ("request_id", "audit_id", "result"),
+    ),
+    ErrorCode.ADMIN_SUBSCRIPTION_CONFLICT: ErrorSpec(
+        status.HTTP_409_CONFLICT,
+        "The subscription changed while this action was in flight. Re-read and retry.",
+        ("user_id",),
+    ),
+    ErrorCode.ADMIN_RECONCILE_FAILED: ErrorSpec(
+        status.HTTP_409_CONFLICT,
+        "Credits could not be reconciled to the requested balance.",
+        ("desired_remaining", "actual_remaining"),
+    ),
+    ErrorCode.SUBSCRIPTION_NOT_FOUND: ErrorSpec(
+        status.HTTP_404_NOT_FOUND, "No subscription exists for this user.", ("user_id",)
+    ),
+    ErrorCode.SUBSCRIPTION_NOT_ACTIVE: ErrorSpec(
+        status.HTTP_409_CONFLICT,
+        "The subscription is not active; grant or extend it first.",
+        ("user_id", "end_ms"),
+    ),
+    ErrorCode.DAILY_LOT_NOT_FOUND: ErrorSpec(
+        status.HTTP_404_NOT_FOUND, "No daily pass lot with that id.", ("daily_lot_id",)
+    ),
+    ErrorCode.INVALID_SUBSCRIPTION_PLAN: ErrorSpec(
+        status.HTTP_400_BAD_REQUEST,
+        "Unknown subscription tier/period combination.",
+        ("tier", "period"),
+    ),
+    ErrorCode.EXTEND_TARGET_INVALID: ErrorSpec(
+        status.HTTP_400_BAD_REQUEST,
+        "Provide exactly one of extend_days or new_end_ms.",
     ),
 }
 

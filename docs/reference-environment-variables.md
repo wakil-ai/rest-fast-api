@@ -77,6 +77,10 @@ Source of truth: [`src/core/config.py`](../src/core/config.py).
 | `DT_API_KEY_NAME` | `x-dt-team-api-key` | DT team API key header |
 | `DT_API_KEY` | `null` | DT team API key |
 | `DT_TEAM_DISCLAIMER` | empty | Optional DT response disclaimer |
+| `ADMIN_OPERATOR_HEADER_NAME` | `x-admin-operator` | Operator label header on admin subscription mutations |
+| `ADMIN_REQUEST_ID_HEADER_NAME` | `x-admin-request-id` | UUID idempotency-key header |
+| `ADMIN_MAX_GRANT_DAYS` | `400` | Ceiling on a single extend/grant |
+| `ADMIN_MAX_CREDIT_ADJUSTMENT` | `500000` | Ceiling on a single credit adjustment |
 | `DOCS_USER` | `admin` | Docs basic-auth username |
 | `DOCS_PASSWORD` | `admin` | Docs basic-auth password |
 | `AUTH_SECRET_KEY` | `secret-key-change-me` | Session cookie signing secret |
