@@ -546,35 +546,6 @@ class BasePaymentService:
             now_ms=now_ms,
         )
 
-        if quote and not order_id:
-            existing_invoice = await self.db_handler.find_one(
-                self.invoices_collection,
-                {
-                    "user_id": user_id,
-                    "provider": self.provider,
-                    "purpose": purpose,
-                    "status": "pending",
-                    "subscription.tier": quote.get("tier"),
-                    "subscription.period": quote.get("period"),
-                },
-            )
-            if existing_invoice:
-                existing_order_id = existing_invoice.get(
-                    "order_id"
-                ) or existing_invoice.get("invoice_id")
-                if existing_order_id:
-                    link = await self.build_payment_link(
-                        amount_sum=int(
-                            existing_invoice.get("amount_sum") or amount_sum
-                        ),
-                        user_id=user_id,
-                        callback_url=str(
-                            existing_invoice.get("callback_url") or callback_url
-                        ),
-                        order_id=str(existing_order_id),
-                    )
-                    return {"order_id": str(existing_order_id), "link": link}
-
         order_id_value = order_id or secrets.token_hex(8)
         existing_invoice = await self.db_handler.find_one(
             self.invoices_collection,
