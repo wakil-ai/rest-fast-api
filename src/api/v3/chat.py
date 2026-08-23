@@ -3,7 +3,13 @@ from fastapi import APIRouter, Request
 from core.dependencies import get_chat_service
 from core.exceptions import ChatGenerationException
 from core.logger import logger
-from models.chat import AgenticRAGRequest, ChatRequest, ModelInfoResponse
+from models.chat import (
+    AgenticRAGRequest,
+    ChatRequest,
+    ModelInfoResponse,
+    PromptEnhanceRequest,
+    PromptEnhanceResponse,
+)
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -27,6 +33,19 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
     Returns session metadata followed by the final answer when generation completes.
     """
     return await chat_service.handle_agentic_rag_stream(request)
+
+
+@router.post(
+    "/prompt/enhance",
+    response_model=PromptEnhanceResponse,
+    summary="Improve a draft prompt before sending",
+)
+async def enhance_prompt(request: PromptEnhanceRequest):
+    """
+    Rewrite the draft in the composer into a clearer, more answerable question,
+    tailored to the assistant it is aimed at. Does not send anything.
+    """
+    return await chat_service.handle_prompt_enhance(request)
 
 
 @router.get("/assistants", summary="Get available assistants")
