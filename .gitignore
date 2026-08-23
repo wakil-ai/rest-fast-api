@@ -22,3 +22,4 @@ pentagi/
 docs/superpowers/
 scripts/mint_jwt.py
 http/
+.DS_Store
