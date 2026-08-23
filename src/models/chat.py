@@ -56,6 +56,34 @@ class AssistantType(str, Enum):
         return AssistantConfig.get_assistant_names()
 
 
+class PromptEnhanceRequest(BaseModel):
+    """Request body for composer draft enhancement."""
+
+    query: str = Field(
+        ...,
+        min_length=1,
+        example="qqs qancha",
+        description="The user's draft, as currently typed in the composer",
+    )
+    assistant: AssistantType | None = Field(
+        default=AssistantType.MAIN,
+        description="Assistant the draft is aimed at; selects the enhancement hint",
+    )
+    language: str | None = Field(
+        default=None,
+        description="UI locale (uz/ru/en). A tiebreaker only — the draft's language wins.",
+    )
+
+
+class PromptEnhanceResponse(BaseModel):
+    """Enhanced draft, with the original so clients can offer undo."""
+
+    original: str
+    enhanced: str
+    assistant: str
+    changed: bool
+
+
 class ChatRequest(BaseModel):
     """
     Request body for chat questions.
