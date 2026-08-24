@@ -742,6 +742,7 @@ class ChatService:
                     "query": request.query,
                     "assistant": assistant_name,
                     "language": request.language,
+                    "history": request.history,
                 }
             )
         except ChatException:
@@ -784,6 +785,7 @@ class ChatService:
                     "query": request.query,
                     "assistant": assistant_name,
                     "language": request.language,
+                    "history": request.history,
                     "answers": request.answers,
                 }
             )

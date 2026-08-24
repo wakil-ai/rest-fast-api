@@ -243,3 +243,48 @@ async def test_enhance_forwards_supplied_answers(monkeypatch):
 
     assert client.payload is not None
     assert client.payload["answers"] == {"tax_type": "QQS", "taxpayer_status": "MChJ"}
+
+
+@pytest.mark.asyncio
+async def test_clarify_forwards_conversation_history(monkeypatch):
+    """Mid-thread a draft is a fragment; without history the model sees nothing."""
+    service = ChatService.__new__(ChatService)
+    client = _patch_clarify(monkeypatch, {"assistant": "main", "questions": []})
+
+    await service.handle_prompt_clarify(
+        PromptClarifyRequest(
+            query="Ozodlikda bulsachi?",
+            history="Assistant: Hukm kerak bo'lgan shaxs qamoqdami yoki ozodlikdami?",
+        )
+    )
+
+    assert client.payload is not None
+    assert "qamoqdami yoki ozodlikdami" in client.payload["history"]
+
+
+@pytest.mark.asyncio
+async def test_enhance_forwards_conversation_history(monkeypatch):
+    service = ChatService.__new__(ChatService)
+    client = _patch_client(
+        monkeypatch,
+        {"original": "q", "enhanced": "q", "assistant": "main", "changed": False},
+    )
+
+    await service.handle_prompt_enhance(
+        PromptEnhanceRequest(query="Ozodlikda bulsachi?", history="Assistant: ...")
+    )
+
+    assert client.payload is not None
+    assert client.payload["history"] == "Assistant: ..."
+
+
+@pytest.mark.asyncio
+async def test_history_is_optional(monkeypatch):
+    """A first message has no history; the field must simply be absent, not an error."""
+    service = ChatService.__new__(ChatService)
+    client = _patch_clarify(monkeypatch, {"assistant": "main", "questions": []})
+
+    await service.handle_prompt_clarify(PromptClarifyRequest(query="soliq"))
+
+    assert client.payload is not None
+    assert client.payload["history"] is None
