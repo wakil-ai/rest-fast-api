@@ -7,6 +7,8 @@ from models.chat import (
     AgenticRAGRequest,
     ChatRequest,
     ModelInfoResponse,
+    PromptClarifyRequest,
+    PromptClarifyResponse,
     PromptEnhanceRequest,
     PromptEnhanceResponse,
 )
@@ -33,6 +35,19 @@ async def stream_agentic_rag(request: AgenticRAGRequest):
     Returns session metadata followed by the final answer when generation completes.
     """
     return await chat_service.handle_agentic_rag_stream(request)
+
+
+@router.post(
+    "/prompt/clarify",
+    response_model=PromptClarifyResponse,
+    summary="Ask what is missing from a draft prompt",
+)
+async def clarify_prompt(request: PromptClarifyRequest):
+    """
+    Return up to three multiple-choice questions about the user's own situation.
+    An empty list means the draft is ready to send as it is.
+    """
+    return await chat_service.handle_prompt_clarify(request)
 
 
 @router.post(

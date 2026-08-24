@@ -214,6 +214,9 @@ class LlmServiceClient:
     async def ask_chat(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.post_json("/api/v1/chat/ask", payload)
 
+    async def clarify_prompt(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self.post_json("/api/v1/chat/prompt/clarify", payload)
+
     async def enhance_prompt(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.post_json("/api/v1/chat/prompt/enhance", payload)
 
