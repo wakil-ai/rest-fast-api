@@ -81,6 +81,14 @@ class PromptClarifyRequest(BaseModel):
     language: str | None = Field(
         default=None, description="UI locale (uz/ru/en); a tiebreaker only"
     )
+    history: str | None = Field(
+        default=None,
+        description=(
+            "Recent conversation turns. Mid-thread a draft is often a fragment that "
+            "only makes sense against what came before, so without this the model has "
+            "nothing to work with."
+        ),
+    )
 
 
 class PromptClarifyResponse(BaseModel):
@@ -106,6 +114,14 @@ class PromptEnhanceRequest(BaseModel):
     language: str | None = Field(
         default=None,
         description="UI locale (uz/ru/en). A tiebreaker only — the draft's language wins.",
+    )
+    history: str | None = Field(
+        default=None,
+        description=(
+            "Recent conversation turns. Mid-thread a draft is often a fragment that "
+            "only makes sense against what came before, so without this the model has "
+            "nothing to work with."
+        ),
     )
     answers: dict[str, str] | None = Field(
         default=None,
