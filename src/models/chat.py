@@ -56,6 +56,40 @@ class AssistantType(str, Enum):
         return AssistantConfig.get_assistant_names()
 
 
+class ClarifyQuestion(BaseModel):
+    """One multiple-choice question about the user's own situation."""
+
+    id: str = Field(..., description="Stable snake_case key naming the fact")
+    question: str = Field(..., description="The question, in the user's language")
+    options: list[str] = Field(
+        default_factory=list,
+        description="Two to four choices. Clients always add a free-text option.",
+    )
+
+
+class PromptClarifyRequest(BaseModel):
+    """Request body for draft clarification."""
+
+    query: str = Field(
+        ..., min_length=1, example="sudga bersam yutamanmi",
+        description="The user's draft, as currently typed in the composer",
+    )
+    assistant: AssistantType | None = Field(
+        default=AssistantType.MAIN,
+        description="Assistant the draft is aimed at; selects which facts matter",
+    )
+    language: str | None = Field(
+        default=None, description="UI locale (uz/ru/en); a tiebreaker only"
+    )
+
+
+class PromptClarifyResponse(BaseModel):
+    """Questions to put to the user. An empty list means the draft is ready as-is."""
+
+    questions: list[ClarifyQuestion] = Field(default_factory=list)
+    assistant: str
+
+
 class PromptEnhanceRequest(BaseModel):
     """Request body for composer draft enhancement."""
 
@@ -72,6 +106,10 @@ class PromptEnhanceRequest(BaseModel):
     language: str | None = Field(
         default=None,
         description="UI locale (uz/ru/en). A tiebreaker only — the draft's language wins.",
+    )
+    answers: dict[str, str] | None = Field(
+        default=None,
+        description="Facts the user supplied, keyed by clarify question id",
     )
 
 

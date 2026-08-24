@@ -31,6 +31,8 @@ from models.chat import (
     ChatRequest,
     ChatResponse,
     ModelInfoResponse,
+    PromptClarifyRequest,
+    PromptClarifyResponse,
     PromptEnhanceRequest,
     PromptEnhanceResponse,
 )
@@ -721,6 +723,43 @@ class ChatService:
             return answer
         return f"{answer}{settings.DT_TEAM_DISCLAIMER}"
 
+    async def handle_prompt_clarify(
+        self, request: PromptClarifyRequest
+    ) -> PromptClarifyResponse:
+        """Ask what the assistant still needs before the draft is worth sending.
+
+        Charges no credits, for the same reason as ``handle_prompt_enhance``.
+        """
+        self.validate_query_length(request.query)
+
+        assistant_name = AssistantConfig.validate_assistant_or_default(
+            request.assistant.value if request.assistant else None
+        )
+
+        try:
+            result = await get_llm_service_client().clarify_prompt(
+                {
+                    "query": request.query,
+                    "assistant": assistant_name,
+                    "language": request.language,
+                }
+            )
+        except ChatException:
+            raise
+        except Exception as error:
+            logger.error(f"Prompt clarification failed: {error}")
+            raise ChatGenerationException("Failed to prepare clarifying questions.")
+
+        # No questions is a valid, common outcome; so is an upstream response we
+        # cannot read. Both mean "send the draft as it is", never an error page.
+        raw_questions = result.get("questions")
+        questions = raw_questions if isinstance(raw_questions, list) else []
+
+        return PromptClarifyResponse(
+            questions=questions,
+            assistant=result.get("assistant") or assistant_name,
+        )
+
     async def handle_prompt_enhance(
         self, request: PromptEnhanceRequest
     ) -> PromptEnhanceResponse:
@@ -745,6 +784,7 @@ class ChatService:
                     "query": request.query,
                     "assistant": assistant_name,
                     "language": request.language,
+                    "answers": request.answers,
                 }
             )
         except ChatException:
