@@ -805,28 +805,38 @@ class ChatHistoryService:
         return session[0] if session else {}
 
     async def delete_session(self, session_id: str) -> None:
-        """Delete a session and its messages."""
+        """Soft-delete a session: stamp it archived, leave its messages in place.
+
+        Only the session document is touched. Every user-facing read of a
+        session, its messages, its shares and its files funnels through
+        _ensure_session_exists, which applies _ACTIVE_ONLY — so archiving this
+        one document is what makes the whole chat disappear for the user,
+        while the message rows are retained intact for analytics and audit.
+
+        Deliberately not a hard delete: this used to delete_many across
+        sessions, messages and files, which left no way back from a mis-click
+        and destroyed the message record the business keeps.
+        """
 
         session = await self._ensure_session_exists(session_id)
         user_id = session.get("user_id")
 
-        # Delete session
-        await self.db_manager.delete_documents(
-            self.sessions_collection, {"_id": session_id}
+        await self.db_manager.update_documents(
+            self.sessions_collection,
+            {"_id": session_id},
+            {
+                "$set": {
+                    "archived": True,
+                    "archived_at": datetime.now(timezone.utc),
+                }
+            },
         )
 
-        # Delete associated messages
-        await self.db_manager.delete_documents(
-            self.messages_collection, {"session_id": session_id}
-        )
+        logger.info(f"Archived session with session_id: {session_id}")
 
-        # Delete associated message files
-        await self.db_manager.delete_documents(
-            self.files_collection, {"session_id": session_id, "scope": "message"}
-        )
-
-        logger.info(f"Deleted session with session_id: {session_id} and its messages")
-
+        # Kept from the hard-delete version: delete_agent_thread is an inert
+        # stub today (agent threads are not implemented), so this is only the
+        # hook staying wired for when they are.
         if user_id:
             await delete_agent_thread(user_id=str(user_id), session_id=session_id)
 
@@ -1036,6 +1046,24 @@ class ChatHistoryService:
         )
         message = message[0] if message else None
         if not message:
+            raise InvalidInputError(f"Share {share_id} not found")
+
+        # A share outlives its chat unless this is checked. Soft-deleting a
+        # session leaves its messages active on purpose (they are retained),
+        # so the message row alone still looks live here — and this endpoint is
+        # unauthenticated. Without the parent-session check, a chat the user
+        # deleted stays publicly readable to anyone holding the old link.
+        # Same error as a missing share, so a revoked link is indistinguishable
+        # from one that never existed.
+        session_id = message.get("session_id")
+        parent_session = (
+            await self.db_manager.find_documents(
+                self.sessions_collection, {"_id": session_id, **_ACTIVE_ONLY}
+            )
+            if session_id
+            else None
+        )
+        if not parent_session:
             raise InvalidInputError(f"Share {share_id} not found")
 
         created_at = message.get("shared_at") or datetime.now(timezone.utc)
