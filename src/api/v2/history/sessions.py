@@ -74,6 +74,11 @@ async def update_session(
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_service_error
 async def delete_session(session_id: str, user_id: str = CurrentUser):
-    """Delete a session and its messages. Owner only — see update_session."""
+    """Soft-delete a session. Owner only — see update_session.
+
+    The session is stamped archived, which hides the whole chat from every
+    user-facing read. Its messages are deliberately retained — see
+    ChatHistoryService.delete_session.
+    """
     await chat_history_service.assert_session_owner(session_id, user_id)
     await chat_history_service.delete_session(session_id)
