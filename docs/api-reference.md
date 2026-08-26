@@ -213,6 +213,23 @@ Base path: `/api/v2/admin` — requires `x-super-admin-key` (internal ops).
 | POST | `/api/v2/admin/telegram/save/chats` | Upsert Telegram chat IDs |
 | GET | `/api/v2/admin/telegram/chats` | List Telegram chats |
 
+### Subscription management
+
+Manual grants for users who paid outside the webhook flow. Mutations additionally
+require `x-admin-operator` and a UUID `x-admin-request-id` (idempotency key), plus a
+`reason` in the body. See [Admin Subscription Management](admin-subscription-management.md)
+— read it before using these; editing Mongo directly does not work, and the doc
+explains why.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/v2/admin/subscriptions/{user_id}` | Diagnostic: stored vs. computed vs. credit ledger, with warnings |
+| POST | `/api/v2/admin/subscriptions/{user_id}/grant` | Grant a pool subscription or daily pass |
+| POST | `/api/v2/admin/subscriptions/{user_id}/extend` | Move `end_ms` without changing tier |
+| POST | `/api/v2/admin/subscriptions/{user_id}/adjust-credits` | Set or change the effective balance |
+| POST | `/api/v2/admin/subscriptions/{user_id}/revoke` | End early (never deletes) |
+| GET | `/api/v2/admin/subscriptions/audit` | Audit trail, filterable by user/operator/action |
+
 ## Payments & Subscriptions (v2)
 
 Base path: `/api/v2/transaction`

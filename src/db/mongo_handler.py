@@ -1,6 +1,7 @@
 from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import PyMongoError
 from pymongo.server_api import ServerApi
 
 from core.config import settings
@@ -23,12 +24,16 @@ class MongoHandler:
                 server_api=ServerApi("1"),
                 serverSelectionTimeoutMS=5000,
                 tlsAllowInvalidCertificates=True,
+                # BSON stores dates as UTC milliseconds with no zone. Without this
+                # the driver hands back naive datetimes, which Pydantic serializes
+                # with no `Z` — and a browser reads an offset-less timestamp as
+                # local time, ageing every activity log by the viewer's UTC offset.
+                tz_aware=True,
             )
             self.db = self.client[settings.MONGODB_DB_NAME]
-            self.collection = self.db[settings.COLLECTION_NAME]
             logger.info("[MongoHandler] Initialized async MongoDB connection")
-        except Exception as e:
-            logger.warning(f"[MongoHandler] Could not initialize MongoDB: {str(e)}")
+        except PyMongoError as e:
+            logger.warning(f"[MongoHandler] Could not initialize MongoDB: {e}")
 
     async def ping_server(self) -> bool:
         """Check if MongoDB server is reachable (async)."""
@@ -36,11 +41,13 @@ class MongoHandler:
             await self.client.admin.command("ping")
             logger.info("[MongoHandler] MongoDB ping successful")
             return True
-        except Exception as e:
-            logger.warning(f"[MongoHandler] MongoDB ping failed: {str(e)}")
+        except PyMongoError as e:
+            logger.warning(f"[MongoHandler] MongoDB ping failed: {e}")
             return False
 
-    async def insert_documents(self, collection_name: str, documents: list) -> list:
+    async def insert_documents(
+        self, collection_name: str, documents: list[dict[str, Any]]
+    ) -> list[str]:
         """
         Insert multiple documents and return their inserted IDs.
         """
@@ -71,9 +78,9 @@ class MongoHandler:
         try:
             await self.db.drop_collection(collection_name)
             logger.info(f"[MongoHandler] Dropped collection: {collection_name}")
-        except Exception as e:
+        except PyMongoError as e:
             logger.error(
-                f"[MongoHandler] Error dropping collection {collection_name}: {str(e)}"
+                f"[MongoHandler] Error dropping collection {collection_name}: {e}"
             )
 
     async def clean_collection(self, collection_name: str) -> None:
@@ -85,16 +92,16 @@ class MongoHandler:
             logger.info(
                 f"[MongoHandler] Cleaned {result.deleted_count} documents from '{collection_name}' collection."
             )
-        except Exception as e:
+        except PyMongoError as e:
             logger.error(
-                f"[MongoHandler] Error cleaning collection {collection_name}: {str(e)}"
+                f"[MongoHandler] Error cleaning collection {collection_name}: {e}"
             )
 
     async def find_one(
         self, collection_name: str, query: dict[str, Any]
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """
-        Find a single document matching the query.
+        Find a single document matching the query. None when nothing matches.
         """
         collection = self.db[collection_name]
         return await collection.find_one(query)

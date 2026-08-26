@@ -11,6 +11,17 @@ class ProjectStatus(str, Enum):
     closed = "closed"
 
 
+def is_closed(row: dict[str, Any]) -> bool:
+    """Has this Case or Task been signed off?
+
+    Both carry the same `closure` block, and `approved_at` — not `requested_at`,
+    not `status` — is the moment the record becomes evidence. Lives here rather
+    than on either service because CaseService, TaskService and DraftService all
+    ask the question, and TaskService already imports CaseService.
+    """
+    return bool((row.get("closure") or {}).get("approved_at"))
+
+
 class ProjectSettings(BaseModel):
     """UI and agent preferences scoped to a project."""
 
@@ -66,6 +77,10 @@ class ProjectSessionCreateRequest(BaseModel):
     user_id: str
     title: str | None = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
+    task_id: str | None = Field(
+        default=None,
+        description="Tag the chat to a Task of this Case. Case sessions only.",
+    )
 
 
 class ProjectFileSearchQuery(BaseModel):

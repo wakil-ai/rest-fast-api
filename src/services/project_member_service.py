@@ -2,10 +2,12 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import HTTPException, status
+from fastapi import status
 
 from core.config import settings
 from core.dependencies import get_chat_history_service, get_db_manager
+from core.error_codes import ErrorCode
+from core.exceptions import ChatException
 from core.logger import logger
 from models.project_collaboration import ProjectInviteStatus, ProjectMembershipRole
 from models.projects import ProjectStatus
@@ -41,7 +43,9 @@ class ProjectMemberService:
         await members.create_index(
             [("user_id", 1), ("joined_at", -1)], name="user_projects"
         )
-        await invites.create_index([("project_id", 1), ("status", 1)], name="project_invites")
+        await invites.create_index(
+            [("project_id", 1), ("status", 1)], name="project_invites"
+        )
 
     async def is_member(self, project_id: str, user_id: str) -> bool:
         rows = await self.db.find_documents(
@@ -98,16 +102,19 @@ class ProjectMemberService:
 
         await ProjectService().assert_project_owner(project_id, owner_id)
         if member_user_id == owner_id:
-            raise HTTPException(
+            raise ChatException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot remove the project owner",
+                code=ErrorCode.PROJECT_CANNOT_REMOVE_OWNER,
             )
         result = await self.db.mongo_handler.db[self.members_collection].delete_one(
             {"project_id": project_id, "user_id": member_user_id}
         )
         if result.deleted_count == 0:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Member not found"
+            raise ChatException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Member not found",
+                code=ErrorCode.PROJECT_MEMBER_NOT_FOUND,
             )
 
     async def list_members(
@@ -154,8 +161,10 @@ class ProjectMemberService:
             self.invites_collection, {"_id": invite_id}, limit=1
         )
         if not rows:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found"
+            raise ChatException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invite not found",
+                code=ErrorCode.INVITE_NOT_FOUND,
             )
         return rows[0]
 
@@ -174,26 +183,33 @@ class ProjectMemberService:
                 return ProjectInviteStatus.expired.value
         return raw
 
-    async def _assert_invite_owner(self, project_id: str, user_id: str) -> dict[str, Any]:
+    async def _assert_invite_owner(
+        self, project_id: str, user_id: str
+    ) -> dict[str, Any]:
         """Invite links can only be created or managed by the project owner."""
         from services.project_service import ProjectService
 
-        project = await ProjectService()._load_project_row(project_id)
+        svc = ProjectService()
+        project = await svc._load_project_row(project_id)
+        # Cases never use project_members — it is reserved for the per-case access
+        # control customization. Without this a Case owner could mint an invite
+        # link that anyone outside the organization accepts.
+        svc.reject_if_case(project)
         if project.get("owner_id") != user_id:
-            raise HTTPException(
+            raise ChatException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the project owner can create or manage invite links",
+                code=ErrorCode.INVITE_NOT_MANAGEABLE,
             )
         return project
 
-    async def create_invite(
-        self, project_id: str, user_id: str
-    ) -> dict[str, Any]:
+    async def create_invite(self, project_id: str, user_id: str) -> dict[str, Any]:
         project = await self._assert_invite_owner(project_id, user_id)
         if project.get("status") != ProjectStatus.active.value:
-            raise HTTPException(
+            raise ChatException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invites can only be created for active projects",
+                code=ErrorCode.PROJECT_CLOSED,
             )
 
         invite_id = generate_short_id(prefix=self.invite_prefix, type="uuid7")
@@ -241,27 +257,24 @@ class ProjectMemberService:
         await self._assert_invite_owner(project_id, user_id)
         invite = await self._load_invite_row(invite_id)
         if invite.get("project_id") != project_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found"
+            raise ChatException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invite not found",
+                code=ErrorCode.INVITE_NOT_FOUND,
             )
         if invite.get("status") != ProjectInviteStatus.pending.value:
-            raise HTTPException(
+            raise ChatException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only pending invites can be revoked",
+                code=ErrorCode.INVITE_NOT_PENDING,
             )
         await self.db.update_documents(
             self.invites_collection,
             {"_id": invite_id},
-            {
-                "$set": clean_for_mongodb(
-                    {"status": ProjectInviteStatus.revoked.value}
-                )
-            },
+            {"$set": clean_for_mongodb({"status": ProjectInviteStatus.revoked.value})},
         )
 
-    async def get_invite_preview(
-        self, invite_id: str, user_id: str
-    ) -> dict[str, Any]:
+    async def get_invite_preview(self, invite_id: str, user_id: str) -> dict[str, Any]:
         from services.project_service import ProjectService
 
         invite = await self._load_invite_row(invite_id)
@@ -271,8 +284,10 @@ class ProjectMemberService:
             settings.PROJECTS_COLLECTION, {"_id": project_id}, limit=1
         )
         if not project_rows:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+            raise ChatException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
+                code=ErrorCode.PROJECT_NOT_FOUND,
             )
         project = project_rows[0]
         owner_id = project.get("owner_id", "")
@@ -307,35 +322,42 @@ class ProjectMemberService:
             "is_owner": is_owner,
         }
 
-    async def accept_invite(
-        self, invite_id: str, user_id: str
-    ) -> dict[str, Any]:
+    async def accept_invite(self, invite_id: str, user_id: str) -> dict[str, Any]:
         await self.history._ensure_user_exists(user_id)
         invitee = await self.history.get_user(user_id)
         if invitee and invitee.get("is_blocked"):
-            raise HTTPException(
+            raise ChatException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is blocked",
+                code=ErrorCode.USER_BLOCKED,
+                params={"user_id": user_id},
             )
 
         invite = await self._load_invite_row(invite_id)
         eff_status = self._effective_invite_status(invite)
         if eff_status == ProjectInviteStatus.expired.value:
-            raise HTTPException(
-                status_code=status.HTTP_410_GONE, detail="Invite has expired"
+            raise ChatException(
+                status_code=status.HTTP_410_GONE,
+                detail="Invite has expired",
+                code=ErrorCode.INVITE_EXPIRED,
             )
         if eff_status == ProjectInviteStatus.revoked.value:
-            raise HTTPException(
-                status_code=status.HTTP_410_GONE, detail="Invite has been revoked"
+            raise ChatException(
+                status_code=status.HTTP_410_GONE,
+                detail="Invite has been revoked",
+                code=ErrorCode.INVITE_REVOKED,
             )
         if eff_status == ProjectInviteStatus.accepted.value:
-            raise HTTPException(
-                status_code=status.HTTP_410_GONE, detail="Invite has already been used"
+            raise ChatException(
+                status_code=status.HTTP_410_GONE,
+                detail="Invite has already been used",
+                code=ErrorCode.INVITE_ALREADY_USED,
             )
         if eff_status != ProjectInviteStatus.pending.value:
-            raise HTTPException(
+            raise ChatException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invite is not available",
+                code=ErrorCode.INVITE_NOT_PENDING,
             )
 
         project_id = invite["project_id"]
@@ -343,22 +365,26 @@ class ProjectMemberService:
             settings.PROJECTS_COLLECTION, {"_id": project_id}, limit=1
         )
         if not project_rows:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+            raise ChatException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
+                code=ErrorCode.PROJECT_NOT_FOUND,
             )
         project = project_rows[0]
         owner_id = project.get("owner_id", "")
 
         if project.get("status") != ProjectStatus.active.value:
-            raise HTTPException(
+            raise ChatException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Project is not accepting new members",
+                code=ErrorCode.PROJECT_CLOSED,
             )
 
         if user_id == owner_id:
-            raise HTTPException(
+            raise ChatException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Project owner cannot accept an invite",
+                code=ErrorCode.INVITE_OWNER_CANNOT_ACCEPT,
             )
 
         if await self.is_member(project_id, user_id):
@@ -380,9 +406,10 @@ class ProjectMemberService:
         invitee_web = (invitee or {}).get("web_client")
         owner_web = (owner_user or {}).get("web_client")
         if invitee_web and owner_web and invitee_web != owner_web:
-            raise HTTPException(
+            raise ChatException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot join a project from a different product tenant",
+                code=ErrorCode.INVITE_CROSS_TENANT,
             )
 
         now = datetime.now(timezone.utc)

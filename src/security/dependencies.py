@@ -1,6 +1,8 @@
 import base64
 import json
+import re
 import secrets
+import uuid
 
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import (
@@ -14,6 +16,8 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from core.config import settings
 from core.dependencies import get_chat_history_service, get_redis_service
+from core.error_codes import ErrorCode
+from core.exceptions import AdminActionError
 
 # HTTP Basic (docs)
 security = HTTPBasic()
@@ -92,6 +96,25 @@ user_bearer = HTTPBearer(
     description="WakilAI JWT access token",
 )
 
+# Admin action attribution. The super-admin key authorizes but does not identify,
+# so mutating admin routes also carry a self-reported operator label and a
+# client-minted idempotency key.
+admin_operator_header = APIKeyHeader(
+    name=settings.ADMIN_OPERATOR_HEADER_NAME.lower(),
+    auto_error=False,
+    description="Operator label recorded on the admin audit entry (a claim, not proof)",
+)
+
+admin_request_id_header = APIKeyHeader(
+    name=settings.ADMIN_REQUEST_ID_HEADER_NAME.lower(),
+    auto_error=False,
+    description="UUID idempotency key; replaying one returns the original result",
+)
+
+# Deliberately narrow: names, emails, and handles, but nothing that would let a
+# caller smuggle newlines or control characters into an audit record.
+_ADMIN_OPERATOR_PATTERN = re.compile(r"^[A-Za-z0-9._@ -]{2,64}$")
+
 
 # Verification functions
 
@@ -153,16 +176,10 @@ async def verify_user_or_service_auth(request: Request) -> bool:
     here so protected routes only need one dependency.
     """
     authorization = request.headers.get("authorization", "")
-    if authorization:
-        try:
-            scheme, token = authorization.split(" ", 1)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
-            ) from exc
-        if scheme.lower() != "bearer":
+    scheme, _, token = authorization.partition(" ")
+
+    if scheme.lower() == "bearer":
+        if not token.strip():
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Bearer token required",
@@ -175,6 +192,9 @@ async def verify_user_or_service_auth(request: Request) -> bool:
         await verify_authenticated_actor(request)
         return True
 
+    # A non-Bearer Authorization header (a proxy adding Basic, the docs page's own
+    # Basic credentials) must not shadow a valid service key: fall through instead
+    # of rejecting outright.
     verify_api_key_or_dt_key(request)
     await verify_not_archived(request)
     return True
@@ -247,7 +267,7 @@ def verify_api_key(api_key: str = Security(api_key_header)):
     if api_key is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API Key required",
+            detail=f"API Key required (use the {settings.API_KEY_NAME.lower()} header)",
             headers={"WWW-Authenticate": "ApiKey"},
         )
     if not secrets.compare_digest(api_key, settings.API_KEY):
@@ -272,6 +292,36 @@ def verify_super_admin_key(api_key: str = Security(super_admin_key_header)):
             detail="Invalid Super Admin API Key",
         )
     return True
+
+
+def get_admin_operator(operator: str = Security(admin_operator_header)) -> str:
+    """The operator label recorded on an admin audit entry.
+
+    Anyone holding the super-admin key can write any name here, so this is a
+    *claim*. The audit record stores it next to a fingerprint of the key that was
+    actually used, which is what turns the claim into evidence once per-operator
+    keys exist.
+    """
+    candidate = (operator or "").strip()
+    if not _ADMIN_OPERATOR_PATTERN.fullmatch(candidate):
+        raise AdminActionError(
+            ErrorCode.ADMIN_OPERATOR_REQUIRED,
+            header=settings.ADMIN_OPERATOR_HEADER_NAME.lower(),
+        )
+    return candidate
+
+
+def get_admin_request_id(request_id: str = Security(admin_request_id_header)) -> str:
+    """Client-minted idempotency key for a mutating admin action."""
+    candidate = (request_id or "").strip()
+    try:
+        uuid.UUID(candidate)
+    except ValueError:
+        raise AdminActionError(
+            ErrorCode.ADMIN_REQUEST_ID_REQUIRED,
+            header=settings.ADMIN_REQUEST_ID_HEADER_NAME.lower(),
+        ) from None
+    return candidate
 
 
 def verify_dt_api_key(
@@ -341,7 +391,10 @@ def verify_api_key_or_dt_key(request: Request) -> bool:
     # Neither key provided
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="API Key required (use either admin or x-dt-team-api-key header)",
+        detail=(
+            f"API Key required (use either {settings.API_KEY_NAME.lower()} "
+            f"or {settings.DT_API_KEY_NAME.lower()} header)"
+        ),
     )
 
 

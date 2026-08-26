@@ -1,6 +1,8 @@
 from security.dependencies import (
     assert_not_archived,
     assert_authenticated_user_id,
+    get_admin_operator,
+    get_admin_request_id,
     get_current_user_id,
     get_current_username,
     invalidate_user_auth_cache,
@@ -19,6 +21,8 @@ from security.dependencies import (
 __all__ = [
     "get_current_username",
     "assert_authenticated_user_id",
+    "get_admin_operator",
+    "get_admin_request_id",
     "get_current_user_id",
     "invalidate_user_auth_cache",
     "verify_api_key",

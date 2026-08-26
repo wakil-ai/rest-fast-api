@@ -91,6 +91,9 @@ class SessionStatus(str, Enum):
 
 class SessionCreateRequest(BaseModel):
     user_id: str = Field(..., description="User ID who owns the session")
+    org_id: str | None = Field(
+        default=None, description="Organization scope; None = personal profile"
+    )
     title: str | None = Field("New Chat", description="Session title")
     tags: list[str] = Field(
         default_factory=list, description="Optional tags for categorization"
@@ -104,6 +107,12 @@ class SessionResponse(BaseModel):
     session_id: str = Field(..., description="Session ID (stored as _id)", alias="_id")
     project_id: str | None = Field(
         default=None, description="Legal project scope when set"
+    )
+    org_id: str | None = Field(
+        default=None, description="Organization scope; None = personal profile"
+    )
+    task_id: str | None = Field(
+        default=None, description="Task this chat belongs to, when it is Task work"
     )
     title: str = Field(default="New Chat")
     tags: list[str] = Field(default_factory=list)
@@ -175,10 +184,6 @@ class MessageSharedResponse(BaseModel):
     url: str = Field(..., description="Public URL to access the shared message")
     created_at: datetime
     model_config = {"populate_by_name": True}
-
-
-class MessageSharedRequest(BaseModel):
-    user_id: str = Field(..., description="User ID who is sharing the message")
 
 
 class ShareResponse(BaseModel):

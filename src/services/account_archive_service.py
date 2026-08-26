@@ -12,6 +12,7 @@ from core.config import settings
 from core.dependencies import get_db_manager
 from core.exceptions import InvalidInputError, UserNotFoundError
 from core.logger import logger
+from services.project_service import PERSONAL_SCOPE
 
 _BSON_INT64_MIN = -(2**63)
 _BSON_INT64_MAX = 2**63 - 1
@@ -44,6 +45,21 @@ class AccountArchiveService:
             settings.TELEGRAM_CHATS_COLLECTION: "user_id",  # stored as int (see below)
             settings.FINGERPRINTS_COLLECTION: "user_id",
         }
+        # Enterprise collections are deliberately absent, and this is not an
+        # oversight to be "fixed" by adding them:
+        #
+        #   tasks, workflow_states, organizations, organization_members —
+        #     owned by the organization, not by any one member. A person deleting
+        #     their personal WakilAI account must not take the department's board
+        #     and assignments with them. The same reasoning that scopes `projects`
+        #     above, taken to its conclusion: these have no personal half at all.
+        #   activity_logs — ZRU-1115 evidence. Append-only, never archived.
+        #   drafts — the same. A member deleting their personal account must not
+        #     archive the drafts their organization approved; `created_by`
+        #     pointing at a departed member is the intended state, not a leak.
+        #
+        # A departed member leaves rows referencing their id. That is intended:
+        # the log has to stay readable, and the org still needs the work.
 
     @staticmethod
     def _owner_values(user_id: str) -> list[Any]:
@@ -102,7 +118,38 @@ class AccountArchiveService:
         #    safe to retry after a partial/crashed run.
         results: dict[str, int] = {}
         for collection_name, owner_field in self._owned_collections.items():
-            query = {owner_field: {"$in": owner_values}, "archived": {"$ne": True}}
+            query: dict[str, Any] = {
+                owner_field: {"$in": owner_values},
+                "archived": {"$ne": True},
+            }
+            # These four collections all hold enterprise rows alongside personal
+            # ones, keyed by the same owner. Unscoped, a member deleting their own
+            # WakilAI account would take the whole organization's data with them:
+            # the Cases they opened off the board, the Case conversations they
+            # started, those conversations' transcripts, and the evidence files they
+            # uploaded to a Case. Someone else's data, erased by a personal action.
+            #
+            # Each carries `org_id`, so one predicate separates all four. Messages
+            # take it from their session and Case files from their project, both at
+            # write time — rows written before that stamp existed have no `org_id`
+            # and read as personal, which is what they were.
+            #
+            # The reads that make the loss visible: `get_sessions_by_project` and
+            # `get_messages` filter archived rows, and `get_file_by_id` backs the
+            # fetch, download and delete routes plus the file context injected into
+            # chat. A Case would keep its session list while every transcript came
+            # back empty, and keep listing files that 404 on open.
+            #
+            # Compared here rather than through a lookup map: both sides then read
+            # the same setting at the same moment, so the scope cannot silently go
+            # missing if that setting is patched or reloaded.
+            if collection_name in (
+                settings.PROJECTS_COLLECTION,
+                settings.SESSIONS_COLLECTION,
+                settings.MESSAGES_COLLECTION,
+                settings.FILES_COLLECTION,
+            ):
+                query.update(PERSONAL_SCOPE)
             res = await db[collection_name].update_many(query, {"$set": stamp})
             results[collection_name] = res.modified_count
 
