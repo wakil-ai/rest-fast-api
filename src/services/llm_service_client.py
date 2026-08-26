@@ -225,6 +225,9 @@ class LlmServiceClient:
     async def enhance_prompt(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.post_json("/api/v1/chat/prompt/enhance", payload)
 
+    async def task_brief(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self.post_json("/api/v1/chat/brief", payload)
+
     async def embed_file(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.post_json("/api/v1/embed", payload)
 

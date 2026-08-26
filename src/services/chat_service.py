@@ -1006,29 +1006,19 @@ class ChatService:
     async def handle_task_brief(
         self, request: TaskBriefRequest
     ) -> TaskBriefResponse:
-        """Generate a 2-3 sentence AI summary of a task (``POST /chat/brief``).
+        """Generate a concise AI summary of a task (``POST /chat/brief``).
 
         Lightweight one-shot LLM call — no session, no credits, no streaming.
-        Uses the lite model (gpt-4.1-mini) via the prompt-enhance endpoint,
-        same as the composer's "improve prompt" feature. The frontend fires
-        it on the task landing page so the user sees a quick overview before
-        starting a chat.
+        Calls the inference service's dedicated /chat/brief endpoint, which uses
+        the lite model (gpt-4.1-mini) with its own prompt template. The frontend
+        fires it on the task landing page and persists the result on the task.
         """
-        query = (
-            f"Give the user a brief, helpful overview of this task — what it is "
-            f"about and what to focus on. Use markdown formatting (headings, "
-            f"bullet points, **bold** for key terms). Keep it concise (3-5 lines). "
-            f"Respond in {request.language}.\n\n"
-            f"{request.context}"
-        )
-
         try:
-            result = await get_llm_service_client().enhance_prompt({
-                "query": query,
-                "assistant": "main",
+            result = await get_llm_service_client().task_brief({
+                "context": request.context,
                 "language": request.language,
             })
-            brief = str(result.get("enhanced") or "").strip()
+            brief = str(result.get("brief") or "").strip()
             if not brief:
                 raise ChatGenerationException("Empty brief from LLM service.")
             return TaskBriefResponse(brief=brief)
