@@ -7,6 +7,8 @@ from models.chat import (
     AgenticRAGRequest,
     ChatRequest,
     ModelInfoResponse,
+    TaskBriefRequest,
+    TaskBriefResponse,
     PromptClarifyRequest,
     PromptClarifyResponse,
     PromptEnhanceRequest,
@@ -85,3 +87,17 @@ async def get_model_info():
     except Exception as e:
         logger.error(f"Error retrieving model info: {e}")
         raise ChatGenerationException("Failed to retrieve model configuration.")
+
+
+@router.post(
+    "/brief",
+    response_model=TaskBriefResponse,
+    summary="Generate a brief AI summary of a task",
+)
+async def generate_task_brief(request: TaskBriefRequest):
+    """
+    One-shot LLM call that produces a 2-3 sentence summary of a task from
+    structured context. No session, no credits, no streaming — just a
+    quick overview for the task landing page.
+    """
+    return await chat_service.handle_task_brief(request)

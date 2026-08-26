@@ -265,3 +265,28 @@ class AgenticRAGRequest(BaseModel):
         default=None,
         description="Optional inline text context for this turn",
     )
+
+
+class TaskBriefRequest(BaseModel):
+    """
+    Request body for generating a brief AI summary of a task (``/chat/brief``).
+
+    Lightweight one-shot call — no session, no credits, no streaming. The
+    frontend fires it on the task landing page so the user sees a quick
+    overview before starting a chat.
+    """
+
+    context: str = Field(
+        ...,
+        description="Structured context about the task (title, description, objective, state, etc.)",
+    )
+    language: str = Field(
+        default="en",
+        description="Language code for the response (en, ru, uz)",
+    )
+
+
+class TaskBriefResponse(BaseModel):
+    """Response body for ``/chat/brief``."""
+
+    brief: str = Field(..., description="A 2-3 sentence summary of the task")
