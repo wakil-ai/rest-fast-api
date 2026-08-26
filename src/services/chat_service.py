@@ -30,6 +30,8 @@ from models.chat import (
     ChatRequest,
     ChatResponse,
     ModelInfoResponse,
+    TaskBriefRequest,
+    TaskBriefResponse,
 )
 from models.intent_types import LegalIntent
 from utils.streaming import (
@@ -896,6 +898,43 @@ class ChatService:
                 for name, config in assistants.items()
             ]
         }
+
+    async def handle_task_brief(
+        self, request: TaskBriefRequest
+    ) -> TaskBriefResponse:
+        """Generate a 2-3 sentence AI summary of a task (``POST /chat/brief``).
+
+        Lightweight one-shot LLM call — no session, no credits, no streaming.
+        The frontend fires it on the task landing page so the user sees a
+        quick overview before starting a chat.
+        """
+        query = (
+            f"Give the user a brief, helpful overview of this task — what it is "
+            f"about and what to focus on. Keep it to 2-3 sentences. "
+            f"Respond in {request.language}.\n\n"
+            f"{request.context}"
+        )
+
+        payload = {
+            "query": query,
+            "assistant": "main",
+            "thread_id": f"brief:{uuid.uuid4()}",
+        }
+
+        try:
+            result = await get_llm_service_client().ask_chat(payload)
+            brief = str(result.get("answer") or "").strip()
+            if not brief:
+                raise ChatGenerationException("Empty brief from LLM service.")
+            return TaskBriefResponse(brief=brief)
+        except ChatException:
+            raise
+        except Exception as e:
+            logger.error(
+                f"[ChatService] Error in handle_task_brief: {str(e)}",
+                exc_info=True,
+            )
+            raise ChatGenerationException("Failed to generate task brief.")
 
     @staticmethod
     def get_model_info_response() -> ModelInfoResponse:
