@@ -33,6 +33,7 @@ _EDITABLE: tuple[str, ...] = (
     "start_date",
     "deadline",
     "assignee_id",
+    "ai_brief",
 )
 
 
