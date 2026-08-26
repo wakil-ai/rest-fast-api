@@ -38,6 +38,10 @@ class TaskUpdateRequest(BaseModel):
     start_date: date | None = None
     deadline: date | None = None
     assignee_id: str | None = None
+    ai_brief: str | None = Field(
+        default=None,
+        description="AI-generated brief summary. Set by the frontend after /chat/brief returns.",
+    )
 
 
 class TaskResponse(BaseModel):
@@ -52,6 +56,7 @@ class TaskResponse(BaseModel):
     start_date: date | None = None
     deadline: date | None = None
     assignee_id: str | None = None
+    ai_brief: str | None = None
     closure: CaseClosure = Field(default_factory=CaseClosure)
     created_by: str
     updated_by: str | None = None

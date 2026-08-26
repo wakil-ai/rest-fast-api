@@ -38,6 +38,7 @@ def _to_response(doc: dict[str, Any]) -> TaskResponse:
         start_date=doc.get("start_date"),
         deadline=doc.get("deadline"),
         assignee_id=doc.get("assignee_id"),
+        ai_brief=doc.get("ai_brief"),
         closure=CaseClosure(**(doc.get("closure") or {})),
         created_by=doc["created_by"],
         updated_by=doc.get("updated_by"),
