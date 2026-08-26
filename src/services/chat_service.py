@@ -1014,7 +1014,8 @@ class ChatService:
         """
         query = (
             f"Give the user a brief, helpful overview of this task — what it is "
-            f"about and what to focus on. Keep it to 2-3 sentences. "
+            f"about and what to focus on. Use markdown formatting (headings, "
+            f"bullet points, **bold** for key terms). Keep it concise (3-5 lines). "
             f"Respond in {request.language}.\n\n"
             f"{request.context}"
         )
