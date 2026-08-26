@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from core.config import settings
+from models.payment import SubscriptionEligibilityError
 from services.payments.base import BasePaymentService
 from services.payments.uzum import UzumService
 
@@ -75,7 +76,7 @@ def test_promo_disabled_catalog_has_list_prices_only():
 
 
 # --------------------------------------------------------------------------
-# 2. Active campaign discounts standard/pro monthly+yearly, leaves daily alone
+# 2. Active campaign discounts standard/pro monthly+yearly, withdraws daily
 # --------------------------------------------------------------------------
 
 
@@ -98,11 +99,75 @@ def test_promo_active_discounts_monthly_and_yearly_only():
         assert plan["discount_percent"] == 35
         assert plan["list_price_sum"] is not None
 
-    # Daily passes are excluded — untouched at list price, no discount fields.
+    # Daily passes are withdrawn from the catalog outright while the sale runs,
+    # so the plan pickers have no daily cycle to offer.
+    assert [plan for plan in plans if plan["period"] == "daily"] == []
+
+
+# --------------------------------------------------------------------------
+# 2b. The daily kill-switch is scoped to an active campaign only
+# --------------------------------------------------------------------------
+
+
+def test_daily_passes_listed_while_promo_disabled():
+    service = BasePaymentService.__new__(BasePaymentService)
+    service._subscription_catalog = _real_catalog()
+
+    plans = service.get_subscription_catalog()
+
     for tier, price in (("basic", 15_000), ("standard", 30_000), ("premium", 50_000)):
         daily_plan = _plan(plans, tier, "daily")
         assert daily_plan["amount_sum"] == price
         assert daily_plan["discount_percent"] is None
+
+
+def test_daily_passes_return_once_campaign_expires():
+    _enable_campaign(ends_in_ms=_DAY_MS)
+    service = BasePaymentService.__new__(BasePaymentService)
+    service._subscription_catalog = _real_catalog()
+
+    assert [plan for plan in service.get_subscription_catalog()
+            if plan["period"] == "daily"] == []
+
+    # Same cached service instance, campaign now in the past — no restart.
+    settings.SUBSCRIPTION_PROMO_ENDS_AT = datetime.fromtimestamp(
+        (_NOW_MS - _DAY_MS) / 1000, tz=timezone.utc
+    )
+
+    assert _plan(service.get_subscription_catalog(), "basic", "daily")["amount_sum"] == 15_000
+
+
+@pytest.mark.asyncio
+async def test_init_payment_rejects_daily_pass_during_campaign():
+    _enable_campaign()
+    service = _make_service()
+
+    with pytest.raises(SubscriptionEligibilityError) as excinfo:
+        await service.init_payment(
+            amount_sum=None,
+            user_id="u1",
+            callback_url="https://example.com/cb",
+            subscription_tier="basic",
+            subscription_period="daily",
+        )
+
+    assert excinfo.value.code == "DAILY_PASS_DISABLED_DURING_PROMO"
+    assert service.db_handler.inserted == []
+
+
+@pytest.mark.asyncio
+async def test_init_payment_allows_daily_pass_once_campaign_expires():
+    service = _make_service()
+
+    result = await service.init_payment(
+        amount_sum=None,
+        user_id="u1",
+        callback_url="https://example.com/cb",
+        subscription_tier="basic",
+        subscription_period="daily",
+    )
+
+    assert result["order_id"]
 
 
 # --------------------------------------------------------------------------

@@ -3,7 +3,7 @@ import time
 from datetime import datetime, timezone
 
 from core.config import settings
-from core.subscription_promo import apply_discount
+from core.subscription_promo import apply_discount, get_active_campaign
 from core.subscription_tiers import (
     daily_pass_rank,
     is_daily_pass_quote,
@@ -174,9 +174,11 @@ class BasePaymentService:
 
     def get_subscription_catalog(self) -> list[dict]:
         plans: list[dict] = []
+        now_ms = int(time.time() * 1000)
+        promo_active = get_active_campaign(now_ms) is not None
         for tier, cfg in self._subscription_catalog.items():
             for period in ("daily", "monthly", "yearly"):
-                if period not in cfg:
+                if period not in cfg or (period == "daily" and promo_active):
                     continue
                 quote = self._get_subscription_quote(tier, period)
                 plans.append(
@@ -339,6 +341,11 @@ class BasePaymentService:
         current_time_ms = now_ms or int(time.time() * 1000)
 
         if self._is_daily_pass_quote(quote):
+            if get_active_campaign(current_time_ms) is not None:
+                raise SubscriptionEligibilityError(
+                    code="DAILY_PASS_DISABLED_DURING_PROMO",
+                    message="Daily passes are temporarily unavailable during the sale.",
+                )
             active_daily_pass = await self._get_active_daily_pass(
                 user_id, current_time_ms
             )
