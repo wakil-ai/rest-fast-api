@@ -38,6 +38,46 @@ from utils.message_export import (
 from utils.user_management import clean_for_mongodb, generate_short_id
 
 
+# Field headings for the composed request. The employee reads and edits this
+# text, so it is user-facing copy that happens to also reach the model — which
+# handles all three languages, this being an Uzbek legal product.
+#
+# Uzbek is the fallback rather than English: an unrecognised language code on
+# this product is far more likely to be a missing header than an English-
+# speaking user.
+DEFAULT_QUERY_LANGUAGE = "uz"
+
+QUERY_LABELS: dict[str, dict[str, str]] = {
+    "uz": {
+        "title": "Sarlavha",
+        "objective": "Maqsad",
+        "description": "Tavsif",
+        "instruction": "Ko'rsatma",
+        "previous_draft": "Oldingi javob",
+        "revise": (
+            "Yuqoridagi javobni qayta ishlang. Nimani o'zgartirish kerakligini "
+            "yozing."
+        ),
+    },
+    "ru": {
+        "title": "Заголовок",
+        "objective": "Цель",
+        "description": "Описание",
+        "instruction": "Указание",
+        "previous_draft": "Предыдущий черновик",
+        "revise": "Доработайте черновик выше. Укажите, что именно изменить.",
+    },
+    "en": {
+        "title": "Title",
+        "objective": "Objective",
+        "description": "Description",
+        "instruction": "Instruction",
+        "previous_draft": "Previous draft",
+        "revise": "Revise the draft above. State what should change.",
+    },
+}
+
+
 async def detached(coro: Coroutine[Any, Any, Any]) -> None:
     """Let a write finish even when this frame is cancelled again.
 
@@ -344,7 +384,9 @@ class DraftService:
 
     # --- delegation ---------------------------------------------------------
 
-    def _build_query(self, holder: dict[str, Any], instruction: str | None) -> str:
+    def _build_query(
+        self, holder: dict[str, Any], instruction: str | None, language: str = "uz"
+    ) -> str:
         """The machine's opening draft of the request, composed server-side.
 
         This is a starting point the employee may rewrite, not a locked prompt.
@@ -353,14 +395,21 @@ class DraftService:
         be something a human can actually see and change. What protects the
         context is not that it cannot be edited — it is that `query_base` is
         stored alongside whatever was sent, so any divergence is on the record.
+
+        The field labels follow the employee's own language. They are the one
+        part of this text the machine writes, and a Russian lawyer reading their
+        own Case under English headings is being shown a prompt rather than a
+        request — which is the opposite of what the review step is for.
         """
-        parts = [f"Title: {holder.get('title') or ''}"]
+        labels = QUERY_LABELS.get(language, QUERY_LABELS[DEFAULT_QUERY_LANGUAGE])
+
+        parts = [f"{labels['title']}: {holder.get('title') or ''}"]
         if holder.get("objective"):
-            parts.append(f"Objective: {holder['objective']}")
+            parts.append(f"{labels['objective']}: {holder['objective']}")
         if holder.get("description"):
-            parts.append(f"Description: {holder['description']}")
+            parts.append(f"{labels['description']}: {holder['description']}")
         if instruction:
-            parts.append(f"Instruction: {instruction}")
+            parts.append(f"{labels['instruction']}: {instruction}")
         return "\n\n".join(parts)
 
     @staticmethod
@@ -396,6 +445,7 @@ class DraftService:
         user_id: str,
         previous_draft_id: str | None = None,
         instruction: str | None = None,
+        language: str = DEFAULT_QUERY_LANGUAGE,
     ) -> dict[str, Any]:
         """Compose the request and hand it to the employee to review.
 
@@ -424,14 +474,13 @@ class DraftService:
                 )
             body = str(previous.get("content") or "").strip()
             if body:
-                instruction = (
-                    f"Previous draft:\n{body}\n\n"
-                    "Revise the draft above. State what should change."
-                    if not instruction
-                    else f"Previous draft:\n{body}\n\n{instruction}"
+                labels = QUERY_LABELS.get(
+                    language, QUERY_LABELS[DEFAULT_QUERY_LANGUAGE]
                 )
+                tail = instruction or labels["revise"]
+                instruction = f"{labels['previous_draft']}:\n{body}\n\n{tail}"
 
-        query = self._build_query(holder, instruction)
+        query = self._build_query(holder, instruction, language)
         return {
             "org_id": org_id,
             "case_id": resolved_case_id,
@@ -454,6 +503,7 @@ class DraftService:
         query: str | None = None,
         assistant: str | None = None,
         base_hash: str | None = None,
+        language: str = DEFAULT_QUERY_LANGUAGE,
     ) -> Any:
         """Hand a Case or Task to its agent. The answer lands as a pending draft.
 
@@ -483,7 +533,7 @@ class DraftService:
         # Recomputed from the record rather than trusted from the client: this is
         # the half of the pair that has to be the machine's own words for the
         # comparison below to mean anything.
-        query_base = self._build_query(holder, instruction)
+        query_base = self._build_query(holder, instruction, language)
         submitted = (query or "").strip()
         query_final = submitted or query_base
         # A missing or stale hash counts as edited. Over-recording a human touch

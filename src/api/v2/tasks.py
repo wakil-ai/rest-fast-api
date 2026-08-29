@@ -182,6 +182,7 @@ async def prepare_task_delegation(
         user_id=user_id,
         previous_draft_id=body.previous_draft_id,
         instruction=body.instruction,
+        language=body.language,
     )
 
 
@@ -207,4 +208,5 @@ async def delegate_task(
         query=body.query,
         assistant=body.assistant,
         base_hash=body.base_hash,
+        language=body.language,
     )
