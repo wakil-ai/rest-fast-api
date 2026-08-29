@@ -92,6 +92,11 @@ class DelegatePrepareRequest(BaseModel):
 
     previous_draft_id: str | None = None
     instruction: str | None = Field(default=None, max_length=20000)
+    language: str = Field(
+        default="uz",
+        description="Language code (uz, ru, en) for the composed request's field "
+        "headings — the employee reads and edits this text",
+    )
 
 
 class DelegatePrepareResponse(BaseModel):
@@ -138,4 +143,10 @@ class DelegateRequest(BaseModel):
         default=None,
         description="The `base_hash` from prepare, so an untouched request is not "
         "recorded as a human edit",
+    )
+    language: str = Field(
+        default="uz",
+        description="Must match the language passed to prepare. The server "
+        "recomposes `query_base` with it, and a mismatch would make an untouched "
+        "request look edited.",
     )

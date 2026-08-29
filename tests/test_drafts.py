@@ -153,6 +153,52 @@ async def test_prepare_falls_back_to_general_for_an_unknown_role(
     assert out["assistant"] == "main"
 
 
+async def test_prepare_writes_the_headings_in_the_employees_language(
+    service: DraftService,
+) -> None:
+    _prepare_service(service, CASE_HOLDER)
+
+    uz = await service.prepare_delegation(
+        org_id="org-1", case_id="proj-1", task_id=None, user_id="owner", language="uz"
+    )
+    ru = await service.prepare_delegation(
+        org_id="org-1", case_id="proj-1", task_id=None, user_id="owner", language="ru"
+    )
+
+    assert uz["query"].startswith("Sarlavha:")
+    assert "Maqsad:" in uz["query"]
+    assert ru["query"].startswith("Заголовок:")
+    assert "Цель:" in ru["query"]
+    # The Case's own words are untouched — only the headings are translated.
+    assert "Contract dispute" in uz["query"] and "Contract dispute" in ru["query"]
+
+
+async def test_an_unknown_language_falls_back_rather_than_failing(
+    service: DraftService,
+) -> None:
+    _prepare_service(service, CASE_HOLDER)
+
+    out = await service.prepare_delegation(
+        org_id="org-1", case_id="proj-1", task_id=None, user_id="owner", language="de"
+    )
+
+    assert out["query"].startswith("Sarlavha:")
+
+
+def test_the_same_language_round_trips_to_the_same_hash(service: DraftService) -> None:
+    """The hash is the edited/untouched signal, so prepare and delegate must
+    compose in the same language — otherwise every request looks rewritten."""
+    holder = CASE_HOLDER
+
+    uz = service._build_query(holder, None, "uz")
+    ru = service._build_query(holder, None, "ru")
+
+    assert service._hash_query(uz) == service._hash_query(
+        service._build_query(holder, None, "uz")
+    )
+    assert service._hash_query(uz) != service._hash_query(ru)
+
+
 async def test_prepare_reserves_no_slot_and_charges_nothing(
     service: DraftService, collection: MagicMock
 ) -> None:
@@ -1032,13 +1078,20 @@ async def test_delegate_never_takes_the_prompt_from_the_client(
     query itself — a client cannot replace the Case context with its own text."""
     service, _, _, _ = delegatable
 
+    # Pinned to English so the assertions read plainly; the headings follow the
+    # employee's language and are covered separately.
     query = service._build_query(
-        {"title": "Contract dispute", "objective": "Draft a reply"}, "focus on VAT"
+        {"title": "Contract dispute", "objective": "Draft a reply"},
+        "focus on VAT",
+        "en",
     )
 
     assert query.startswith("Title: Contract dispute")
     assert "Objective: Draft a reply" in query
+    # The client's text is one labelled part, and it comes last — the Case
+    # context above it cannot be displaced by anything the client sends.
     assert "Instruction: focus on VAT" in query
+    assert query.index("Instruction:") > query.index("Objective:")
 
 
 async def test_delegating_on_a_closed_case_is_refused(
