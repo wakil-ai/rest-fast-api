@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, Query, status
 
 from core.dependencies import get_draft_service, get_task_service
 from models.cases import CaseClosure
-from models.drafts import DelegateRequest
+from models.drafts import (
+    DelegatePrepareRequest,
+    DelegatePrepareResponse,
+    DelegateRequest,
+)
 from models.tasks import (
     TaskCreateRequest,
     TaskListResponse,
@@ -158,6 +162,29 @@ async def reopen_task(org_id: str, task_id: str, user_id: str = CurrentUser):
     return _to_response(await task_service.reopen(org_id, task_id, user_id))
 
 
+@router.post(
+    "/{org_id}/tasks/{task_id}/delegate/prepare",
+    response_model=DelegatePrepareResponse,
+)
+@handle_service_error
+async def prepare_task_delegation(
+    org_id: str,
+    task_id: str,
+    body: DelegatePrepareRequest | None = None,
+    user_id: str = CurrentUser,
+):
+    """Compose the request for the employee to review before anything is spent."""
+    body = body or DelegatePrepareRequest()
+    return await get_draft_service().prepare_delegation(
+        org_id=org_id,
+        case_id="",
+        task_id=task_id,
+        user_id=user_id,
+        previous_draft_id=body.previous_draft_id,
+        instruction=body.instruction,
+    )
+
+
 @router.post("/{org_id}/tasks/{task_id}/delegate")
 @handle_service_error
 async def delegate_task(
@@ -177,4 +204,7 @@ async def delegate_task(
         task_id=task_id,
         user_id=user_id,
         instruction=body.instruction,
+        query=body.query,
+        assistant=body.assistant,
+        base_hash=body.base_hash,
     )

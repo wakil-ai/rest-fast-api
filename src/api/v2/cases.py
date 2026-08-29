@@ -12,7 +12,11 @@ from models.cases import (
     CaseResponse,
     CaseUpdateRequest,
 )
-from models.drafts import DelegateRequest
+from models.drafts import (
+    DelegatePrepareRequest,
+    DelegatePrepareResponse,
+    DelegateRequest,
+)
 from models.projects import ProjectStatus
 from security import get_current_user_id
 from utils.user_management import handle_service_error
@@ -148,6 +152,35 @@ async def reopen_case(org_id: str, case_id: str, user_id: str = CurrentUser):
     return _to_response(doc)
 
 
+@router.post(
+    "/{org_id}/cases/{case_id}/delegate/prepare",
+    response_model=DelegatePrepareResponse,
+)
+@handle_service_error
+async def prepare_case_delegation(
+    org_id: str,
+    case_id: str,
+    body: DelegatePrepareRequest | None = None,
+    user_id: str = CurrentUser,
+):
+    """Compose the request for the employee to review before anything is spent.
+
+    Registered before `/delegate` is unnecessary here — the paths differ by a
+    literal tail, not a parameter — but the pairing matters: nothing in this
+    route reserves a slot or charges credits, so opening the review step and
+    abandoning it leaves no trace to clean up.
+    """
+    body = body or DelegatePrepareRequest()
+    return await get_draft_service().prepare_delegation(
+        org_id=org_id,
+        case_id=case_id,
+        task_id=None,
+        user_id=user_id,
+        previous_draft_id=body.previous_draft_id,
+        instruction=body.instruction,
+    )
+
+
 @router.post("/{org_id}/cases/{case_id}/delegate")
 @handle_service_error
 async def delegate_case(
@@ -167,4 +200,7 @@ async def delegate_case(
         task_id=None,
         user_id=user_id,
         instruction=body.instruction,
+        query=body.query,
+        assistant=body.assistant,
+        base_hash=body.base_hash,
     )

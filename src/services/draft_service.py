@@ -6,6 +6,7 @@ happens here.
 """
 
 import asyncio
+import hashlib
 import time
 from collections.abc import AsyncGenerator, Coroutine
 from datetime import datetime, timedelta, timezone
@@ -29,6 +30,11 @@ from models.activity_logs import ActorType, EventType
 from models.drafts import DraftSource, DraftStatus
 from models.projects import is_closed
 from models.workflow_states import StateAppliesTo, StateCategory
+from utils.message_export import (
+    DRAFT_DOCX_FILENAME,
+    build_markdown_docx,
+    draft_markdown,
+)
 from utils.user_management import clean_for_mongodb, generate_short_id
 
 
@@ -220,6 +226,9 @@ class DraftService:
         session_id: str,
         assistant: str,
         user_id: str,
+        query_base: str = "",
+        query_final: str = "",
+        query_edited: bool = False,
     ) -> str:
         """Claim the Case/Task before generating, so the loser never pays.
 
@@ -244,6 +253,11 @@ class DraftService:
                 "version": 1,
                 "source": DraftSource.agent.value,
                 "content": "",
+                # Written with the reservation rather than at finalize: a
+                # generation that fails still has to show what was asked.
+                "query_base": query_base,
+                "query_final": query_final,
+                "query_edited": query_edited,
                 "status": DraftStatus.generating.value,
                 "slot_active": True,
                 "assistant": assistant,
@@ -331,10 +345,14 @@ class DraftService:
     # --- delegation ---------------------------------------------------------
 
     def _build_query(self, holder: dict[str, Any], instruction: str | None) -> str:
-        """Composed server-side. The client never supplies the prompt.
+        """The machine's opening draft of the request, composed server-side.
 
-        `instruction` is one labelled part of the query, not the query — so a
-        client cannot swap the Case context out for text of its own.
+        This is a starting point the employee may rewrite, not a locked prompt.
+        The Case context is put in front of them rather than hidden from them:
+        ZRU-1115 asks for proof a human shaped the request, so the request has to
+        be something a human can actually see and change. What protects the
+        context is not that it cannot be edited — it is that `query_base` is
+        stored alongside whatever was sent, so any divergence is on the record.
         """
         parts = [f"Title: {holder.get('title') or ''}"]
         if holder.get("objective"):
@@ -345,6 +363,86 @@ class DraftService:
             parts.append(f"Instruction: {instruction}")
         return "\n\n".join(parts)
 
+    @staticmethod
+    def _hash_query(query: str) -> str:
+        """Fingerprint of a composed request, round-tripped through the client.
+
+        Only ever compared, never trusted as input: a wrong or missing hash makes
+        the request count as edited, which over-records rather than under-records.
+        That is the safe direction for something whose job is to be evidence.
+        """
+        return hashlib.sha256(query.strip().encode("utf-8")).hexdigest()[:32]
+
+    async def _load_delegation_holder(
+        self, org_id: str, case_id: str, task_id: str | None, user_id: str
+    ) -> tuple[dict[str, Any], str, str]:
+        """Resolve the Case or Task being delegated, plus its id and default role.
+
+        `case_id` is read off the Task row rather than taken from the caller, so
+        the two can never disagree.
+        """
+        if task_id:
+            holder = await self._tasks().get_task(org_id, task_id, user_id)
+            return holder, holder["case_id"], holder.get("task_type") or ""
+        holder = await self._cases().assert_case_access(org_id, case_id, user_id)
+        return holder, case_id, holder.get("case_type") or ""
+
+    async def prepare_delegation(
+        self,
+        *,
+        org_id: str,
+        case_id: str,
+        task_id: str | None,
+        user_id: str,
+        previous_draft_id: str | None = None,
+        instruction: str | None = None,
+    ) -> dict[str, Any]:
+        """Compose the request and hand it to the employee to review.
+
+        Deliberately free: no slot is reserved and no credits are checked, so
+        opening the review step and closing it again costs nothing. That is what
+        lets review be the normal path instead of a confirmation dialog people
+        learn to click through.
+        """
+        # Loading the holder is the permission check, and it is deliberately the
+        # same one `delegate` makes: preparing a request must never be harder
+        # than sending one, or people learn to skip the review step.
+        holder, resolved_case_id, declared = await self._load_delegation_holder(
+            org_id, case_id, task_id, user_id
+        )
+
+        # A regeneration carries the rejected text forward, so the employee can
+        # say what to change instead of describing the whole task again.
+        if previous_draft_id:
+            previous = await self.load_draft(org_id, previous_draft_id)
+            if previous.get("case_id") != resolved_case_id or previous.get(
+                "task_id"
+            ) != task_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="That draft belongs to different work",
+                )
+            body = str(previous.get("content") or "").strip()
+            if body:
+                instruction = (
+                    f"Previous draft:\n{body}\n\n"
+                    "Revise the draft above. State what should change."
+                    if not instruction
+                    else f"Previous draft:\n{body}\n\n{instruction}"
+                )
+
+        query = self._build_query(holder, instruction)
+        return {
+            "org_id": org_id,
+            "case_id": resolved_case_id,
+            "task_id": task_id,
+            "query": query,
+            "base_hash": self._hash_query(query),
+            "assistant": AssistantConfig.resolve_delegation_role(None, declared),
+            "roles": AssistantConfig.delegation_roles(),
+            "closed": is_closed(holder),
+        }
+
     async def delegate(
         self,
         *,
@@ -352,21 +450,26 @@ class DraftService:
         case_id: str,
         task_id: str | None,
         user_id: str,
-        instruction: str | None,
+        instruction: str | None = None,
+        query: str | None = None,
+        assistant: str | None = None,
+        base_hash: str | None = None,
     ) -> Any:
         """Hand a Case or Task to its agent. The answer lands as a pending draft.
 
         Everything up to the stream runs eagerly, so a refusal is a normal JSON
         error instead of an error event inside a half-open stream.
+
+        `query` is the request the employee reviewed. When it is omitted the
+        server composes one itself, which is both the fallback for older clients
+        and what keeps the composed text the starting point rather than a
+        client-supplied prompt: `query_base` is always recomputed here from the
+        record, never accepted from the caller.
         """
         chat = self._chat()
-        if task_id:
-            holder = await self._tasks().get_task(org_id, task_id, user_id)
-            case_id = holder["case_id"]
-            declared = holder.get("task_type")
-        else:
-            holder = await self._cases().assert_case_access(org_id, case_id, user_id)
-            declared = holder.get("case_type")
+        holder, case_id, declared = await self._load_delegation_holder(
+            org_id, case_id, task_id, user_id
+        )
 
         if is_closed(holder):
             raise HTTPException(
@@ -374,16 +477,28 @@ class DraftService:
                 detail="This work is closed. Reopen it before delegating again.",
             )
 
-        assistant = AssistantConfig.validate_assistant_or_default(declared)
+        assistant = AssistantConfig.resolve_delegation_role(assistant, declared)
         credit_cost, _ = chat.extract_assistant_config(assistant)
 
-        # Composed here rather than after the reservation, so the length check
-        # below rejects an oversized request while there is still no slot to
-        # release. The cap is the one every chat entry point applies, and it goes
-        # on the whole query: the Case fields reach the model too, so validating
-        # only the client's instruction would leave the real payload unbounded.
-        query = self._build_query(holder, instruction)
-        chat.validate_query_length(query)
+        # Recomputed from the record rather than trusted from the client: this is
+        # the half of the pair that has to be the machine's own words for the
+        # comparison below to mean anything.
+        query_base = self._build_query(holder, instruction)
+        submitted = (query or "").strip()
+        query_final = submitted or query_base
+        # A missing or stale hash counts as edited. Over-recording a human touch
+        # is the safe direction for evidence; under-recording one is not.
+        query_edited = bool(submitted) and (
+            base_hash != self._hash_query(query_base)
+            or submitted != query_base.strip()
+        )
+
+        # Validated before the reservation, so an oversized request is refused
+        # while there is still no slot to release. The cap goes on the whole
+        # request: the Case fields reach the model too, so checking only the part
+        # the client typed would leave the real payload unbounded.
+        chat.validate_query_length(query_final)
+        query = query_final
 
         session = await self._history().ensure_shared_session(
             user_id=user_id,
@@ -402,6 +517,9 @@ class DraftService:
             session_id=session_id,
             assistant=assistant,
             user_id=user_id,
+            query_base=query_base,
+            query_final=query_final,
+            query_edited=query_edited,
         )
 
         try:
@@ -424,8 +542,31 @@ class DraftService:
             object_label=holder.get("title"),
             case_id=case_id,
             task_id=task_id,
-            payload={"assistant": assistant, "has_instruction": bool(instruction)},
+            payload={
+                "assistant": assistant,
+                "has_instruction": bool(instruction),
+                "query_edited": query_edited,
+            },
         )
+        if query_edited:
+            # Its own event beside the submission, so "how often does a human
+            # actually change the request" is a question the log can answer.
+            await self._logs().record(
+                org_id=org_id,
+                actor_id=user_id,
+                actor_type=ActorType.user,
+                event_type=EventType.ai_request_edited,
+                object_type="draft",
+                object_id=draft_id,
+                object_label=holder.get("title"),
+                case_id=case_id,
+                task_id=task_id,
+                payload={
+                    "assistant": assistant,
+                    "chars_before": len(query_base),
+                    "chars_after": len(query_final),
+                },
+            )
 
         generator = self._stream_and_capture(
             draft_id=draft_id,
@@ -475,6 +616,15 @@ class DraftService:
                 started_at=perf_counter(),
                 project_id=case_id,
                 timeout=settings.AI_DELEGATION_TIMEOUT_SECONDS,
+                # Deep analysis is a different inference workflow, not a different
+                # prompt: the same split `handle_agentic_rag_stream` makes for
+                # chat. Routed on the raw role name because `deepresearch` aliases
+                # to `main` the moment it is canonicalised.
+                stream_endpoint=(
+                    "/api/v1/chat/agent/stream"
+                    if AssistantConfig.is_deep_research_assistant(assistant)
+                    else "/api/v1/chat/ask/stream"
+                ),
             )
             async for item in bounded(inner, settings.AI_DELEGATION_TIMEOUT_SECONDS):
                 if isinstance(item, str):
@@ -574,6 +724,35 @@ class DraftService:
         row = await self.load_draft(org_id, draft_id)
         await self._load_holder(org_id, row, user_id)
         return row
+
+    async def render_docx(
+        self, org_id: str, draft_id: str, user_id: str
+    ) -> tuple[bytes, str]:
+        """An approved draft as a Word document, plus the filename to serve it as.
+
+        Only approved rows export. A pending draft has no force yet and a rejected
+        one never will, so putting either on letterhead would hand someone a
+        document the gate has not passed — the export is the moment the text
+        leaves the system, and that is the moment the status has to hold.
+        """
+        row = await self.load_draft(org_id, draft_id)
+        holder = await self._load_holder(org_id, row, user_id)
+
+        if row.get("status") != DraftStatus.approved.value:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only an approved draft can be exported",
+            )
+        markdown = draft_markdown(row, holder.get("title"))
+        if not markdown:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="This draft has no content to export",
+            )
+        # pandoc is a subprocess: off the event loop, or it stalls every other
+        # request on this worker for the length of the conversion.
+        content = await asyncio.to_thread(build_markdown_docx, markdown)
+        return content, DRAFT_DOCX_FILENAME
 
     async def get_chain(
         self, org_id: str, draft_id: str, user_id: str
@@ -773,6 +952,12 @@ class DraftService:
                 "version": row["version"] + 1,
                 "source": DraftSource.human.value,
                 "content": content,
+                # Carried forward, not recomposed: every version in a chain
+                # answers the same request, and a reader of version 3 should not
+                # have to walk back to version 1 to find out what it was.
+                "query_base": row.get("query_base", ""),
+                "query_final": row.get("query_final", ""),
+                "query_edited": row.get("query_edited", False),
                 "status": DraftStatus.pending.value,
                 "slot_active": True,
                 "assistant": row["assistant"],
