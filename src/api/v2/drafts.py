@@ -6,11 +6,12 @@ a machine must never be able to approve a draft, which is the whole point.
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 
 from core.dependencies import get_draft_service
 from models.drafts import DraftEditRequest, DraftListResponse, DraftResponse
 from security import get_current_user_id
+from utils.message_export import DOCX_CONTENT_TYPE
 from utils.user_management import handle_service_error
 
 router = APIRouter(prefix="/organizations", tags=["Drafts"])
@@ -43,6 +44,9 @@ def _to_response(doc: dict[str, Any]) -> DraftResponse:
         created_at=doc["created_at"],
         # Absent on list endpoints, which project it away.
         content=doc.get("content"),
+        query_base=doc.get("query_base"),
+        query_final=doc.get("query_final"),
+        query_edited=doc.get("query_edited", False),
     )
 
 
@@ -103,3 +107,20 @@ async def reject_draft(org_id: str, draft_id: str, user_id: str = CurrentUser):
     """Refuse a draft. Terminal — delegating again starts a new chain."""
     row = await service.reject(org_id, draft_id, user_id)
     return _to_response(row)
+
+
+@router.get("/{org_id}/drafts/{draft_id}/docx")
+@handle_service_error
+async def download_draft_docx(org_id: str, draft_id: str, user_id: str = CurrentUser):
+    """Approved draft as a .docx.
+
+    Rendered from the draft row's own text. The message-based export next door
+    would return the machine's original wording for any draft a human corrected,
+    because an edit stores no message id on the new version.
+    """
+    content, filename = await service.render_docx(org_id, draft_id, user_id)
+    return Response(
+        content=content,
+        media_type=DOCX_CONTENT_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

@@ -41,6 +41,11 @@ class EventType(str, Enum):
     # enum written by ActorType.agent — with on_behalf_of naming the human who
     # asked, because a machine acts for someone, never on its own account.
     ai_request_submitted = "ai.request_submitted"
+    # Written when the employee changed the machine-composed request before
+    # sending it. Its own event, not a payload flag on `ai.request_submitted`:
+    # the edit is the proof of human participation the law asks for, and
+    # evidence that matters is easier to defend when it is countable.
+    ai_request_edited = "ai.request_edited"
     ai_draft_generated = "ai.draft_generated"
     ai_draft_edited = "ai.draft_edited"
     ai_draft_approved = "ai.draft_approved"

@@ -88,6 +88,146 @@ def test_gate_event_types_exist() -> None:
     assert EventType.ai_draft_approved.value == "ai.draft_approved"
     assert EventType.ai_draft_rejected.value == "ai.draft_rejected"
     assert EventType.ai_generation_failed.value == "ai.generation_failed"
+    assert EventType.ai_request_edited.value == "ai.request_edited"
+
+
+# --- the reviewed request ---------------------------------------------------
+
+
+def _prepare_service(service: DraftService, holder: dict[str, Any]) -> DraftService:
+    """A service whose Case lookup returns `holder` and nothing else is wired."""
+    cases = MagicMock()
+    cases.assert_case_access = AsyncMock(return_value=holder)
+    service._cases = lambda: cases  # type: ignore[method-assign]
+    return service
+
+
+CASE_HOLDER: dict[str, Any] = {
+    "_id": "proj-1",
+    "owner_id": "owner",
+    "title": "Contract dispute",
+    "objective": "Recover the deposit",
+    "description": "Counterparty stopped replying",
+    "case_type": "court",
+}
+
+
+async def test_prepare_returns_the_composed_request_and_its_hash(
+    service: DraftService,
+) -> None:
+    _prepare_service(service, CASE_HOLDER)
+
+    out = await service.prepare_delegation(
+        org_id="org-1", case_id="proj-1", task_id=None, user_id="owner"
+    )
+
+    assert "Contract dispute" in out["query"]
+    assert "Recover the deposit" in out["query"]
+    assert out["base_hash"] == service._hash_query(out["query"])
+    assert out["closed"] is False
+
+
+async def test_prepare_defaults_the_role_from_the_record(
+    service: DraftService,
+) -> None:
+    _prepare_service(service, CASE_HOLDER)
+
+    out = await service.prepare_delegation(
+        org_id="org-1", case_id="proj-1", task_id=None, user_id="owner"
+    )
+
+    assert out["assistant"] == "court"
+    assert [r["key"] for r in out["roles"]] == ["main", "deepresearch", "court", "tax"]
+
+
+async def test_prepare_falls_back_to_general_for_an_unknown_role(
+    service: DraftService,
+) -> None:
+    """A stale or non-public name on the record must not reach the model."""
+    _prepare_service(service, {**CASE_HOLDER, "case_type": "administrative_court"})
+
+    out = await service.prepare_delegation(
+        org_id="org-1", case_id="proj-1", task_id=None, user_id="owner"
+    )
+
+    assert out["assistant"] == "main"
+
+
+async def test_prepare_reserves_no_slot_and_charges_nothing(
+    service: DraftService, collection: MagicMock
+) -> None:
+    """Opening the review step and walking away must leave no trace."""
+    _prepare_service(service, CASE_HOLDER)
+
+    await service.prepare_delegation(
+        org_id="org-1", case_id="proj-1", task_id=None, user_id="owner"
+    )
+
+    assert collection.insert_one.await_count == 0
+    assert collection.update_one.await_count == 0
+
+
+async def test_prepare_carries_a_previous_draft_into_the_request(
+    service: DraftService, collection: MagicMock
+) -> None:
+    """Regeneration is a revision: the earlier text comes back with the request."""
+    _prepare_service(service, CASE_HOLDER)
+    collection.find_one.return_value = draft_row(content="the earlier answer")
+
+    out = await service.prepare_delegation(
+        org_id="org-1",
+        case_id="proj-1",
+        task_id=None,
+        user_id="owner",
+        previous_draft_id="draft-1",
+    )
+
+    assert "the earlier answer" in out["query"]
+
+
+async def test_prepare_refuses_a_draft_from_other_work(
+    service: DraftService, collection: MagicMock
+) -> None:
+    _prepare_service(service, CASE_HOLDER)
+    collection.find_one.return_value = draft_row(case_id="proj-OTHER")
+
+    with pytest.raises(HTTPException) as exc:
+        await service.prepare_delegation(
+            org_id="org-1",
+            case_id="proj-1",
+            task_id=None,
+            user_id="owner",
+            previous_draft_id="draft-1",
+        )
+
+    assert exc.value.status_code == 400
+
+
+def test_an_untouched_request_hashes_back_to_its_own_fingerprint(
+    service: DraftService,
+) -> None:
+    """Whitespace-only differences must not read as a human edit."""
+    query = "Title: A\n\nObjective: B"
+
+    assert service._hash_query(query) == service._hash_query(f"  {query}  ")
+
+
+async def test_reserve_slot_records_both_versions_of_the_request(
+    service: DraftService, collection: MagicMock
+) -> None:
+    collection.find_one.return_value = None
+
+    await service.reserve_slot(
+        **RESERVE,
+        query_base="Title: A",
+        query_final="Title: A, rewritten",
+        query_edited=True,
+    )
+
+    doc = collection.insert_one.await_args.args[0]
+    assert doc["query_base"] == "Title: A"
+    assert doc["query_final"] == "Title: A, rewritten"
+    assert doc["query_edited"] is True
 
 
 # --- slot reservation -------------------------------------------------------
@@ -1114,7 +1254,10 @@ def test_no_gate_route_admits_a_service_key() -> None:
         or "delegate" in getattr(r, "path", "")
     ]
 
-    assert len(gate) == 9, f"expected 9 gate routes, found {len(gate)}"
+    # 9 originally, plus the two `delegate/prepare` routes and the draft export.
+    # Prepare belongs behind the same JWT-only wall as the rest: it reads Case
+    # text, and the export hands over a document the gate has passed.
+    assert len(gate) == 12, f"expected 12 gate routes, found {len(gate)}"
     for route in gate:
         calls = [d.call for d in route.dependant.dependencies]  # type: ignore[attr-defined]
         assert verify_user_or_service_auth not in calls, getattr(route, "path", "")

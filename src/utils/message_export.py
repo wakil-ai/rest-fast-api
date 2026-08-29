@@ -82,3 +82,50 @@ def build_message_docx(message: dict[str, Any]) -> bytes:
             return handle.read()
     finally:
         os.remove(tmp_path)
+
+
+DRAFT_DOCX_FILENAME = "loyiha.docx"
+
+
+def draft_markdown(draft: dict[str, Any], holder_title: str | None = None) -> str:
+    """The markdown to render for an approved draft.
+
+    Built from the draft row's own ``content``, never from the chat message it
+    came out of. A human edit stores ``message_id: None`` on the new version, so
+    rendering the message would export the machine's original wording for exactly
+    the drafts a person took the trouble to correct — the one document the
+    Non-Substitution Gate exists to prevent.
+    """
+    body = str(draft.get("content") or "").strip()
+    request = str(draft.get("query_final") or "").strip()
+
+    parts: list[str] = []
+    if holder_title:
+        parts.append(f"# {holder_title}")
+    if request:
+        parts.append(f"*{request}*")
+        parts.append("---")
+    if body:
+        parts.append(body)
+    return "\n\n".join(parts).strip()
+
+
+def build_markdown_docx(markdown_text: str) -> bytes:
+    """Convert markdown to DOCX bytes via pandoc.
+
+    Callers must run this off the event loop — pandoc is a subprocess, and it
+    stalls every other request on the worker for the length of the conversion.
+    """
+    fd, tmp_path = tempfile.mkstemp(suffix=".docx")
+    os.close(fd)
+    try:
+        pypandoc.convert_text(
+            markdown_text or " ",
+            to="docx",
+            format=_SOURCE_FORMAT,
+            outputfile=tmp_path,
+        )
+        with open(tmp_path, "rb") as handle:
+            return handle.read()
+    finally:
+        os.remove(tmp_path)

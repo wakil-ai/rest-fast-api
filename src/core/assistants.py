@@ -77,6 +77,65 @@ class AssistantConfig:
         config = cls.get_assistant_config(assistant_name)
         return config["description"]
 
+    # The reasoning roles a Case or Task may be delegated to, in the order the
+    # specification lists them (general, deep analysis, court, taxes). Held here
+    # rather than derived from ASSISTANTS because that dict is the full internal
+    # roster — non-public court variants included — and the delegation picker is
+    # a deliberately shorter, product-level list.
+    #
+    # `deepresearch` stays raw on purpose. ASSISTANT_ALIASES maps it to `main`,
+    # so canonicalising it here would silently turn deep analysis into the
+    # general assistant; `is_deep_research_assistant` reads the raw name.
+    DELEGATION_ROLES: tuple[str, ...] = (
+        "main",
+        "deepresearch",
+        "court",
+        "tax",
+    )
+
+    DELEGATION_ROLE_LABELS: dict[str, str] = {
+        "main": "General",
+        "deepresearch": "Deep analysis",
+        "court": "Court",
+        "tax": "Taxes",
+    }
+
+    @classmethod
+    def delegation_roles(cls) -> list[dict[str, Any]]:
+        """The picker's options, each with the credits a delegation will cost."""
+        options: list[dict[str, Any]] = []
+        for key in cls.DELEGATION_ROLES:
+            try:
+                config = cls.get_assistant_config(key)
+            except ValueError:
+                # A role missing from configuration is dropped rather than
+                # offered: picking it would fail at generation time instead.
+                continue
+            options.append(
+                {
+                    "key": key,
+                    "label": cls.DELEGATION_ROLE_LABELS.get(key, key),
+                    "description": str(config.get("description") or ""),
+                    "credit_cost": int(config.get("credit_cost") or 0),
+                }
+            )
+        return options
+
+    @classmethod
+    def resolve_delegation_role(cls, requested: str | None, declared: str | None) -> str:
+        """Pick the role for one delegation: the employee's choice wins.
+
+        Only names on the picker are accepted from a client, so a delegation can
+        never reach a non-public assistant by naming it. `declared` is the role
+        stored on the Case or Task and is used only as the default — routing
+        automatically from it is the paid add-on, not this.
+        """
+        for candidate in (requested, declared):
+            raw = (candidate or "").strip()
+            if raw and raw in cls.DELEGATION_ROLES:
+                return raw
+        return "main"
+
     @classmethod
     def is_deep_research_assistant(cls, assistant_name: str | None) -> bool:
         """True when the client explicitly selected the deep-research assistant."""
