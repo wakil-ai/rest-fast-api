@@ -290,7 +290,11 @@ def test_empty_bearer_token_is_still_rejected() -> None:
 def test_bearer_scheme_is_matched_case_insensitively(
     jwt_settings: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    patch_user_status(monkeypatch)
+    monkeypatch.setattr(
+        security_dependencies.chat_history_service,
+        "get_user_auth_status",
+        AsyncMock(return_value={"exists": True, "is_blocked": False, "archived": False}),
+    )
     token = frontend_token()
 
     response = guarded_ping_client().get(

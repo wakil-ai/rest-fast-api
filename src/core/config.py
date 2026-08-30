@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     TELEGRAM_CHATS_COLLECTION: str = "telegram_chats"
     REFERRAL_SOURCES_COLLECTION: str = "referral_sources"
     FINGERPRINTS_COLLECTION: str = "fingerprints"
+    ADMIN_AUDIT_LOGS_COLLECTION: str = "admin_audit_logs"
 
     # Google Cloud Storage
     GCS_BUCKET_NAME: str | None = None
@@ -91,6 +92,16 @@ class Settings(BaseSettings):
     DT_API_KEY_NAME: str = "x-dt-team-api-key"
     DT_API_KEY: str | None = None  # DT team dedicated API key for backend access
     DT_TEAM_DISCLAIMER: str = ""
+
+    # Admin subscription management. The super-admin key authorizes the action but
+    # carries no identity, so mutating routes additionally require a self-reported
+    # operator label and a client-minted idempotency key.
+    ADMIN_OPERATOR_HEADER_NAME: str = "x-admin-operator"
+    ADMIN_REQUEST_ID_HEADER_NAME: str = "x-admin-request-id"
+    # Ceilings on a single manual action, so a typo cannot grant a decade or a
+    # million credits in one click.
+    ADMIN_MAX_GRANT_DAYS: int = 400
+    ADMIN_MAX_CREDIT_ADJUSTMENT: int = 500_000
 
     # OTHERS
     STREAM: bool = True  # Whether to use streaming responses
