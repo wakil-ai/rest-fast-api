@@ -30,6 +30,10 @@ from models.chat import (
     ChatRequest,
     ChatResponse,
     ModelInfoResponse,
+    PromptClarifyRequest,
+    PromptClarifyResponse,
+    PromptEnhanceRequest,
+    PromptEnhanceResponse,
 )
 from models.intent_types import LegalIntent
 from utils.streaming import (
@@ -707,6 +711,87 @@ class ChatService:
         if not is_dt_team_request:
             return answer
         return f"{answer}{settings.DT_TEAM_DISCLAIMER}"
+
+    async def handle_prompt_clarify(
+        self, request: PromptClarifyRequest
+    ) -> PromptClarifyResponse:
+        """Ask what the assistant still needs before the draft is worth sending.
+
+        Charges no credits, for the same reason as ``handle_prompt_enhance``.
+        """
+        self.validate_query_length(request.query)
+
+        assistant_name = AssistantConfig.validate_assistant_or_default(
+            request.assistant.value if request.assistant else None
+        )
+
+        try:
+            result = await get_llm_service_client().clarify_prompt(
+                {
+                    "query": request.query,
+                    "assistant": assistant_name,
+                    "language": request.language,
+                    "history": request.history,
+                }
+            )
+        except ChatException:
+            raise
+        except Exception as error:
+            logger.error(f"Prompt clarification failed: {error}")
+            raise ChatGenerationException("Failed to prepare clarifying questions.")
+
+        # No questions is a valid, common outcome; so is an upstream response we
+        # cannot read. Both mean "send the draft as it is", never an error page.
+        raw_questions = result.get("questions")
+        questions = raw_questions if isinstance(raw_questions, list) else []
+
+        return PromptClarifyResponse(
+            questions=questions,
+            assistant=result.get("assistant") or assistant_name,
+        )
+
+    async def handle_prompt_enhance(
+        self, request: PromptEnhanceRequest
+    ) -> PromptEnhanceResponse:
+        """Rewrite a composer draft into a clearer question.
+
+        Deliberately does NOT charge credits. It runs on the lite model and helps the
+        user ask a better question — charging a question's worth of credit for the
+        button would mean nobody presses it, and the improved question is the one that
+        gets charged anyway. Abuse is bounded by auth plus the clients disabling the
+        button while a call is in flight; a dedicated limiter is worth adding if it
+        ever shows up in usage.
+        """
+        self.validate_query_length(request.query)
+
+        assistant_name = AssistantConfig.validate_assistant_or_default(
+            request.assistant.value if request.assistant else None
+        )
+
+        try:
+            result = await get_llm_service_client().enhance_prompt(
+                {
+                    "query": request.query,
+                    "assistant": assistant_name,
+                    "language": request.language,
+                    "history": request.history,
+                    "answers": request.answers,
+                }
+            )
+        except ChatException:
+            raise
+        except Exception as error:
+            logger.error(f"Prompt enhancement failed: {error}")
+            raise ChatGenerationException("Failed to enhance the prompt.")
+
+        # The draft is the safe fallback for anything the inference service left out:
+        # the caller's composer must never end up empty because of this endpoint.
+        return PromptEnhanceResponse(
+            original=result.get("original") or request.query,
+            enhanced=result.get("enhanced") or request.query,
+            assistant=result.get("assistant") or assistant_name,
+            changed=bool(result.get("changed")),
+        )
 
     async def handle_chat_ask(
         self, request: ChatRequest, raw_request: Request
