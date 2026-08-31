@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.17-260830 (2026-08-31)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.17-260830 -->
+
+## What's Changed
+### 💬 Other
+* feat: port the improve-prompt feature to main by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/177
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.16-260821...v5.0.17-260830
+
 ## v5.0.16-260821 (2026-08-21)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.16-260821 -->
