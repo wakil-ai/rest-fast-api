@@ -1,7 +1,8 @@
 # app/routers/history/sessions.py
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.dependencies import get_chat_history_service
+from security.dependencies import get_current_user_id
 from models.chat_history import (
     SessionCreateRequest,
     SessionEditRequest,
@@ -57,5 +58,18 @@ async def update_session(session_id: str, request: SessionEditRequest):
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_service_error
-async def delete_session(session_id: str):
+async def delete_session(
+    session_id: str, user_id: str = Depends(get_current_user_id)
+):
+    """Soft-delete a session. Owner only.
+
+    This route carries no user_id in the path, query or body, so the
+    router-level actor cross-check has nothing to compare and waves it
+    through — the ownership assert below is the only guard it gets.
+
+    The session is stamped archived, which hides the whole chat from every
+    user-facing read. Its messages are deliberately retained — see
+    ChatHistoryService.delete_session.
+    """
+    await chat_history_service.assert_session_owner(session_id, user_id)
     await chat_history_service.delete_session(session_id)
