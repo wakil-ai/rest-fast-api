@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.18-260831 (2026-08-31)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.18-260831 -->
+
+## What's Changed
+### 💬 Other
+* feat: port DOCX export and soft session delete to main by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/178
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.17-260830...v5.0.18-260831
+
 ## v5.0.17-260830 (2026-08-31)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.17-260830 -->
