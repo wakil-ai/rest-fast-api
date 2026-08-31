@@ -210,6 +210,115 @@ def test_bearer_subject_must_match_request_user(jwt_settings, monkeypatch):
     )
 
 
+def guarded_ping_client() -> TestClient:
+    """Bare app whose only route sits behind ``verify_user_or_service_auth``.
+
+    No ``user_id`` in the path, so the archive guard resolves no actor and the
+    service-key path needs no user lookup.
+    """
+    app = FastAPI()
+
+    @app.get(
+        "/ping",
+        dependencies=[Depends(security_dependencies.verify_user_or_service_auth)],
+    )
+    async def ping() -> dict[str, bool]:
+        return {"ok": True}
+
+    return TestClient(app)
+
+
+def test_service_key_is_accepted_without_an_authorization_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "API_KEY", "service-key")
+    monkeypatch.setattr(settings, "API_KEY_NAME", "admin")
+
+    response = guarded_ping_client().get("/ping", headers={"admin": "service-key"})
+
+    assert response.status_code == 200
+
+
+def test_non_bearer_authorization_does_not_shadow_a_valid_service_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A proxy (or the docs page's own Basic auth) must not veto the service key."""
+    monkeypatch.setattr(settings, "API_KEY", "service-key")
+    monkeypatch.setattr(settings, "API_KEY_NAME", "admin")
+
+    response = guarded_ping_client().get(
+        "/ping",
+        headers={"Authorization": "Basic dXNlcjpwYXNz", "admin": "service-key"},
+    )
+
+    assert response.status_code == 200
+
+
+def test_non_bearer_authorization_without_a_key_reports_the_api_key_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "API_KEY_NAME", "admin")
+
+    response = guarded_ping_client().get(
+        "/ping", headers={"Authorization": "Basic dXNlcjpwYXNz"}
+    )
+
+    assert response.status_code == 401
+    # The caller is missing a key, not a bearer token; say so.
+    assert "API Key required" in response.json()["detail"]
+
+
+def test_api_key_error_names_the_configured_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "API_KEY_NAME", "X-Custom-Key")
+    monkeypatch.setattr(settings, "DT_API_KEY_NAME", "x-dt-team-api-key")
+
+    detail = guarded_ping_client().get("/ping").json()["detail"]
+
+    assert "x-custom-key" in detail
+    assert "x-dt-team-api-key" in detail
+
+
+def test_empty_bearer_token_is_still_rejected() -> None:
+    response = guarded_ping_client().get("/ping", headers={"Authorization": "Bearer "})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Bearer token required"
+
+
+def test_bearer_scheme_is_matched_case_insensitively(
+    jwt_settings: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        security_dependencies.chat_history_service,
+        "get_user_auth_status",
+        AsyncMock(return_value={"exists": True, "is_blocked": False, "archived": False}),
+    )
+    token = frontend_token()
+
+    response = guarded_ping_client().get(
+        "/ping", headers={"Authorization": f"bearer {token}"}
+    )
+
+    assert response.status_code == 200
+
+
+def test_invalid_bearer_token_is_rejected_rather_than_falling_through(
+    jwt_settings: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed JWT must 401, not silently retry as a service key."""
+    monkeypatch.setattr(settings, "API_KEY", "service-key")
+    monkeypatch.setattr(settings, "API_KEY_NAME", "admin")
+
+    response = guarded_ping_client().get(
+        "/ping",
+        headers={"Authorization": "Bearer not-a-jwt", "admin": "service-key"},
+    )
+
+    assert response.status_code == 401
+
+
 def test_payme_init_accepts_frontend_jwt(jwt_settings, monkeypatch):
     transaction_service = MagicMock()
     transaction_service.init_payment = AsyncMock(

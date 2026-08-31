@@ -180,6 +180,45 @@ class RateLimitService:
             return 0
         return int(rows[0].get("total") or 0)
 
+    async def get_period_credit_usage_breakdown(
+        self, user_id: str, start_ms: int, end_ms: int
+    ) -> dict:
+        """Per-day ``creditusage`` rows over a subscription window, plus the total.
+
+        The admin diagnostic needs the breakdown, not just the sum: the window is
+        day-granular (see ``_ms_to_date``), so it silently includes credits the user
+        spent on free or daily-pass days that happen to fall inside it. Showing the
+        rows is what makes an unexpected balance explainable.
+        """
+        if start_ms <= 0 or end_ms <= 0 or end_ms < start_ms:
+            return {
+                "window_start_date": None,
+                "window_end_date": None,
+                "total_used_in_window": 0,
+                "by_date": [],
+            }
+
+        start_date = self._ms_to_date(start_ms)
+        end_date = self._ms_to_date(end_ms)
+        collection = self.mongo_handler.db[self.RATE_LIMIT_COLLECTION]
+
+        cursor = collection.find(
+            {"user_id": user_id, "date": {"$gte": start_date, "$lte": end_date}},
+            {"_id": 0, "date": 1, "credits_used": 1},
+        ).sort("date", 1)
+        rows = await cursor.to_list(length=1000)
+
+        by_date = [
+            {"date": row.get("date"), "credits_used": int(row.get("credits_used") or 0)}
+            for row in rows
+        ]
+        return {
+            "window_start_date": start_date,
+            "window_end_date": end_date,
+            "total_used_in_window": sum(row["credits_used"] for row in by_date),
+            "by_date": by_date,
+        }
+
     async def _get_pool_credits_remaining(self, user_id: str, sub: dict) -> int:
         """Remaining pool credits from ``creditusage`` over the subscription window.
 

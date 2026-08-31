@@ -25,6 +25,7 @@ from starlette.middleware.sessions import SessionMiddleware
 # Internal imports
 from api.v2 import (
     admin,
+    admin_subscriptions,
     auth,
     chat,
     fingerprint,
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
         prefix=settings.API_PREFIX,
     )
     app.include_router(admin.router, prefix=settings.API_PREFIX)
+    app.include_router(admin_subscriptions.router, prefix=settings.API_PREFIX)
     app.include_router(promo_codes.router, prefix=settings.API_PREFIX)
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)

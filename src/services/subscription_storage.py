@@ -448,3 +448,126 @@ class SubscriptionStorage:
             return_document=True,
         )
         return updated
+
+    # ------------------------------------------------------------------
+    # Admin surface
+    #
+    # Every write below funnels through `admin_set_pool_fields` so integer
+    # coercion and the optimistic lock live in exactly one place. A String
+    # `end_ms` reads back fine over HTTP but never matches the Mongo-side
+    # `{"end_ms": {"$gt": now_ms}}` predicate in `try_consume_pool_credits`,
+    # leaving a subscriber unable to spend anything.
+    # ------------------------------------------------------------------
+
+    _INT_FIELDS = (
+        "start_ms",
+        "end_ms",
+        "total_credits",
+        "credits_remaining",
+        "daily_credits",
+        "days",
+    )
+
+    @classmethod
+    def _coerce_int_fields(cls, updates: dict) -> dict:
+        coerced = dict(updates)
+        for field in cls._INT_FIELDS:
+            if field in coerced and coerced[field] is not None:
+                coerced[field] = int(coerced[field])
+        return coerced
+
+    async def get_raw_subscription(self, user_id: str) -> dict | None:
+        """The stored document, untouched.
+
+        Unlike `get_subscription`, this applies no `credits_remaining` backfill and
+        no legacy `users.subscription` fallback — the diagnostic view has to show
+        what is actually on disk, including the fields that are missing.
+        """
+        await self.ensure_indexes()
+        return await self.mongo_handler.db[self.subscriptions_collection].find_one(
+            {"user_id": user_id}
+        )
+
+    async def get_all_daily_lots(self, user_id: str, limit: int = 50) -> list[dict]:
+        """Every daily-pass lot, expired ones included, newest window first."""
+        await self.ensure_indexes()
+        cursor = (
+            self.mongo_handler.db[self.daily_subscriptions_collection]
+            .find({"user_id": user_id})
+            .sort("end_ms", -1)
+            .limit(limit)
+        )
+        return await cursor.to_list(length=limit)
+
+    async def admin_set_pool_fields(
+        self,
+        user_id: str,
+        *,
+        updates: dict,
+        now_ms: int,
+        expected_updated_at_ms: int | None = None,
+    ) -> dict | None:
+        """Set fields on the pool subscription under an optimistic lock.
+
+        Returns the updated document, or ``None`` when the guard did not match —
+        either no subscription exists or another writer moved it first. The caller
+        decides which of those it is.
+        """
+        query: dict = {"user_id": user_id}
+        if expected_updated_at_ms is not None:
+            query["updated_at_ms"] = expected_updated_at_ms
+
+        payload = self._coerce_int_fields(updates)
+        payload["updated_at_ms"] = int(now_ms)
+
+        return await self.mongo_handler.db[
+            self.subscriptions_collection
+        ].find_one_and_update(
+            query,
+            {"$set": payload},
+            return_document=ReturnDocument.AFTER,
+        )
+
+    async def admin_set_daily_lot_fields(
+        self, lot_id, user_id: str, *, updates: dict, now_ms: int
+    ) -> dict | None:
+        payload = self._coerce_int_fields(updates)
+        payload["updated_at_ms"] = int(now_ms)
+
+        return await self.mongo_handler.db[
+            self.daily_subscriptions_collection
+        ].find_one_and_update(
+            {"_id": lot_id, "user_id": user_id},
+            {"$set": payload},
+            return_document=ReturnDocument.AFTER,
+        )
+
+    async def admin_revoke_daily_lots(
+        self,
+        user_id: str,
+        *,
+        now_ms: int,
+        lot_ids: list | None = None,
+        zero_credits: bool = True,
+        operator: str | None = None,
+        reason: str | None = None,
+    ) -> int:
+        """Expire daily lots in place. Never deletes — the history stays readable."""
+        query: dict = {"user_id": user_id, "end_ms": {"$gt": int(now_ms)}}
+        if lot_ids is not None:
+            query = {"_id": {"$in": lot_ids}, "user_id": user_id}
+
+        updates: dict = {
+            "end_ms": int(now_ms) - 1,
+            "updated_at_ms": int(now_ms),
+            "revoked_at_ms": int(now_ms),
+            "revoked_by": operator,
+            "revoke_reason": reason,
+        }
+        if zero_credits:
+            updates["credits_remaining"] = 0
+
+        result = await self.mongo_handler.db[
+            self.daily_subscriptions_collection
+        ].update_many(query, {"$set": updates})
+        return int(getattr(result, "modified_count", 0) or 0)
