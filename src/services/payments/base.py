@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from core.config import settings
 from core.subscription_promo import apply_discount, get_active_campaign
 from core.subscription_tiers import (
+    SUBSCRIPTION_PERIODS,
     daily_pass_rank,
     is_daily_pass_quote,
 )
@@ -15,6 +16,114 @@ from core.dependencies import (
 )
 from core.logger import logger
 from models.payment import SubscriptionEligibilityError
+
+
+def build_subscription_catalog() -> dict[str, dict]:
+    """Tier -> period -> plan config, read fresh from settings on every call.
+
+    Module-level so tests exercise the real table rather than a hand-copied
+    duplicate, and so a price override in the environment is picked up without
+    constructing a service (which would need Mongo).
+    """
+    # Paid tiers grant a pool of `total_credits` valid until `end_ms`.
+    # Daily passes (basic/standard/premium + period daily) add per-day credits
+    # on top of the free quota; multi-month pool tiers have no per-day cap.
+    # Pool credits scale strictly with duration — the tier fixes the monthly
+    # rate (standard 6000, pro 12000) and every discount is on price only.
+    catalog: dict[str, dict] = {
+        "basic": {
+            "daily": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_BASIC_DAILY_PRICE_SUM,
+                "days": 1,
+                "daily_credits": 200,
+                "total_credits": 200,
+            },
+        },
+        "standard": {
+            "daily": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_DAILY_PRICE_SUM,
+                "days": 1,
+                "daily_credits": 500,
+                "total_credits": 500,
+            },
+            "monthly": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM,
+                "days": 30,
+                "total_credits": 6000,
+            },
+            "quarterly": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_QUARTERLY_PRICE_SUM,
+                "days": 90,
+                "total_credits": 18000,
+            },
+            "semiannual": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_SEMIANNUAL_PRICE_SUM,
+                "days": 180,
+                "total_credits": 36000,
+            },
+            "yearly": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM,
+                "days": 360,
+                "total_credits": 72000,
+            },
+        },
+        "premium": {
+            "daily": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_PREMIUM_DAILY_PRICE_SUM,
+                "days": 1,
+                "daily_credits": 800,
+                "total_credits": 800,
+            },
+        },
+        "pro": {
+            "monthly": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM,
+                "days": 30,
+                "total_credits": 12000,
+            },
+            "quarterly": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_PRO_QUARTERLY_PRICE_SUM,
+                "days": 90,
+                "total_credits": 36000,
+            },
+            "semiannual": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_PRO_SEMIANNUAL_PRICE_SUM,
+                "days": 180,
+                "total_credits": 72000,
+            },
+            "yearly": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM,
+                "days": 360,
+                "total_credits": 144000,
+            },
+        },
+    }
+
+    if settings.DEBUG:
+        catalog["test"] = {
+            "monthly": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_TEST_MONTHLY_PRICE_SUM,
+                "days": 30,
+                "total_credits": 2100,
+            },
+            "quarterly": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_TEST_QUARTERLY_PRICE_SUM,
+                "days": 90,
+                "total_credits": 6300,
+            },
+            "semiannual": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_TEST_SEMIANNUAL_PRICE_SUM,
+                "days": 180,
+                "total_credits": 12600,
+            },
+            "yearly": {
+                "price_sum": settings.PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM,
+                "days": 360,
+                "total_credits": 25200,
+            },
+        }
+
+    return catalog
 
 
 class BasePaymentService:
@@ -28,71 +137,7 @@ class BasePaymentService:
         self.rate_limit_service = get_rate_limit_service()
         self._invoice_indexes_ready = False
 
-        # Paid tiers grant a pool of `total_credits` valid until `end_ms`.
-        # Daily passes (basic/standard/premium + period daily) add per-day credits
-        # on top of the free quota; monthly/yearly pool tiers have no per-day cap.
-        self._subscription_catalog = {
-            "basic": {
-                "daily": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_BASIC_DAILY_PRICE_SUM,
-                    "days": 1,
-                    "daily_credits": 200,
-                    "total_credits": 200,
-                },
-            },
-            "standard": {
-                "daily": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_DAILY_PRICE_SUM,
-                    "days": 1,
-                    "daily_credits": 500,
-                    "total_credits": 500,
-                },
-                "monthly": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM,
-                    "days": 30,
-                    "total_credits": 6000,
-                },
-                "yearly": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM,
-                    "days": 360,
-                    "total_credits": 72000,
-                },
-            },
-            "premium": {
-                "daily": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_PREMIUM_DAILY_PRICE_SUM,
-                    "days": 1,
-                    "daily_credits": 800,
-                    "total_credits": 800,
-                },
-            },
-            "pro": {
-                "monthly": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM,
-                    "days": 30,
-                    "total_credits": 12000,
-                },
-                "yearly": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM,
-                    "days": 360,
-                    "total_credits": 144000,
-                },
-            },
-        }
-
-        if settings.DEBUG:
-            self._subscription_catalog["test"] = {
-                "monthly": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_TEST_MONTHLY_PRICE_SUM,
-                    "days": 30,
-                    "total_credits": 2100,
-                },
-                "yearly": {
-                    "price_sum": settings.PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM,
-                    "days": 360,
-                    "total_credits": 25200,
-                },
-            }
+        self._subscription_catalog = build_subscription_catalog()
 
     async def ensure_invoice_indexes(self) -> None:
         if self._invoice_indexes_ready:
@@ -177,7 +222,7 @@ class BasePaymentService:
         now_ms = int(time.time() * 1000)
         promo_active = get_active_campaign(now_ms) is not None
         for tier, cfg in self._subscription_catalog.items():
-            for period in ("daily", "monthly", "yearly"):
+            for period in SUBSCRIPTION_PERIODS:
                 if period not in cfg or (period == "daily" and promo_active):
                     continue
                 quote = self._get_subscription_quote(tier, period)

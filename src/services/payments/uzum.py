@@ -9,10 +9,13 @@ from models.payment import (
     UzumServiceError,
     UzumTransactionState,
 )
+from core.subscription_tiers import SUBSCRIPTION_PERIODS
 from services.payments.base import BasePaymentService
 
 # Acceptable planId formats: "<tier>_<period>" — e.g. "standard_monthly", "basic_daily".
-_VALID_PERIODS = {"daily", "monthly", "yearly"}
+# Periods must therefore never contain an underscore, or the rsplit below misparses
+# them (e.g. "standard_3_months" would yield tier "standard_3").
+_VALID_PERIODS = set(SUBSCRIPTION_PERIODS)
 
 
 def _now_ms() -> int:
