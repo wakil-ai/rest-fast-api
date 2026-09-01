@@ -1,6 +1,18 @@
-"""Daily-pass tier identifiers, ranks, and quote helpers."""
+"""Subscription period vocabulary, daily-pass tier identifiers, ranks, and quote helpers."""
 
 from typing import Any
+
+# Every period the catalog may offer, ordered shortest to longest. Single source
+# of truth for catalog output order and plan-id validation — keep in sync with
+# ``models.payment.SubscriptionPeriod`` (a Literal, so it can't be derived from
+# this tuple; ``tests/test_subscription_periods.py`` guards the pair).
+SUBSCRIPTION_PERIODS: tuple[str, ...] = (
+    "daily",
+    "monthly",
+    "quarterly",
+    "semiannual",
+    "yearly",
+)
 
 # Daily pass tiers (period must be ``daily``).
 DAILY_PASS_TIERS = frozenset({"basic", "standard", "premium"})

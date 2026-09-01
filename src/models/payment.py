@@ -9,7 +9,11 @@ from core.exceptions import ChatException
 
 
 SubscriptionTier = Literal["basic", "standard", "premium", "pro", "test"]
-SubscriptionPeriod = Literal["daily", "monthly", "yearly"]
+# Keep in sync with core.subscription_tiers.SUBSCRIPTION_PERIODS — a Literal can't
+# be built from that tuple, so a test asserts the two agree.
+SubscriptionPeriod = Literal[
+    "daily", "monthly", "quarterly", "semiannual", "yearly"
+]
 
 
 # Methods
