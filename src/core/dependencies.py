@@ -13,6 +13,7 @@ if TYPE_CHECKING:
         Bitrix24Service,
         ClickService,
         FileManager,
+        GooglePlayService,
         OTPService,
         ProjectService,
         PromoCodeService,
@@ -224,6 +225,13 @@ def get_appstore_service() -> "AppStoreService":
     from services import AppStoreService
 
     return AppStoreService()
+
+
+@lru_cache
+def get_playstore_service() -> "GooglePlayService":
+    from services import GooglePlayService
+
+    return GooglePlayService()
 
 
 @lru_cache
