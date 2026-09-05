@@ -198,6 +198,14 @@ class Settings(BaseSettings):
     APPSTORE_ROOT_CERTS_DIR: str | None = None
     APPSTORE_TRANSACTIONS_COLLECTION: str = "appstore_transactions"
 
+    # Google Play Billing (Android) In-App Purchases
+    PLAYSTORE_PACKAGE_NAME: str = "ai.humblebee.wakil"
+    # Path to a Google Cloud service-account JSON key granted Play Developer API
+    # access (Play Console -> Setup -> API access). REQUIRED before purchase
+    # verification/acknowledgement will work.
+    PLAYSTORE_SERVICE_ACCOUNT_FILE: str | None = None
+    PLAYSTORE_TRANSACTIONS_COLLECTION: str = "playstore_transactions"
+
     # Payme Subscriptions — daily passes (stack on free quota; credits per pass tier)
     PAYME_SUBSCRIPTION_BASIC_DAILY_PRICE_SUM: int = 15_000
     PAYME_SUBSCRIPTION_STANDARD_DAILY_PRICE_SUM: int = 30_000

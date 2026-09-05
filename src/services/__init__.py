@@ -10,6 +10,7 @@ from services.payments import (
     AppStoreService,
     BasePaymentService,
     ClickService,
+    GooglePlayService,
     TransactionService,
     UzumService,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "AppStoreService",
     "BasePaymentService",
     "ClickService",
+    "GooglePlayService",
     "TransactionService",
     "UzumService",
     "PromoCodeService",
