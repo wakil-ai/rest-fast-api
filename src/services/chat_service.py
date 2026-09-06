@@ -41,6 +41,7 @@ from utils.streaming import (
     get_streaming_headers,
 )
 from utils.contract_docx import contract_text_to_docx_bytes
+from utils.tokens import count_tokens, truncate_to_token_limit
 
 
 def _orchestration_exception_detail(exc: BaseException) -> str:
@@ -479,12 +480,32 @@ class ChatService:
             metadata = record.get("file_metadata") or {}
             file_name = metadata.get("file_name") or file_id
             milvus_file_index = metadata.get("milvus_file_index") or {}
-            if milvus_file_index.get("enabled"):
-                indexed_file_ids.append(file_id)
-                continue
+            is_indexed = bool(milvus_file_index.get("enabled"))
             ocr_result = str(record.get("ocr_result") or "").strip()
-            if ocr_result:
+
+            # A file within budget goes in whole, indexed or not: it's cheap enough
+            # that there's no reason to hand the model a lossy 3-chunk excerpt of
+            # something short enough to just read. This also means a file does not
+            # silently lose ground truth the moment background indexing finishes —
+            # previously, an indexed file always fell through to a top-K vector
+            # search keyed to the *current* query, even when its full OCR text
+            # (still sitting on the record) would answer a differently-phrased
+            # follow-up that the top-K search missed entirely.
+            if ocr_result and count_tokens(ocr_result) <= settings.FILE_CONTENT_TOKEN_LIMIT:
                 ocr_sections.append(f"## USER FILE CONTEXT: {file_name}\n{ocr_result}")
+                continue
+
+            if is_indexed:
+                # Too large to include whole — this is what the vector search
+                # below exists for.
+                indexed_file_ids.append(file_id)
+            elif ocr_result:
+                # Too large, and indexing has not finished yet: a bounded excerpt
+                # beats leaving the model with nothing while it waits.
+                truncated = truncate_to_token_limit(ocr_result, settings.FILE_CONTENT_TOKEN_LIMIT)
+                ocr_sections.append(
+                    f"## USER FILE CONTEXT (truncated, indexing in progress): {file_name}\n{truncated}"
+                )
 
         if indexed_file_ids:
             try:
