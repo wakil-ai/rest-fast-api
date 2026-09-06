@@ -77,7 +77,11 @@ class Settings(BaseSettings):
     FILE_CONTENT_TOKEN_LIMIT: int = (
         50_000  # Max uploaded file context tokens for LLM prompts
     )
-    FILE_SEARCH_TOP_K: int = 3
+    # Only reached once a file exceeds FILE_CONTENT_TOKEN_LIMIT and can no longer
+    # be handed to the model whole — see collect_user_uploaded_context. 3 was
+    # thin enough that a differently-phrased follow-up routinely missed the
+    # relevant chunk entirely.
+    FILE_SEARCH_TOP_K: int = 6
 
     # SECURITY
     # Docs User
