@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.21-260906 (2026-09-06)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.21-260906 -->
+
+## What's Changed
+### 💬 Other
+* feat(payments): add 3-month and 6-month subscription plans by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/183
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.20-260906...v5.0.21-260906
+
 ## v5.0.20-260906 (2026-09-06)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.20-260906 -->
