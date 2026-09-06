@@ -14,7 +14,7 @@ import pytest
 
 from core.config import settings
 from models.payment import SubscriptionEligibilityError
-from services.payments.base import BasePaymentService
+from services.payments.base import BasePaymentService, build_subscription_catalog
 from services.payments.uzum import UzumService
 
 _NOW_MS = int(time.time() * 1000)
@@ -319,53 +319,9 @@ def test_uzum_get_list_price_ignores_active_campaign():
 
 
 def _real_catalog() -> dict:
-    """Mirror BasePaymentService.__init__'s catalog construction without
-    touching Mongo/rate-limit dependencies, so tests stay hermetic."""
-    return {
-        "basic": {
-            "daily": {
-                "price_sum": settings.PAYME_SUBSCRIPTION_BASIC_DAILY_PRICE_SUM,
-                "days": 1,
-                "daily_credits": 200,
-                "total_credits": 200,
-            },
-        },
-        "standard": {
-            "daily": {
-                "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_DAILY_PRICE_SUM,
-                "days": 1,
-                "daily_credits": 500,
-                "total_credits": 500,
-            },
-            "monthly": {
-                "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM,
-                "days": 30,
-                "total_credits": 6000,
-            },
-            "yearly": {
-                "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM,
-                "days": 360,
-                "total_credits": 72000,
-            },
-        },
-        "premium": {
-            "daily": {
-                "price_sum": settings.PAYME_SUBSCRIPTION_PREMIUM_DAILY_PRICE_SUM,
-                "days": 1,
-                "daily_credits": 800,
-                "total_credits": 800,
-            },
-        },
-        "pro": {
-            "monthly": {
-                "price_sum": settings.PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM,
-                "days": 30,
-                "total_credits": 12000,
-            },
-            "yearly": {
-                "price_sum": settings.PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM,
-                "days": 360,
-                "total_credits": 144000,
-            },
-        },
-    }
+    """The real catalog table, built straight from settings.
+
+    Previously a hand-copied duplicate, which meant a new plan could be added to
+    the shipped catalog and these tests would never see it.
+    """
+    return build_subscription_catalog()
