@@ -20,6 +20,14 @@ _NO_GRANT_STATES = {
     "SUBSCRIPTION_STATE_EXPIRED",
     "SUBSCRIPTION_STATE_PENDING_PURCHASE_CANCELED",
 }
+# Of the above, only EXPIRED comes with a real, permanent `latestOrderId` — a
+# once-expired order can never later become valid again, so it's safe (and
+# avoids reprocessing) to claim it as a terminal no-grant record. PENDING and
+# PENDING_PURCHASE_CANCELED purchases frequently have no order id yet (payment
+# never completed) — claiming a missing/None order id under the unique index
+# below would collide across unrelated purchases, so those two are never
+# claimed regardless of whether an order id happens to be present.
+_TERMINAL_NO_GRANT_STATES = {"SUBSCRIPTION_STATE_EXPIRED"}
 
 
 def _parse_rfc3339_ms(value: str | None) -> int | None:
@@ -111,29 +119,45 @@ class GooglePlayService(BasePaymentService):
             return
         try:
             collection = self.db_handler.db[self.transactions_collection]
-            await collection.create_index([("purchase_token", 1)], unique=True)
+            # order_id (Play's `latestOrderId`) is the grant idempotency key — see
+            # _claim_order for why purchase_token itself cannot be used for this.
+            # Older data from before this fix may still carry a purchase_token
+            # unique index; drop it if present so it can't collide with this one.
+            try:
+                await collection.drop_index("purchase_token_1")
+            except Exception:
+                pass
+            await collection.create_index([("order_id", 1)], unique=True)
+            await collection.create_index([("purchase_token", 1)])
             self._playstore_indexes_ready = True
         except Exception as exc:
             logger.warning(f"[PlayStore] Failed to ensure indexes: {exc}")
 
-    async def _claim_purchase(self, document: dict) -> dict | None:
-        """Atomically claim a purchase token. Returns the pre-existing record if
+    async def _claim_order(self, document: dict) -> dict | None:
+        """Atomically claim an order id. Returns the pre-existing record if
         already claimed, or None if we are the first to insert it (we own the
-        grant). Play's idempotency key is purchaseToken, not a stable per-subscription
-        id — it changes on renewal, so each billing cycle's charge is claimed
-        separately, same as Apple's per-charge transactionId."""
+        grant).
+
+        This keys on Play's `latestOrderId`, NOT `purchase_token` — a
+        subscription's purchase_token stays the SAME across its renewals (it
+        only changes on upgrade/downgrade/account-transfer/resubscribe), while
+        Play mints a fresh order id every billing cycle even when the token
+        doesn't change. Keying on purchase_token (as this file originally did)
+        would claim+grant the first cycle and then treat every renewal after it
+        as "already claimed", silently never re-granting credits again.
+        """
         collection = self.db_handler.db[self.transactions_collection]
         return await collection.find_one_and_update(
-            {"purchase_token": document["purchase_token"]},
+            {"order_id": document["order_id"]},
             {"$setOnInsert": document},
             upsert=True,
             return_document=ReturnDocument.BEFORE,
         )
 
-    async def _mark_granted(self, purchase_token: str, now_ms: int) -> None:
+    async def _mark_granted(self, order_id: str, now_ms: int) -> None:
         await self.db_handler.update_one(
             self.transactions_collection,
-            {"purchase_token": purchase_token},
+            {"order_id": order_id},
             {"granted": True, "granted_at_ms": now_ms},
         )
 
@@ -176,21 +200,42 @@ class GooglePlayService(BasePaymentService):
         now_ms: int,
     ) -> dict:
         """Grant (once) from a verified SubscriptionPurchaseV2. Idempotent per
-        purchaseToken. Returns a summary dict with tier/period/expires/granted."""
+        Play order id (latestOrderId) — see _claim_order. Returns a summary dict
+        with tier/period/expires/granted."""
         subscription_state = purchase.get("subscriptionState")
         line_item = self._line_item_for_product(purchase, product_id)
         expires_ms = _parse_rfc3339_ms(
             line_item.get("expiryTime") if line_item else None
         )
+        order_id = purchase.get("latestOrderId")
+        linked_purchase_token = purchase.get("linkedPurchaseToken")
 
         summary = {
             "tier": tier,
             "period": period,
+            "order_id": order_id,
             "expires_ms": expires_ms,
         }
 
+        # Ownership: a purchase token already bound to a different user is a
+        # hard conflict (shared/transferred Google account, a client bug
+        # sending someone else's token, etc.) — closes the "no cross-account
+        # ownership check" gap this file originally deferred. Apple's analogue
+        # is the originalTransactionId check in AppStoreService.
+        conflict = await self.db_handler.find_one(
+            self.transactions_collection,
+            {"purchase_token": purchase_token, "user_id": {"$ne": user_id}},
+        )
+        if conflict:
+            raise GooglePlayError(
+                "This subscription is already associated with a different account.",
+                status_code=409,
+            )
+
         base_claim = {
+            "order_id": order_id,
             "purchase_token": purchase_token,
+            "linked_purchase_token": linked_purchase_token,
             "user_id": user_id,
             "product_id": product_id,
             "tier": tier,
@@ -203,30 +248,54 @@ class GooglePlayService(BasePaymentService):
         }
 
         # A purchase that never completed, or was explicitly canceled before it
-        # did, must not grant — matches Apple's revoked-transaction skip.
+        # did, must not grant — matches Apple's revoked-transaction skip. Only
+        # EXPIRED is claimed (see _TERMINAL_NO_GRANT_STATES): PENDING and
+        # PENDING_PURCHASE_CANCELED purchases often have no order id yet, and
+        # claiming a None order id would collide across unrelated purchases
+        # under the unique index.
         if subscription_state in _NO_GRANT_STATES:
-            await self._claim_purchase({**base_claim, "note": subscription_state})
+            if subscription_state in _TERMINAL_NO_GRANT_STATES and order_id:
+                await self._claim_order({**base_claim, "note": subscription_state})
             return {**summary, "granted": False}
 
-        # No line item for this product id, or no expiry at all — nothing to grant.
+        # No line item for this product id, or no expiry at all — nothing to
+        # grant, and nothing safe to claim without a reliable order id either.
         if expires_ms is None:
-            await self._claim_purchase({**base_claim, "note": "missing_expiry"})
+            logger.info(
+                f"[PlayStore] No expiry on purchase for user {user_id} "
+                f"(token={purchase_token[:12]}…, product={product_id}); not granting."
+            )
             return {**summary, "granted": False}
 
-        # Already-expired purchase — almost always a stale replay. Claim it (so a
-        # retry doesn't keep re-checking) but don't grant a fresh period, same
+        if not order_id:
+            raise GooglePlayError(
+                "Subscription response missing order id", status_code=422
+            )
+
+        # Already-expired purchase — almost always a stale replay. Claim it (an
+        # order id can never become valid again later) so a retry doesn't keep
+        # re-deriving the same answer, but don't grant a fresh period, same
         # reasoning as AppStoreService's expired-transaction skip.
         if expires_ms <= now_ms:
-            await self._claim_purchase({**base_claim, "note": "expired"})
+            await self._claim_order({**base_claim, "note": "expired_on_arrival"})
             logger.info(
-                f"[PlayStore] Skipping expired purchase {purchase_token} "
+                f"[PlayStore] Skipping expired order {order_id} "
                 f"(expires_ms={expires_ms} <= now_ms={now_ms}) for user {user_id}"
             )
             return {**summary, "granted": False}
 
-        # Claim the purchase token. If someone already claimed it, don't re-grant.
-        existing = await self._claim_purchase(base_claim)
+        # Claim the order id. If someone already claimed it, don't re-grant.
+        existing = await self._claim_order(base_claim)
         if existing is not None:
+            if not existing.get("granted"):
+                # Expected under concurrency: the app can call verify from both
+                # the purchase callback and a queryPurchasesAsync refresh close
+                # together, racing two verify calls for the same order. The
+                # loser skips here; the winner grants. Normal, not an error.
+                logger.info(
+                    f"[PlayStore] Order {order_id} already in flight (concurrent "
+                    "duplicate verify); skipping to avoid double-grant."
+                )
             return {**summary, "granted": bool(existing.get("granted"))}
 
         # We own the grant. If applying credits fails, remove our (granted=False)
@@ -237,20 +306,20 @@ class GooglePlayService(BasePaymentService):
             await self.subscription_storage.upsert_subscription(
                 user_id=user_id,
                 quote=quote,
-                order_id=purchase_token,
+                order_id=order_id,
                 transaction_id=purchase_token,
                 now_ms=now_ms,
                 provider=self.provider,
             )
         except Exception:
             await self.db_handler.db[self.transactions_collection].delete_one(
-                {"purchase_token": purchase_token, "granted": False}
+                {"order_id": order_id, "granted": False}
             )
             raise
-        await self._mark_granted(purchase_token, now_ms)
+        await self._mark_granted(order_id, now_ms)
         logger.info(
             f"[PlayStore] Granted {tier}/{period} to user {user_id} "
-            f"(token={purchase_token})"
+            f"(order={order_id}, token={purchase_token[:12]}…)"
         )
         return {**summary, "granted": True}
 
