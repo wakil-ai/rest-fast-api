@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.20-260906 (2026-09-06)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.20-260906 -->
+
+## What's Changed
+### 💬 Other
+* fix: stop uploaded files losing full context once background indexing finishes by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/182
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.19-260831...v5.0.20-260906
+
 ## v5.0.19-260831 (2026-08-31)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.19-260831 -->
