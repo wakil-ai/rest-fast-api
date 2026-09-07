@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.22-260907 (2026-09-07)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.22-260907 -->
+
+## What's Changed
+### 💬 Other
+* feat(payments): price longer commitments on a discount ladder by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/184
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.21-260906...v5.0.22-260907
+
 ## v5.0.21-260906 (2026-09-06)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.21-260906 -->
