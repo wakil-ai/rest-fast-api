@@ -10,6 +10,7 @@ from core.dependencies import (
 from models.chat_history import FileUploadResponse, SessionResponse
 from models.projects import (
     ProjectCreateRequest,
+    ProjectFileReferenceUpdateRequest,
     ProjectFileSearchQuery,
     ProjectInstructionsResponse,
     ProjectInstructionsWriteRequest,
@@ -204,6 +205,22 @@ async def delete_project_file(project_id: str, file_id: str, user_id: str):
     )
     if code != status.HTTP_204_NO_CONTENT:
         raise HTTPException(status_code=code, detail=detail or "Failed to delete file")
+
+
+@router.patch("/{project_id}/files/{file_id}/reference", response_model=FileUploadResponse)
+@handle_service_error
+async def update_project_file_reference(
+    project_id: str, file_id: str, body: ProjectFileReferenceUpdateRequest
+):
+    code, resp = await file_manager.set_project_file_reference(
+        project_id=project_id,
+        file_id=file_id,
+        user_id=body.user_id,
+        used_as_ai_reference=body.used_as_ai_reference,
+    )
+    if code != 200:
+        raise HTTPException(code, str(resp))
+    return resp
 
 
 @router.post("/{project_id}/search")

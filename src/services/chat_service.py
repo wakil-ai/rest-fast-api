@@ -446,21 +446,23 @@ class ChatService:
                     exc_info=True,
                 )
 
+            # Only files explicitly marked "use as AI reference" ever reach the
+            # model (WK-267): a project's file library doubles as plain document
+            # storage, so uploading a file must not automatically make it AI
+            # visible. This folds the flagged files into the same per-file
+            # OCR/vector-search path below instead of the old project-wide blind
+            # search, which had no concept of file-level selection at all.
             try:
-                result = await get_llm_service_client().search_project(
-                    {
-                        "project_id": project_id,
-                        "user_id": user_id,
-                        "query": query,
-                        "top_k": settings.TOP_K,
-                    }
+                project_files = await self.chat_history_service.get_files_by_project(
+                    project_id
                 )
-                context = str(result.get("context") or "").strip()
-                if context:
-                    sections.append(context)
+                referenced_ids = {
+                    f["_id"] for f in project_files if f.get("used_as_ai_reference")
+                }
+                file_ids = list({*(file_ids or []), *referenced_ids})
             except Exception as exc:
                 logger.warning(
-                    f"[ChatService] Project context search failed for {project_id}: {exc}",
+                    f"[ChatService] Could not load referenced files for project {project_id}: {exc}",
                     exc_info=True,
                 )
 

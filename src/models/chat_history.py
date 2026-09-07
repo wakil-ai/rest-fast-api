@@ -257,6 +257,10 @@ class FileUploadResponse(BaseModel):
     processing_skip_reason: str | None = Field(
         default=None, description="Reason processing skipped indexing"
     )
+    used_as_ai_reference: bool = Field(
+        default=False,
+        description="Project files only: whether this file is included as AI context",
+    )
     created_at: datetime
     updated_at: datetime
     model_config = {"populate_by_name": True}
