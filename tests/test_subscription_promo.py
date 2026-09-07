@@ -89,8 +89,8 @@ def test_promo_active_discounts_monthly_and_yearly_only():
 
     assert _plan(plans, "standard", "monthly")["amount_sum"] == 195_000
     assert _plan(plans, "pro", "monthly")["amount_sum"] == 390_000
-    assert _plan(plans, "standard", "yearly")["amount_sum"] == 1_950_000
-    assert _plan(plans, "pro", "yearly")["amount_sum"] == 3_900_000
+    assert _plan(plans, "standard", "yearly")["amount_sum"] == 1_872_000
+    assert _plan(plans, "pro", "yearly")["amount_sum"] == 3_744_000
 
     for plan in (
         _plan(plans, "standard", "monthly"),
@@ -181,14 +181,14 @@ def test_promo_expires_without_restart():
 
     _enable_campaign(ends_in_ms=_DAY_MS)  # ends tomorrow
     active_quote = service._get_subscription_quote("pro", "yearly")
-    assert active_quote["amount_sum"] == 3_900_000
+    assert active_quote["amount_sum"] == 3_744_000
 
     # Same cached service instance, campaign now in the past.
     settings.SUBSCRIPTION_PROMO_ENDS_AT = datetime.fromtimestamp(
         (_NOW_MS - _DAY_MS) / 1000, tz=timezone.utc
     )
     expired_quote = service._get_subscription_quote("pro", "yearly")
-    assert expired_quote["amount_sum"] == 6_000_000
+    assert expired_quote["amount_sum"] == 5_760_000
     assert expired_quote["discount_percent"] is None
 
 
@@ -252,8 +252,8 @@ async def test_init_payment_charges_discounted_amount():
 
     assert result["order_id"]
     _, document = service.db_handler.inserted[0]
-    assert document["amount_sum"] == 3_900_000
-    assert document["subscription"]["list_price_sum"] == 6_000_000
+    assert document["amount_sum"] == 3_744_000
+    assert document["subscription"]["list_price_sum"] == 5_760_000
     assert document["subscription"]["discount_percent"] == 35
 
 
@@ -264,7 +264,7 @@ async def test_init_payment_rejects_stale_list_price():
 
     with pytest.raises(ValueError, match="does not match"):
         await service.init_payment(
-            amount_sum=6_000_000,  # list price — no longer valid once the promo is live
+            amount_sum=5_760_000,  # list price — no longer valid once the promo is live
             user_id="u1",
             callback_url="https://example.com/cb",
             subscription_tier="pro",
@@ -314,8 +314,8 @@ def test_uzum_get_list_price_ignores_active_campaign():
     service = UzumService.__new__(UzumService)
     service._subscription_catalog = _real_catalog()
 
-    assert service._get_list_price_sum("pro", "yearly") == 6_000_000
-    assert service._get_subscription_quote("pro", "yearly")["amount_sum"] == 3_900_000
+    assert service._get_list_price_sum("pro", "yearly") == 5_760_000
+    assert service._get_subscription_quote("pro", "yearly")["amount_sum"] == 3_744_000
 
 
 def _real_catalog() -> dict:
