@@ -20,12 +20,20 @@ from models.payment import SubscriptionPeriod
 from services.payments.base import BasePaymentService, build_subscription_catalog
 from services.payments.uzum import UzumService
 
-# tier, period, days, credits, price multiple of the tier's monthly price
+# tier, period, days, credits, percent off the straight monthly rate
 MULTI_MONTH_PLANS = [
-    ("standard", "quarterly", 90, 18_000, 3),
-    ("standard", "semiannual", 180, 36_000, 6),
-    ("pro", "quarterly", 90, 36_000, 3),
-    ("pro", "semiannual", 180, 72_000, 6),
+    ("standard", "quarterly", 90, 18_000, 10),
+    ("standard", "semiannual", 180, 36_000, 15),
+    ("pro", "quarterly", 90, 36_000, 10),
+    ("pro", "semiannual", 180, 72_000, 15),
+]
+
+# Every pool plan, longest-lived last, with its discount off n x monthly.
+COMMITMENT_DISCOUNTS = [
+    ("monthly", 1, 0),
+    ("quarterly", 3, 10),
+    ("semiannual", 6, 15),
+    ("yearly", 12, 20),
 ]
 
 
@@ -60,9 +68,9 @@ def test_periods_contain_no_underscore():
     assert [period for period in SUBSCRIPTION_PERIODS if "_" in period] == []
 
 
-@pytest.mark.parametrize("tier,period,days,credits,_multiple", MULTI_MONTH_PLANS)
+@pytest.mark.parametrize("tier,period,days,credits,_discount", MULTI_MONTH_PLANS)
 def test_multi_month_plans_are_offered_for_sale(
-    service, tier, period, days, credits, _multiple
+    service, tier, period, days, credits, _discount
 ):
     """The regression test for the hardcoded catalog loop."""
     plans = service.get_subscription_catalog()
@@ -77,9 +85,9 @@ def test_multi_month_plans_are_offered_for_sale(
     assert plan["daily_credits"] == 0
 
 
-@pytest.mark.parametrize("tier,period,_days,credits,_multiple", MULTI_MONTH_PLANS)
+@pytest.mark.parametrize("tier,period,_days,credits,_discount", MULTI_MONTH_PLANS)
 def test_credits_scale_strictly_with_duration(
-    service, tier, period, _days, credits, _multiple
+    service, tier, period, _days, credits, _discount
 ):
     """The tier fixes the monthly credit rate; the period only buys more months."""
     monthly = service._get_subscription_quote(tier, "monthly")
@@ -88,30 +96,47 @@ def test_credits_scale_strictly_with_duration(
     assert credits == monthly["total_credits"] * months
 
 
-@pytest.mark.parametrize("tier,period,_days,_credits,multiple", MULTI_MONTH_PLANS)
-def test_list_prices_are_the_agreed_multiples(
-    service, tier, period, _days, _credits, multiple
+@pytest.mark.parametrize("tier", ["standard", "pro"])
+@pytest.mark.parametrize("period,months,discount", COMMITMENT_DISCOUNTS)
+def test_list_price_applies_the_commitment_discount(
+    service, tier, period, months, discount
 ):
-    """Quarterly is 3x monthly (no discount); semiannual is 5x (one month free)."""
-    price_multiple = 3 if period == "quarterly" else 5
-    monthly_price = service._get_list_price_sum(tier, "monthly")
+    """Longer commitments discount the straight monthly rate: -10/-15/-20%."""
+    monthly = service._get_list_price_sum(tier, "monthly")
+    expected = round(monthly * months * (100 - discount) / 100)
 
-    assert service._get_list_price_sum(tier, period) == monthly_price * price_multiple
+    assert service._get_list_price_sum(tier, period) == expected
 
 
 @pytest.mark.parametrize("tier", ["standard", "pro"])
-def test_semiannual_grants_six_months_for_five_months_of_price(service, tier):
-    """The free month is real: six months of both window and credits."""
-    monthly = service._get_subscription_quote(tier, "monthly")
-    semiannual = service._get_subscription_quote(tier, "semiannual")
+def test_value_per_credit_improves_with_every_step_up(service, tier):
+    """The ladder must stay monotonic.
 
-    assert semiannual["days"] == monthly["days"] * 6
-    assert semiannual["total_credits"] == monthly["total_credits"] * 6
-    assert semiannual["amount_sum"] == monthly["amount_sum"] * 5
+    If a longer plan ever costs more per credit than a shorter one it is pure
+    downside for the customer, and the longest plan stops being worth buying —
+    which is exactly what happened when 6-month and yearly were priced at the
+    same rate.
+    """
+    rates = []
+    for period, _months, _discount in COMMITMENT_DISCOUNTS:
+        quote = service._get_subscription_quote(tier, period)
+        rates.append(quote["amount_sum"] / quote["total_credits"])
+
+    assert rates == sorted(rates, reverse=True)
+    assert len(set(rates)) == len(rates), "two plans offer identical value per credit"
 
 
-@pytest.mark.parametrize("tier,period,_d,_c,_m", MULTI_MONTH_PLANS)
-def test_uzum_plan_ids_round_trip(tier, period, _d, _c, _m):
+@pytest.mark.parametrize("tier", ["standard", "pro"])
+def test_yearly_beats_buying_two_six_month_plans(service, tier):
+    """Otherwise the longest commitment is money for nothing."""
+    semiannual = service._get_list_price_sum(tier, "semiannual")
+    yearly = service._get_list_price_sum(tier, "yearly")
+
+    assert yearly < semiannual * 2
+
+
+@pytest.mark.parametrize("tier,period,_d,_c,_disc", MULTI_MONTH_PLANS)
+def test_uzum_plan_ids_round_trip(tier, period, _d, _c, _disc):
     uzum = UzumService.__new__(UzumService)
 
     assert uzum._parse_plan_id(f"{tier}_{period}") == (tier, period)

@@ -196,21 +196,26 @@ class Settings(BaseSettings):
     PAYME_SUBSCRIPTION_BASIC_DAILY_PRICE_SUM: int = 15_000
     PAYME_SUBSCRIPTION_STANDARD_DAILY_PRICE_SUM: int = 30_000
     PAYME_SUBSCRIPTION_PREMIUM_DAILY_PRICE_SUM: int = 50_000
-    # Pool tiers. Quarterly lists at 3x monthly (a longer commitment, no discount);
-    # semiannual at 5x monthly (six months of service, one month free).
+    # Pool tiers. Each longer commitment discounts the straight monthly rate:
+    # 3 months -10%, 6 months -15%, 12 months -20%. Credits stay strictly
+    # proportional to duration, so the discount is entirely on price and value
+    # per credit improves monotonically with length (50.0 / 45.0 / 42.5 / 40.0
+    # sum per credit). Keep that ladder intact when repricing: if a longer plan
+    # ever costs more per credit than a shorter one, it is pure downside for the
+    # customer and yearly stops being worth buying.
     PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 300_000
-    PAYME_SUBSCRIPTION_STANDARD_QUARTERLY_PRICE_SUM: int = 900_000
-    PAYME_SUBSCRIPTION_STANDARD_SEMIANNUAL_PRICE_SUM: int = 1_500_000
-    PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 3_000_000
+    PAYME_SUBSCRIPTION_STANDARD_QUARTERLY_PRICE_SUM: int = 810_000
+    PAYME_SUBSCRIPTION_STANDARD_SEMIANNUAL_PRICE_SUM: int = 1_530_000
+    PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 2_880_000
     PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM: int = 600_000
-    PAYME_SUBSCRIPTION_PRO_QUARTERLY_PRICE_SUM: int = 1_800_000
-    PAYME_SUBSCRIPTION_PRO_SEMIANNUAL_PRICE_SUM: int = 3_000_000
-    PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM: int = 6_000_000
+    PAYME_SUBSCRIPTION_PRO_QUARTERLY_PRICE_SUM: int = 1_620_000
+    PAYME_SUBSCRIPTION_PRO_SEMIANNUAL_PRICE_SUM: int = 3_060_000
+    PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM: int = 5_760_000
 
     # Testing plan
     PAYME_SUBSCRIPTION_TEST_MONTHLY_PRICE_SUM: int = 10_000
-    PAYME_SUBSCRIPTION_TEST_QUARTERLY_PRICE_SUM: int = 30_000
-    PAYME_SUBSCRIPTION_TEST_SEMIANNUAL_PRICE_SUM: int = 50_000
+    PAYME_SUBSCRIPTION_TEST_QUARTERLY_PRICE_SUM: int = 27_000
+    PAYME_SUBSCRIPTION_TEST_SEMIANNUAL_PRICE_SUM: int = 51_000
     PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM: int = 20_000
 
     # Subscription promo campaign — off by default. Flip SUBSCRIPTION_PROMO_ENABLED
