@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.23-260907 (2026-09-07)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.23-260907 -->
+
+## What's Changed
+### 💬 Other
+* hotfix: stop a failed turn from surfacing as an empty reply by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/187
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.22-260907...v5.0.23-260907
+
 ## v5.0.22-260907 (2026-09-07)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.22-260907 -->
