@@ -220,10 +220,14 @@ class BasePaymentService:
     def get_subscription_catalog(self) -> list[dict]:
         plans: list[dict] = []
         now_ms = int(time.time() * 1000)
-        promo_active = get_active_campaign(now_ms) is not None
         for tier, cfg in self._subscription_catalog.items():
             for period in SUBSCRIPTION_PERIODS:
-                if period not in cfg or (period == "daily" and promo_active):
+                # Daily-pass plans are withdrawn from the catalog for new sales
+                # regardless of promo state; existing holders are unaffected
+                # (they read their pass via get_user_subscription, and
+                # validate_subscription_eligibility governs top-up/downgrade
+                # rules for their next purchase, unchanged by this).
+                if period not in cfg or period == "daily":
                     continue
                 quote = self._get_subscription_quote(tier, period)
                 plans.append(

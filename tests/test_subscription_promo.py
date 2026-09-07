@@ -105,23 +105,21 @@ def test_promo_active_discounts_monthly_and_yearly_only():
 
 
 # --------------------------------------------------------------------------
-# 2b. The daily kill-switch is scoped to an active campaign only
+# 2b. The catalog withdraws daily plans permanently, not just during a promo
+#     (purchase eligibility below this is still promo-gated, unchanged)
 # --------------------------------------------------------------------------
 
 
-def test_daily_passes_listed_while_promo_disabled():
+def test_daily_passes_absent_while_promo_disabled():
     service = BasePaymentService.__new__(BasePaymentService)
     service._subscription_catalog = _real_catalog()
 
     plans = service.get_subscription_catalog()
 
-    for tier, price in (("basic", 15_000), ("standard", 30_000), ("premium", 50_000)):
-        daily_plan = _plan(plans, tier, "daily")
-        assert daily_plan["amount_sum"] == price
-        assert daily_plan["discount_percent"] is None
+    assert [plan for plan in plans if plan["period"] == "daily"] == []
 
 
-def test_daily_passes_return_once_campaign_expires():
+def test_daily_passes_stay_absent_once_campaign_expires():
     _enable_campaign(ends_in_ms=_DAY_MS)
     service = BasePaymentService.__new__(BasePaymentService)
     service._subscription_catalog = _real_catalog()
@@ -134,7 +132,8 @@ def test_daily_passes_return_once_campaign_expires():
         (_NOW_MS - _DAY_MS) / 1000, tz=timezone.utc
     )
 
-    assert _plan(service.get_subscription_catalog(), "basic", "daily")["amount_sum"] == 15_000
+    assert [plan for plan in service.get_subscription_catalog()
+            if plan["period"] == "daily"] == []
 
 
 @pytest.mark.asyncio
