@@ -14,6 +14,16 @@ _NOW_MS = int(time.time() * 1000)
 _DAY_MS = 24 * 60 * 60 * 1000
 
 
+@pytest.fixture(autouse=True)
+def _daily_passes_on_sale():
+    """This file covers daily-pass purchase mechanics, so the product switch is
+    held on — otherwise every case would stop at DAILY_PASS_DISABLED."""
+    original = settings.DAILY_PASS_ENABLED
+    settings.DAILY_PASS_ENABLED = True
+    yield
+    settings.DAILY_PASS_ENABLED = original
+
+
 def _daily_quote(*, tier: str = "basic", credits: int = 200) -> dict:
     return {
         "tier": tier,

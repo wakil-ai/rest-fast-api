@@ -25,6 +25,10 @@ _DAY_MS = 24 * 60 * 60 * 1000
 def _reset_promo_settings():
     """Every test starts from the shipped-disabled default and restores it after."""
     original = {
+        # These tests are about what a campaign does to daily passes, so the
+        # separate product switch is held on — otherwise they would only be
+        # re-testing DAILY_PASS_ENABLED.
+        "DAILY_PASS_ENABLED": settings.DAILY_PASS_ENABLED,
         "SUBSCRIPTION_PROMO_ENABLED": settings.SUBSCRIPTION_PROMO_ENABLED,
         "SUBSCRIPTION_PROMO_PERCENT": settings.SUBSCRIPTION_PROMO_PERCENT,
         "SUBSCRIPTION_PROMO_STARTS_AT": settings.SUBSCRIPTION_PROMO_STARTS_AT,
@@ -32,6 +36,7 @@ def _reset_promo_settings():
         "SUBSCRIPTION_PROMO_TIERS": settings.SUBSCRIPTION_PROMO_TIERS,
         "SUBSCRIPTION_PROMO_PERIODS": settings.SUBSCRIPTION_PROMO_PERIODS,
     }
+    settings.DAILY_PASS_ENABLED = True
     settings.SUBSCRIPTION_PROMO_ENABLED = False
     settings.SUBSCRIPTION_PROMO_PERCENT = 0
     settings.SUBSCRIPTION_PROMO_STARTS_AT = None

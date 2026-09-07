@@ -218,6 +218,16 @@ class Settings(BaseSettings):
     PAYME_SUBSCRIPTION_TEST_SEMIANNUAL_PRICE_SUM: int = 51_000
     PAYME_SUBSCRIPTION_TEST_YEARLY_PRICE_SUM: int = 20_000
 
+    # Daily passes (basic/standard/premium, period `daily`). Off means they are
+    # withdrawn from the catalog and refused at checkout, so no web or mobile
+    # client can offer or buy one. Existing passes are untouched and run to their
+    # end_ms — this hides the product, it does not revoke what people paid for.
+    #
+    # Kept separate from the promo campaign on purpose. Daily passes used to be
+    # hidden only while a sale ran, so they silently reappeared the moment a
+    # campaign expired, which is not a decision anyone made deliberately.
+    DAILY_PASS_ENABLED: bool = False
+
     # Subscription promo campaign — off by default. Flip SUBSCRIPTION_PROMO_ENABLED
     # + set percent/ends_at via env to run a time-boxed discount with no code
     # change or restart-free rollback (see core.subscription_promo). Applies only
