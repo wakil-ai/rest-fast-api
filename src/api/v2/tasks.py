@@ -14,6 +14,7 @@ from models.drafts import (
 from models.tasks import (
     TaskCreateRequest,
     TaskListResponse,
+    TaskReopenRequest,
     TaskResponse,
     TaskUpdateRequest,
 )
@@ -157,9 +158,21 @@ async def approve_task_closure(org_id: str, task_id: str, user_id: str = Current
 
 @router.post("/{org_id}/tasks/{task_id}/closure/reopen", response_model=TaskResponse)
 @handle_service_error
-async def reopen_task(org_id: str, task_id: str, user_id: str = CurrentUser):
-    """Undo a closure and put the Task back on the draft column. Admin only."""
-    return _to_response(await task_service.reopen(org_id, task_id, user_id))
+async def reopen_task(
+    org_id: str,
+    task_id: str,
+    body: TaskReopenRequest | None = None,
+    user_id: str = CurrentUser,
+):
+    """Undo a closure. Admin only.
+
+    Lands on the column named in the body, or the draft column when none is
+    given — the board sends the one the card was dropped on.
+    """
+    body = body or TaskReopenRequest()
+    return _to_response(
+        await task_service.reopen(org_id, task_id, user_id, state_id=body.state_id)
+    )
 
 
 @router.post(

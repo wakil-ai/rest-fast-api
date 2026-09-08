@@ -309,8 +309,23 @@ class TaskService:
         await self._log(task, EventType.task_archived, user_id)
         return row
 
-    async def reopen(self, org_id: str, task_id: str, user_id: str) -> dict[str, Any]:
-        """Undo a Task's closure. Admin only — see CaseService.reopen."""
+    async def reopen(
+        self,
+        org_id: str,
+        task_id: str,
+        user_id: str,
+        state_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Undo a Task's closure. Admin only — see CaseService.reopen.
+
+        `state_id` is where the Task lands. The board sends the column the card
+        was dragged onto: a closed Task is frozen against ordinary state moves,
+        so without it an admin dragging one back to "In progress" needs a reopen
+        onto the draft column followed by a second move, which records a state
+        change through a column nobody asked for and leaves the Task stranded in
+        draft if the second call fails. Omitted, it still lands on draft — the
+        behaviour every existing caller expects.
+        """
         await self._orgs().assert_org_admin(org_id, user_id)
         task = await self._load_task(org_id, task_id)
 
@@ -321,17 +336,37 @@ class TaskService:
             )
 
         set_fields: dict[str, Any] = {"closure": {}}
-        draft = await self._states().default_state_for(
-            org_id, StateAppliesTo.task, StateCategory.draft
-        )
-        if draft:
-            set_fields["state_id"] = str(draft["_id"])
+        if state_id:
+            # The ordinary validator, so a reopen cannot reach a closed column,
+            # the Case board, or another organization's states either.
+            state = await self._states().assert_state_usable(
+                org_id, state_id, StateAppliesTo.task
+            )
+            set_fields["state_id"] = str(state["_id"])
+        else:
+            draft = await self._states().default_state_for(
+                org_id, StateAppliesTo.task, StateCategory.draft
+            )
+            if draft:
+                set_fields["state_id"] = str(draft["_id"])
         row = await self._apply(task, set_fields, user_id)
         await self._log(
             task,
             EventType.closure_reopened,
             user_id,
             {"approved_by": closure.get("approved_by")},
+        )
+        # The closure event says the Task is open again; this says which column
+        # it opened onto, which is what the board and the timeline both read.
+        await self._logs().record_changes(
+            kind="task",
+            previous=task,
+            set_fields={"state_id": set_fields.get("state_id")}
+            if set_fields.get("state_id")
+            else {},
+            actor_id=user_id,
+            case_id=task["case_id"],
+            task_id=str(task["_id"]),
         )
         return row
 
