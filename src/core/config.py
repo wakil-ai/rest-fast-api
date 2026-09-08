@@ -130,6 +130,12 @@ class Settings(BaseSettings):
     # File processing
     DOCUMENT_PROCESSING_POLL_TIMEOUT_SECONDS: int = 900
 
+    # Upload limits (WK-267) — per-scope caps enforced in FileManager.
+    MAIN_CHAT_MAX_FILE_SIZE_MB: int = 25
+    MAIN_CHAT_MAX_FILES: int = 5
+    PROJECT_MAX_FILE_SIZE_MB: int = 50
+    PROJECT_MAX_FILES: int = 50
+
     # Auth (For Telegram Login)
     TELEGRAM_BOT_TOKEN: str = None
     TELEGRAM_BOT_LOGIN: str = None

@@ -17,6 +17,7 @@ from core.dependencies import (
 from core.logger import logger
 from models.chat_history import FileUploadResponse
 from utils.progress_webhook import send_project_file_progress_webhook
+from utils.upload_limits import max_file_count, max_file_size_bytes, max_file_size_mb
 
 
 class DocumentProcessingSubmissionError(Exception):
@@ -44,6 +45,13 @@ class FileManager:
         temp_path, content_hash, file_size = await self._spool_upload_to_temp(
             file, file.filename or "upload"
         )
+
+        if file_size > max_file_size_bytes("message"):
+            self._safe_remove_temp_file(temp_path)
+            return (
+                413,
+                f"File exceeds the {max_file_size_mb('message')} MB limit for chat uploads.",
+            )
 
         try:
             existing_by_content = await self.history.get_file_by_content_hash(
@@ -183,9 +191,23 @@ class FileManager:
         project_service = get_project_service()
         await project_service.get_project(project_id, user_id)
 
+        project_file_cap = max_file_count("project")
+        existing_project_files = await self.history.get_files_by_project(
+            project_id, limit=project_file_cap
+        )
+        if len(existing_project_files) >= project_file_cap:
+            return 413, f"This project already has the maximum of {project_file_cap} files."
+
         temp_path, content_hash, file_size = await self._spool_upload_to_temp(
             file, file.filename or "upload"
         )
+
+        if file_size > max_file_size_bytes("project"):
+            self._safe_remove_temp_file(temp_path)
+            return (
+                413,
+                f"File exceeds the {max_file_size_mb('project')} MB limit for project uploads.",
+            )
 
         try:
             existing_by_content = (
@@ -360,6 +382,39 @@ class FileManager:
             f"Deleted project file {file_id} from project {project_id} for user {user_id}"
         )
         return 204, None
+
+    async def set_project_file_reference(
+        self,
+        project_id: str,
+        file_id: str,
+        user_id: str,
+        used_as_ai_reference: bool,
+    ) -> tuple[int, FileUploadResponse | str]:
+        """Toggle whether a project file is included as AI context (WK-267)."""
+        from core.dependencies import get_project_service
+
+        project_service = get_project_service()
+        await project_service.get_project(project_id, user_id)
+
+        file_record = await self.history.get_file_by_id(file_id)
+        if not file_record:
+            return 404, "File not found"
+        if file_record.get("project_id") != project_id:
+            return 404, "File not found"
+        if file_record.get("scope") != "project":
+            return 400, "File is not scoped to a project"
+
+        updated = await self.history.update_file_metadata_fields(
+            file_id, {"used_as_ai_reference": used_as_ai_reference}
+        )
+        response = self._build_success_response(
+            file_id=file_id,
+            metadata=updated.get("file_metadata", {}),
+            ocr_result=updated.get("ocr_result", ""),
+            record=updated,
+            project_id=project_id,
+        )
+        return 200, response
 
     async def _submit_processing_job(
         self,
@@ -695,6 +750,7 @@ class FileManager:
             processed_chunk_count=record.get("processed_chunk_count"),
             processing_skipped=record.get("processing_skipped"),
             processing_skip_reason=record.get("processing_skip_reason"),
+            used_as_ai_reference=record.get("used_as_ai_reference", False),
             created_at=record["created_at"],
             updated_at=record["updated_at"],
         )
