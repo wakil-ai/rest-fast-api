@@ -1,5 +1,18 @@
 # Changelog
 
+## v5.0.25-260908 (2026-09-08)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.25-260908 -->
+
+## What's Changed
+### 💬 Other
+* feat(uploads): enforce per-scope upload limits, add AI reference toggle by @abdulahat-hbai in https://github.com/wakil-ai/rest-fast-api/pull/185
+
+## New Contributors
+* @abdulahat-hbai made their first contribution in https://github.com/wakil-ai/rest-fast-api/pull/185
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.24-260907...v5.0.25-260908
+
 ## v5.0.24-260907 (2026-09-07)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.24-260907 -->
