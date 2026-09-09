@@ -1,9 +1,13 @@
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from core.assistants import AssistantConfig
 from core.config import settings
+
+ResponseStyle = Literal["balanced", "brief", "detailed"]
+ExplanationTone = Literal["simple", "professional"]
 
 
 class ChatModel(str, Enum):
@@ -170,6 +174,14 @@ class ChatRequest(BaseModel):
             "`project_id` on the message"
         ),
     )
+    response_style: ResponseStyle | None = Field(
+        default="balanced",
+        description="How long/concise the answer should be",
+    )
+    explanation_tone: ExplanationTone | None = Field(
+        default="simple",
+        description="Register of the explanation: plain language vs. professional/legal",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -264,4 +276,12 @@ class AgenticRAGRequest(BaseModel):
     file_context: str | None = Field(
         default=None,
         description="Optional inline text context for this turn",
+    )
+    response_style: ResponseStyle | None = Field(
+        default="balanced",
+        description="How long/concise the answer should be",
+    )
+    explanation_tone: ExplanationTone | None = Field(
+        default="simple",
+        description="Register of the explanation: plain language vs. professional/legal",
     )

@@ -373,6 +373,8 @@ class ChatService:
         file_ids: list[str] | None = None,
         project_id: str | None = None,
         file_context: str | None = None,
+        response_style: str | None = None,
+        explanation_tone: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         payload = await self.build_llm_inference_payload(
             query=query,
@@ -382,6 +384,8 @@ class ChatService:
             file_ids=file_ids,
             project_id=project_id,
             file_context=file_context,
+            response_style=response_style,
+            explanation_tone=explanation_tone,
         )
         result = await get_llm_service_client().ask_chat(payload)
         meta = dict(result.get("metadata") or {})
@@ -393,6 +397,33 @@ class ChatService:
             meta["workflow"] = "rest_api_llm"
         return str(result.get("answer") or ""), meta
 
+    @staticmethod
+    def build_ai_config_instructions(
+        response_style: str | None,
+        explanation_tone: str | None,
+    ) -> str | None:
+        """Turn the user's AI-config choices into a short directive for the system prompt.
+
+        Reuses the `instructions` channel the internal LLM service already appends to
+        every system prompt (`_append_instructions` on its side); no change needed there.
+        """
+        lines: list[str] = []
+
+        if response_style == "brief":
+            lines.append("Keep the answer brief: a few short sentences, no more than a short paragraph.")
+        elif response_style == "detailed":
+            lines.append("Give a detailed, thorough answer with full context and relevant nuance.")
+
+        if explanation_tone == "professional":
+            lines.append("Use a formal, professional register; legal terminology is fine.")
+        elif explanation_tone == "simple":
+            lines.append("Explain in simple, plain language; avoid legal jargon where possible.")
+
+        if not lines:
+            return None
+
+        return "\n".join(f"- {line}" for line in lines)
+
     async def build_llm_inference_payload(
         self,
         *,
@@ -403,6 +434,8 @@ class ChatService:
         file_ids: list[str] | None = None,
         project_id: str | None = None,
         file_context: str | None = None,
+        response_style: str | None = None,
+        explanation_tone: str | None = None,
     ) -> dict[str, Any]:
         user_uploaded_context = await self.collect_user_uploaded_context(
             query=query,
@@ -417,6 +450,9 @@ class ChatService:
             "assistant": assistant,
             "thread_id": f"{user_id}:{session_id}",
             "user_uploaded_context": user_uploaded_context or None,
+            "instructions": self.build_ai_config_instructions(
+                response_style, explanation_tone
+            ),
         }
 
     async def collect_user_uploaded_context(
@@ -544,6 +580,8 @@ class ChatService:
         is_dt_team_request: bool = False,
         project_id: str | None = None,
         file_context: str | None = None,
+        response_style: str | None = None,
+        explanation_tone: str | None = None,
         stream_endpoint: str = "/api/v1/chat/ask/stream",
     ) -> AsyncGenerator[Any, None]:
         yield {
@@ -561,6 +599,8 @@ class ChatService:
                 file_ids=file_ids,
                 project_id=project_id,
                 file_context=file_context,
+                response_style=response_style,
+                explanation_tone=explanation_tone,
             )
             answer_chunks: list[str] = []
             generation_meta: dict[str, Any] = {
@@ -864,6 +904,8 @@ class ChatService:
                         is_dt_team_request=is_dt,
                         project_id=resolved_project_id,
                         file_context=request.file_context,
+                        response_style=request.response_style,
+                        explanation_tone=request.explanation_tone,
                     )
                 )
 
@@ -878,6 +920,8 @@ class ChatService:
                     file_ids=request.file_ids,
                     project_id=resolved_project_id,
                     file_context=request.file_context,
+                    response_style=request.response_style,
+                    explanation_tone=request.explanation_tone,
                 )
             except Exception as error:
                 detail = _orchestration_exception_detail(error)
@@ -976,6 +1020,8 @@ class ChatService:
                     started_at=started_at,
                     project_id=resolved_project_id,
                     file_context=request.file_context,
+                    response_style=request.response_style,
+                    explanation_tone=request.explanation_tone,
                     stream_endpoint="/api/v1/chat/agent/stream",
                 )
             )
