@@ -157,3 +157,54 @@ def test_multi_month_plans_are_discountable(service):
 
     assert {"quarterly", "semiannual"} <= periods
     assert "daily" not in periods
+
+
+# --------------------------------------------------------------------------
+# Daily passes are a separate product with its own switch
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def daily_pass_enabled():
+    """Turn daily passes back on for the duration of a test."""
+    original = settings.DAILY_PASS_ENABLED
+    settings.DAILY_PASS_ENABLED = True
+    yield
+    settings.DAILY_PASS_ENABLED = original
+
+
+def test_daily_passes_are_withdrawn_by_default(service):
+    """No web or mobile client can offer one, because the catalog omits them."""
+    plans = service.get_subscription_catalog()
+
+    assert [plan for plan in plans if plan["period"] == "daily"] == []
+
+
+def test_daily_passes_return_when_switched_on(service, daily_pass_enabled):
+    """The switch is a product decision, not a one-way door."""
+    plans = service.get_subscription_catalog()
+
+    assert [plan for plan in plans if plan["period"] == "daily"] != []
+
+
+def test_the_switch_does_not_disturb_the_pool_plans(service):
+    """Hiding one product must not withdraw the others."""
+    periods = {plan["period"] for plan in service.get_subscription_catalog()}
+
+    assert {"monthly", "quarterly", "semiannual", "yearly"} <= periods
+
+
+async def test_buying_a_daily_pass_is_refused_while_disabled(service):
+    """Hiding the plan is not enough on its own.
+
+    A client holding a cached catalog, or anyone posting the tier and period
+    directly, would otherwise still reach checkout.
+    """
+    from models.payment import SubscriptionEligibilityError
+
+    quote = service._get_subscription_quote("basic", "daily")
+
+    with pytest.raises(SubscriptionEligibilityError) as excinfo:
+        await service.validate_subscription_eligibility(user_id="u1", quote=quote)
+
+    assert excinfo.value.code == "DAILY_PASS_DISABLED"

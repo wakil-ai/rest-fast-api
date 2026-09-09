@@ -1,5 +1,40 @@
 # Changelog
 
+## v5.0.25-260908 (2026-09-08)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.25-260908 -->
+
+## What's Changed
+### 💬 Other
+* feat(uploads): enforce per-scope upload limits, add AI reference toggle by @abdulahat-hbai in https://github.com/wakil-ai/rest-fast-api/pull/185
+
+## New Contributors
+* @abdulahat-hbai made their first contribution in https://github.com/wakil-ai/rest-fast-api/pull/185
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.24-260907...v5.0.25-260908
+
+## v5.0.24-260907 (2026-09-07)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.24-260907 -->
+
+## What's Changed
+### 💬 Other
+* feat(payments): give daily passes their own kill switch, default off by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/189
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.23-260907...v5.0.24-260907
+
+## v5.0.23-260907 (2026-09-07)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.23-260907 -->
+
+## What's Changed
+### 💬 Other
+* hotfix: stop a failed turn from surfacing as an empty reply by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/187
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.22-260907...v5.0.23-260907
+
 ## v5.0.22-260907 (2026-09-07)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.22-260907 -->

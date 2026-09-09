@@ -482,21 +482,23 @@ class ChatService:
                     exc_info=True,
                 )
 
+            # Only files explicitly marked "use as AI reference" ever reach the
+            # model (WK-267): a project's file library doubles as plain document
+            # storage, so uploading a file must not automatically make it AI
+            # visible. This folds the flagged files into the same per-file
+            # OCR/vector-search path below instead of the old project-wide blind
+            # search, which had no concept of file-level selection at all.
             try:
-                result = await get_llm_service_client().search_project(
-                    {
-                        "project_id": project_id,
-                        "user_id": user_id,
-                        "query": query,
-                        "top_k": settings.TOP_K,
-                    }
+                project_files = await self.chat_history_service.get_files_by_project(
+                    project_id
                 )
-                context = str(result.get("context") or "").strip()
-                if context:
-                    sections.append(context)
+                referenced_ids = {
+                    f["_id"] for f in project_files if f.get("used_as_ai_reference")
+                }
+                file_ids = list({*(file_ids or []), *referenced_ids})
             except Exception as exc:
                 logger.warning(
-                    f"[ChatService] Project context search failed for {project_id}: {exc}",
+                    f"[ChatService] Could not load referenced files for project {project_id}: {exc}",
                     exc_info=True,
                 )
 
@@ -638,6 +640,15 @@ class ChatService:
                     item["attachments"] = resolved
                     yield item
                     continue
+                if event_type == "error":
+                    # Upstream already reported the failure to the client. Falling
+                    # through would run the success path below -- persisting an
+                    # empty assistant message and emitting a normal "end" -- which
+                    # turned a hard provider error (e.g. a 400 on a malformed tool
+                    # call) into a blank reply the UI labelled "we are processing
+                    # too many messages".
+                    yield item
+                    return
                 if event_type == "end":
                     updates = {k: v for k, v in item.items() if k != "type"}
                     if "attachments" in updates:
@@ -661,7 +672,7 @@ class ChatService:
             answer,
             is_dt_team_request=is_dt_team_request,
         )
-        if is_dt_team_request and settings.DT_TEAM_DISCLAIMER:
+        if answer and is_dt_team_request and settings.DT_TEAM_DISCLAIMER:
             yield settings.DT_TEAM_DISCLAIMER
         attachments = await self.upload_final_answer_docx(
             assistant=assistant,
@@ -718,6 +729,15 @@ class ChatService:
         metadata: dict[str, Any],
         project_id: str | None = None,
     ) -> None:
+        if not answer.strip():
+            # An empty answer means the turn failed. Storing it adds a blank
+            # message to the session and to the replayed thread, so each retry
+            # made the next one likelier to fail too.
+            logger.warning(
+                f"Refusing to persist empty assistant message {message_id} "
+                f"for session {session_id}"
+            )
+            return
         try:
             meta = dict(metadata)
             if project_id:
@@ -769,7 +789,11 @@ class ChatService:
 
     @staticmethod
     def append_dt_team_disclaimer(answer: str, *, is_dt_team_request: bool) -> str:
-        if not is_dt_team_request:
+        if not is_dt_team_request or not answer.strip():
+            # A failed turn has nothing to disclaim. Appending anyway rendered the
+            # English notice alone in the chat, and -- because the client treats any
+            # streamed text as a successful answer -- it also masked the failure,
+            # suppressing both the error toast and the Sentry report.
             return answer
         return f"{answer}{settings.DT_TEAM_DISCLAIMER}"
 

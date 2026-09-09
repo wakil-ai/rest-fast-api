@@ -74,6 +74,13 @@ class ProjectFileSearchQuery(BaseModel):
     top_k: int = Field(default=8, ge=1, le=50)
 
 
+class ProjectFileReferenceUpdateRequest(BaseModel):
+    user_id: str = Field(..., description="User ID for ownership check")
+    used_as_ai_reference: bool = Field(
+        ..., description="Whether this file should be included as AI context"
+    )
+
+
 class ProjectInstructionsResponse(BaseModel):
     project_id: str
     instructions: str | None = None
