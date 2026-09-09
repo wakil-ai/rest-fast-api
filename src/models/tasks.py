@@ -44,6 +44,21 @@ class TaskUpdateRequest(BaseModel):
     )
 
 
+class TaskReopenRequest(BaseModel):
+    """Where a reopened Task should land.
+
+    Optional, so an older client that posts no body still gets the draft column.
+    A closed column is refused by the same validator every other state move goes
+    through — reopening onto "Done" would undo the closure and reinstate it in
+    one call.
+    """
+
+    state_id: str | None = Field(
+        default=None,
+        description="Workflow state to reopen onto; the board's draft state if omitted",
+    )
+
+
 class TaskResponse(BaseModel):
     task_id: str
     case_id: str

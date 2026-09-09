@@ -452,6 +452,80 @@ async def test_reopening_a_task_clears_the_closure(svc: Svc) -> None:
     ]
 
 
+async def test_reopening_lands_on_the_column_the_admin_chose(svc: Svc) -> None:
+    """A closed Task is frozen against ordinary moves, so reopen carries it."""
+    svc.db.find_documents = AsyncMock(
+        return_value=[
+            task_doc(
+                state_id="wfst-done",
+                closure={"approved_by": "head", "approved_at": "t"},
+            )
+        ]
+    )
+    svc.states.assert_state_usable = AsyncMock(return_value={"_id": "wfst-returned"})
+
+    await svc.svc.reopen("org-1", "task-1", "the-head", state_id="wfst-returned")
+
+    sent = svc.sent()
+    assert sent["closure"] == {}
+    assert sent["state_id"] == "wfst-returned"
+    # Validated like any other state move, so it cannot reach the Case board or
+    # another organization's column.
+    svc.states.assert_state_usable.assert_awaited_once_with(
+        "org-1", "wfst-returned", StateAppliesTo.task
+    )
+    svc.states.default_state_for.assert_not_awaited()
+
+
+async def test_reopening_records_where_the_task_landed(svc: Svc) -> None:
+    svc.db.find_documents = AsyncMock(
+        return_value=[
+            task_doc(
+                state_id="wfst-done",
+                closure={"approved_by": "head", "approved_at": "t"},
+            )
+        ]
+    )
+    svc.states.assert_state_usable = AsyncMock(return_value={"_id": "wfst-progress"})
+
+    await svc.svc.reopen("org-1", "task-1", "the-head", state_id="wfst-progress")
+
+    changes = svc.logs.record_changes.await_args.kwargs
+    assert changes["previous"]["state_id"] == "wfst-done"
+    assert changes["set_fields"] == {"state_id": "wfst-progress"}
+
+
+async def test_reopening_onto_a_closed_column_is_refused(svc: Svc) -> None:
+    """Otherwise one call would undo a closure and reinstate it."""
+    svc.db.find_documents = AsyncMock(
+        return_value=[
+            task_doc(
+                state_id="wfst-done",
+                closure={"approved_by": "head", "approved_at": "t"},
+            )
+        ]
+    )
+    svc.states.assert_state_usable = AsyncMock(
+        side_effect=HTTPException(status_code=400, detail="closed column")
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.svc.reopen("org-1", "task-1", "the-head", state_id="wfst-done-2")
+
+    assert exc.value.status_code == 400
+    svc.db.update_documents.assert_not_awaited()
+
+
+async def test_reopening_an_open_task_is_refused_whatever_the_target(svc: Svc) -> None:
+    svc.db.find_documents = AsyncMock(return_value=[task_doc(state_id="wfst-review")])
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.svc.reopen("org-1", "task-1", "the-head", state_id="wfst-todo")
+
+    assert exc.value.status_code == 409
+    svc.db.update_documents.assert_not_awaited()
+
+
 async def test_reopening_a_task_is_admin_only(svc: Svc) -> None:
     svc.orgs.assert_org_admin = AsyncMock(
         side_effect=HTTPException(status_code=403, detail="Admin only")
