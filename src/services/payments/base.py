@@ -48,21 +48,25 @@ def build_subscription_catalog() -> dict[str, dict]:
             },
             "monthly": {
                 "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM,
+                "previous_price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PREVIOUS_PRICE_SUM,
                 "days": 30,
                 "total_credits": 6000,
             },
             "quarterly": {
                 "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_QUARTERLY_PRICE_SUM,
+                "previous_price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_QUARTERLY_PREVIOUS_PRICE_SUM,
                 "days": 90,
                 "total_credits": 18000,
             },
             "semiannual": {
                 "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_SEMIANNUAL_PRICE_SUM,
+                "previous_price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_SEMIANNUAL_PREVIOUS_PRICE_SUM,
                 "days": 180,
                 "total_credits": 36000,
             },
             "yearly": {
                 "price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM,
+                "previous_price_sum": settings.PAYME_SUBSCRIPTION_STANDARD_YEARLY_PREVIOUS_PRICE_SUM,
                 "days": 360,
                 "total_credits": 72000,
             },
@@ -79,22 +83,22 @@ def build_subscription_catalog() -> dict[str, dict]:
             "monthly": {
                 "price_sum": settings.PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM,
                 "days": 30,
-                "total_credits": 12000,
+                "total_credits": 18000,
             },
             "quarterly": {
                 "price_sum": settings.PAYME_SUBSCRIPTION_PRO_QUARTERLY_PRICE_SUM,
                 "days": 90,
-                "total_credits": 36000,
+                "total_credits": 54000,
             },
             "semiannual": {
                 "price_sum": settings.PAYME_SUBSCRIPTION_PRO_SEMIANNUAL_PRICE_SUM,
                 "days": 180,
-                "total_credits": 72000,
+                "total_credits": 108000,
             },
             "yearly": {
                 "price_sum": settings.PAYME_SUBSCRIPTION_PRO_YEARLY_PRICE_SUM,
                 "days": 360,
-                "total_credits": 144000,
+                "total_credits": 216000,
             },
         },
     }
@@ -205,6 +209,15 @@ class BasePaymentService:
             apply_discount(tier, period, list_price_sum, now_ms)
         )
 
+        # Only a genuine reduction is worth striking through. A stale or equal
+        # value would render the current price crossed out above itself, which
+        # reads as a rendering fault rather than a saving.
+        previous_price_sum = period_cfg.get("previous_price_sum")
+        if previous_price_sum is not None:
+            previous_price_sum = int(previous_price_sum)
+            if previous_price_sum <= price_sum:
+                previous_price_sum = None
+
         return {
             "tier": tier,
             "period": period,
@@ -212,6 +225,7 @@ class BasePaymentService:
             "days": days,
             "total_credits": total_credits,
             "amount_sum": price_sum,
+            "previous_price_sum": previous_price_sum,
             "list_price_sum": promo_list_price_sum,
             "discount_percent": discount_percent,
             "promo_ends_at_ms": promo_ends_at_ms,
@@ -237,6 +251,7 @@ class BasePaymentService:
                         "daily_credits": quote["daily_credits"],
                         "total_credits": quote["total_credits"],
                         "days": quote["days"],
+                        "previous_price_sum": quote["previous_price_sum"],
                         "list_price_sum": quote["list_price_sum"],
                         "discount_percent": quote["discount_percent"],
                         "promo_ends_at_ms": quote["promo_ends_at_ms"],
