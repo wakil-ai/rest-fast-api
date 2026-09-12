@@ -28,6 +28,7 @@ from api.internal import router as internal_router
 from api.v2 import (
     activity_logs,
     admin,
+    atmos,
     auth,
     cases,
     chat,
@@ -199,11 +200,16 @@ def create_app() -> FastAPI:
     )
     app.include_router(admin.router, prefix=settings.API_PREFIX)
     app.include_router(admin_subscriptions.router, prefix=settings.API_PREFIX)
+    app.include_router(atmos.admin_router, prefix=settings.API_PREFIX)
     app.include_router(promo_codes.router, prefix=settings.API_PREFIX)
     # Auth routers without API prefix
     app.include_router(auth.router, prefix=settings.API_PREFIX)
     app.include_router(otp.router, prefix=settings.API_PREFIX)
     app.include_router(payment.router, prefix=settings.API_PREFIX)
+    # Per-route auth (JWT, service key, or a webhook's own signature/api_key),
+    # same convention as payment.router above — not every route here needs the
+    # same guard.
+    app.include_router(atmos.router, prefix=settings.API_PREFIX)
     app.include_router(referral.router, prefix=settings.API_PREFIX)
     app.include_router(share_router, prefix=settings.API_PREFIX, tags=["Public"])
     app.include_router(internal_router)
