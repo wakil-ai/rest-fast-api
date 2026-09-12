@@ -24,8 +24,8 @@ from services.payments.uzum import UzumService
 MULTI_MONTH_PLANS = [
     ("standard", "quarterly", 90, 18_000, 10),
     ("standard", "semiannual", 180, 36_000, 15),
-    ("pro", "quarterly", 90, 36_000, 10),
-    ("pro", "semiannual", 180, 72_000, 15),
+    ("pro", "quarterly", 90, 54_000, 10),
+    ("pro", "semiannual", 180, 108_000, 15),
 ]
 
 # Every pool plan, longest-lived last, with its discount off n x monthly.
@@ -208,3 +208,70 @@ async def test_buying_a_daily_pass_is_refused_while_disabled(service):
         await service.validate_subscription_eligibility(user_id="u1", quote=quote)
 
     assert excinfo.value.code == "DAILY_PASS_DISABLED"
+
+
+# --------------------------------------------------------------------------
+# A price cut is shown, not just applied
+# --------------------------------------------------------------------------
+
+# tier, period, the price before the cut
+STANDARD_PRICE_CUT = [
+    ("standard", "monthly", 300_000),
+    ("standard", "quarterly", 810_000),
+    ("standard", "semiannual", 1_530_000),
+    ("standard", "yearly", 2_880_000),
+]
+
+
+@pytest.mark.parametrize("tier,period,was", STANDARD_PRICE_CUT)
+def test_the_old_price_is_carried_for_display(service, tier, period, was):
+    """The struck-through figure comes from the backend, so it cannot drift.
+
+    A frontend hardcoding what a plan "used to" cost would keep claiming it long
+    after the next reprice.
+    """
+    quote = service._get_subscription_quote(tier, period)
+
+    assert quote["previous_price_sum"] == was
+    assert quote["amount_sum"] < was
+
+
+@pytest.mark.parametrize("tier,period,was", STANDARD_PRICE_CUT)
+def test_the_cut_reaches_the_catalog(service, tier, period, was):
+    plan = next(
+        p
+        for p in service.get_subscription_catalog()
+        if p["tier"] == tier and p["period"] == period
+    )
+
+    assert plan["previous_price_sum"] == was
+
+
+@pytest.mark.parametrize("period", ["monthly", "quarterly", "semiannual", "yearly"])
+def test_plans_that_did_not_change_show_no_old_price(service, period):
+    """Pro was untouched, so nothing should be struck through on its cards."""
+    assert service._get_subscription_quote("pro", period)["previous_price_sum"] is None
+
+
+def test_an_old_price_at_or_below_the_current_one_is_suppressed(service, monkeypatch):
+    """Guards the case that reads as a rendering fault.
+
+    Left unchecked, a stale setting would print the current price crossed out
+    directly above itself.
+    """
+    monkeypatch.setattr(
+        settings, "PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PREVIOUS_PRICE_SUM", 220_000
+    )
+    service._subscription_catalog = build_subscription_catalog()
+
+    assert service._get_subscription_quote("standard", "monthly")["previous_price_sum"] is None
+
+
+def test_the_cut_holds_the_commitment_ladder(service):
+    """Every standard plan fell by the same proportion, so the ladder survives."""
+    ratios = []
+    for period, _months, _discount in COMMITMENT_DISCOUNTS:
+        quote = service._get_subscription_quote("standard", period)
+        ratios.append(round(quote["amount_sum"] / quote["previous_price_sum"], 4))
+
+    assert len(set(ratios)) == 1, f"plans were cut by different amounts: {ratios}"

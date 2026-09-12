@@ -74,7 +74,7 @@ def test_promo_disabled_catalog_has_list_prices_only():
     plans = service.get_subscription_catalog()
 
     standard_monthly = _plan(plans, "standard", "monthly")
-    assert standard_monthly["amount_sum"] == 300_000
+    assert standard_monthly["amount_sum"] == 220_000
     assert standard_monthly["list_price_sum"] is None
     assert standard_monthly["discount_percent"] is None
     assert standard_monthly["promo_ends_at_ms"] is None
@@ -92,9 +92,9 @@ def test_promo_active_discounts_monthly_and_yearly_only():
 
     plans = service.get_subscription_catalog()
 
-    assert _plan(plans, "standard", "monthly")["amount_sum"] == 195_000
+    assert _plan(plans, "standard", "monthly")["amount_sum"] == 143_000
     assert _plan(plans, "pro", "monthly")["amount_sum"] == 390_000
-    assert _plan(plans, "standard", "yearly")["amount_sum"] == 1_872_000
+    assert _plan(plans, "standard", "yearly")["amount_sum"] == 1_372_000
     assert _plan(plans, "pro", "yearly")["amount_sum"] == 3_744_000
 
     for plan in (
@@ -303,7 +303,7 @@ async def test_invoice_created_during_campaign_keeps_discounted_amount_after_exp
         (_NOW_MS - _DAY_MS) / 1000, tz=timezone.utc
     )
 
-    assert invoice_document["amount_sum"] == 195_000
+    assert invoice_document["amount_sum"] == 143_000
     assert result["order_id"] == invoice_document["order_id"]
 
 

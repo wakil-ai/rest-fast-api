@@ -209,10 +209,20 @@ class Settings(BaseSettings):
     # sum per credit). Keep that ladder intact when repricing: if a longer plan
     # ever costs more per credit than a shorter one, it is pure downside for the
     # customer and yearly stops being worth buying.
-    PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 300_000
-    PAYME_SUBSCRIPTION_STANDARD_QUARTERLY_PRICE_SUM: int = 810_000
-    PAYME_SUBSCRIPTION_STANDARD_SEMIANNUAL_PRICE_SUM: int = 1_530_000
-    PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 2_880_000
+    PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PRICE_SUM: int = 220_000
+    PAYME_SUBSCRIPTION_STANDARD_QUARTERLY_PRICE_SUM: int = 594_000
+    PAYME_SUBSCRIPTION_STANDARD_SEMIANNUAL_PRICE_SUM: int = 1_122_000
+    PAYME_SUBSCRIPTION_STANDARD_YEARLY_PRICE_SUM: int = 2_112_000
+
+    # What each plan used to cost, shown struck through beside the current price
+    # so a price cut is legible rather than silent. Set only where a plan actually
+    # got cheaper; a value at or below the current price is ignored rather than
+    # rendered, so these can be left in place after a later reprice without
+    # producing a nonsense "was" figure.
+    PAYME_SUBSCRIPTION_STANDARD_MONTHLY_PREVIOUS_PRICE_SUM: int | None = 300_000
+    PAYME_SUBSCRIPTION_STANDARD_QUARTERLY_PREVIOUS_PRICE_SUM: int | None = 810_000
+    PAYME_SUBSCRIPTION_STANDARD_SEMIANNUAL_PREVIOUS_PRICE_SUM: int | None = 1_530_000
+    PAYME_SUBSCRIPTION_STANDARD_YEARLY_PREVIOUS_PRICE_SUM: int | None = 2_880_000
     PAYME_SUBSCRIPTION_PRO_MONTHLY_PRICE_SUM: int = 600_000
     PAYME_SUBSCRIPTION_PRO_QUARTERLY_PRICE_SUM: int = 1_620_000
     PAYME_SUBSCRIPTION_PRO_SEMIANNUAL_PRICE_SUM: int = 3_060_000

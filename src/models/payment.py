@@ -279,6 +279,9 @@ class SubscriptionPlan(BaseModel):
     days: int
     # Promo campaign fields — all None when no discount applies to this plan.
     # See core.subscription_promo for how amount_sum gets discounted.
+    # What the plan used to cost, when it has actually been reduced. Rendered
+    # struck through beside the current price; None means no price cut to show.
+    previous_price_sum: int | None = None
     list_price_sum: int | None = None
     discount_percent: int | None = None
     promo_ends_at_ms: int | None = None
