@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.26-260912 (2026-09-12)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.26-260912 -->
+
+## What's Changed
+### 💬 Other
+* feat(payments): cut the standard tier, and show that it got cheaper by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/192
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.25-260908...v5.0.26-260912
+
 ## v5.0.25-260908 (2026-09-08)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.25-260908 -->
