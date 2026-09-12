@@ -300,6 +300,30 @@ class Settings(BaseSettings):
     DT_WEB_CLIENT_NAME: str = "birdarcha"  # Web client name for OneID integration
     WAKILAI_WEB_CLIENT_NAME: str = "wakilai"  # Web client name for regular users
 
+    # ATMOS Payment Gateway (bind -> charge -> renew; docs.atmos.uz)
+    ATMOS_CONSUMER_KEY: str | None = None
+    ATMOS_CONSUMER_SECRET: str | None = None
+    ATMOS_STORE_ID: int | None = None
+    ATMOS_APIGW_BASE: str = "https://apigw.atmos.uz"
+    ATMOS_BIND_CHECKOUT_BASE: str = "https://checkout.atmos.uz/bind"
+    # Verifies both the payment Callback API's `sign` and the bind callback's
+    # `api_key` — ATMOS documents a single api_key per merchant, not one per
+    # callback type. See docs.atmos.uz/en/ "Callback API".
+    ATMOS_CALLBACK_API_KEY: str | None = None
+    ATMOS_CALLBACK_IP_ALLOWLIST: str = "92.63.207.0/24"
+    ATMOS_TRANSACTIONS_COLLECTION: str = "atmos_transactions"
+    ATMOS_MANDATES_COLLECTION: str = "atmos_mandates"
+    ATMOS_BIND_LOCK_COLLECTION: str = "atmos_bind_locks"
+    # How long a single in-flight card-bind attempt reserves the (merchant-wide)
+    # attribution slot. See AtmosService module docstring: ATMOS's bind callback
+    # carries only {api_key, card_id} — no request_id/account is echoed back — so
+    # nothing in the callback tells us which pending bind it belongs to. Until
+    # ATMOS confirms a per-request correlation field, only one bind may be in
+    # flight at a time; this is the abandonment timeout that frees a slot if the
+    # user never completes the hosted page.
+    ATMOS_BIND_LOCK_TTL_SECONDS: int = 600
+    ATMOS_TIMEOUT_SECONDS: float = 20.0
+
     # Bitrix24 CRM
     BITRIX24_WEBHOOK_URL: str | None = None
     BITRIX24_LEAD_TITLE: str = "Wakil platform"

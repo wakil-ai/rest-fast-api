@@ -8,6 +8,7 @@ from services.llm_service_client import LlmServiceClient
 from services.otp_service import OTPService
 from services.payments import (
     AppStoreService,
+    AtmosService,
     BasePaymentService,
     ClickService,
     GooglePlayService,
@@ -37,6 +38,7 @@ __all__ = [
     "LlmServiceClient",
     "OTPService",
     "AppStoreService",
+    "AtmosService",
     "BasePaymentService",
     "ClickService",
     "GooglePlayService",

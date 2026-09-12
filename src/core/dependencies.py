@@ -8,6 +8,7 @@ if TYPE_CHECKING:
         AdminAuditService,
         AdminSubscriptionService,
         AppStoreService,
+        AtmosService,
         ChatHistoryService,
         ChatService,
         Bitrix24Service,
@@ -232,6 +233,13 @@ def get_playstore_service() -> "GooglePlayService":
     from services import GooglePlayService
 
     return GooglePlayService()
+
+
+@lru_cache
+def get_atmos_service() -> "AtmosService":
+    from services import AtmosService
+
+    return AtmosService()
 
 
 @lru_cache

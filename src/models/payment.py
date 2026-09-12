@@ -507,6 +507,94 @@ class UzumStatusRequest(BaseModel):
     transId: str
 
 
+# ATMOS Models
+#
+# Docs: https://docs.atmos.uz/en/ (single-page Slate doc; anchors under "Visa/Mastercard
+# acquiring" for the hosted bind flow, "Merchant API" for the charge sequence).
+class AtmosError(ChatException):
+    """Raised inside AtmosService/AtmosClient; rendered by FastAPI as its status code."""
+
+    def __init__(self, detail: str, *, status_code: int = 400):
+        super().__init__(detail=detail, status_code=status_code)
+
+
+class AtmosServiceError(Exception):
+    """Raised when ATMOS's own API returns a non-success status for a call we made
+    (as opposed to AtmosError, which is a request WE reject)."""
+
+    def __init__(self, message: str, *, atmos_code: str | None = None):
+        self.atmos_code = atmos_code
+        super().__init__(message)
+
+
+class AtmosBindRequest(BaseModel):
+    user_id: str
+    # Where ATMOS's hosted bind page redirects the browser after the user finishes
+    # entering card + OTP. Carries no payment outcome — see AtmosService docstring
+    # for why the bind *callback* (server-to-server) is the actual source of truth.
+    success_url: str
+
+
+class AtmosBindResponse(BaseModel):
+    request_id: str
+    url: str  # https://checkout.atmos.uz/bind?id=<token>
+
+
+class AtmosMandateResponse(BaseModel):
+    status: str  # "none" | "pending" | "active" | "revoked"
+    bound_at_ms: int | None = None
+    # Masked reference only — never a PAN. See "Recurring" in the spec.
+    atmos_card_id: int | None = None
+
+
+class AtmosChargeRequest(BaseModel):
+    user_id: str
+    subscription_tier: SubscriptionTier
+    subscription_period: SubscriptionPeriod
+
+
+class AtmosChargeResponse(BaseModel):
+    order_id: str
+    status: str  # "paid" | "failed"
+    ofd_url: str | None = None
+    detail: str | None = None  # Failure reason; None on success.
+
+
+class AtmosRenewDueRequest(BaseModel):
+    # Omit to sweep every mandate due for renewal (the external scheduler's call);
+    # set to charge one user on demand (the admin dashboard's "run renewal now").
+    user_id: str | None = None
+
+
+class AtmosRenewDueResult(BaseModel):
+    user_id: str
+    order_id: str | None = None
+    outcome: str  # "charged" | "failed" | "skipped_revoked" | "skipped_not_due"
+    detail: str | None = None
+
+
+class AtmosRenewDueResponse(BaseModel):
+    results: list[AtmosRenewDueResult]
+
+
+class AtmosRecentCharge(BaseModel):
+    order_id: str | None = None
+    status: str | None = None
+    is_renewal: bool = False
+    amount_sum: int | None = None
+    created_at_ms: int | None = None
+    atmos_error: str | None = None
+
+
+class AtmosDiagnosticResponse(BaseModel):
+    user_id: str
+    mandate_status: str
+    atmos_card_id: int | None = None
+    bound_at_ms: int | None = None
+    revoked_at_ms: int | None = None
+    recent_charges: list[AtmosRecentCharge]
+
+
 # DT Team Subscription Models
 class DTSubscriptionApplyResponse(BaseModel):
     """Response for DT team subscription application"""
