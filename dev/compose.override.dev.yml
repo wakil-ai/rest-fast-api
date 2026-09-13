@@ -1,5 +1,9 @@
 services:
   api:
+    # Own tag so this host never shares :latest with prod-stack-wakil, which
+    # pulls the same compose.yml (no build: context — registry-pull-only).
+    # 2.build-publish.yml pushes this tag on every push to `dev`.
+    image: humblebeeai/wakil-ai-api:dev
     ports: !override
       - "8080:8080"
     environment:
