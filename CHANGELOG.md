@@ -1,5 +1,18 @@
 # Changelog
 
+## v5.0.27-260914 (2026-09-14)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.27-260914 -->
+
+## What's Changed
+### 💬 Other
+* feat(payments): port Google Play Billing to main by @saidazizkhon05 in https://github.com/wakil-ai/rest-fast-api/pull/194
+
+## New Contributors
+* @saidazizkhon05 made their first contribution in https://github.com/wakil-ai/rest-fast-api/pull/194
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.26-260912...v5.0.27-260914
+
 ## v5.0.26-260912 (2026-09-12)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.26-260912 -->
