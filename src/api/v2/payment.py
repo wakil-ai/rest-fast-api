@@ -9,6 +9,7 @@ from core.config import settings
 from core.dependencies import (
     get_appstore_service,
     get_click_service,
+    get_playstore_service,
     get_subscription_storage,
     get_transaction_service,
     get_uzum_service,
@@ -27,6 +28,8 @@ from models.payment import (
     PaymeMethod,
     PaymentLinkRequest,
     PaymentLinkResponse,
+    PlayStoreVerifyRequest,
+    PlayStoreVerifyResponse,
     SubscriptionCatalogResponse,
     SubscriptionEligibilityError,
     SubscriptionPlan,
@@ -46,6 +49,7 @@ from security import (
 from services import (
     AppStoreService,
     ClickService,
+    GooglePlayService,
     TransactionService,
     UzumService,
 )
@@ -352,6 +356,39 @@ async def appstore_notifications(
         logger.exception(f"Error handling App Store notification: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to handle App Store notification"
+        )
+
+
+# MARK: Google Play Billing (Android)
+@router.post("/playstore/verify", response_model=PlayStoreVerifyResponse)
+async def verify_playstore_purchase(
+    request: PlayStoreVerifyRequest,
+    _auth: bool = Depends(verify_api_key),
+    playstore_service: GooglePlayService = Depends(get_playstore_service),
+):
+    """Verify a Google Play purchase and grant the subscription.
+
+    Called by the Android app right after a purchase. Unlike App Store's offline
+    JWS verification, this is a live authenticated call to the Play Developer API
+    (`purchases.subscriptionsv2.get`); on success the subscription is granted
+    through the same path Payme/Click/App Store use. Idempotent per Play
+    purchase token.
+    """
+    try:
+        result = await playstore_service.verify_purchase(
+            user_id=request.user_id,
+            package_name=request.package_name,
+            product_id=request.product_id,
+            purchase_token=request.purchase_token,
+        )
+        return PlayStoreVerifyResponse(**result)
+    except HTTPException:
+        # GooglePlayError is an HTTPException; FastAPI renders it as-is.
+        raise
+    except Exception as e:
+        logger.exception(f"Error verifying Google Play purchase: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to verify Google Play purchase"
         )
 
 

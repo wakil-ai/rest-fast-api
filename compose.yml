@@ -12,6 +12,10 @@ services:
       - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     volumes:
       - ./keys/gcs_creds.json:/app/keys/gcs_creds.json:ro
+      # Play Developer API service-account key — see PLAYSTORE_SERVICE_ACCOUNT_FILE
+      # in .env.example. The file itself is placed directly on the deploy host
+      # (not committed here), same as keys/gcs_creds.json above.
+      - ./keys/wakilai-android-billing-key.json:/app/keys/wakilai-android-billing-key.json:ro
     networks:
       - wakilai-bridge
       - rest-api-ai_wakil-network

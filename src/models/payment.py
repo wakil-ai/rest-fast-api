@@ -314,7 +314,7 @@ class UserSubscriptionResponse(BaseModel):
     today_remaining_credits: int | None = None
     uses_combined_credit_pool: bool = True
     can_upload: bool = False
-    # Which rail granted the active subscription: "appstore" | "payme" | "click" | "uzum".
+    # Which rail granted the active subscription: "appstore" | "playstore" | "payme" | "click" | "uzum".
     source: str | None = None
 
 
@@ -343,6 +343,32 @@ class AppStoreVerifyResponse(BaseModel):
     tier: str | None = None
     period: str | None = None
     original_transaction_id: str | None = None
+    expires_ms: int | None = None
+    daily_credits: int | None = None
+
+
+# Google Play Billing (Android) Models
+class GooglePlayError(ChatException):
+    """Raised inside GooglePlayService; rendered by FastAPI as its status code."""
+
+    def __init__(self, detail: str, *, status_code: int = 400):
+        super().__init__(detail=detail, status_code=status_code)
+
+
+class PlayStoreVerifyRequest(BaseModel):
+    user_id: str
+    package_name: str
+    product_id: str
+    # BillingClient's Purchase.purchaseToken from the Android app — Play's
+    # idempotency key (see GooglePlayService, it changes on renewal, unlike
+    # App Store's stable originalTransactionId).
+    purchase_token: str
+
+
+class PlayStoreVerifyResponse(BaseModel):
+    status: str  # "active" | "inactive"
+    tier: str | None = None
+    period: str | None = None
     expires_ms: int | None = None
     daily_credits: int | None = None
 
