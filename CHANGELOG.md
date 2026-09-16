@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.28-260916 (2026-09-16)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.28-260916 -->
+
+## What's Changed
+### 💬 Other
+* Feat/add ai configuration by @abdulahat-hbai in https://github.com/wakil-ai/rest-fast-api/pull/191
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.27-260914...v5.0.28-260916
+
 ## v5.0.27-260914 (2026-09-14)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.27-260914 -->
