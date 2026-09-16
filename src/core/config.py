@@ -54,14 +54,16 @@ class Settings(BaseSettings):
     FINGERPRINTS_COLLECTION: str = "fingerprints"
     ADMIN_AUDIT_LOGS_COLLECTION: str = "admin_audit_logs"
 
-    # Google Cloud Storage
+    # Google Cloud server identity. IAM controls which APIs it can access.
+    GOOGLE_APPLICATION_CREDENTIALS: str | None = None
+    GOOGLE_PROJECT_ID: str | None = None
+    GOOGLE_CLIENT_EMAIL: str | None = None
+    GOOGLE_PRIVATE_KEY: str | None = None
+    GOOGLE_PRIVATE_KEY_ID: str | None = None
+    GOOGLE_SERVICE_ACCOUNT_CLIENT_ID: str | None = None
+
+    # Google Cloud Storage resource
     GCS_BUCKET_NAME: str | None = None
-    GCS_CREDENTIALS_PATH: str | None = None  # Optional local service account JSON file
-    GCS_PROJECT_ID: str | None = None
-    GCS_CLIENT_EMAIL: str | None = None
-    GCS_PRIVATE_KEY: str | None = None
-    GCS_PRIVATE_KEY_ID: str | None = None
-    GCS_CLIENT_ID: str | None = None
 
     # Assistant compatibility names owned by public routes/credits.
     ASSISTANT_MAIN_COLLECTION: str = "lexuz"
