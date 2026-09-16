@@ -24,21 +24,21 @@ class StorageService:
             credentials = self._credentials_from_environment()
             if credentials is not None:
                 self.client = storage.Client(
-                    credentials=credentials, project=settings.GCS_PROJECT_ID
+                    credentials=credentials, project=settings.GOOGLE_PROJECT_ID
                 )
-            elif settings.GCS_CREDENTIALS_PATH and os.path.exists(
-                settings.GCS_CREDENTIALS_PATH
+            elif settings.GOOGLE_APPLICATION_CREDENTIALS and os.path.exists(
+                settings.GOOGLE_APPLICATION_CREDENTIALS
             ):
                 # Optional compatibility mode for local development.
                 credentials = service_account.Credentials.from_service_account_file(
-                    settings.GCS_CREDENTIALS_PATH
+                    settings.GOOGLE_APPLICATION_CREDENTIALS
                 )
                 self.client = storage.Client(
-                    credentials=credentials, project=settings.GCS_PROJECT_ID
+                    credentials=credentials, project=settings.GOOGLE_PROJECT_ID
                 )
             else:
                 # Use default credentials (for Cloud Run, GCE, etc.)
-                self.client = storage.Client(project=settings.GCS_PROJECT_ID)
+                self.client = storage.Client(project=settings.GOOGLE_PROJECT_ID)
 
             self.bucket_name = settings.GCS_BUCKET_NAME
             self.bucket = self.client.bucket(self.bucket_name)
@@ -57,11 +57,18 @@ class StorageService:
         document into GitHub Actions and container environment configuration.
         """
         required = {
-            "project_id": settings.GCS_PROJECT_ID,
-            "private_key_id": settings.GCS_PRIVATE_KEY_ID,
-            "private_key": settings.GCS_PRIVATE_KEY,
-            "client_email": settings.GCS_CLIENT_EMAIL,
-            "client_id": settings.GCS_CLIENT_ID,
+            "project_id": settings.GOOGLE_PROJECT_ID,
+            "private_key_id": settings.GOOGLE_PRIVATE_KEY_ID,
+            "private_key": settings.GOOGLE_PRIVATE_KEY,
+            "client_email": settings.GOOGLE_CLIENT_EMAIL,
+            "client_id": settings.GOOGLE_SERVICE_ACCOUNT_CLIENT_ID,
+        }
+        environment_names = {
+            "project_id": "GOOGLE_PROJECT_ID",
+            "private_key_id": "GOOGLE_PRIVATE_KEY_ID",
+            "private_key": "GOOGLE_PRIVATE_KEY",
+            "client_email": "GOOGLE_CLIENT_EMAIL",
+            "client_id": "GOOGLE_SERVICE_ACCOUNT_CLIENT_ID",
         }
         credential_fields = set(required) - {"project_id"}
         configured_credentials = {name for name in credential_fields if required[name]}
@@ -71,8 +78,8 @@ class StorageService:
         missing = sorted(name for name, value in required.items() if not value)
         if missing:
             raise ValueError(
-                "Incomplete GCS service account configuration; missing: "
-                + ", ".join(f"GCS_{name.upper()}" for name in missing)
+                "Incomplete Google server identity configuration; missing: "
+                + ", ".join(environment_names[name] for name in missing)
             )
 
         service_account_info = {
