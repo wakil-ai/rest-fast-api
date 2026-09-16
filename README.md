@@ -48,8 +48,9 @@ Important settings:
 - `LLM_SERVICE_URL`
 - `LLM_SERVICE_INTERNAL_TOKEN`
 - `API_KEY`, `SUPER_ADMIN_API_KEY`
-- `GCS_BUCKET_NAME`, `GCS_PROJECT_ID`, `GCS_CLIENT_EMAIL`,
-  `GCS_PRIVATE_KEY_ID`, `GCS_PRIVATE_KEY`, `GCS_CLIENT_ID`
+- `GOOGLE_PROJECT_ID`, `GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY_ID`,
+  `GOOGLE_PRIVATE_KEY`, `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID`
+- `GCS_BUCKET_NAME`
 - payment provider settings, if payments are enabled
 
 Provider keys such as OpenAI, Gemini, Milvus, Neo4j, Mem0, OCR, and STT keys should be configured in `rest-api-llm`, not here.
