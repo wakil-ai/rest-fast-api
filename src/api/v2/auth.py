@@ -29,8 +29,8 @@ chat_history_service = get_chat_history_service()
 oauth = OAuth()
 oauth.register(
     name="google",
-    client_id=settings.GOOGLE_CLIENT_ID,
-    client_secret=settings.GOOGLE_CLIENT_SECRET,
+    client_id=settings.GOOGLE_OAUTH_CLIENT_ID,
+    client_secret=settings.GOOGLE_OAUTH_CLIENT_SECRET,
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
     code_challenge_method="S256",  # Use PKCE (Proof Key for Code Exchange)
@@ -124,7 +124,7 @@ async def login(request: Request):
     """
     Redirect the user to Google's OAuth 2.0 consent screen.
     """
-    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+    if not settings.GOOGLE_OAUTH_CLIENT_ID or not settings.GOOGLE_OAUTH_CLIENT_SECRET:
         raise HTTPException(
             status_code=500, detail="Google OAuth credentials not configured."
         )
@@ -135,13 +135,15 @@ async def login(request: Request):
     else:
         request.session.pop("google_frontend_redirect_uri", None)
 
-    redirect_uri = settings.GOOGLE_REDIRECT_URI or str(request.url_for("auth_callback"))
+    redirect_uri = settings.GOOGLE_OAUTH_REDIRECT_URI or str(
+        request.url_for("auth_callback")
+    )
     logger.info(f"[GoogleAuth] Frontend redirect URI: {frontend_redirect_uri}")
     logger.info(f"[GoogleAuth] Session before redirect: {dict(request.session)}")
 
     # Build Google OAuth URL manually to ensure redirect_uri matches exactly
     params = {
-        "client_id": settings.GOOGLE_CLIENT_ID,
+        "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
         "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": "openid email profile",
@@ -175,7 +177,7 @@ async def auth_callback(request: Request):
             )
 
         # Manually exchange auth code for tokens (bypass session-based state validation)
-        redirect_uri = settings.GOOGLE_REDIRECT_URI or str(
+        redirect_uri = settings.GOOGLE_OAUTH_REDIRECT_URI or str(
             request.url_for("auth_callback")
         )
 
@@ -183,8 +185,8 @@ async def auth_callback(request: Request):
             token_response = await client.post(
                 "https://oauth2.googleapis.com/token",
                 data={
-                    "client_id": settings.GOOGLE_CLIENT_ID,
-                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                    "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
                     "code": auth_code,
                     "grant_type": "authorization_code",
                     "redirect_uri": redirect_uri,

@@ -94,9 +94,9 @@ Source of truth: [`src/core/config.py`](../src/core/config.py).
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `GOOGLE_CLIENT_ID` | `null` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | `null` | Google OAuth client secret |
-| `GOOGLE_REDIRECT_URI` | `null` | Google OAuth callback |
+| `GOOGLE_OAUTH_CLIENT_ID` | `null` | Google OAuth client ID |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | `null` | Google OAuth client secret |
+| `GOOGLE_OAUTH_REDIRECT_URI` | `null` | Google OAuth callback |
 | `TELEGRAM_BOT_TOKEN` | `null` | Telegram login bot token |
 | `TELEGRAM_BOT_LOGIN` | `null` | Telegram bot username |
 | `TELEGRAM_SESSION_TIMEOUT` | `259200` | Telegram login max age |
@@ -108,17 +108,22 @@ Source of truth: [`src/core/config.py`](../src/core/config.py).
 | `OTP_VERIFY_LIMIT_PER_PHONE` | `10` | OTP verify limit |
 | `OTP_VERIFY_WINDOW_SECONDS` | `3600` | OTP verify window |
 
+## Google Cloud Server Identity
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GOOGLE_PROJECT_ID` | `null` | Google Cloud project ID |
+| `GOOGLE_CLIENT_EMAIL` | `null` | Server service-account email |
+| `GOOGLE_PRIVATE_KEY_ID` | `null` | Server service-account private-key ID |
+| `GOOGLE_PRIVATE_KEY` | `null` | PEM private key; literal `\\n` sequences are supported |
+| `GOOGLE_CLIENT_ID` | `null` | Server service-account client ID |
+| `GOOGLE_APPLICATION_CREDENTIALS` | `null` | Optional local JSON path fallback |
+
 ## Storage
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `GCS_BUCKET_NAME` | `null` | GCS bucket |
-| `GCS_PROJECT_ID` | `null` | GCP project ID |
-| `GCS_CLIENT_EMAIL` | `null` | Service account email |
-| `GCS_PRIVATE_KEY_ID` | `null` | Service account private-key ID |
-| `GCS_PRIVATE_KEY` | `null` | PEM private key; literal `\\n` sequences are supported |
-| `GCS_CLIENT_ID` | `null` | Service account client ID |
-| `GCS_CREDENTIALS_PATH` | `null` | Optional local JSON path fallback |
+| `GCS_BUCKET_NAME` | `null` | GCS bucket used by this server |
 
 ## Redis
 

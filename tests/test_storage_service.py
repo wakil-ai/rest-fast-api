@@ -10,22 +10,22 @@ from services.storage_service import StorageService
 
 def _clear_service_account_settings(monkeypatch):
     for name in (
-        "GCS_PROJECT_ID",
-        "GCS_PRIVATE_KEY_ID",
-        "GCS_PRIVATE_KEY",
-        "GCS_CLIENT_EMAIL",
-        "GCS_CLIENT_ID",
+        "GOOGLE_PROJECT_ID",
+        "GOOGLE_PRIVATE_KEY_ID",
+        "GOOGLE_PRIVATE_KEY",
+        "GOOGLE_CLIENT_EMAIL",
+        "GOOGLE_CLIENT_ID",
     ):
         monkeypatch.setattr(settings, name, None)
 
 
 def test_credentials_from_environment(monkeypatch):
     values = {
-        "GCS_PROJECT_ID": "project",
-        "GCS_PRIVATE_KEY_ID": "key-id",
-        "GCS_PRIVATE_KEY": "line-one\\nline-two",
-        "GCS_CLIENT_EMAIL": "svc@example.iam.gserviceaccount.com",
-        "GCS_CLIENT_ID": "client-id",
+        "GOOGLE_PROJECT_ID": "project",
+        "GOOGLE_PRIVATE_KEY_ID": "key-id",
+        "GOOGLE_PRIVATE_KEY": "line-one\\nline-two",
+        "GOOGLE_CLIENT_EMAIL": "svc@example.iam.gserviceaccount.com",
+        "GOOGLE_CLIENT_ID": "client-id",
     }
     for name, value in values.items():
         monkeypatch.setattr(settings, name, value)
@@ -40,22 +40,22 @@ def test_credentials_from_environment(monkeypatch):
     info = factory.call_args.args[0]
     assert info["project_id"] == "project"
     assert info["private_key"] == "line-one\nline-two"
-    assert info["client_email"] == values["GCS_CLIENT_EMAIL"]
+    assert info["client_email"] == values["GOOGLE_CLIENT_EMAIL"]
 
 
 def test_credentials_from_environment_returns_none_for_adc(monkeypatch):
     _clear_service_account_settings(monkeypatch)
     # A project ID is also useful with Workload Identity / ADC and does not mean
     # that individual service-account credentials were partially configured.
-    monkeypatch.setattr(settings, "GCS_PROJECT_ID", "project")
+    monkeypatch.setattr(settings, "GOOGLE_PROJECT_ID", "project")
     assert StorageService._credentials_from_environment() is None
 
 
 def test_credentials_from_environment_rejects_partial_config(monkeypatch):
     _clear_service_account_settings(monkeypatch)
-    monkeypatch.setattr(settings, "GCS_CLIENT_EMAIL", "svc@example.com")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_EMAIL", "svc@example.com")
 
-    with pytest.raises(ValueError, match="GCS_PRIVATE_KEY"):
+    with pytest.raises(ValueError, match="GOOGLE_PRIVATE_KEY"):
         StorageService._credentials_from_environment()
 
 
