@@ -61,7 +61,14 @@ class StorageService:
             "private_key_id": settings.GOOGLE_PRIVATE_KEY_ID,
             "private_key": settings.GOOGLE_PRIVATE_KEY,
             "client_email": settings.GOOGLE_CLIENT_EMAIL,
-            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_id": settings.GOOGLE_SERVICE_ACCOUNT_CLIENT_ID,
+        }
+        environment_names = {
+            "project_id": "GOOGLE_PROJECT_ID",
+            "private_key_id": "GOOGLE_PRIVATE_KEY_ID",
+            "private_key": "GOOGLE_PRIVATE_KEY",
+            "client_email": "GOOGLE_CLIENT_EMAIL",
+            "client_id": "GOOGLE_SERVICE_ACCOUNT_CLIENT_ID",
         }
         credential_fields = set(required) - {"project_id"}
         configured_credentials = {name for name in credential_fields if required[name]}
@@ -72,7 +79,7 @@ class StorageService:
         if missing:
             raise ValueError(
                 "Incomplete Google server identity configuration; missing: "
-                + ", ".join(f"GOOGLE_{name.upper()}" for name in missing)
+                + ", ".join(environment_names[name] for name in missing)
             )
 
         service_account_info = {

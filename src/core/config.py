@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_EMAIL: str | None = None
     GOOGLE_PRIVATE_KEY: str | None = None
     GOOGLE_PRIVATE_KEY_ID: str | None = None
-    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_SERVICE_ACCOUNT_CLIENT_ID: str | None = None
 
     # Google Cloud Storage resource
     GCS_BUCKET_NAME: str | None = None
@@ -270,9 +270,9 @@ class Settings(BaseSettings):
         return value
 
     # Google Auth
-    GOOGLE_OAUTH_CLIENT_ID: str | None = None
-    GOOGLE_OAUTH_CLIENT_SECRET: str | None = None
-    GOOGLE_OAUTH_REDIRECT_URI: str | None = None
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    GOOGLE_REDIRECT_URI: str | None = None
     AUTH_SECRET_KEY: str = "secret-key-change-me"
     JWT_SECRET_KEY: str | None = Field(default=None, min_length=32)
     JWT_ALGORITHM: str = "HS256"

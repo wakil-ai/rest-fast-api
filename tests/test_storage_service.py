@@ -14,7 +14,7 @@ def _clear_service_account_settings(monkeypatch):
         "GOOGLE_PRIVATE_KEY_ID",
         "GOOGLE_PRIVATE_KEY",
         "GOOGLE_CLIENT_EMAIL",
-        "GOOGLE_CLIENT_ID",
+        "GOOGLE_SERVICE_ACCOUNT_CLIENT_ID",
     ):
         monkeypatch.setattr(settings, name, None)
 
@@ -25,7 +25,7 @@ def test_credentials_from_environment(monkeypatch):
         "GOOGLE_PRIVATE_KEY_ID": "key-id",
         "GOOGLE_PRIVATE_KEY": "line-one\\nline-two",
         "GOOGLE_CLIENT_EMAIL": "svc@example.iam.gserviceaccount.com",
-        "GOOGLE_CLIENT_ID": "client-id",
+        "GOOGLE_SERVICE_ACCOUNT_CLIENT_ID": "client-id",
     }
     for name, value in values.items():
         monkeypatch.setattr(settings, name, value)
@@ -56,6 +56,14 @@ def test_credentials_from_environment_rejects_partial_config(monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_EMAIL", "svc@example.com")
 
     with pytest.raises(ValueError, match="GOOGLE_PRIVATE_KEY"):
+        StorageService._credentials_from_environment()
+
+
+def test_partial_identity_reports_service_account_client_id_name(monkeypatch):
+    _clear_service_account_settings(monkeypatch)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_EMAIL", "svc@example.com")
+
+    with pytest.raises(ValueError, match="GOOGLE_SERVICE_ACCOUNT_CLIENT_ID"):
         StorageService._credentials_from_environment()
 
 
