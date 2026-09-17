@@ -167,7 +167,9 @@ class FileManager:
                 else 500
             )
             logger.error(
-                f"Message file upload failed: {file.filename} - {str(e)}",
+                "Message file upload failed: {} - {}",
+                file.filename,
+                str(e),
                 exc_info=True,
             )
             return status_code, str(e)
@@ -209,6 +211,7 @@ class FileManager:
                 f"File exceeds the {max_file_size_mb('project')} MB limit for project uploads.",
             )
 
+        temp_path_handed_off = False
         try:
             existing_by_content = (
                 await self.history.get_file_by_content_hash_for_project(
@@ -236,18 +239,21 @@ class FileManager:
                     f"Existing project file cache hit is not ingested; reprocessing "
                     f"file_id: {fid}"
                 )
-                existing_by_content = await self._submit_processing_job(
-                    file_id=fid,
-                    temp_path=temp_path,
-                    filename=file.filename or "upload",
-                    content_type=file.content_type or "application/octet-stream",
-                    user_id=user_id,
-                    record=existing_by_content,
-                    project_id=project_id,
-                    session_id=session_id,
+                existing_by_content = await self.history.update_file_metadata_fields(
+                    fid, {"status": "processing", "processing_status": "queued"}
                 )
-                existing_by_content = await self._await_processing_success(
-                    existing_by_content
+                temp_path_handed_off = True
+                asyncio.create_task(
+                    self._finish_project_file_processing(
+                        file_id=fid,
+                        temp_path=temp_path,
+                        filename=file.filename or "upload",
+                        content_type=file.content_type or "application/octet-stream",
+                        user_id=user_id,
+                        record=existing_by_content,
+                        project_id=project_id,
+                        session_id=session_id,
+                    )
                 )
                 response = self._build_success_response(
                     file_id=fid,
@@ -295,23 +301,33 @@ class FileManager:
                 status="processing",
             )
 
-            record = await self._submit_processing_job(
-                file_id=file_id,
-                temp_path=temp_path,
-                filename=file.filename or "upload",
-                content_type=file.content_type or "application/octet-stream",
-                user_id=user_id,
-                record=record,
-                project_id=project_id,
-                session_id=session_id,
+            # Ingestion (OCR + Milvus indexing) can take minutes. Holding this
+            # request open for it let a slow client/proxy time out mid-poll: the
+            # record and project link above were already committed, but the
+            # response never reached the frontend, so the upload silently
+            # vanished from the project instead of erroring or completing.
+            # Handing it off to a background task closes that gap -- the
+            # frontend already polls processing files to completion via
+            # scheduleProjectFileStatusPoll, so an immediate "processing"
+            # response is all it needs.
+            temp_path_handed_off = True
+            asyncio.create_task(
+                self._finish_project_file_processing(
+                    file_id=file_id,
+                    temp_path=temp_path,
+                    filename=file.filename or "upload",
+                    content_type=file.content_type or "application/octet-stream",
+                    user_id=user_id,
+                    record=record,
+                    project_id=project_id,
+                    session_id=session_id,
+                )
             )
-
-            record = await self._await_processing_success(record)
 
             response = self._build_success_response(
                 file_id=file_id,
-                metadata=record.get("file_metadata", metadata),
-                ocr_result=record.get("ocr_result", ""),
+                metadata=metadata,
+                ocr_result="",
                 record=record,
                 project_id=project_id,
             )
@@ -327,11 +343,61 @@ class FileManager:
                 else 500
             )
             logger.error(
-                f"Project file upload failed: {file.filename} - {str(e)}",
+                "Project file upload failed: {} - {}",
+                file.filename,
+                str(e),
                 exc_info=True,
             )
             return status_code, str(e)
 
+        finally:
+            if not temp_path_handed_off:
+                self._safe_remove_temp_file(temp_path)
+
+    async def _finish_project_file_processing(
+        self,
+        *,
+        file_id: str,
+        temp_path: str,
+        filename: str,
+        content_type: str,
+        user_id: str,
+        record: dict,
+        project_id: str,
+        session_id: str | None,
+    ) -> None:
+        """Run OCR/ingestion for a project file after the upload response was sent.
+
+        The caller hands off temp_path ownership once this task is scheduled,
+        so this is the only place that removes it. Expected failures are
+        already persisted to the file record by _submit_processing_job /
+        _poll_processing_job's own error handling; only truly unexpected
+        exceptions need to mark the record failed here.
+        """
+        try:
+            submitted_record = await self._submit_processing_job(
+                file_id=file_id,
+                temp_path=temp_path,
+                filename=filename,
+                content_type=content_type,
+                user_id=user_id,
+                record=record,
+                project_id=project_id,
+                session_id=session_id,
+            )
+            await self._await_processing_success(submitted_record)
+        except DocumentProcessingSubmissionError:
+            pass
+        except Exception:
+            logger.error(
+                f"[FileManager] Background processing crashed for file_id={file_id}",
+                exc_info=True,
+            )
+            await self._mark_processing_failed(
+                record,
+                "Document processing failed unexpectedly.",
+                processing_status="failed",
+            )
         finally:
             self._safe_remove_temp_file(temp_path)
 
@@ -371,7 +437,9 @@ class FileManager:
             )
         except Exception as exc:
             logger.warning(
-                f"Could not delete indexed vectors for project file {file_id}: {exc}"
+                "Could not delete indexed vectors for project file {}: {}",
+                file_id,
+                exc,
             )
 
         await self.history.delete_file_upload(file_id)
@@ -518,7 +586,8 @@ class FileManager:
 
         if not file_id or not task_id:
             logger.warning(
-                f"[FileManager] Cannot poll processing job without file/task id: {record}"
+                "[FileManager] Cannot poll processing job without file/task id: {}",
+                record,
             )
             return None
 
@@ -544,14 +613,18 @@ class FileManager:
                         processing_status="failed",
                     )
                 logger.warning(
-                    f"[FileManager] Polling failed for file_id={file_id}: {exc}",
+                    "[FileManager] Polling failed for file_id={}: {}",
+                    file_id,
+                    exc,
                     exc_info=True,
                 )
                 await asyncio.sleep(self._processing_poll_interval(elapsed))
                 continue
             except Exception as exc:
                 logger.warning(
-                    f"[FileManager] Polling failed for file_id={file_id}: {exc}",
+                    "[FileManager] Polling failed for file_id={}: {}",
+                    file_id,
+                    exc,
                     exc_info=True,
                 )
                 await asyncio.sleep(self._processing_poll_interval(elapsed))
