@@ -1,5 +1,18 @@
 # Changelog
 
+## v5.0.30-260919 (2026-09-19)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.30-260919 -->
+
+## What's Changed
+### 💬 Other
+* fix: promo/welcome-bonus daily credit total surfaced correctly by @umidjontursunovhbai in https://github.com/wakil-ai/rest-fast-api/pull/198
+
+## New Contributors
+* @umidjontursunovhbai made their first contribution in https://github.com/wakil-ai/rest-fast-api/pull/198
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.29-260916...v5.0.30-260919
+
 ## v5.0.29-260916 (2026-09-16)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.29-260916 -->
