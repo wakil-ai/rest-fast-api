@@ -216,7 +216,7 @@ class PromoCodeService:
 
     async def assign_promo_code_to_user(
         self, user_id: str, promo_code: str
-    ) -> tuple[bool, int]:
+    ) -> tuple[bool, int, dict[str, Any] | None]:
         """
         Assign a promo code to a user for unlimited access.
 
@@ -227,6 +227,9 @@ class PromoCodeService:
         Returns:
             bool: True if assigned successfully
             status_code: int
+            assignment: the assignment doc merged with the promo code's own
+                credit_amount / expiration_date (for surfacing to the caller),
+                or None on failure
         """
         try:
             # Verify promo code exists and is active
@@ -235,19 +238,20 @@ class PromoCodeService:
                 logger.warning(
                     f"[PromoCodeService] Promo code '{promo_code}' not found"
                 )
-                return False, 404
+                return False, 404, None
 
             if not promo.get("is_active", False):
                 logger.warning(
                     f"[PromoCodeService] Promo code '{promo_code}' is not active"
                 )
-                return False, 400
+                return False, 400, None
 
             # Check if user already has a promo code
             user_promo_collection = self.mongo_handler.db[
                 self.USER_PROMO_CODE_COLLECTION
             ]
             existing = await user_promo_collection.find_one({"user_id": user_id})
+            assigned_at = datetime.now(timezone.utc)
 
             if existing:
                 # Update existing assignment
@@ -256,7 +260,7 @@ class PromoCodeService:
                     {
                         "$set": {
                             "promo_code": promo_code,
-                            "assigned_at": datetime.now(timezone.utc),
+                            "assigned_at": assigned_at,
                             "has_unlimited_access": True,
                         }
                     },
@@ -269,7 +273,7 @@ class PromoCodeService:
                 assignment_doc = {
                     "user_id": user_id,
                     "promo_code": promo_code,
-                    "assigned_at": datetime.now(timezone.utc),
+                    "assigned_at": assigned_at,
                     "has_unlimited_access": True,
                 }
                 await user_promo_collection.insert_one(assignment_doc)
@@ -277,13 +281,20 @@ class PromoCodeService:
                     f"[PromoCodeService] Assigned promo code '{promo_code}' to user {user_id}"
                 )
 
-            return True, 200
+            return True, 200, {
+                "user_id": user_id,
+                "promo_code": promo_code,
+                "assigned_at": assigned_at,
+                "has_unlimited_access": True,
+                "credit_amount": promo.get("credit_amount"),
+                "expiration_date": promo.get("expiration_date"),
+            }
 
         except Exception as e:
             logger.error(
                 f"[PromoCodeService] Error assigning promo code to user: {str(e)}"
             )
-            return False
+            return False, 500, None
 
     async def remove_user_promo_code(self, user_id: str) -> bool:
         """
@@ -316,7 +327,9 @@ class PromoCodeService:
 
     async def get_user_promo_code(self, user_id: str) -> dict[str, Any] | None:
         """
-        Get the promo code assigned to a user.
+        Get the promo code assigned to a user, joined with the promo code's own
+        document so callers get its current `credit_amount` / `expiration_date`
+        rather than just the bare user_id/promo_code/assigned_at assignment.
 
         Args:
             user_id: The user's unique identifier
@@ -329,7 +342,15 @@ class PromoCodeService:
                 self.USER_PROMO_CODE_COLLECTION
             ]
             assignment = await user_promo_collection.find_one({"user_id": user_id})
-            return assignment
+            if not assignment:
+                return None
+
+            promo = await self.get_promo_code(assignment["promo_code"])
+            return {
+                **assignment,
+                "credit_amount": promo.get("credit_amount") if promo else None,
+                "expiration_date": promo.get("expiration_date") if promo else None,
+            }
 
         except Exception as e:
             logger.error(f"[PromoCodeService] Error getting user promo code: {str(e)}")

@@ -198,17 +198,23 @@ async def assign_promo_code_to_user(request: UserPromoCode):
     - message: Status message
     """
     try:
-        success, status_code = await promo_code_service.assign_promo_code_to_user(
-            user_id=request.user_id, promo_code=request.promo_code
+        success, status_code, assignment = (
+            await promo_code_service.assign_promo_code_to_user(
+                user_id=request.user_id, promo_code=request.promo_code
+            )
         )
 
         if success:
+            assignment = cast(dict[str, Any], assignment)
             return {
                 "success": True,
                 "message": f"Promo code '{request.promo_code}' assigned to user {request.user_id}",
                 "user_id": request.user_id,
                 "promo_code": request.promo_code,
+                "assigned_at": assignment["assigned_at"],
                 "has_unlimited_access": True,
+                "credit_amount": assignment.get("credit_amount"),
+                "expiration_date": assignment.get("expiration_date"),
             }
         else:
             raise HTTPException(
@@ -287,6 +293,8 @@ async def get_user_promo_code(user_id: str):
             "promo_code": assignment["promo_code"],
             "assigned_at": assignment["assigned_at"],
             "has_unlimited_access": assignment.get("has_unlimited_access", True),
+            "credit_amount": assignment.get("credit_amount"),
+            "expiration_date": assignment.get("expiration_date"),
         }
     except HTTPException:
         raise
