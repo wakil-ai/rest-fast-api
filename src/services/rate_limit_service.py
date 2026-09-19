@@ -80,7 +80,10 @@ class RateLimitService:
         remaining = max(0, limit - used)
         return {
             "remaining_credits": remaining,
-            "effective_daily_credit_limit": remaining,
+            # The fixed welcome-pool size, not `remaining` — callers (e.g. the
+            # mobile credits ring) need a total that doesn't shrink in lockstep
+            # with usage, or a fully-used pool would read back as "100% left".
+            "effective_daily_credit_limit": limit,
             "today_credits_used": used,
         }
 
