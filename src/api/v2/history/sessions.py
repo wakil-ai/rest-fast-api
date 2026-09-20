@@ -1,8 +1,7 @@
 # app/routers/history/sessions.py
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
 from core.dependencies import get_chat_history_service
-from security.dependencies import get_current_user_id
 from models.chat_history import (
     SessionCreateRequest,
     SessionEditRequest,
@@ -58,14 +57,20 @@ async def update_session(session_id: str, request: SessionEditRequest):
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_service_error
-async def delete_session(
-    session_id: str, user_id: str = Depends(get_current_user_id)
-):
+async def delete_session(session_id: str, user_id: str):
     """Soft-delete a session. Owner only.
 
-    This route carries no user_id in the path, query or body, so the
-    router-level actor cross-check has nothing to compare and waves it
-    through — the ownership assert below is the only guard it gets.
+    `user_id` is a required query param rather than a JWT-derived actor:
+    every other mobile-facing endpoint in this API trusts a client-supplied
+    user_id under the shared static API key (see verify_user_or_service_auth),
+    and the mobile apps never send a Bearer token — the previous
+    `Depends(get_current_user_id)` required one unconditionally, so this
+    route 401ed on every single call from Android/iOS (which in turn
+    triggered a global forced sign-out, since the client treats any 401 as
+    an expired session). Making user_id a plain query param also gives the
+    router-level actor cross-check something to compare for a real bearer
+    caller; the ownership assert below is what actually guards the
+    static-key path, same as every other destructive-by-id route here.
 
     The session is stamped archived, which hides the whole chat from every
     user-facing read. Its messages are deliberately retained — see
