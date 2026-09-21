@@ -15,6 +15,10 @@ from models.payment import AtmosServiceError
 # CLAUDE.md's vendor-doc-citation rule and this file's git history for why.
 
 
+# "OK" for merchant/pay/* and partner/*, 0 for checkout/* and mps/*.
+_SUCCESS_CODES = frozenset({"OK", "0"})
+
+
 class AtmosClient:
     """Thin async HTTP client for apigw.atmos.uz.
 
@@ -90,9 +94,21 @@ class AtmosClient:
         these as HTTP 200 regardless of the underlying business outcome."""
         envelope = data.get("result") or data.get("status") or {}
         code = envelope.get("code")
-        if code is not None and str(code) != "OK":
+        # Two envelope dialects: merchant/pay/* and partner/* use
+        # {"code": "OK", "description": ...}; checkout/card-bind/* and mps/*
+        # use {"code": 0, "message": "Success", "trace_id": ...} (verified
+        # against ATMOS DEV on 2026-09-17: card-bind/create returned code 0).
+        if code is not None and str(code) not in _SUCCESS_CODES:
+            locale = envelope.get("locale") or {}
+            detail = (
+                envelope.get("description")
+                or envelope.get("message")
+                or locale.get("en")
+                or locale.get("ru")
+                or ""
+            )
             raise AtmosServiceError(
-                f"ATMOS {path} returned {code}: {envelope.get('description')}",
+                f"ATMOS {path} returned {code}: {detail}",
                 atmos_code=str(code),
             )
         return data
@@ -139,7 +155,7 @@ class AtmosClient:
     async def create_card_bind(
         self, *, request_id: str, account: str, success_url: str
     ) -> dict:
-        """Returns {"store_id", "payment_id", "token", "url", "status": {"code": "OK", ...}}."""
+        """Returns {"store_id", "payment_id", "token", "url", "status": {"code": 0, "message": "Success", ...}}."""
         return await self._request(
             "POST",
             "/checkout/card-bind/create",

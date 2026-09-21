@@ -112,6 +112,11 @@ class ErrorCode(str, Enum):
     DAILY_PASS_DOWNGRADE_NOT_ALLOWED = "DAILY_PASS_DOWNGRADE_NOT_ALLOWED"
     PAYMENT_AMOUNT_MISMATCH = "PAYMENT_AMOUNT_MISMATCH"
 
+    # ATMOS (bind -> charge -> renew)
+    ATMOS_BIND_IN_PROGRESS = "ATMOS_BIND_IN_PROGRESS"
+    ATMOS_MANDATE_NOT_FOUND = "ATMOS_MANDATE_NOT_FOUND"
+    ATMOS_GATEWAY_UNAVAILABLE = "ATMOS_GATEWAY_UNAVAILABLE"
+
     # Admin subscription management
     ADMIN_OPERATOR_REQUIRED = "ADMIN_OPERATOR_REQUIRED"
     ADMIN_REQUEST_ID_REQUIRED = "ADMIN_REQUEST_ID_REQUIRED"
@@ -265,6 +270,19 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
         status.HTTP_400_BAD_REQUEST, "Could not assign promo code."
     ),
 
+    ErrorCode.ATMOS_BIND_IN_PROGRESS: ErrorSpec(
+        status.HTTP_409_CONFLICT,
+        "Another card binding is in progress; try again shortly.",
+        ("retry_after_seconds",),
+    ),
+    ErrorCode.ATMOS_MANDATE_NOT_FOUND: ErrorSpec(
+        status.HTTP_404_NOT_FOUND, "No linked ATMOS card for this user."
+    ),
+    ErrorCode.ATMOS_GATEWAY_UNAVAILABLE: ErrorSpec(
+        status.HTTP_502_BAD_GATEWAY,
+        "ATMOS is not responding. For a charge the outcome may be unknown.",
+        ("outcome_unknown",),
+    ),
     ErrorCode.ACTIVE_SUBSCRIPTION_EXISTS: ErrorSpec(
         status.HTTP_409_CONFLICT,
         "An active subscription already exists for this user.",

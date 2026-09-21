@@ -6,7 +6,7 @@ on:
     workflows: ["1. Bump Version"]
     types: [completed]
     branches: [main]
-  # Independent of the main-only bump/release chain above: pushes a `:dev`
+  # Independent of the main-only bump/release chain above: pushes an `:atmos-test`
   # tag so dev-stack-wakil can run branch code without ever touching
   # `:latest`, which prod-stack-wakil also pulls (compose.yml has no `build:`
   # context for the api service — it's registry-pull-only on every host).
@@ -70,7 +70,7 @@ jobs:
           push: true
 
   build_publish_dev:
-    name: Build and Publish (dev tag)
+    name: Build and Publish (atmos-test tag)
     runs-on: ubuntu-24.04
 
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
@@ -96,12 +96,12 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push ARM64 image (dev tag only)
+      - name: Build and push ARM64 image (atmos-test tag only)
         uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64, linux/arm64
-          cache-from: type=registry,ref=${{ env.IMAGE }}:cache-dev-arm64
-          cache-to: type=registry,ref=${{ env.IMAGE }}:cache-dev-arm64,mode=max
-          tags: ${{ env.IMAGE }}:dev
+          cache-from: type=registry,ref=${{ env.IMAGE }}:cache-atmos-test-arm64
+          cache-to: type=registry,ref=${{ env.IMAGE }}:cache-atmos-test-arm64,mode=max
+          tags: ${{ env.IMAGE }}:atmos-test
           push: true

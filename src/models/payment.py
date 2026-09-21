@@ -5,6 +5,7 @@ from typing import Literal
 from bson import ObjectId
 from pydantic import BaseModel, Field
 
+from core.error_codes import ErrorCode
 from core.exceptions import ChatException
 
 
@@ -514,8 +515,15 @@ class UzumStatusRequest(BaseModel):
 class AtmosError(ChatException):
     """Raised inside AtmosService/AtmosClient; rendered by FastAPI as its status code."""
 
-    def __init__(self, detail: str, *, status_code: int = 400):
-        super().__init__(detail=detail, status_code=status_code)
+    def __init__(
+        self,
+        detail: str,
+        *,
+        status_code: int = 400,
+        code: ErrorCode | None = None,
+        params: dict | None = None,
+    ):
+        super().__init__(detail=detail, status_code=status_code, code=code, params=params)
 
 
 class AtmosServiceError(Exception):
@@ -537,11 +545,22 @@ class AtmosBindRequest(BaseModel):
 
 class AtmosBindResponse(BaseModel):
     request_id: str
-    url: str  # https://checkout.atmos.uz/bind?id=<token>
+    url: str  # https://checkout.atmos.uz/bind?id=<token> (dev: dev-checkout.atmos.uz)
+    # True when the caller already had a live pending bind and we returned its
+    # existing ATMOS page instead of starting a new one.
+    resumed: bool = False
+    # When the merchant-wide bind slot held for this attempt expires.
+    expires_at_ms: int | None = None
+
+
+class AtmosBindCancelResponse(BaseModel):
+    cancelled: bool
 
 
 class AtmosMandateResponse(BaseModel):
-    status: str  # "none" | "pending" | "active" | "revoked"
+    status: str  # "none" | "pending_bind" | "active"
+    # Set only for "pending_bind": when the unfinished bind stops being resumable.
+    pending_expires_at_ms: int | None = None
     bound_at_ms: int | None = None
     # Masked reference only — never a PAN. See "Recurring" in the spec.
     atmos_card_id: int | None = None

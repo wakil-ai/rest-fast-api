@@ -308,10 +308,14 @@ class Settings(BaseSettings):
     ATMOS_STORE_ID: int | None = None
     ATMOS_APIGW_BASE: str = "https://apigw.atmos.uz"
     ATMOS_BIND_CHECKOUT_BASE: str = "https://checkout.atmos.uz/bind"
-    # Verifies both the payment Callback API's `sign` and the bind callback's
-    # `api_key` — ATMOS documents a single api_key per merchant, not one per
-    # callback type. See docs.atmos.uz/en/ "Callback API".
-    ATMOS_CALLBACK_API_KEY: str | None = None
+    # ATMOS issues two separate callback keys (ATMOS support, 2026-09-17), even
+    # though docs.atmos.uz "Callback API" describes a single api_key:
+    # - payment key: the `api_key` term in the payment Callback API's
+    #   sign = md5(store_id + transaction_id + invoice + amount + api_key)
+    # - cards key: compared against the `api_key` field of the card-bind callback
+    # Leaving either unset makes that callback reject every request.
+    ATMOS_PAYMENT_CALLBACK_API_KEY: str | None = None
+    ATMOS_BIND_CALLBACK_API_KEY: str | None = None
     ATMOS_CALLBACK_IP_ALLOWLIST: str = "92.63.207.0/24"
     ATMOS_TRANSACTIONS_COLLECTION: str = "atmos_transactions"
     ATMOS_MANDATES_COLLECTION: str = "atmos_mandates"

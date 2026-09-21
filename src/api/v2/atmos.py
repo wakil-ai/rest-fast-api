@@ -6,13 +6,17 @@ doc anchors behind every field/endpoint used here.
 
 import ipaddress
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from core.config import settings
+from core.error_codes import ErrorCode
+from core.exceptions import ChatException
 from core.dependencies import get_atmos_service
 from core.logger import logger
 from models.payment import (
+    AtmosBindCancelResponse,
     AtmosBindRequest,
     AtmosBindResponse,
     AtmosChargeRequest,
@@ -22,6 +26,7 @@ from models.payment import (
     AtmosRenewDueRequest,
     AtmosRenewDueResponse,
     AtmosRenewDueResult,
+    AtmosServiceError,
     SubscriptionEligibilityError,
 )
 from security import verify_api_key, verify_super_admin_key, verify_user_or_service_auth
@@ -33,6 +38,15 @@ admin_router = APIRouter(
     tags=["Admin Subscriptions"],
     dependencies=[Depends(verify_super_admin_key)],
 )
+
+
+def _gateway_unavailable(*, outcome_unknown: bool) -> ChatException:
+    return ChatException(
+        detail="ATMOS is not responding. Please try again shortly.",
+        status_code=502,
+        code=ErrorCode.ATMOS_GATEWAY_UNAVAILABLE,
+        params={"outcome_unknown": outcome_unknown},
+    )
 
 
 def _client_ip(request: Request) -> str | None:
@@ -71,6 +85,10 @@ async def start_atmos_bind(
         return AtmosBindResponse(**result)
     except HTTPException:
         raise
+    except (httpx.HTTPError, AtmosServiceError) as e:
+        # Nothing was bound and nothing charged: safe to tell the user to retry.
+        logger.warning(f"[Atmos] Bind start failed at ATMOS: {e!r}")
+        raise _gateway_unavailable(outcome_unknown=False) from e
     except Exception as e:
         logger.exception(f"Error starting ATMOS bind: {e}")
         raise HTTPException(status_code=500, detail="Failed to start card binding")
@@ -142,6 +160,11 @@ async def charge_atmos_mandate(
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except httpx.HTTPError as e:
+        # The request may have reached ATMOS: the debit outcome is unknown until
+        # reconciliation, so the client must not present this as a failure.
+        logger.error(f"[Atmos] Charge transport error for user={request.user_id}: {e!r}")
+        raise _gateway_unavailable(outcome_unknown=True) from e
     except Exception as e:
         logger.exception(f"Error charging ATMOS mandate: {e}")
         raise HTTPException(status_code=500, detail="Failed to charge card")
@@ -155,12 +178,28 @@ async def get_atmos_mandate(
 ):
     mandate = await atmos_service.get_active_mandate(user_id)
     if not mandate:
+        pending = await atmos_service.get_pending_bind(user_id)
+        if pending:
+            return AtmosMandateResponse(
+                status="pending_bind",
+                pending_expires_at_ms=pending.get("lock_expires_at_ms"),
+            )
         return AtmosMandateResponse(status="none")
     return AtmosMandateResponse(
         status=mandate.get("status", "none"),
         bound_at_ms=mandate.get("bound_at_ms"),
         atmos_card_id=mandate.get("atmos_card_id"),
     )
+
+
+@router.post("/cards/{user_id}/bind/cancel", response_model=AtmosBindCancelResponse)
+async def cancel_atmos_bind(
+    user_id: str,
+    _auth: bool = Depends(verify_user_or_service_auth),
+    atmos_service: AtmosService = Depends(get_atmos_service),
+):
+    """Abandon this user's unfinished card bind and free the bind slot."""
+    return AtmosBindCancelResponse(cancelled=await atmos_service.cancel_bind(user_id))
 
 
 @router.post("/cards/{user_id}/unbind")

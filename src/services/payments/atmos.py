@@ -5,6 +5,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from core.config import settings
+from core.error_codes import ErrorCode
 from core.logger import logger
 from models.payment import AtmosError, AtmosServiceError
 from services.payments.atmos_client import AtmosClient
@@ -114,7 +115,7 @@ class AtmosService(BasePaymentService):
 
     # ------------------------------------------------------------------ bind
 
-    async def _acquire_bind_lock(self, request_id: str, now_ms: int) -> None:
+    async def _acquire_bind_lock(self, request_id: str, now_ms: int) -> int:
         """Raises AtmosError(409) if another bind is currently in flight.
 
         Standard "lock document" upsert pattern: the filter only matches an
@@ -137,11 +138,16 @@ class AtmosService(BasePaymentService):
                 upsert=True,
             )
         except DuplicateKeyError:
+            held = await lock_collection.find_one({"_id": "singleton"}) or {}
+            retry_after_s = max(1, -(-(int(held.get("expires_at_ms") or now_ms) - now_ms) // 1000))
             raise AtmosError(
                 "Another card binding is already in progress; please try again "
                 "in a few minutes.",
                 status_code=409,
+                code=ErrorCode.ATMOS_BIND_IN_PROGRESS,
+                params={"retry_after_seconds": retry_after_s},
             ) from None
+        return now_ms + ttl_ms
 
     async def _release_bind_lock(self, request_id: str) -> None:
         await self.db_handler.db[self.bind_lock_collection].delete_one(
@@ -155,17 +161,37 @@ class AtmosService(BasePaymentService):
             raise AtmosError("User not found", status_code=404)
 
         now_ms = int(time.time() * 1000)
+
+        # Clicking "link card" again while this user's own bind is still live
+        # resumes it (same ATMOS page) instead of failing on our own lock.
+        pending = await self.get_pending_bind(user_id, now_ms=now_ms)
+        if pending and pending.get("bind_url"):
+            return {
+                "request_id": pending["request_id"],
+                "url": pending["bind_url"],
+                "resumed": True,
+                "expires_at_ms": pending.get("lock_expires_at_ms"),
+            }
+
         request_id = secrets.token_hex(8)
-        await self._acquire_bind_lock(request_id, now_ms)
+        expires_at_ms = await self._acquire_bind_lock(request_id, now_ms)
 
         try:
             response = await self.client.create_card_bind(
                 request_id=request_id, account=request_id, success_url=success_url
             )
+            bind_url = response.get("url")
+            if not bind_url:
+                raise AtmosServiceError("ATMOS card-bind/create returned no url")
         except Exception:
             await self._release_bind_lock(request_id)
             raise
 
+        # Any older unfinished bind of this user can never complete now.
+        await self.db_handler.db[self.mandates_collection].update_many(
+            {"user_id": user_id, "status": "pending_bind"},
+            {"$set": {"status": "expired", "updated_at_ms": now_ms}},
+        )
         await self.db_handler.insert_one(
             self.mandates_collection,
             {
@@ -174,19 +200,58 @@ class AtmosService(BasePaymentService):
                 "status": "pending_bind",
                 "atmos_payment_id": response.get("payment_id"),
                 "atmos_card_id": None,
+                "bind_url": bind_url,
+                "lock_expires_at_ms": expires_at_ms,
                 "created_at_ms": now_ms,
                 "updated_at_ms": now_ms,
             },
         )
-        return {"request_id": request_id, "url": response["url"]}
+        return {
+            "request_id": request_id,
+            "url": bind_url,
+            "resumed": False,
+            "expires_at_ms": expires_at_ms,
+        }
+
+    async def get_pending_bind(self, user_id: str, *, now_ms: int | None = None) -> dict | None:
+        """This user's unfinished bind, only while it still holds the bind lock
+        (otherwise its callback can no longer be attributed and it is dead)."""
+        now_ms = now_ms or int(time.time() * 1000)
+        lock = await self.db_handler.find_one(self.bind_lock_collection, {"_id": "singleton"})
+        if not lock or int(lock.get("expires_at_ms") or 0) <= now_ms:
+            return None
+        return await self.db_handler.find_one(
+            self.mandates_collection,
+            {"user_id": user_id, "status": "pending_bind", "request_id": lock.get("request_id")},
+        )
+
+    async def cancel_bind(self, user_id: str) -> bool:
+        """User abandoned the ATMOS page: free the merchant-wide slot now
+        rather than making everyone wait for the TTL."""
+        pending = await self.get_pending_bind(user_id)
+        if not pending:
+            return False
+        now_ms = int(time.time() * 1000)
+        await self.db_handler.update_one(
+            self.mandates_collection,
+            {"request_id": pending["request_id"], "status": "pending_bind"},
+            {"status": "cancelled", "updated_at_ms": now_ms},
+        )
+        await self._release_bind_lock(pending["request_id"])
+        return True
 
     async def handle_bind_callback(self, payload: dict) -> dict:
         api_key = payload.get("api_key")
         card_id = payload.get("card_id")
 
-        if not api_key or not secrets.compare_digest(
-            str(api_key), str(settings.ATMOS_CALLBACK_API_KEY or "")
-        ):
+        expected_key = settings.ATMOS_BIND_CALLBACK_API_KEY
+        if not expected_key:
+            # Fail closed: without a configured key nothing can be verified.
+            logger.error(
+                "[Atmos] Bind callback rejected: ATMOS_BIND_CALLBACK_API_KEY is not configured"
+            )
+            return {"status": 0, "message": "Invalid api_key"}
+        if not api_key or not secrets.compare_digest(str(api_key), str(expected_key)):
             logger.warning("[Atmos] Bind callback with invalid or missing api_key")
             return {"status": 0, "message": "Invalid api_key"}
         if card_id is None:
@@ -322,7 +387,11 @@ class AtmosService(BasePaymentService):
 
         mandate = await self.get_active_mandate(user_id)
         if not mandate or not mandate.get("atmos_card_id"):
-            raise AtmosError("No active ATMOS mandate for this user", status_code=404)
+            raise AtmosError(
+                "No active ATMOS mandate for this user",
+                status_code=404,
+                code=ErrorCode.ATMOS_MANDATE_NOT_FOUND,
+            )
 
         quote = self._get_subscription_quote(subscription_tier, subscription_period)
         now_ms = int(time.time() * 1000)
@@ -431,7 +500,14 @@ class AtmosService(BasePaymentService):
     def _verify_payment_sign(
         self, *, store_id, transaction_id, invoice, amount, sign
     ) -> bool:
-        api_key = settings.ATMOS_CALLBACK_API_KEY or ""
+        api_key = settings.ATMOS_PAYMENT_CALLBACK_API_KEY
+        if not api_key:
+            # Fail closed: hashing with an empty key would make `sign` forgeable
+            # by anyone who knows the documented formula.
+            logger.error(
+                "[Atmos] Payment callback rejected: ATMOS_PAYMENT_CALLBACK_API_KEY is not configured"
+            )
+            return False
         # sign = md5(store_id + transaction_id + invoice + amount + api_key), no
         # separators, over the raw received string values (docs.atmos.uz Callback
         # API) — do not re-serialize amount before hashing.
