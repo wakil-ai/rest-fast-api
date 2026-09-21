@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.31-260921 (2026-09-21)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.31-260921 -->
+
+## What's Changed
+### 💬 Other
+* fix: session delete endpoint 401s on every mobile call, forcing sign-out by @umidjontursunovhbai in https://github.com/wakil-ai/rest-fast-api/pull/199
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.30-260919...v5.0.31-260921
+
 ## v5.0.30-260919 (2026-09-19)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.30-260919 -->
