@@ -52,7 +52,7 @@ async def test_zero_daily_limit_denies_first_request_of_the_day(monkeypatch):
     monkeypatch.setattr(settings, "DAILY_CREDITS_LIMIT", 0)
     service = _make_service(today_bucket=None)
 
-    allowed, remaining, limit = await service.check_and_decrement_credits(
+    allowed, remaining, limit, _ = await service.check_and_decrement_credits(
         "user-1", "main"
     )
 
@@ -68,7 +68,7 @@ async def test_positive_daily_limit_still_allows_first_request(monkeypatch):
     monkeypatch.setattr(settings, "DAILY_CREDITS_LIMIT", MAIN_COST * 2)
     service = _make_service(today_bucket=None)
 
-    allowed, remaining, limit = await service.check_and_decrement_credits(
+    allowed, remaining, limit, _ = await service.check_and_decrement_credits(
         "user-1", "main"
     )
 
@@ -86,7 +86,7 @@ async def test_error_fallback_denies_when_free_quota_cannot_cover_cost(monkeypat
         side_effect=RuntimeError("mongo down")
     )
 
-    allowed, remaining, limit = await service.check_and_decrement_credits(
+    allowed, remaining, limit, _ = await service.check_and_decrement_credits(
         "user-1", "main"
     )
 

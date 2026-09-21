@@ -328,7 +328,7 @@ async def test_daily_pass_spend_does_not_reset_or_block_on_calendar_usage():
         RateLimitService.RATE_LIMIT_COLLECTION: creditusage,
     }
 
-    allowed, remaining, limit = await service.check_and_decrement_credits(
+    allowed, remaining, limit, _ = await service.check_and_decrement_credits(
         "user-1", "main"
     )
 
