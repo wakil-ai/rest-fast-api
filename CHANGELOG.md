@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.33-260922 (2026-09-22)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.33-260922 -->
+
+## What's Changed
+### 💬 Other
+* fix(payments): bundle Apple root CA cert for StoreKit verification by @saidazizkhon05 in https://github.com/wakil-ai/rest-fast-api/pull/202
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.32-260922...v5.0.33-260922
+
 ## v5.0.32-260922 (2026-09-22)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.32-260922 -->
