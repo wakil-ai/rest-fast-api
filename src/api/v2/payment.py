@@ -216,7 +216,7 @@ async def init_payme_payment(
             f"Initialized Payme payment for user {request.user_id}, order_id={result['order_id']}"
         )
 
-        return PaymeInitResponse(order_id=result["order_id"], link=result["link"])
+        return PaymeInitResponse(**result)
     except SubscriptionEligibilityError as e:
         raise HTTPException(status_code=409, detail=e.to_detail())
     except ValueError as e:
@@ -264,7 +264,7 @@ async def init_click_payment(
             subscription_tier=request.subscription_tier,
             subscription_period=request.subscription_period,
         )
-        return ClickInitResponse(order_id=result["order_id"], link=result["link"])
+        return ClickInitResponse(**result)
     except SubscriptionEligibilityError as e:
         raise HTTPException(status_code=409, detail=e.to_detail())
     except ValueError as e:
