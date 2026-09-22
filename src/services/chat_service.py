@@ -669,6 +669,17 @@ class ChatService:
                 yield item
 
             answer = "".join(answer_chunks).strip()
+            if not answer:
+                # An upstream provider can close a syntactically valid stream
+                # without ever yielding a response chunk. Do not emit a false
+                # successful end event or charge the user for that empty turn.
+                if credit_cost > 0:
+                    await self.rate_limit_service.refund_credits(
+                        user_id, credit_cost, refund_info
+                    )
+                raise ChatGenerationException(
+                    "The assistant did not return a response. Please try again."
+                )
         except asyncio.CancelledError:
             # The client (mobile "Stop" button, or just navigating away) dropped
             # the connection — Starlette's StreamingResponse cancels this
