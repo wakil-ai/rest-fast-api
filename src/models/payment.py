@@ -268,6 +268,10 @@ class PaymeInitRequest(BaseModel):
 class PaymeInitResponse(BaseModel):
     order_id: str
     link: str
+    amount_sum: int
+    full_amount_sum: int | None = None
+    upgrade_credit_sum: int | None = None
+    upgrade_from_tier: str | None = None
 
 
 class SubscriptionPlan(BaseModel):
@@ -402,6 +406,10 @@ class ClickInitRequest(BaseModel):
 class ClickInitResponse(BaseModel):
     order_id: str
     link: str
+    amount_sum: int
+    full_amount_sum: int | None = None
+    upgrade_credit_sum: int | None = None
+    upgrade_from_tier: str | None = None
 
 
 class ClickPrepareResponse(BaseModel):
