@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.35-260922 (2026-09-22)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.35-260922 -->
+
+## What's Changed
+### 💬 Other
+* fix: expose chat credit costs in rate limit status by @umidjontursunovhbai in https://github.com/wakil-ai/rest-fast-api/pull/203
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.34-260922...v5.0.35-260922
+
 ## v5.0.34-260922 (2026-09-22)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.34-260922 -->
