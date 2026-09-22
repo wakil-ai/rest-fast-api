@@ -1047,7 +1047,7 @@ class ChatService:
             assistant_name = "deepresearch"
             credit_cost, _ = self.extract_assistant_config(assistant_name)
 
-            await self.verify_user_credits(
+            refund_info = await self.verify_user_credits(
                 user_id=request.user_id,
                 assistant_type=assistant_name,
                 required_credits=credit_cost,
@@ -1078,6 +1078,8 @@ class ChatService:
                     response_style=request.response_style,
                     explanation_tone=request.explanation_tone,
                     stream_endpoint="/api/v1/chat/agent/stream",
+                    credit_cost=credit_cost,
+                    refund_info=refund_info,
                 )
             )
 
