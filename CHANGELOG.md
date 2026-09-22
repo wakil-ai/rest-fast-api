@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.36-260922 (2026-09-22)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.36-260922 -->
+
+## What's Changed
+### 💬 Other
+* hotfix(payments): restore payme/click init — 400 on every call since v5.0.35 by @odilmode in https://github.com/wakil-ai/rest-fast-api/pull/205
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.35-260922...v5.0.36-260922
+
 ## v5.0.35-260922 (2026-09-22)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.35-260922 -->
