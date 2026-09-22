@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from core.config import settings
+from core.assistants import AssistantConfig
 from core.dependencies import (
     get_account_archive_service,
     get_chat_history_service,
@@ -88,6 +89,13 @@ async def get_user_rate_limit(user_id: str):
             effective_daily_credit_limit=int(status["effective_daily_credit_limit"]),
             today_credits_used=int(status["today_credits_used"]),
             uses_combined_credit_pool=bool(status["uses_combined_credit_pool"]),
+            credit_costs={
+                "main": AssistantConfig.get_credit_cost("main"),
+                "soliq": AssistantConfig.get_credit_cost("tax"),
+                "court": AssistantConfig.get_credit_cost("court"),
+                "shartnoma": AssistantConfig.get_credit_cost("contract_analyzer"),
+                "deepresearch": AssistantConfig.get_credit_cost("deepresearch"),
+            },
         )
     except Exception as e:
         logger.error(
