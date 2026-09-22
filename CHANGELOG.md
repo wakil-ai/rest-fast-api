@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.32-260922 (2026-09-22)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.32-260922 -->
+
+## What's Changed
+### 💬 Other
+* fix: make Standard to Pro an in-period upgrade by @umidjontursunovhbai in https://github.com/wakil-ai/rest-fast-api/pull/201
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.31-260921...v5.0.32-260922
+
 ## v5.0.31-260921 (2026-09-21)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.31-260921 -->
