@@ -308,7 +308,7 @@ class RateLimitService:
 
     async def _try_consume_daily_pass_credits(
         self, user_id: str, cost: int
-    ) -> tuple[bool, int, int] | None:
+    ) -> tuple[bool, int, int, list[tuple[object, int]]] | None:
         """Consume paid daily lots if they can cover the full cost."""
         try:
             helper = getattr(
@@ -321,13 +321,14 @@ class RateLimitService:
                         True,
                         int(result.get("credits_remaining") or 0),
                         int(result.get("total_credits") or 0),
+                        result.get("_consumed") or [],
                     )
                 if result is not None:
                     summary = await self._get_daily_pass_summary(user_id)
                     remaining = int(summary.get("remaining") or 0)
                     if remaining >= cost:
                         total = int(summary.get("total") or remaining)
-                        return True, remaining - cost, total
+                        return True, remaining - cost, total, []
             return None
         except Exception as exc:
             logger.warning(
@@ -401,14 +402,19 @@ class RateLimitService:
 
     async def check_and_decrement_credits(
         self, user_id: str, assistant_type: AssistantType = "main"
-    ) -> tuple[bool, int, int]:
+    ) -> tuple[bool, int, int, dict | None]:
         """
         Check if user has enough credits and decrement if available.
 
-        Returns (allowed, remaining, limit).
+        Returns (allowed, remaining, limit, refund_info).
           * Paid subscription: remaining/limit reflect the monthly pool.
           * Free or daily-pass user: remaining/limit reflect today's daily quota.
-          * Unlimited promo: returns (True, -1, -1).
+          * Unlimited promo: returns (True, -1, -1, None) — nothing was actually
+            charged, so there's nothing to refund.
+          * refund_info names exactly which bucket a successful charge came from
+            (pool / daily_pass / signup_bonus / daily_promo), for refund_credits
+            to reverse later if the request is cancelled before any content is
+            generated. None when the charge was denied or nothing was charged.
         """
         try:
             users = self.mongo_handler.db[settings.USERS_COLLECTION]
@@ -416,7 +422,7 @@ class RateLimitService:
 
             if not user:
                 logger.warning(f"[RateLimitService] Invalid user ID: {user_id}")
-                return False, 0, 0
+                return False, 0, 0, None
 
             credit_cost = self._get_credit_cost(assistant_type)
 
@@ -432,8 +438,8 @@ class RateLimitService:
                         f"[RateLimitService] User {user_id} pool insufficient "
                         f"({remaining} < {credit_cost}) for {assistant_type}."
                     )
-                    return False, remaining, total
-                return True, remaining, total
+                    return False, remaining, total, None
+                return True, remaining, total, {"kind": "pool"}
 
             daily_pass_summary = await self._get_daily_pass_summary(user_id)
             daily_pass_remaining = int(daily_pass_summary.get("remaining") or 0)
@@ -442,7 +448,13 @@ class RateLimitService:
                     user_id, credit_cost
                 )
                 if daily_result is not None:
-                    return daily_result
+                    allowed, remaining, total, consumed = daily_result
+                    return (
+                        allowed,
+                        remaining,
+                        total,
+                        {"kind": "daily_pass", "consumed": consumed},
+                    )
 
             (
                 has_promo,
@@ -457,7 +469,10 @@ class RateLimitService:
                     user_id, user, credit_cost
                 )
                 if signup_result is not None:
-                    return signup_result
+                    allowed, remaining, limit = signup_result
+                    if not allowed:
+                        return False, remaining, limit, None
+                    return True, remaining, limit, {"kind": "signup_bonus"}
 
             # Free / promo path: per-day quota. Paid daily lots are handled above
             # from their own expiring credit pools, so they do not reset at UTC midnight.
@@ -468,7 +483,7 @@ class RateLimitService:
                     logger.info(
                         f"[RateLimitService] User {user_id} has unlimited access via promo code"
                     )
-                    return True, -1, -1
+                    return True, -1, -1, None
                 daily_limit += promo_credit_limit
             else:
                 logger.info(
@@ -488,7 +503,7 @@ class RateLimitService:
                     logger.warning(
                         f"[RateLimitService] User {user_id} has insufficient credits for {assistant_type}."
                     )
-                    return False, credits_remaining, daily_limit
+                    return False, credits_remaining, daily_limit, None
 
                 await collection.update_one(
                     query,
@@ -497,7 +512,12 @@ class RateLimitService:
                         "$set": {"updated_at": datetime.now(timezone.utc)},
                     },
                 )
-                return True, credits_remaining - credit_cost, daily_limit
+                return (
+                    True,
+                    credits_remaining - credit_cost,
+                    daily_limit,
+                    {"kind": "daily_promo"},
+                )
 
             # No bucket for today yet: the user has spent nothing, so the whole
             # daily limit is available. Still check it covers the cost — a limit
@@ -507,23 +527,75 @@ class RateLimitService:
                 logger.warning(
                     f"[RateLimitService] User {user_id} has insufficient credits for {assistant_type}."
                 )
-                return False, daily_limit, daily_limit
+                return False, daily_limit, daily_limit, None
 
             await self._increment_today_credits_used(user_id, credit_cost)
-            return True, daily_limit - credit_cost, daily_limit
+            return True, daily_limit - credit_cost, daily_limit, {"kind": "daily_promo"}
 
         except Exception as e:
             logger.error(
                 f"[RateLimitService] Error checking credits for user {user_id}: {str(e)}"
             )
             # On error, fall back to the free quota to avoid blocking traffic —
-            # but only when that quota can actually cover the request.
+            # but only when that quota can actually cover the request. Nothing
+            # was actually persisted in this branch, so there's nothing to refund.
             fallback_limit = settings.DAILY_CREDITS_LIMIT
             try:
                 fallback_cost = self._get_credit_cost(assistant_type)
             except Exception:
                 fallback_cost = 0
-            return fallback_limit >= fallback_cost, fallback_limit, fallback_limit
+            return (
+                fallback_limit >= fallback_cost,
+                fallback_limit,
+                fallback_limit,
+                None,
+            )
+
+    async def refund_credits(
+        self, user_id: str, credit_cost: int, refund_info: dict | None
+    ) -> None:
+        """Reverse a check_and_decrement_credits charge for a request that was
+        cancelled before any content was generated (the mobile "Stop" button hit
+        before the first streamed token). refund_info names exactly which bucket
+        the original charge came from, so this reverses that same one — re-deriving
+        it fresh at refund time isn't safe, since the charge itself can be the
+        thing that just crossed a bucket's exhaustion threshold.
+        """
+        if not refund_info:
+            return
+        kind = refund_info.get("kind")
+        try:
+            if kind == "pool":
+                await self._rollback_today_credits_used(user_id, credit_cost)
+                pool_sub = await self._get_active_pool_subscription(user_id)
+                if pool_sub is not None:
+                    remaining = await self._get_pool_credits_remaining(
+                        user_id, pool_sub
+                    )
+                    await self._sync_pool_credits_remaining(user_id, remaining)
+            elif kind == "daily_pass":
+                await self.subscription_storage.refund_daily_pass_credits(
+                    refund_info.get("consumed") or []
+                )
+            elif kind == "signup_bonus":
+                users = self.mongo_handler.db[settings.USERS_COLLECTION]
+                await users.update_one(
+                    {"_id": user_id},
+                    {
+                        "$inc": {"signup_credits_used": -credit_cost},
+                        "$set": {"signup_bonus_exhausted": False},
+                    },
+                )
+            elif kind == "daily_promo":
+                await self._rollback_today_credits_used(user_id, credit_cost)
+            else:
+                logger.warning(
+                    f"[RateLimitService] refund_credits: unknown kind={kind!r} for {user_id}"
+                )
+        except Exception as exc:
+            logger.error(
+                f"[RateLimitService] Failed to refund credits for {user_id}: {exc}"
+            )
 
     async def get_remaining_credits(self, user_id: str) -> int:
         """Remaining credits. For paid subs this is the pool; otherwise today's

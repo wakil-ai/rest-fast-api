@@ -59,7 +59,7 @@ def _make_service(*, rate_limit_doc=None) -> RateLimitService:
 async def test_daily_pass_spend_is_not_blocked_by_leftover_signup_credits():
     service = _make_service()
 
-    allowed, remaining, limit = await service.check_and_decrement_credits(
+    allowed, remaining, limit, _ = await service.check_and_decrement_credits(
         "user-1", "main"
     )
 

@@ -92,13 +92,19 @@ class ChatService:
         user_id: str,
         assistant_type: AssistantType | str = "main",
         required_credits: int = 1,
-    ) -> None:
-        """Verify user has sufficient credits and deduct them."""
+    ) -> dict | None:
+        """Verify user has sufficient credits and deduct them.
+
+        Returns refund_info (opaque to callers — pass it back to
+        RateLimitService.refund_credits if the request is cancelled before any
+        content is generated) or None when nothing was actually charged.
+        """
         try:
             (
                 is_allowed,
                 credits_remaining,
                 limit,
+                refund_info,
             ) = await self.rate_limit_service.check_and_decrement_credits(
                 user_id=user_id,
                 assistant_type=cast(AssistantType, assistant_type),
@@ -110,6 +116,7 @@ class ChatService:
                     limit=limit,
                     required_credits=required_credits,
                 )
+            return refund_info
         except InsufficientCreditsException:
             raise
         except Exception as e:
@@ -585,6 +592,8 @@ class ChatService:
         response_style: str | None = None,
         explanation_tone: str | None = None,
         stream_endpoint: str = "/api/v1/chat/ask/stream",
+        credit_cost: int = 0,
+        refund_info: dict | None = None,
     ) -> AsyncGenerator[Any, None]:
         yield {
             "type": "metadata",
@@ -660,6 +669,26 @@ class ChatService:
                 yield item
 
             answer = "".join(answer_chunks).strip()
+        except asyncio.CancelledError:
+            # The client (mobile "Stop" button, or just navigating away) dropped
+            # the connection — Starlette's StreamingResponse cancels this
+            # generator's task on an ASGI http.disconnect message. If the user
+            # never saw a single token of the answer, the charge upfront in
+            # verify_user_credits bought them nothing; refund it. Once even one
+            # chunk went out, the LLM call already ran its course server-side,
+            # so the charge stands.
+            if not answer_chunks and credit_cost > 0:
+                try:
+                    await self.rate_limit_service.refund_credits(
+                        user_id, credit_cost, refund_info
+                    )
+                except Exception:
+                    logger.error(
+                        f"[ChatService] Failed to refund credits for {user_id} "
+                        "after cancellation",
+                        exc_info=True,
+                    )
+            raise
         except Exception as error:
             detail = _orchestration_exception_detail(error)
             logger.error(
@@ -893,7 +922,7 @@ class ChatService:
 
             credit_cost, _ = self.extract_assistant_config(assistant_name)
 
-            await self.verify_user_credits(
+            refund_info = await self.verify_user_credits(
                 user_id=request.user_id,
                 assistant_type=assistant_name,
                 required_credits=credit_cost,
@@ -930,6 +959,8 @@ class ChatService:
                         file_context=request.file_context,
                         response_style=request.response_style,
                         explanation_tone=request.explanation_tone,
+                        credit_cost=credit_cost,
+                        refund_info=refund_info,
                     )
                 )
 
@@ -1016,7 +1047,7 @@ class ChatService:
             assistant_name = "deepresearch"
             credit_cost, _ = self.extract_assistant_config(assistant_name)
 
-            await self.verify_user_credits(
+            refund_info = await self.verify_user_credits(
                 user_id=request.user_id,
                 assistant_type=assistant_name,
                 required_credits=credit_cost,
@@ -1047,6 +1078,8 @@ class ChatService:
                     response_style=request.response_style,
                     explanation_tone=request.explanation_tone,
                     stream_endpoint="/api/v1/chat/agent/stream",
+                    credit_cost=credit_cost,
+                    refund_info=refund_info,
                 )
             )
 

@@ -1,3 +1,5 @@
+import time
+
 from pymongo import ReturnDocument
 
 from core.config import settings
@@ -268,7 +270,36 @@ class SubscriptionStorage:
             "total_credits": int(summary["total"]),
             "nearest_end_ms": summary["nearest_end_ms"],
             "latest_end_ms": summary["latest_end_ms"],
+            # Exactly which lot(s) this charge drew from and how much from each —
+            # lets refund_daily_pass_credits reverse this specific charge later
+            # without re-deriving (and possibly misidentifying) the source lot.
+            "_consumed": consumed,
         }
+
+    async def refund_daily_pass_credits(
+        self, consumed: list[tuple[object, int]]
+    ) -> None:
+        """Reverse a try_consume_daily_pass_credits charge for a request that was
+        cancelled before any content was generated — gives back exactly the
+        amounts taken from exactly the lots they came from."""
+        if not consumed:
+            return
+        collection = self.mongo_handler.db[self.daily_subscriptions_collection]
+        now_ms = int(time.time() * 1000)
+        for lot_id, amount in consumed:
+            try:
+                await collection.update_one(
+                    {"_id": lot_id},
+                    {
+                        "$inc": {"credits_remaining": amount},
+                        "$set": {"updated_at_ms": now_ms},
+                    },
+                )
+            except Exception as exc:
+                logger.error(
+                    f"[SubscriptionStorage] Failed to refund {amount} to daily "
+                    f"pass lot {lot_id}: {exc}"
+                )
 
     async def upsert_subscription(
         self,
