@@ -91,6 +91,7 @@ class ErrorCode(str, Enum):
     ORG_SEAT_LIMIT_REACHED = "ORG_SEAT_LIMIT_REACHED"
     ORG_NOT_ACCEPTING_MEMBERS = "ORG_NOT_ACCEPTING_MEMBERS"
     ORG_NAME_REQUIRED = "ORG_NAME_REQUIRED"
+    ORG_CREATION_REQUIRES_PRO = "ORG_CREATION_REQUIRES_PRO"
 
     # Auth / OTP
     INVALID_PHONE_FORMAT = "INVALID_PHONE_FORMAT"
@@ -248,6 +249,11 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
         status.HTTP_400_BAD_REQUEST, "Organization is not accepting new members."
     ),
     ErrorCode.ORG_NAME_REQUIRED: ErrorSpec(status.HTTP_400_BAD_REQUEST, "Organization name is required."),
+    ErrorCode.ORG_CREATION_REQUIRES_PRO: ErrorSpec(
+        status.HTTP_402_PAYMENT_REQUIRED,
+        "Creating an organization is available on the Pro plan only.",
+        ("upgrade_required",),
+    ),
 
     ErrorCode.INVALID_PHONE_FORMAT: ErrorSpec(
         status.HTTP_400_BAD_REQUEST, "Invalid phone number format.", ("phone",)

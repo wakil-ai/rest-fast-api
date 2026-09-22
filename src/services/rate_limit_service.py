@@ -766,6 +766,29 @@ class RateLimitService:
             # Fail closed: deny upload when entitlement cannot be confirmed.
             return False
 
+    async def can_create_organization(self, user_id: str) -> bool:
+        """Return True if the user is on an active Pro subscription.
+
+        Organization creation is Pro-only — unlike ``can_upload_files``, a daily
+        pass, promo, or the signup bonus does not grant this entitlement.
+
+        This is a paywall check, so it fails *closed* (returns ``False``) on any
+        lookup error.
+        """
+        try:
+            sub = await self.subscription_storage.get_subscription(user_id)
+            return bool(
+                isinstance(sub, dict)
+                and sub.get("tier") == "pro"
+                and int(sub.get("end_ms") or 0) > self._now_ms()
+            )
+        except Exception as e:
+            logger.error(
+                f"[RateLimitService] Error checking organization-creation "
+                f"entitlement for user {user_id}: {str(e)}"
+            )
+            return False
+
     def reset_user_limit(self, user_id: str) -> bool:
         """
         Reset rate limit for a specific user (admin function).

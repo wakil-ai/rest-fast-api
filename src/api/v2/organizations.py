@@ -24,6 +24,7 @@ from models.organizations import (
 )
 from security import get_current_user_id
 from services.organization_service import assert_avatar_size
+from utils.entitlements import ensure_can_create_organization
 from utils.user_management import handle_service_error
 
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
@@ -70,6 +71,7 @@ def _org_to_response(doc: dict[str, Any]) -> OrganizationResponse:
 async def create_organization(
     body: OrganizationCreateRequest, user_id: str = CurrentUser
 ):
+    await ensure_can_create_organization(user_id, endpoint="POST /organizations")
     doc = await org_service.create_organization(
         user_id=user_id,
         name=body.name,
