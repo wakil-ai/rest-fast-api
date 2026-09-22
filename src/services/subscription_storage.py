@@ -298,6 +298,9 @@ class SubscriptionStorage:
             or int(quote.get("daily_credits") or 0) * int(quote["days"])
         )
 
+        upgrade_from_tier: str | None = None
+        upgrade_at_ms: int | None = None
+
         if is_daily_subscription:
             daily_credits = int(quote.get("daily_credits") or 0)
             days = int(quote["days"])
@@ -305,16 +308,39 @@ class SubscriptionStorage:
             end_ms = start_ms + days * 24 * 60 * 60 * 1000
             credits_remaining = purchased_total
         else:
-            start_ms = max(now_ms, existing_end_ms)
-            end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
+            is_standard_to_pro_upgrade = bool(
+                isinstance(existing_record, dict)
+                and existing_end_ms > now_ms
+                and existing_record.get("tier") == "standard"
+                and quote.get("tier") == "pro"
+                and existing_record.get("period") == quote.get("period")
+            )
 
-            existing_remaining = 0
-            if isinstance(existing_record, dict) and existing_end_ms > now_ms:
-                existing_remaining = max(
+            if is_standard_to_pro_upgrade:
+                # A plan upgrade replaces the current billing-period allowance; it is
+                # not a second month or a credit top-up. Keep the original renewal
+                # date and preserve what the customer has already consumed.
+                start_ms = int(existing_record.get("start_ms") or now_ms)
+                end_ms = existing_end_ms
+                old_total = max(0, int(existing_record.get("total_credits") or 0))
+                old_remaining = max(
                     0, int(existing_record.get("credits_remaining") or 0)
                 )
+                credits_used = max(0, old_total - old_remaining)
+                credits_remaining = max(0, purchased_total - credits_used)
+                upgrade_from_tier = "standard"
+                upgrade_at_ms = now_ms
+            else:
+                start_ms = max(now_ms, existing_end_ms)
+                end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
 
-            credits_remaining = existing_remaining + purchased_total
+                existing_remaining = 0
+                if isinstance(existing_record, dict) and existing_end_ms > now_ms:
+                    existing_remaining = max(
+                        0, int(existing_record.get("credits_remaining") or 0)
+                    )
+
+                credits_remaining = existing_remaining + purchased_total
             daily_credits = int(quote.get("daily_credits") or 0)
 
         document = {
@@ -333,6 +359,8 @@ class SubscriptionStorage:
             "last_order_id": order_id,
             "last_transaction_id": transaction_id,
             "provider": provider,
+            "upgrade_from_tier": upgrade_from_tier,
+            "upgrade_at_ms": upgrade_at_ms,
             "updated_at_ms": now_ms,
         }
 
