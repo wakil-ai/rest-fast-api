@@ -382,6 +382,7 @@ class ChatService:
         file_context: str | None = None,
         response_style: str | None = None,
         explanation_tone: str | None = None,
+        generation_id: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         payload = await self.build_llm_inference_payload(
             query=query,
@@ -456,6 +457,7 @@ class ChatService:
             "query": query,
             "assistant": assistant,
             "thread_id": f"{user_id}:{session_id}",
+            "generation_id": generation_id,
             "user_uploaded_context": user_uploaded_context or None,
             "instructions": self.build_ai_config_instructions(
                 response_style, explanation_tone
@@ -612,6 +614,7 @@ class ChatService:
                 file_context=file_context,
                 response_style=response_style,
                 explanation_tone=explanation_tone,
+                generation_id=message_id,
             )
             answer_chunks: list[str] = []
             generation_meta: dict[str, Any] = {
