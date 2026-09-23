@@ -310,6 +310,8 @@ class GooglePlayService(BasePaymentService):
                 transaction_id=purchase_token,
                 now_ms=now_ms,
                 provider=self.provider,
+                verified_end_ms=expires_ms,
+                carry_unused_mobile_standard_credits=True,
             )
         except Exception:
             await self.db_handler.db[self.transactions_collection].delete_one(
