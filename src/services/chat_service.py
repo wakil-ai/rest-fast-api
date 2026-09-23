@@ -643,6 +643,17 @@ class ChatService:
                     answer_chunks.append(str(item.get("chunk") or ""))
                     yield item
                     continue
+                if event_type == "progress":
+                    # Some upstream workflows stream visible answer text as a
+                    # progress event (event_type="chunk", message="...") rather
+                    # than as a top-level chunk. It is visible to clients and must
+                    # therefore count as generated content: otherwise the normal
+                    # completion path mistakes a successful answer for an empty
+                    # stream and refunds its credit.
+                    if item.get("event_type") == "chunk":
+                        answer_chunks.append(str(item.get("message") or ""))
+                    yield item
+                    continue
                 if event_type == "attachments":
                     resolved = self.resolve_attachment_urls(item.get("attachments"))
                     generation_meta["attachments"] = resolved
