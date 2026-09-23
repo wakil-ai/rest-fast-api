@@ -659,6 +659,10 @@ class ChatService:
                     # turned a hard provider error (e.g. a 400 on a malformed tool
                     # call) into a blank reply the UI labelled "we are processing
                     # too many messages".
+                    if not answer_chunks and credit_cost > 0:
+                        await self.rate_limit_service.refund_credits(
+                            user_id, credit_cost, refund_info
+                        )
                     yield item
                     return
                 if event_type == "end":
