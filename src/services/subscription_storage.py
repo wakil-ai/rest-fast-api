@@ -310,6 +310,8 @@ class SubscriptionStorage:
         transaction_id: str | None,
         now_ms: int,
         provider: str | None,
+        verified_end_ms: int | None = None,
+        carry_unused_mobile_standard_credits: bool = False,
     ) -> dict:
         await self.ensure_indexes()
 
@@ -331,6 +333,7 @@ class SubscriptionStorage:
 
         upgrade_from_tier: str | None = None
         upgrade_at_ms: int | None = None
+        is_standard_to_pro_upgrade = False
 
         if is_daily_subscription:
             daily_credits = int(quote.get("daily_credits") or 0)
@@ -340,26 +343,31 @@ class SubscriptionStorage:
             credits_remaining = purchased_total
         else:
             is_standard_to_pro_upgrade = bool(
-                isinstance(existing_record, dict)
+                carry_unused_mobile_standard_credits
+                and isinstance(existing_record, dict)
                 and existing_end_ms > now_ms
                 and existing_record.get("tier") == "standard"
+                and existing_record.get("provider") == provider
                 and quote.get("tier") == "pro"
-                and existing_record.get("period") == quote.get("period")
             )
             if is_standard_to_pro_upgrade:
-                # An upgrade changes this billing period's allowance; it is never a
-                # second month or an additive credit pack.
-                start_ms = int(existing_record.get("start_ms") or now_ms)
-                end_ms = existing_end_ms
-                old_total = max(0, int(existing_record.get("total_credits") or 0))
+                # The store charged Pro at full price. Carry only the unused
+                # Standard balance into the new verified Pro period; spent credits
+                # never come back. The atomic update below rereads this balance so
+                # a concurrently sent chat cannot be over-credited.
+                start_ms = now_ms
+                end_ms = int(verified_end_ms or 0)
+                if end_ms <= start_ms:
+                    end_ms = now_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
                 old_remaining = max(0, int(existing_record.get("credits_remaining") or 0))
-                credits_used = max(0, old_total - old_remaining)
-                credits_remaining = max(0, purchased_total - credits_used)
+                credits_remaining = old_remaining + purchased_total
                 upgrade_from_tier = "standard"
                 upgrade_at_ms = now_ms
             else:
                 start_ms = max(now_ms, existing_end_ms)
-                end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
+                end_ms = int(verified_end_ms or 0)
+                if end_ms <= now_ms:
+                    end_ms = start_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
                 existing_remaining = 0
                 if isinstance(existing_record, dict) and existing_end_ms > now_ms:
                     existing_remaining = max(
@@ -386,6 +394,7 @@ class SubscriptionStorage:
             "provider": provider,
             "upgrade_from_tier": upgrade_from_tier,
             "upgrade_at_ms": upgrade_at_ms,
+            "credit_carryover": old_remaining if is_standard_to_pro_upgrade else 0,
             "updated_at_ms": now_ms,
         }
 
@@ -396,6 +405,45 @@ class SubscriptionStorage:
         )
 
         collection = self.mongo_handler.db[target_collection]
+
+        if is_standard_to_pro_upgrade:
+            # Apply the carryover against the current document, not the earlier
+            # read. A chat request may have consumed credits while store receipt
+            # verification was in flight; this preserves only its real remaining
+            # balance and makes the payment transaction's idempotency claim safe.
+            remaining_expression = {
+                "$max": [0, {"$ifNull": ["$credits_remaining", "$total_credits"]}]
+            }
+            atomic_document = {
+                **document,
+                "total_credits": {"$add": [remaining_expression, purchased_total]},
+                "credits_remaining": {"$add": [remaining_expression, purchased_total]},
+                "credit_carryover": remaining_expression,
+            }
+            updated = await collection.find_one_and_update(
+                {
+                    "user_id": user_id,
+                    "tier": "standard",
+                    "provider": provider,
+                    "end_ms": {"$gt": now_ms},
+                },
+                [{"$set": atomic_document}],
+                return_document=ReturnDocument.AFTER,
+            )
+            if updated is not None:
+                return updated
+
+            # The Standard record expired or changed after the initial read. Do
+            # not carry a stale balance into Pro.
+            document.update(
+                {
+                    "total_credits": purchased_total,
+                    "credits_remaining": purchased_total,
+                    "credit_carryover": 0,
+                    "upgrade_from_tier": None,
+                    "upgrade_at_ms": None,
+                }
+            )
 
         if is_daily_subscription and not (provider and order_id):
             await self.mongo_handler.db[target_collection].insert_one(

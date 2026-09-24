@@ -359,6 +359,8 @@ class AppStoreService(BasePaymentService):
                 transaction_id=transaction_id,
                 now_ms=now_ms,
                 provider=self.provider,
+                verified_end_ms=expires_ms,
+                carry_unused_mobile_standard_credits=True,
             )
         except Exception:
             # Only removes our own uncommitted claim; a claim another request has
