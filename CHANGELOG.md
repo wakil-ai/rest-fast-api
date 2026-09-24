@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.39-260924 (2026-09-24)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.39-260924 -->
+
+## What's Changed
+### 💬 Other
+* fix: do not refund credits for visible progress responses by @umidjontursunovhbai in https://github.com/wakil-ai/rest-fast-api/pull/209
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.38-260924...v5.0.39-260924
+
 ## v5.0.38-260924 (2026-09-24)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.38-260924 -->
