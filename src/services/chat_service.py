@@ -614,6 +614,7 @@ class ChatService:
                 explanation_tone=explanation_tone,
             )
             answer_chunks: list[str] = []
+            progress_answer_chunks: list[str] = []
             generation_meta: dict[str, Any] = {
                 "workflow": "rest_api_llm_stream",
                 "selected_assistant": assistant,
@@ -643,6 +644,17 @@ class ChatService:
                     answer_chunks.append(str(item.get("chunk") or ""))
                     yield item
                     continue
+                if event_type == "progress":
+                    # Some upstream workflows stream visible answer text as a
+                    # progress event (event_type="chunk", message="...") rather
+                    # than as a top-level chunk. It is visible to clients and must
+                    # therefore count as generated content: otherwise the normal
+                    # completion path mistakes a successful answer for an empty
+                    # stream and refunds its credit.
+                    if item.get("event_type") == "chunk":
+                        progress_answer_chunks.append(str(item.get("message") or ""))
+                    yield item
+                    continue
                 if event_type == "attachments":
                     resolved = self.resolve_attachment_urls(item.get("attachments"))
                     generation_meta["attachments"] = resolved
@@ -668,7 +680,11 @@ class ChatService:
                     continue
                 yield item
 
-            answer = "".join(answer_chunks).strip()
+            # Some workflows expose their answer as progress chunks while others
+            # emit standard chunk events. Prefer the standard stream whenever it
+            # exists so a provider that sends both representations is persisted
+            # once rather than with duplicated text.
+            answer = "".join(answer_chunks or progress_answer_chunks).strip()
             if not answer:
                 # An upstream provider can close a syntactically valid stream
                 # without ever yielding a response chunk. Do not emit a false
@@ -688,7 +704,7 @@ class ChatService:
             # verify_user_credits bought them nothing; refund it. Once even one
             # chunk went out, the LLM call already ran its course server-side,
             # so the charge stands.
-            if not answer_chunks and credit_cost > 0:
+            if not answer_chunks and not progress_answer_chunks and credit_cost > 0:
                 try:
                     await self.rate_limit_service.refund_credits(
                         user_id, credit_cost, refund_info
