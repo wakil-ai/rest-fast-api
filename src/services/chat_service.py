@@ -394,6 +394,7 @@ class ChatService:
             file_context=file_context,
             response_style=response_style,
             explanation_tone=explanation_tone,
+            generation_id=generation_id,
         )
         result = await get_llm_service_client().ask_chat(payload)
         meta = dict(result.get("metadata") or {})
@@ -444,6 +445,7 @@ class ChatService:
         file_context: str | None = None,
         response_style: str | None = None,
         explanation_tone: str | None = None,
+        generation_id: str | None = None,
     ) -> dict[str, Any]:
         user_uploaded_context = await self.collect_user_uploaded_context(
             query=query,
