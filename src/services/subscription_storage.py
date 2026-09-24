@@ -333,6 +333,7 @@ class SubscriptionStorage:
 
         upgrade_from_tier: str | None = None
         upgrade_at_ms: int | None = None
+        is_standard_to_pro_upgrade = False
 
         if is_daily_subscription:
             daily_credits = int(quote.get("daily_credits") or 0)
@@ -356,7 +357,7 @@ class SubscriptionStorage:
                 # a concurrently sent chat cannot be over-credited.
                 start_ms = now_ms
                 end_ms = int(verified_end_ms or 0)
-                if end_ms <= now_ms:
+                if end_ms <= start_ms:
                     end_ms = now_ms + int(quote["days"]) * 24 * 60 * 60 * 1000
                 old_remaining = max(0, int(existing_record.get("credits_remaining") or 0))
                 credits_remaining = old_remaining + purchased_total
