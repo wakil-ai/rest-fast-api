@@ -311,7 +311,7 @@ class SubscriptionStorage:
         now_ms: int,
         provider: str | None,
         verified_end_ms: int | None = None,
-        carry_unused_mobile_standard_credits: bool = False,
+        full_price_standard_to_pro_upgrade: bool = False,
     ) -> dict:
         await self.ensure_indexes()
 
@@ -343,18 +343,17 @@ class SubscriptionStorage:
             credits_remaining = purchased_total
         else:
             is_standard_to_pro_upgrade = bool(
-                carry_unused_mobile_standard_credits
+                full_price_standard_to_pro_upgrade
                 and isinstance(existing_record, dict)
                 and existing_end_ms > now_ms
                 and existing_record.get("tier") == "standard"
-                and existing_record.get("provider") == provider
                 and quote.get("tier") == "pro"
             )
             if is_standard_to_pro_upgrade:
-                # The store charged Pro at full price. Carry only the unused
-                # Standard balance into the new verified Pro period; spent credits
-                # never come back. The atomic update below rereads this balance so
-                # a concurrently sent chat cannot be over-credited.
+                # Pro was charged at full price. Carry only unused Standard credits
+                # into the new Pro period; spent credits never come back. The atomic
+                # update below rereads the balance so a concurrent chat cannot
+                # over-credit the account.
                 start_ms = now_ms
                 end_ms = int(verified_end_ms or 0)
                 if end_ms <= start_ms:
@@ -424,7 +423,6 @@ class SubscriptionStorage:
                 {
                     "user_id": user_id,
                     "tier": "standard",
-                    "provider": provider,
                     "end_ms": {"$gt": now_ms},
                 },
                 [{"$set": atomic_document}],

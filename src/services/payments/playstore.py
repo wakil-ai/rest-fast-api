@@ -311,7 +311,7 @@ class GooglePlayService(BasePaymentService):
                 now_ms=now_ms,
                 provider=self.provider,
                 verified_end_ms=expires_ms,
-                carry_unused_mobile_standard_credits=True,
+                full_price_standard_to_pro_upgrade=True,
             )
         except Exception:
             await self.db_handler.db[self.transactions_collection].delete_one(

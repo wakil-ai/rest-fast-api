@@ -360,7 +360,7 @@ class AppStoreService(BasePaymentService):
                 now_ms=now_ms,
                 provider=self.provider,
                 verified_end_ms=expires_ms,
-                carry_unused_mobile_standard_credits=True,
+                full_price_standard_to_pro_upgrade=True,
             )
         except Exception:
             # Only removes our own uncommitted claim; a claim another request has

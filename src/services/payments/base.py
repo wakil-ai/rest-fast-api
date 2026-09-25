@@ -461,41 +461,6 @@ class BasePaymentService:
             active_subscription_period=active_subscription.get("period"),
         )
 
-    async def _apply_standard_to_pro_proration(
-        self, *, user_id: str, quote: dict, now_ms: int
-    ) -> dict:
-        """Credit unused Standard payment toward an immediate local Pro upgrade."""
-        if quote.get("tier") != "pro":
-            return quote
-
-        active = await self._get_active_subscription(user_id, now_ms)
-        if not isinstance(active, dict) or active.get("tier") != "standard":
-            return quote
-        if active.get("period") != quote.get("period"):
-            return quote
-
-        start_ms = int(active.get("start_ms") or now_ms)
-        end_ms = int(active.get("end_ms") or now_ms)
-        period_ms = max(1, end_ms - start_ms)
-        remaining_ms = max(0, min(period_ms, end_ms - now_ms))
-        standard_paid = int(active.get("amount_sum") or 0)
-        if standard_paid <= 0:
-            standard_paid = int(
-                self._get_subscription_quote("standard", str(quote["period"]))[
-                    "amount_sum"
-                ]
-            )
-
-        upgrade_credit_sum = round(standard_paid * remaining_ms / period_ms)
-        full_amount_sum = int(quote["amount_sum"])
-        return {
-            **quote,
-            "amount_sum": max(1, full_amount_sum - upgrade_credit_sum),
-            "full_amount_sum": full_amount_sum,
-            "upgrade_credit_sum": upgrade_credit_sum,
-            "upgrade_from_tier": "standard",
-        }
-
     @staticmethod
     def _payment_init_response(
         *, order_id: str, link: str, amount_sum: int, quote: dict | None
@@ -581,6 +546,9 @@ class BasePaymentService:
             transaction_id=transaction_id,
             now_ms=now_ms,
             provider=invoice.get("provider"),
+            full_price_standard_to_pro_upgrade=(
+                quote.get("tier") == "pro"
+            ),
         )
 
         await self.db_handler.update_one(
@@ -659,9 +627,6 @@ class BasePaymentService:
             now_ms=now_ms,
         )
         if quote is not None:
-            quote = await self._apply_standard_to_pro_proration(
-                user_id=user_id, quote=quote, now_ms=now_ms
-            )
             expected = int(quote["amount_sum"])
             if amount_sum is not None and int(amount_sum) != expected:
                 raise ValueError("Amount does not match subscription price")
