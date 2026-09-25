@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from services.subscription_storage import SubscriptionStorage
+from services.payments.base import BasePaymentService
 
 
 NOW_MS = 1_700_000_000_000
@@ -80,3 +81,46 @@ async def test_paid_web_pro_upgrade_carries_unused_standard_credits_into_new_per
     assert document["upgrade_from_tier"] == "standard"
     assert document["total_credits"] == {"$add": [{"$max": [0, {"$ifNull": ["$credits_remaining", "$total_credits"]}]}, 18_000]}
     assert document["credits_remaining"] == {"$add": [{"$max": [0, {"$ifNull": ["$credits_remaining", "$total_credits"]}]}, 18_000]}
+
+
+@pytest.mark.asyncio
+async def test_web_pro_checkout_keeps_the_full_pro_price():
+    """A Standard user's remaining paid time must never discount a Pro invoice."""
+    quote = {
+        "tier": "pro",
+        "period": "monthly",
+        "days": 30,
+        "daily_credits": 0,
+        "total_credits": 18_000,
+        "amount_sum": 300_000,
+    }
+    service = BasePaymentService.__new__(BasePaymentService)
+    service.ensure_invoice_indexes = AsyncMock()
+    service._get_subscription_quote = MagicMock(return_value=quote)
+    service.get_user_by_id = AsyncMock(return_value={"_id": "user-1"})
+    service.validate_subscription_eligibility = AsyncMock()
+    service._resolve_purpose = MagicMock(return_value="subscription")
+    service._build_invoice_document = MagicMock(
+        side_effect=lambda **kwargs: {
+            "amount_sum": kwargs["amount_sum"],
+            "subscription": kwargs["quote"],
+        }
+    )
+    service.build_payment_link = AsyncMock(return_value="https://checkout.example")
+    service.invoices_collection = "invoices"
+    service.provider = "payme"
+    service.db_handler = MagicMock()
+    service.db_handler.find_one = AsyncMock(return_value=None)
+    service.db_handler.insert_one = AsyncMock()
+
+    result = await service.init_payment(
+        amount_sum=None,
+        user_id="user-1",
+        callback_url="https://app.example/payment-result",
+        order_id="order-1",
+        subscription_tier="pro",
+        subscription_period="monthly",
+    )
+
+    assert result["amount_sum"] == 300_000
+    assert service.db_handler.insert_one.await_args.args[1]["amount_sum"] == 300_000
