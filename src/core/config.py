@@ -315,6 +315,14 @@ class Settings(BaseSettings):
     BITRIX24_LEAD_ASSIGNED_BY_ID: int | None = None
     BITRIX24_TIMEOUT_SECONDS: float = 10.0
 
+    # Meta Conversions API (Purchase events). Empty token/dataset disables reporting.
+    META_DATASET_ID: str | None = "1117665360630284"  # public id; only the token is secret
+    META_CAPI_TOKEN: str | None = None
+    META_GRAPH_API_VERSION: str = "v21.0"
+    META_CAPI_TEST_EVENT_CODE: str | None = None  # set only while QA-ing in Test Events
+    META_CAPI_TIMEOUT_SECONDS: float = 10.0
+    META_APP_BUNDLE_ID: str = "ai.humblebee.wakil"
+
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
