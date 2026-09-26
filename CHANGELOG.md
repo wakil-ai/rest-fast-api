@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.41-260926 (2026-09-26)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.41-260926 -->
+
+## What's Changed
+### 💬 Other
+* feat(meta): report ad attribution and purchases to Meta Conversions API by @saidazizkhon05 in https://github.com/wakil-ai/rest-fast-api/pull/213
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.40-260926...v5.0.41-260926
+
 ## v5.0.40-260926 (2026-09-26)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.40-260926 -->
