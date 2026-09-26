@@ -16,6 +16,7 @@ from core.dependencies import (
 )
 from core.logger import logger
 from models.payment import SubscriptionEligibilityError
+from services import meta_capi_service
 
 
 def build_subscription_catalog() -> dict[str, dict]:
@@ -507,6 +508,35 @@ class BasePaymentService:
                     response[key] = quote[key]
         return response
 
+    def _report_meta_purchase(
+        self,
+        *,
+        user_id: str,
+        event_id: str | None,
+        amount: float | None,
+        currency: str = "UZS",
+        now_ms: int,
+    ) -> None:
+        """Background Meta CAPI Purchase. Must be called only after the grant is committed.
+
+        `amount` is what was actually charged, in `currency`. Pass None when unknown
+        (trial, discount, sandbox): nothing is reported rather than a wrong value.
+        """
+        if not event_id or not amount:
+            return
+
+        async def _run() -> None:
+            user = await self.get_user_by_id(user_id)
+            await meta_capi_service.send_purchase(
+                user=user,
+                event_id=event_id,
+                amount=amount,
+                currency=currency,
+                event_time=now_ms // 1000,
+            )
+
+        meta_capi_service.spawn(_run())
+
     async def _finalize_subscription_invoice(
         self, *, order_id: str | None, transaction_id: str | None, now_ms: int
     ) -> None:
@@ -596,6 +626,13 @@ class BasePaymentService:
                 "subscription_apply_resolution_at_ms": now_ms,
                 **resolution_update,
             },
+        )
+
+        self._report_meta_purchase(
+            user_id=user_id,
+            event_id=order_id,
+            amount=invoice.get("amount_sum") or quote.get("amount_sum"),
+            now_ms=now_ms,
         )
 
     def _build_invoice_document(
