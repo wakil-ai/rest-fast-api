@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.config import settings
+from services import llm_service_client as llm_module
 from services.chat_service import ChatService
 from services.llm_service_client import LlmServiceClient
 
@@ -129,3 +130,13 @@ async def test_disconnect_refunds_and_notifies_llm_service(monkeypatch):
 
     assert refunds == [("user-1", 3, {"kind": "daily_promo"})]
     assert cancel_calls == [("POST", CANCEL_URL, {"generation_id": "message-1"})]
+
+
+@pytest.mark.asyncio
+async def test_hung_cancel_notification_does_not_block_the_refund(monkeypatch):
+    monkeypatch.setattr(llm_module, "CANCEL_NOTIFY_TIMEOUT_SECONDS", 0.2)
+
+    refunds, _, elapsed = await _disconnect_mid_stream(monkeypatch, cancel_hangs=True)
+
+    assert refunds == [("user-1", 3, {"kind": "daily_promo"})]
+    assert elapsed < 1.5
