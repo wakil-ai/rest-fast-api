@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 from typing import Any, BinaryIO
@@ -95,32 +96,50 @@ class LlmServiceClient:
     async def stream_json(
         self, path: str, payload: dict[str, Any]
     ) -> AsyncGenerator[Any, None]:
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream(
-                "POST",
-                self._url(path),
-                json=payload,
-                headers=self._headers(),
-            ) as response:
-                if not response.is_success:
-                    # Streaming responses are lazy: read the body so the
-                    # upstream error detail (e.g. a 422 validation error) is
-                    # available before we raise.
-                    body_bytes = await response.aread()
-                    self._raise_for_status(
-                        response,
-                        path=path,
-                        body_text=body_bytes.decode(errors="replace"),
+        try:
+            async with httpx.AsyncClient(timeout=None) as client:
+                async with client.stream(
+                    "POST",
+                    self._url(path),
+                    json=payload,
+                    headers=self._headers(),
+                ) as response:
+                    if not response.is_success:
+                        # Streaming responses are lazy: read the body so the
+                        # upstream error detail (e.g. a 422 validation error) is
+                        # available before we raise.
+                        body_bytes = await response.aread()
+                        self._raise_for_status(
+                            response,
+                            path=path,
+                            body_text=body_bytes.decode(errors="replace"),
+                        )
+                    async for line in response.aiter_lines():
+                        line = line.strip()
+                        if not line or not line.startswith("data: "):
+                            continue
+                        raw = line.removeprefix("data: ").strip()
+                        try:
+                            yield json.loads(raw)
+                        except json.JSONDecodeError:
+                            yield raw
+        except asyncio.CancelledError:
+            generation_id = payload.get("generation_id")
+            if generation_id:
+                try:
+                    await asyncio.shield(
+                        self.request_json(
+                            "POST",
+                            "/api/v1/chat/generations/cancel",
+                            payload={"generation_id": str(generation_id)},
+                        )
                     )
-                async for line in response.aiter_lines():
-                    line = line.strip()
-                    if not line or not line.startswith("data: "):
-                        continue
-                    raw = line.removeprefix("data: ").strip()
-                    try:
-                        yield json.loads(raw)
-                    except json.JSONDecodeError:
-                        yield raw
+                except Exception as exc:
+                    logger.warning(
+                        f"[LlmServiceClient] Could not cancel generation "
+                        f"{generation_id}: {exc}"
+                    )
+            raise
 
     async def transcribe_audio(
         self,
