@@ -13,6 +13,15 @@ class UserCreateRequest(BaseModel):
     phone_number: str | None = None
     last_name: str | None = None
     picture: str | None = None
+    # Meta ad attribution from the mobile apps. `Any` on purpose: a strict type makes
+    # Pydantic 422 a malformed value; `normalize_ad_attribution` drops it instead.
+    platform: Any = None
+    madid: Any = None
+    anon_id: Any = None
+    att: Any = None
+    os_version: Any = None
+    app_version: Any = None
+    app_build: Any = None
 
 
 class UserUpdateRequest(BaseModel):

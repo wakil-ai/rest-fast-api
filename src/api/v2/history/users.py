@@ -20,6 +20,7 @@ from models.chat_history import (
 )
 from models.rate_limit import RateLimitResponse
 from security import invalidate_user_auth_cache, verify_super_admin_key
+from services.meta_capi_service import normalize_ad_attribution
 from utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -34,6 +35,18 @@ def create_response(data: dict, message: str) -> dict:
     return {"info": serialize_mongo_id(data), "message": message}
 
 
+async def _save_ad_attribution(user_id: str, fields: dict) -> None:
+    """Best effort: ad attribution must never fail a login."""
+    try:
+        await chat_history_service.set_ad_attribution(user_id, fields)
+    except Exception as exc:
+        logger.error(f"[Users] Could not save ad attribution for {user_id}: {exc}")
+
+
+def _attribution_changed(user: dict, fields: dict) -> bool:
+    return any(user.get(key) != value for key, value in fields.items())
+
+
 @router.post(
     "",
     status_code=status.HTTP_200_OK,
@@ -42,13 +55,34 @@ def create_response(data: dict, message: str) -> dict:
 )
 @handle_service_error
 async def create_or_get_user(request: UserCreateRequest, response: Response):
-    """Create a new user or return existing one (idempotent)"""
+    """Create a new user or return existing one (idempotent).
+
+    Answers 201 only when this request inserted the user; the apps log a
+    registration event off that status.
+    """
+    ad_fields = normalize_ad_attribution(
+        platform=request.platform,
+        madid=request.madid,
+        anon_id=request.anon_id,
+        att=request.att,
+        os_version=request.os_version,
+        app_version=request.app_version,
+        app_build=request.app_build,
+    )
+
     existing = await chat_history_service.get_user(user_id=request.user_id)
     if existing:
+        # Deleted accounts must not get their ad IDs written back on a later login.
+        if (
+            ad_fields
+            and not existing.get("archived")
+            and _attribution_changed(existing, ad_fields)
+        ):
+            await _save_ad_attribution(request.user_id, ad_fields)
         invalidate_user_auth_cache(request.user_id)
         return create_response(existing, "User already exists")
 
-    user = await chat_history_service.create_user(
+    user, created = await chat_history_service.create_user_with_status(
         user_id=request.user_id,
         username=request.username,
         first_name=request.first_name,
@@ -57,7 +91,11 @@ async def create_or_get_user(request: UserCreateRequest, response: Response):
         picture=request.picture,
         web_client=settings.WAKILAI_WEB_CLIENT_NAME,
     )
+    if ad_fields:
+        await _save_ad_attribution(request.user_id, ad_fields)
     invalidate_user_auth_cache(request.user_id)
+    if not created:
+        return create_response(user, "User already exists")
     response.status_code = status.HTTP_201_CREATED
     return create_response(user, "User created successfully")
 

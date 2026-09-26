@@ -401,6 +401,35 @@ class ChatHistoryService:
         external_id: str | None = None,
     ) -> dict[str, Any]:
         """Create or retrieve an existing user. Uses user_id as _id."""
+        user, _ = await self.create_user_with_status(
+            user_id,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+            phone_number=phone_number,
+            picture=picture,
+            web_client=web_client,
+            external_id=external_id,
+        )
+        return user
+
+    async def create_user_with_status(
+        self,
+        user_id: str,
+        username: str | None = None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        phone_number: str | None = None,
+        picture: str | None = None,
+        web_client: str | None = None,
+        external_id: str | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        """Like ``create_user`` but also says whether this call inserted the user.
+
+        Callers that must act only on a real signup (e.g. answering 201) can't
+        rely on the returned document: it is the existing one when a concurrent
+        request won the insert.
+        """
         # Check if user exists using _id
         existing_user = await self.db_manager.find_documents(
             self.users_collection, {"_id": user_id}
@@ -408,7 +437,7 @@ class ChatHistoryService:
 
         if existing_user:
             logger.info(f"User with user_id {user_id} already exists.")
-            return existing_user[0]
+            return existing_user[0], False
 
         user = {
             "_id": user_id,  # Use user_id as _id
@@ -436,7 +465,7 @@ class ChatHistoryService:
             await self.db_manager.insert_documents(self.users_collection, [user])
             logger.info(f"Created new user with user_id: {user_id}")
             await self._create_bitrix_lead_if_needed(user)
-            return user
+            return user, True
         except (BulkWriteError, DuplicateKeyError) as e:
             # A concurrent request inserted this user first. Matched by exception
             # type, not by sniffing "E11000" out of the message — insert_documents
@@ -448,7 +477,7 @@ class ChatHistoryService:
                 self.users_collection, {"_id": user_id}
             )
             if existing:
-                return existing[0]
+                return existing[0], False
             raise ValueError(f"Failed to create user: {e!s}") from e
 
     async def get_user(self, user_id: str) -> dict[str, Any] | None:
@@ -457,6 +486,12 @@ class ChatHistoryService:
             self.users_collection, {"_id": user_id}
         )
         return users[0] if users else None
+
+    async def set_ad_attribution(self, user_id: str, fields: dict[str, Any]) -> None:
+        """Store Meta ad attribution fields (see ``AD_ATTRIBUTION_FIELDS``) on a user."""
+        await self.db_manager.update_documents(
+            self.users_collection, {"_id": user_id}, {"$set": fields}
+        )
 
     async def get_user_auth_status(self, user_id: str) -> dict[str, Any] | None:
         """Return only the user fields required by request authentication."""
