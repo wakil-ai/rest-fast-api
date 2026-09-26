@@ -419,6 +419,12 @@ class AtmosService(BasePaymentService):
                 {"provider": self.provider, "order_id": order_id},
                 {"subscription_applied": True, "updated_at": now_ms},
             )
+            self._report_meta_purchase(
+                user_id=user_id,
+                event_id=order_id,
+                amount=quote.get("amount_sum"),
+                now_ms=now_ms,
+            )
         else:
             await self._finalize_subscription_invoice(
                 order_id=order_id, transaction_id=str(transaction_id), now_ms=now_ms

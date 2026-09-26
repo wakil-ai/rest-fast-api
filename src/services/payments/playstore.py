@@ -186,6 +186,32 @@ class GooglePlayService(BasePaymentService):
                 return item
         return None
 
+    @staticmethod
+    def _meta_purchase_amount(
+        purchase: dict, line_item: dict | None, quote: dict
+    ) -> tuple[float | None, str]:
+        """(amount, currency) to report to Meta, or (None, ...) to report nothing.
+
+        Play test purchases aren't revenue. Play's response has no per-charge amount,
+        only the plan's recurring price, so a purchase with an offer (free trial or
+        intro price) reports nothing rather than the full price.
+        """
+        if purchase.get("testPurchase") is not None:
+            return None, "UZS"
+        item = line_item or {}
+        if (item.get("offerDetails") or {}).get("offerId"):
+            return None, "UZS"
+        money = (item.get("autoRenewingPlan") or {}).get("recurringPrice") or {}
+        code = money.get("currencyCode")
+        if code:
+            try:
+                units = int(money.get("units") or 0)
+                nanos = int(money.get("nanos") or 0)
+            except (TypeError, ValueError):
+                return None, "UZS"
+            return units + nanos / 1e9, str(code)
+        return quote.get("amount_sum"), "UZS"
+
     # MARK: shared grant
 
     async def _grant_from_purchase(
@@ -317,6 +343,14 @@ class GooglePlayService(BasePaymentService):
             )
             raise
         await self._mark_granted(order_id, now_ms)
+        amount, currency = self._meta_purchase_amount(purchase, line_item, quote)
+        self._report_meta_purchase(
+            user_id=user_id,
+            event_id=str(order_id),
+            amount=amount,
+            currency=currency,
+            now_ms=now_ms,
+        )
         logger.info(
             f"[PlayStore] Granted {tier}/{period} to user {user_id} "
             f"(order={order_id}, token={purchase_token[:12]}…)"
