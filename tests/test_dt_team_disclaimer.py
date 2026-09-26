@@ -7,14 +7,17 @@ failure was masked -- no error toast, no Sentry report, and the disclaimer-only
 text was persisted as if it were a real reply.
 """
 
+from core.config import settings
 from services.chat_service import ChatService
 
 
-def test_disclaimer_appended_to_a_real_answer():
+def test_disclaimer_appended_to_a_real_answer(monkeypatch):
+    # Empty by default; only a developer's .env fills it in.
+    monkeypatch.setattr(settings, "DT_TEAM_DISCLAIMER", "\n\n> notice")
+
     out = ChatService.append_dt_team_disclaimer("javob matni", is_dt_team_request=True)
 
-    assert out.startswith("javob matni")
-    assert len(out) > len("javob matni")
+    assert out == "javob matni\n\n> notice"
 
 
 def test_disclaimer_not_added_to_an_empty_answer():

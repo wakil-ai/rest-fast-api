@@ -325,6 +325,7 @@ def test_payme_init_accepts_frontend_jwt(jwt_settings, monkeypatch):
         return_value={
             "order_id": "order-123",
             "link": "https://checkout.paycom.uz/example",
+            "amount_sum": 50000,
         }
     )
     monkeypatch.setattr(
@@ -359,6 +360,10 @@ def test_payme_init_accepts_frontend_jwt(jwt_settings, monkeypatch):
     assert response.json() == {
         "order_id": "order-123",
         "link": "https://checkout.paycom.uz/example",
+        "amount_sum": 50000,
+        "full_amount_sum": None,
+        "upgrade_credit_sum": None,
+        "upgrade_from_tier": None,
     }
     transaction_service.init_payment.assert_awaited_once_with(
         amount_sum=None,
@@ -417,6 +422,7 @@ def test_click_init_accepts_frontend_jwt(jwt_settings, monkeypatch):
         return_value={
             "order_id": "order-456",
             "link": "https://my.click.uz/example",
+            "amount_sum": 50000,
         }
     )
     monkeypatch.setattr(
@@ -451,6 +457,10 @@ def test_click_init_accepts_frontend_jwt(jwt_settings, monkeypatch):
     assert response.json() == {
         "order_id": "order-456",
         "link": "https://my.click.uz/example",
+        "amount_sum": 50000,
+        "full_amount_sum": None,
+        "upgrade_credit_sum": None,
+        "upgrade_from_tier": None,
     }
     click_service.init_payment.assert_awaited_once()
 

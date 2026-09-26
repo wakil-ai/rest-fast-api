@@ -10,6 +10,9 @@ import httpx
 from core.config import settings
 from core.logger import logger
 
+# Total budget for telling the LLM service to stop; the refund waits behind it.
+CANCEL_NOTIFY_TIMEOUT_SECONDS = 3.0
+
 
 class LlmServiceClient:
     """HTTP client for the internal rest-api-llm service."""
@@ -128,16 +131,19 @@ class LlmServiceClient:
             if generation_id:
                 try:
                     await asyncio.shield(
-                        self.request_json(
-                            "POST",
-                            "/api/v1/chat/generations/cancel",
-                            payload={"generation_id": str(generation_id)},
+                        asyncio.wait_for(
+                            self.request_json(
+                                "POST",
+                                "/api/v1/chat/generations/cancel",
+                                payload={"generation_id": str(generation_id)},
+                            ),
+                            timeout=CANCEL_NOTIFY_TIMEOUT_SECONDS,
                         )
                     )
                 except Exception as exc:
                     logger.warning(
                         f"[LlmServiceClient] Could not cancel generation "
-                        f"{generation_id}: {exc}"
+                        f"{generation_id}: {exc!r}"
                     )
             raise
 
