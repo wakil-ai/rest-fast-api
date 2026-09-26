@@ -101,6 +101,19 @@ async def test_archive_fresh_user_marks_all_owned_collections():
     assert settings.USERS_COLLECTION in result["collections"]
 
 
+async def test_archive_wipes_meta_ad_identifiers_from_the_user_doc():
+    """The user doc survives the archive, so advertising IDs must be unset explicitly."""
+    from services.meta_capi_service import AD_ATTRIBUTION_FIELDS
+
+    svc, db = _make_archive_service({"_id": "u1"})
+
+    await svc.archive_user_account("u1")
+
+    _, update = db[settings.USERS_COLLECTION].update_one.await_args.args
+    assert set(update["$unset"]) == set(AD_ATTRIBUTION_FIELDS)
+    assert {"madid", "anon_id"} <= set(update["$unset"])
+
+
 async def test_archive_is_idempotent_for_already_archived_user():
     prior = datetime(2026, 1, 1, tzinfo=timezone.utc)
     svc, db = _make_archive_service(

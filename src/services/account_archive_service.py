@@ -12,6 +12,7 @@ from core.config import settings
 from core.dependencies import get_db_manager
 from core.exceptions import InvalidInputError, UserNotFoundError
 from core.logger import logger
+from services.meta_capi_service import AD_ATTRIBUTION_FIELDS
 
 _BSON_INT64_MIN = -(2**63)
 _BSON_INT64_MAX = 2**63 - 1
@@ -108,8 +109,13 @@ class AccountArchiveService:
 
         # 2) Flip the `users` doc LAST, so a crash mid-sweep leaves a retryable state
         #    (user not yet blocked) rather than a half-archived, already-blocked user.
+        # The user doc is kept, so the advertising IDs must go explicitly.
         user_res = await db[self.users_collection].update_one(
-            {"_id": user_id, "archived": {"$ne": True}}, {"$set": stamp}
+            {"_id": user_id, "archived": {"$ne": True}},
+            {
+                "$set": stamp,
+                "$unset": {field: "" for field in AD_ATTRIBUTION_FIELDS},
+            },
         )
         results[self.users_collection] = user_res.modified_count
 
