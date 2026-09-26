@@ -43,7 +43,13 @@ async def test_enhance_forwards_canonical_assistant_and_returns_result(monkeypat
         PromptEnhanceRequest(query="qqs", assistant=AssistantType.TAX, language="uz")
     )
 
-    assert client.payload == {"query": "qqs", "assistant": "tax", "language": "uz"}
+    assert client.payload == {
+        "query": "qqs",
+        "assistant": "tax",
+        "language": "uz",
+        "answers": None,
+        "history": None,
+    }
     assert result.enhanced == "2026-yilda QQS stavkasi qancha?"
     assert result.changed is True
 
@@ -172,6 +178,7 @@ async def test_clarify_forwards_canonical_assistant_and_returns_questions(monkey
         "query": "sudga bersam",
         "assistant": "court",
         "language": None,
+        "history": None,
     }
     assert [q.id for q in result.questions] == ["case_stage"]
 
