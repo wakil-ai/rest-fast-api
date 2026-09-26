@@ -9,6 +9,7 @@ from core.config import settings
 from models.chat_history import UserCreateRequest
 from services import meta_capi_service as capi
 from services.payments.appstore import AppStoreService
+from services.payments.base import BasePaymentService
 from services.payments.playstore import GooglePlayService
 
 _IDFA = "6D92078A-8246-4BA4-AE5B-76104861E7DC"
@@ -291,3 +292,49 @@ def test_play_offer_reports_nothing():
 
 def test_play_without_price_falls_back_to_catalog():
     assert GooglePlayService._meta_purchase_amount({}, {}, _QUOTE) == (300_000, "UZS")
+
+
+# --------------------------------------------------------------------------- #
+# reporting can never fail a payment                                           #
+# --------------------------------------------------------------------------- #
+def _service_and_spawned(monkeypatch):
+    spawned = []
+
+    def fake_spawn(coro):
+        spawned.append(coro)
+        coro.close()
+
+    monkeypatch.setattr(capi, "spawn", fake_spawn)
+    return BasePaymentService.__new__(BasePaymentService), spawned
+
+
+def test_valid_purchase_is_scheduled(monkeypatch):
+    service, spawned = _service_and_spawned(monkeypatch)
+    service._report_meta_purchase_safely(
+        user_id="u1", event_id="o1", now_ms=1_000, price=lambda: (300_000, "UZS")
+    )
+    assert len(spawned) == 1
+
+
+def test_price_lookup_failure_never_reaches_the_payment_path(monkeypatch):
+    service, spawned = _service_and_spawned(monkeypatch)
+
+    def broken_price():
+        raise AttributeError("unexpected payload shape")
+
+    service._report_meta_purchase_safely(
+        user_id="u1", event_id="o1", now_ms=1_000, price=broken_price
+    )
+    assert spawned == []
+
+
+def test_scheduling_failure_never_reaches_the_payment_path(monkeypatch):
+    def broken_spawn(coro):
+        coro.close()
+        raise RuntimeError("no event loop")
+
+    monkeypatch.setattr(capi, "spawn", broken_spawn)
+    service = BasePaymentService.__new__(BasePaymentService)
+    service._report_meta_purchase_safely(
+        user_id="u1", event_id="o1", now_ms=1_000, price=lambda: (300_000, "UZS")
+    )

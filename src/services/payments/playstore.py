@@ -345,13 +345,11 @@ class GooglePlayService(BasePaymentService):
             )
             raise
         await self._mark_granted(order_id, now_ms)
-        amount, currency = self._meta_purchase_amount(purchase, line_item, quote)
-        self._report_meta_purchase(
+        self._report_meta_purchase_safely(
             user_id=user_id,
             event_id=str(order_id),
-            amount=amount,
-            currency=currency,
             now_ms=now_ms,
+            price=lambda: self._meta_purchase_amount(purchase, line_item, quote),
         )
         logger.info(
             f"[PlayStore] Granted {tier}/{period} to user {user_id} "

@@ -1,5 +1,6 @@
 import secrets
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from core.config import settings
@@ -537,6 +538,32 @@ class BasePaymentService:
 
         meta_capi_service.spawn(_run())
 
+    def _report_meta_purchase_safely(
+        self,
+        *,
+        user_id: str,
+        event_id: str | None,
+        now_ms: int,
+        price: Callable[[], tuple[float | None, str]],
+    ) -> None:
+        """`_report_meta_purchase` with the price lookup inside the guard.
+
+        The grant is already committed, so nothing here may raise into the payment path.
+        """
+        try:
+            amount, currency = price()
+            self._report_meta_purchase(
+                user_id=user_id,
+                event_id=event_id,
+                amount=amount,
+                currency=currency,
+                now_ms=now_ms,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"[MetaCAPI] Purchase {event_id} not reported: {type(exc).__name__}"
+            )
+
     async def _finalize_subscription_invoice(
         self, *, order_id: str | None, transaction_id: str | None, now_ms: int
     ) -> None:
@@ -628,11 +655,11 @@ class BasePaymentService:
             },
         )
 
-        self._report_meta_purchase(
+        self._report_meta_purchase_safely(
             user_id=user_id,
             event_id=order_id,
-            amount=invoice.get("amount_sum") or quote.get("amount_sum"),
             now_ms=now_ms,
+            price=lambda: (invoice.get("amount_sum") or quote.get("amount_sum"), "UZS"),
         )
 
     def _build_invoice_document(

@@ -397,13 +397,11 @@ class AppStoreService(BasePaymentService):
             )
             raise
         await self._mark_granted(transaction_id, now_ms)
-        amount, currency = self._meta_purchase_amount(payload, quote, environment_str)
-        self._report_meta_purchase(
+        self._report_meta_purchase_safely(
             user_id=user_id,
             event_id=str(transaction_id),
-            amount=amount,
-            currency=currency,
             now_ms=now_ms,
+            price=lambda: self._meta_purchase_amount(payload, quote, environment_str),
         )
         logger.info(
             f"[AppStore] Granted {tier}/{period} to user {user_id} "
