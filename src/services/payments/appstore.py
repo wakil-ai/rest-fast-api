@@ -200,6 +200,33 @@ class AppStoreService(BasePaymentService):
         """
         return SimpleNamespace(**self._decode_jws_payload(jws))
 
+    @staticmethod
+    def _meta_purchase_amount(
+        payload, quote: dict, environment_str: str
+    ) -> tuple[float | None, str]:
+        """(amount, currency) to report to Meta, or (None, ...) to report nothing.
+
+        Only Production charges count: Sandbox/TestFlight/Xcode purchases aren't
+        revenue. Apple's own price (milliunits) is used so a free trial reports
+        nothing and a discount reports what was charged. Without a price, an
+        applied offer means the catalog price would overstate, so skip.
+        """
+        environment = getattr(payload, "environment", None)
+        environment_name = (
+            environment.value
+            if isinstance(environment, Environment)
+            else str(environment or environment_str)
+        )
+        if environment_name != Environment.PRODUCTION.value:
+            return None, "UZS"
+        price = getattr(payload, "price", None)
+        currency = getattr(payload, "currency", None)
+        if isinstance(price, int) and not isinstance(price, bool) and currency:
+            return price / 1000, str(currency)
+        if getattr(payload, "offerType", None):
+            return None, "UZS"
+        return quote.get("amount_sum"), "UZS"
+
     # MARK: idempotency store
 
     async def _ensure_appstore_indexes(self) -> None:
@@ -370,6 +397,12 @@ class AppStoreService(BasePaymentService):
             )
             raise
         await self._mark_granted(transaction_id, now_ms)
+        self._report_meta_purchase_safely(
+            user_id=user_id,
+            event_id=str(transaction_id),
+            now_ms=now_ms,
+            price=lambda: self._meta_purchase_amount(payload, quote, environment_str),
+        )
         logger.info(
             f"[AppStore] Granted {tier}/{period} to user {user_id} "
             f"(tx={transaction_id}, source={source})"
