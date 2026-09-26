@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.40-260926 (2026-09-26)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.40-260926 -->
+
+## What's Changed
+### 💬 Other
+* fix: cancel upstream generation on client disconnect by @umidjontursunovhbai in https://github.com/wakil-ai/rest-fast-api/pull/207
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.39-260924...v5.0.40-260926
+
 ## v5.0.39-260924 (2026-09-24)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.39-260924 -->
