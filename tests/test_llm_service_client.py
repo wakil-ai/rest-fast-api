@@ -10,6 +10,11 @@ class FakeResponse:
     def __init__(self, payload=None, status_code=200):
         self._payload = payload or {}
         self.status_code = status_code
+        self.text = json.dumps(self._payload)
+
+    @property
+    def is_success(self):
+        return self.status_code < 400
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -45,6 +50,8 @@ class FakeAsyncClient:
 
 
 class FakeStreamResponse:
+    is_success = True
+
     async def __aenter__(self):
         return self
 

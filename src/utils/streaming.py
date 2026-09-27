@@ -16,6 +16,9 @@ SUPPORTED_STREAM_EVENT_TYPES = {
 }
 KEEPALIVE_EVENT = {"type": "progress", "message": "still working"}
 STREAM_END = object()
+# The event loop holds tasks weakly, and after a disconnect the producer keeps
+# running its cleanup once the generator that created it is gone.
+_producer_tasks: set[asyncio.Task[Any]] = set()
 
 
 def _format_sse_message(item: Any) -> str:
@@ -65,6 +68,8 @@ async def format_streaming_response(
     """
     queue: asyncio.Queue[Any] = asyncio.Queue()
     producer_task = asyncio.create_task(_pump_stream_items(response_generator, queue))
+    _producer_tasks.add(producer_task)
+    producer_task.add_done_callback(_producer_tasks.discard)
 
     try:
         while True:
@@ -102,7 +107,10 @@ async def format_streaming_response(
             producer_task.cancel()
 
         try:
-            await producer_task
+            # Shielded: on a client disconnect this task is itself cancelled, and
+            # awaiting the producer directly would cancel it a second time in the
+            # middle of its cleanup (credit refund, upstream cancel).
+            await asyncio.shield(producer_task)
         except asyncio.CancelledError:
             pass
 

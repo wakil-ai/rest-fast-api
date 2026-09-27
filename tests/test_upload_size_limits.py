@@ -17,16 +17,19 @@ from core.config import settings
 
 
 def _build_file_manager(*, existing_project_files: list[dict] | None = None):
+    from services import file_management
+
+    # Patch where the names are used: the module binds them at import, so
+    # patching core.dependencies only works for whichever test imports it first.
     with (
-        patch("core.dependencies.get_storage_service", return_value=MagicMock()),
-        patch(
-            "core.dependencies.get_chat_history_service",
+        patch.object(file_management, "get_storage_service", return_value=MagicMock()),
+        patch.object(
+            file_management,
+            "get_chat_history_service",
             return_value=MagicMock(),
         ),
     ):
-        from services.file_management import FileManager
-
-        manager = FileManager()
+        manager = file_management.FileManager()
 
     manager.storage.upload_file_from_path = MagicMock()
     manager.history.add_file_upload = AsyncMock()
