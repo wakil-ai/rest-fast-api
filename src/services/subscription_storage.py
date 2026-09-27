@@ -1,6 +1,7 @@
 import time
 
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from core.config import settings
 from core.dependencies import get_mongo_handler
@@ -311,7 +312,8 @@ class SubscriptionStorage:
         now_ms: int,
         provider: str | None,
         verified_end_ms: int | None = None,
-        carry_unused_mobile_standard_credits: bool = False,
+        full_price_standard_to_pro_upgrade: bool = False,
+        payment_grant_key: str | None = None,
     ) -> dict:
         await self.ensure_indexes()
 
@@ -343,18 +345,17 @@ class SubscriptionStorage:
             credits_remaining = purchased_total
         else:
             is_standard_to_pro_upgrade = bool(
-                carry_unused_mobile_standard_credits
+                full_price_standard_to_pro_upgrade
                 and isinstance(existing_record, dict)
                 and existing_end_ms > now_ms
                 and existing_record.get("tier") == "standard"
-                and existing_record.get("provider") == provider
                 and quote.get("tier") == "pro"
             )
             if is_standard_to_pro_upgrade:
-                # The store charged Pro at full price. Carry only the unused
-                # Standard balance into the new verified Pro period; spent credits
-                # never come back. The atomic update below rereads this balance so
-                # a concurrently sent chat cannot be over-credited.
+                # Pro was charged at full price. Carry only unused Standard credits
+                # into the new Pro period; spent credits never come back. The atomic
+                # update below rereads the balance so a concurrent chat cannot
+                # over-credit the account.
                 start_ms = now_ms
                 end_ms = int(verified_end_ms or 0)
                 if end_ms <= start_ms:
@@ -406,6 +407,17 @@ class SubscriptionStorage:
 
         collection = self.mongo_handler.db[target_collection]
 
+        if payment_grant_key and not is_daily_subscription:
+            return await self._apply_web_payment_grant(
+                collection=collection,
+                document=document,
+                existing_record=existing_record,
+                grant_key=payment_grant_key,
+                full_price_upgrade=full_price_standard_to_pro_upgrade,
+                purchased_total=purchased_total,
+                now_ms=now_ms,
+            )
+
         if is_standard_to_pro_upgrade:
             # Apply the carryover against the current document, not the earlier
             # read. A chat request may have consumed credits while store receipt
@@ -424,7 +436,6 @@ class SubscriptionStorage:
                 {
                     "user_id": user_id,
                     "tier": "standard",
-                    "provider": provider,
                     "end_ms": {"$gt": now_ms},
                 },
                 [{"$set": atomic_document}],
@@ -487,6 +498,75 @@ class SubscriptionStorage:
         )
 
         return document
+
+    async def _apply_web_payment_grant(
+        self, *, collection, document: dict, existing_record: dict | None,
+        grant_key: str, full_price_upgrade: bool, purchased_total: int, now_ms: int,
+    ) -> dict:
+        # Store the grant key with the balance in one conditional document write.
+        # A retry after a failed invoice update cannot grant again or restore spent
+        # credits. Do not prune these keys: older invoices may be replayed later.
+        # https://www.mongodb.com/docs/manual/core/write-operations-atomicity/
+        # https://www.mongodb.com/docs/manual/tutorial/update-documents-with-aggregation-pipeline/
+        user_id = document["user_id"]
+        # Fail closed if uniqueness cannot be enforced; concurrent first purchases
+        # must never create two subscription records for one user.
+        await collection.create_index([("user_id", 1)], unique=True)
+        seed = {**(existing_record or {}), "user_id": user_id}
+        seed.pop("_id", None)
+        seed.setdefault("created_at_ms", now_ms)
+        try:
+            await collection.update_one(
+                {"user_id": user_id}, {"$setOnInsert": seed}, upsert=True,
+            )
+        except DuplicateKeyError:
+            # Another callback inserted the same user's record first.
+            if await collection.find_one({"user_id": user_id}) is None:
+                raise
+
+        current_end = {"$ifNull": ["$end_ms", 0]}
+        active = {"$gt": [current_end, now_ms]}
+        remaining = {"$cond": [
+            active,
+            {"$max": [0, {"$ifNull": [
+                "$credits_remaining", {"$ifNull": ["$total_credits", 0]},
+            ]}]},
+            0,
+        ]}
+        upgrade = {"$and": [
+            full_price_upgrade and document["tier"] == "pro",
+            active,
+            {"$eq": ["$tier", "standard"]},
+        ]}
+        start = {"$cond": [upgrade, now_ms, {"$max": [now_ms, current_end]}]}
+        balance = {"$add": [remaining, purchased_total]}
+        # $literal keeps caller-supplied order/transaction ids from being treated
+        # as field references (for example an order beginning with '$').
+        fields = {key: {"$literal": value} for key, value in document.items()}
+        fields.update({
+            "credits_remaining": balance,
+            "total_credits": {"$cond": [upgrade, balance, purchased_total]},
+            "start_ms": start,
+            "end_ms": {"$add": [start, int(document["days"]) * 86_400_000]},
+            "credit_carryover": {"$cond": [upgrade, remaining, 0]},
+            "upgrade_from_tier": {"$cond": [upgrade, "standard", None]},
+            "upgrade_at_ms": {"$cond": [upgrade, now_ms, None]},
+            "applied_payment_grants": {"$setUnion": [
+                {"$ifNull": ["$applied_payment_grants", []]},
+                {"$literal": [grant_key]},
+            ]},
+        })
+        updated = await collection.find_one_and_update(
+            {"user_id": user_id, "applied_payment_grants": {"$ne": grant_key}},
+            [{"$set": fields}],
+            return_document=ReturnDocument.AFTER,
+        )
+        if updated is not None:
+            return updated
+        current = await collection.find_one({"user_id": user_id})
+        if current is not None and grant_key in current.get("applied_payment_grants", []):
+            return current
+        raise RuntimeError("Subscription disappeared while applying payment grant")
 
     async def try_consume_pool_credits(
         self, user_id: str, cost: int, now_ms: int
