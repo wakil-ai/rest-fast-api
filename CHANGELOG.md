@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.42-260927 (2026-09-27)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.42-260927 -->
+
+## What's Changed
+### 💬 Other
+* fix(stream): finish refund on disconnect and repair stale tests by @saidazizkhon05 in https://github.com/wakil-ai/rest-fast-api/pull/212
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.41-260926...v5.0.42-260927
+
 ## v5.0.41-260926 (2026-09-26)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.41-260926 -->
