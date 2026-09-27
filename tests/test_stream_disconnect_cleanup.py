@@ -1,7 +1,6 @@
-"""A client disconnect must still refund an unanswered charge and tell the LLM
-service to stop, driven through the real Starlette disconnect path (uvicorn
-advertises ASGI spec 2.3, so Starlette cancels the response task group).
-"""
+# A client disconnect must still refund an unanswered charge and tell the LLM
+# service to stop, driven through the real Starlette disconnect path (uvicorn
+# advertises ASGI spec 2.3, so Starlette cancels the response task group).
 
 import asyncio
 import time
