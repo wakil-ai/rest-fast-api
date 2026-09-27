@@ -1,4 +1,4 @@
-"""Regression coverage for the paid Standard-to-Pro upgrade policy."""
+# Regression coverage for the paid Standard-to-Pro upgrade policy.
 
 from unittest.mock import AsyncMock, MagicMock
 

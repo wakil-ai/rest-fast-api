@@ -539,6 +539,9 @@ class BasePaymentService:
                         f"conflicts with active pass until {active_end_ms}"
                     )
 
+        # Only newly issued invoices opt into immediate full-price upgrades.
+        # Unversioned invoices keep their original quote and legacy period rules.
+        # The storage grant key also survives a crash before subscription_applied.
         await self.subscription_storage.upsert_subscription(
             user_id=user_id,
             quote=quote,
@@ -548,6 +551,10 @@ class BasePaymentService:
             provider=invoice.get("provider"),
             full_price_standard_to_pro_upgrade=(
                 quote.get("tier") == "pro"
+                and invoice.get("subscription_upgrade_policy") == "full_price_v1"
+            ),
+            payment_grant_key=(
+                f"{self.provider}:{invoice.get('order_id') or invoice.get('invoice_id') or order_id}"
             ),
         )
 
@@ -587,6 +594,7 @@ class BasePaymentService:
             "purpose": purpose,
             "subscription": quote,
             "subscription_applied": False,
+            "subscription_upgrade_policy": "full_price_v1",
             "created_at": now_ms,
             "updated_at": now_ms,
         }
