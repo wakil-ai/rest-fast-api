@@ -34,6 +34,7 @@ class FileManager:
     def __init__(self):
         self.storage = get_storage_service()
         self.history = get_chat_history_service()
+        self._project_processing_tasks: dict[tuple[str, str], asyncio.Task] = {}
 
     async def upload_message_file(
         self, file: UploadFile, user_id: str
@@ -167,7 +168,9 @@ class FileManager:
                 else 500
             )
             logger.error(
-                f"Message file upload failed: {file.filename} - {str(e)}",
+                "Message file upload failed: {} - {}",
+                file.filename,
+                str(e),
                 exc_info=True,
             )
             return status_code, str(e)
@@ -236,19 +239,18 @@ class FileManager:
                     f"Existing project file cache hit is not ingested; reprocessing "
                     f"file_id: {fid}"
                 )
-                existing_by_content = await self._submit_processing_job(
-                    file_id=fid,
-                    temp_path=temp_path,
-                    filename=file.filename or "upload",
-                    content_type=file.content_type or "application/octet-stream",
-                    user_id=user_id,
-                    record=existing_by_content,
-                    project_id=project_id,
-                    session_id=session_id,
-                )
-                existing_by_content = await self._await_processing_success(
-                    existing_by_content
-                )
+                if not self._processing_is_active(existing_by_content):
+                    existing_by_content = await self._submit_processing_job(
+                        file_id=fid,
+                        temp_path=temp_path,
+                        filename=file.filename or "upload",
+                        content_type=file.content_type or "application/octet-stream",
+                        user_id=user_id,
+                        record=existing_by_content,
+                        project_id=project_id,
+                        session_id=session_id,
+                    )
+                self.resume_project_file_processing(existing_by_content)
                 response = self._build_success_response(
                     file_id=fid,
                     metadata=existing_by_content.get("file_metadata", {}),
@@ -295,6 +297,8 @@ class FileManager:
                 status="processing",
             )
 
+            # Acknowledge only after the inference service queues the durable job
+            # and its identifier is persisted locally. OCR/indexing still run async.
             record = await self._submit_processing_job(
                 file_id=file_id,
                 temp_path=temp_path,
@@ -305,13 +309,12 @@ class FileManager:
                 project_id=project_id,
                 session_id=session_id,
             )
-
-            record = await self._await_processing_success(record)
+            self.resume_project_file_processing(record)
 
             response = self._build_success_response(
                 file_id=file_id,
-                metadata=record.get("file_metadata", metadata),
-                ocr_result=record.get("ocr_result", ""),
+                metadata=metadata,
+                ocr_result="",
                 record=record,
                 project_id=project_id,
             )
@@ -327,13 +330,53 @@ class FileManager:
                 else 500
             )
             logger.error(
-                f"Project file upload failed: {file.filename} - {str(e)}",
+                "Project file upload failed: {} - {}",
+                file.filename,
+                str(e),
                 exc_info=True,
             )
             return status_code, str(e)
 
         finally:
             self._safe_remove_temp_file(temp_path)
+
+    def resume_project_file_processing(self, record: dict) -> None:
+        if (
+            not record.get("project_id")
+            or not self._processing_is_active(record)
+            or record.get("processing_status") == "succeeded"
+        ):
+            return
+        key = (
+            str(record.get("_id") or record.get("file_id")),
+            str(record["processing_task_id"]),
+        )
+        current = self._project_processing_tasks.get(key)
+        if current is not None and not current.done():
+            return
+        task = asyncio.create_task(self._finish_project_file_processing(record))
+        self._project_processing_tasks[key] = task
+
+        def forget(completed: asyncio.Task) -> None:
+            if self._project_processing_tasks.get(key) is completed:
+                self._project_processing_tasks.pop(key, None)
+
+        task.add_done_callback(forget)
+
+    async def _finish_project_file_processing(self, record: dict) -> None:
+        try:
+            await self._await_processing_success(record)
+        except asyncio.CancelledError:
+            # The queued job survives this API worker. A later project listing
+            # resumes observation using the persisted task id.
+            raise
+        except DocumentProcessingSubmissionError:
+            pass
+        except Exception:
+            logger.exception(
+                "[FileManager] Background polling failed for file_id={}", record.get("_id")
+            )
+            # Leave the durable job resumable on the next project listing.
 
     async def delete_project_file(
         self,
@@ -371,7 +414,9 @@ class FileManager:
             )
         except Exception as exc:
             logger.warning(
-                f"Could not delete indexed vectors for project file {file_id}: {exc}"
+                "Could not delete indexed vectors for project file {}: {}",
+                file_id,
+                exc,
             )
 
         await self.history.delete_file_upload(file_id)
@@ -478,6 +523,7 @@ class FileManager:
         return await self.history.update_file_metadata_fields(
             file_id,
             {
+                "status": "processing",
                 "processing_task_id": task_id,
                 "processing_status": str(result.get("status") or "queued"),
                 "processing_error": None,
@@ -518,7 +564,8 @@ class FileManager:
 
         if not file_id or not task_id:
             logger.warning(
-                f"[FileManager] Cannot poll processing job without file/task id: {record}"
+                "[FileManager] Cannot poll processing job without file/task id: {}",
+                record,
             )
             return None
 
@@ -529,6 +576,7 @@ class FileManager:
                     record,
                     "Document processing timed out.",
                     processing_status="failed",
+                    fence_task=True,
                 )
 
             try:
@@ -542,16 +590,21 @@ class FileManager:
                         record,
                         "Document processing job expired.",
                         processing_status="failed",
+                        fence_task=True,
                     )
                 logger.warning(
-                    f"[FileManager] Polling failed for file_id={file_id}: {exc}",
+                    "[FileManager] Polling failed for file_id={}: {}",
+                    file_id,
+                    exc,
                     exc_info=True,
                 )
                 await asyncio.sleep(self._processing_poll_interval(elapsed))
                 continue
             except Exception as exc:
                 logger.warning(
-                    f"[FileManager] Polling failed for file_id={file_id}: {exc}",
+                    "[FileManager] Polling failed for file_id={}: {}",
+                    file_id,
+                    exc,
                     exc_info=True,
                 )
                 await asyncio.sleep(self._processing_poll_interval(elapsed))
@@ -559,12 +612,14 @@ class FileManager:
 
             status = str(payload.get("status") or "").strip().lower()
             if status in {"queued", "started"}:
-                await self.history.update_file_metadata_fields(
-                    file_id,
+                current_record, applied = await self.history.update_file_processing_fields(
+                    file_id, task_id,
                     {
                         "processing_status": status,
                     },
                 )
+                if not applied:
+                    return current_record
                 if project_id and status != last_status:
                     await send_project_file_progress_webhook(
                         webhook_url,
@@ -583,6 +638,7 @@ class FileManager:
                     record,
                     str(payload.get("error") or "Document processing failed."),
                     processing_status="failed",
+                    fence_task=True,
                 )
 
             if status == "succeeded":
@@ -598,9 +654,10 @@ class FileManager:
                         record,
                         f"Document processing skipped Milvus ingestion: {skip_reason or 'unknown'}",
                         processing_status="failed",
+                        fence_task=True,
                     )
-                final_record = await self.history.update_file_metadata_fields(
-                    file_id,
+                final_record, applied = await self.history.update_file_processing_fields(
+                    file_id, task_id,
                     {
                         "status": "completed",
                         "processing_status": "succeeded",
@@ -615,7 +672,7 @@ class FileManager:
                         "file_metadata.milvus_file_index.reason": skip_reason,
                     },
                 )
-                if project_id:
+                if project_id and applied:
                     await send_project_file_progress_webhook(
                         webhook_url,
                         project_id=project_id,
@@ -642,21 +699,27 @@ class FileManager:
         error: str,
         *,
         processing_status: str,
+        fence_task: bool = False,
     ) -> dict | None:
         file_id = str(record.get("_id") or record.get("file_id") or "")
         if not file_id:
             return None
-        failed_record = await self.history.update_file_metadata_fields(
-            file_id,
-            {
-                "status": "failed",
-                "processing_status": processing_status,
-                "processing_error": error,
-                "processing_completed_at": datetime.now(timezone.utc),
-                "file_metadata.milvus_file_index.enabled": False,
-                "file_metadata.milvus_file_index.error": error,
-            },
-        )
+        fields = {
+            "status": "failed",
+            "processing_status": processing_status,
+            "processing_error": error,
+            "processing_completed_at": datetime.now(timezone.utc),
+            "file_metadata.milvus_file_index.enabled": False,
+            "file_metadata.milvus_file_index.error": error,
+        }
+        if fence_task:
+            failed_record, applied = await self.history.update_file_processing_fields(
+                file_id, str(record.get("processing_task_id") or ""), fields,
+            )
+            if not applied:
+                return failed_record
+        else:
+            failed_record = await self.history.update_file_metadata_fields(file_id, fields)
         project_id = record.get("project_id")
         if project_id:
             await send_project_file_progress_webhook(

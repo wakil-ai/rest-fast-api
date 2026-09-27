@@ -79,3 +79,13 @@ def test_listing_reports_ingested_file_as_completed(projects_client):
     resp = projects_client.get("/projects/p1/files", params={"user_id": "u1"})
 
     assert resp.json()[0]["status"] == "completed"
+
+
+def test_listing_resumes_persisted_processing_jobs(projects_client):
+    import api.v2.history.projects as module
+
+    response = projects_client.get('/projects/p1/files', params={'user_id': 'u1'})
+    assert response.status_code == 200
+    module.file_manager.resume_project_file_processing.assert_called_once()
+    record = module.file_manager.resume_project_file_processing.call_args.args[0]
+    assert record['_id'] == 'file-019e060f'

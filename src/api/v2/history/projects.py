@@ -189,6 +189,8 @@ async def upload_project_file(
 @handle_service_error
 async def list_project_files(project_id: str, user_id: str, limit: int = 100):
     files = await project_service.list_project_files(project_id, user_id, limit=limit)
+    for file in files:
+        file_manager.resume_project_file_processing(file)
     return [serialize_mongo_id(f) for f in files]
 
 
