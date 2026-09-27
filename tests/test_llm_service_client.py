@@ -10,14 +10,11 @@ class FakeResponse:
     def __init__(self, payload=None, status_code=200):
         self._payload = payload or {}
         self.status_code = status_code
+        self.text = json.dumps(self._payload)
 
     @property
     def is_success(self):
         return self.status_code < 400
-
-    @property
-    def text(self):
-        return json.dumps(self._payload)
 
     def raise_for_status(self):
         if self.status_code >= 400:
