@@ -11,6 +11,8 @@ SUPPORTED_STREAM_EVENT_TYPES = {
     "think",
     "attachments",
     "metadata",
+    "route",
+    "sources",
     "error",
     "end",
 }
