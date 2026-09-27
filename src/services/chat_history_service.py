@@ -1224,6 +1224,21 @@ class ChatHistoryService:
             raise InvalidInputError("File not found after update")
         return file
 
+    async def update_file_processing_fields(
+        self, file_id: str, task_id: str, fields: dict[str, Any]
+    ) -> tuple[dict | None, bool]:
+        # Only the current, unfinished job may update status or complete the file.
+        changed = await self.db_manager.update_documents(
+            self.files_collection,
+            {
+                "_id": file_id,
+                "processing_task_id": task_id,
+                "processing_status": {"$nin": ["succeeded", "failed"]},
+            },
+            {"$set": {**fields, "updated_at": datetime.now(timezone.utc)}},
+        )
+        return await self.get_file_by_id(file_id), bool(changed)
+
     async def update_file_message_id(self, file_id: str, message_id: str) -> None:
         """Associate a file with a message."""
 
