@@ -42,6 +42,7 @@ from utils.streaming import (
 )
 from utils.contract_docx import contract_text_to_docx_bytes
 from utils.tokens import count_tokens, truncate_to_token_limit
+from utils.inference_events import merge_sources, normalize_inference_event
 
 
 def _orchestration_exception_detail(exc: BaseException) -> str:
@@ -228,6 +229,10 @@ class ChatService:
 
         if used_web_search := generation_meta.get("used_web_search"):
             metadata["used_web_search"] = used_web_search
+
+        for key in ("retrieval_route", "retrieval_sources", "generation_status", "usage_ledger"):
+            if generation_meta.get(key) is not None:
+                metadata[key] = generation_meta[key]
 
         return metadata
 
@@ -596,6 +601,7 @@ class ChatService:
         response_style: str | None = None,
         explanation_tone: str | None = None,
         stream_endpoint: str = "/api/v1/chat/ask/stream",
+        include_retrieval_metadata: bool = False,
         credit_cost: int = 0,
         refund_info: dict | None = None,
     ) -> AsyncGenerator[Any, None]:
@@ -618,8 +624,12 @@ class ChatService:
                 explanation_tone=explanation_tone,
                 generation_id=message_id,
             )
+            if settings.LLM_STREAM_V2_ENABLED and include_retrieval_metadata:
+                payload["stream_protocol"] = 2
             answer_chunks: list[str] = []
             progress_answer_chunks: list[str] = []
+            v2_seen = False
+            v2_ended = False
             generation_meta: dict[str, Any] = {
                 "workflow": "rest_api_llm_stream",
                 "selected_assistant": assistant,
@@ -636,7 +646,26 @@ class ChatService:
                     yield item
                     continue
 
+                if item.get("schema_version") == 2:
+                    v2_seen = True
+                    v2_ended = item.get("type") == "end" or v2_ended
+                item = normalize_inference_event(item)
+                if item is None:
+                    continue
                 event_type = item.get("type")
+                if event_type == "route":
+                    generation_meta["retrieval_route"] = {k: v for k, v in item.items() if k != "type"}
+                    generation_meta["selected_assistant"] = item["assistant"]
+                    if item.get("legal_intent"):
+                        generation_meta["classified_legal_intent"] = item["legal_intent"]
+                    yield item
+                    continue
+                if event_type == "sources":
+                    snapshot = merge_sources(generation_meta.get("retrieval_sources"), item)
+                    generation_meta["retrieval_sources"] = snapshot
+                    # Emit a complete snapshot so reconnect/history and live views agree.
+                    yield {**snapshot, "type": "sources"}
+                    continue
                 if event_type == "metadata":
                     generation_meta.update(
                         {k: v for k, v in item.items() if k != "type"}
@@ -690,9 +719,16 @@ class ChatService:
                             updates["attachments"]
                         )
                     generation_meta.update(updates)
+                    if item.get("status"):
+                        generation_meta["generation_status"] = item["status"]
                     continue
                 yield item
 
+            if v2_seen and not v2_ended:
+                if not answer_chunks and not progress_answer_chunks and credit_cost > 0:
+                    await self.rate_limit_service.refund_credits(user_id, credit_cost, refund_info)
+                yield {"type": "error", "error": "The answer stream was interrupted. Please try again.", "code": "INFERENCE_STREAM_INTERRUPTED"}
+                return
             # Some workflows expose their answer as progress chunks while others
             # emit standard chunk events. Prefer the standard stream whenever it
             # exists so a provider that sends both representations is persisted
@@ -784,6 +820,8 @@ class ChatService:
         }
         if merged_meta.get("attachments"):
             end_event["attachments"] = merged_meta["attachments"]
+        if merged_meta.get("generation_status"):
+            end_event["status"] = merged_meta["generation_status"]
         yield end_event
 
     async def _persist_assistant_message_safe(
@@ -999,6 +1037,7 @@ class ChatService:
                         file_context=request.file_context,
                         response_style=request.response_style,
                         explanation_tone=request.explanation_tone,
+                        include_retrieval_metadata=request.include_retrieval_metadata,
                         credit_cost=credit_cost,
                         refund_info=refund_info,
                     )
@@ -1118,6 +1157,7 @@ class ChatService:
                     response_style=request.response_style,
                     explanation_tone=request.explanation_tone,
                     stream_endpoint="/api/v1/chat/agent/stream",
+                    include_retrieval_metadata=request.include_retrieval_metadata,
                     credit_cost=credit_cost,
                     refund_info=refund_info,
                 )

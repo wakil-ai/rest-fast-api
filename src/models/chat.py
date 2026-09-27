@@ -147,6 +147,10 @@ class ChatRequest(BaseModel):
     Request body for chat questions.
     """
 
+    include_retrieval_metadata: bool = Field(
+        default=False, description="Accept additive route/source events when the server enables them",
+    )
+
     user_id: str = Field(
         ..., example="user_12345", description="Unique identifier for the user"
     )
@@ -263,6 +267,10 @@ class AgenticRAGRequest(BaseModel):
 
     Proxied to the internal LLM service for orchestration and optional web/retrieval work.
     """
+
+    include_retrieval_metadata: bool = Field(
+        default=False, description="Accept additive route/source events when the server enables them",
+    )
 
     query: str = Field(
         ..., example="Explain the tax regulations for freelancers in Uzbekistan."

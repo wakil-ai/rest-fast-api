@@ -128,6 +128,8 @@ class Settings(BaseSettings):
     LLM_SERVICE_INTERNAL_TOKEN: str | None = None
     LLM_SERVICE_INTERNAL_HEADER: str = "x-internal-token"
     LLM_SERVICE_TIMEOUT_SECONDS: float = 600.0
+    # Opt into inference V2 internally; public chat retains its flat SSE contract.
+    LLM_STREAM_V2_ENABLED: bool = False
 
     # File processing
     DOCUMENT_PROCESSING_POLL_TIMEOUT_SECONDS: int = 900
