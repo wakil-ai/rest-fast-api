@@ -1,5 +1,18 @@
 # Changelog
 
+## v5.0.43-260927 (2026-09-27)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.43-260927 -->
+
+## What's Changed
+### 💬 Other
+* fix: process project file ingestion in background, fix masked upload … by @abdulahat-hbai in https://github.com/wakil-ai/rest-fast-api/pull/197
+* Apply full-price Pro upgrades to web payments by @umidjontursunovhbai in https://github.com/wakil-ai/rest-fast-api/pull/210
+* feat(chat): add opt-in route and source visibility by @BaratovSokhibjon in https://github.com/wakil-ai/rest-fast-api/pull/214
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.42-260927...v5.0.43-260927
+
 ## v5.0.42-260927 (2026-09-27)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.42-260927 -->
