@@ -210,6 +210,9 @@ class AppStoreService(BasePaymentService):
         revenue. Apple's own price (milliunits) is used so a free trial reports
         nothing and a discount reports what was charged. Without a price, an
         applied offer means the catalog price would overstate, so skip.
+
+        `META_CAPI_REPORT_TEST_PURCHASES` is a temporary QA override to also report
+        Sandbox/TestFlight purchases; it must be unset before the real release.
         """
         environment = getattr(payload, "environment", None)
         environment_name = (
@@ -217,7 +220,10 @@ class AppStoreService(BasePaymentService):
             if isinstance(environment, Environment)
             else str(environment or environment_str)
         )
-        if environment_name != Environment.PRODUCTION.value:
+        if (
+            environment_name != Environment.PRODUCTION.value
+            and not settings.META_CAPI_REPORT_TEST_PURCHASES
+        ):
             return None, "UZS"
         price = getattr(payload, "price", None)
         currency = getattr(payload, "currency", None)

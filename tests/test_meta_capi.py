@@ -257,6 +257,12 @@ def test_apple_environment_comes_from_the_signed_payload_not_the_client():
     assert AppStoreService._meta_purchase_amount(payload, _QUOTE, "Production")[0] is None
 
 
+def test_apple_sandbox_reports_with_temporary_qa_flag(monkeypatch):
+    monkeypatch.setattr(settings, "META_CAPI_REPORT_TEST_PURCHASES", True)
+    payload = SimpleNamespace(environment="Sandbox", price=9990, currency="USD")
+    assert AppStoreService._meta_purchase_amount(payload, _QUOTE, "Sandbox") == (9.99, "USD")
+
+
 def test_apple_free_trial_reports_nothing():
     payload = _apple(price=0, currency="USD", offerType=1)
     amount, _ = AppStoreService._meta_purchase_amount(payload, _QUOTE, "Production")
@@ -283,6 +289,12 @@ def test_play_reports_recurring_price():
 
 def test_play_test_purchase_reports_nothing():
     assert GooglePlayService._meta_purchase_amount({"testPurchase": {}}, _play_item(), _QUOTE)[0] is None
+
+
+def test_play_test_purchase_reports_with_temporary_qa_flag(monkeypatch):
+    monkeypatch.setattr(settings, "META_CAPI_REPORT_TEST_PURCHASES", True)
+    amount, currency = GooglePlayService._meta_purchase_amount({"testPurchase": {}}, _play_item(), _QUOTE)
+    assert (amount, currency) == (129000, "UZS")
 
 
 def test_play_offer_reports_nothing():

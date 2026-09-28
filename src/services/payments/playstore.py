@@ -195,8 +195,11 @@ class GooglePlayService(BasePaymentService):
         Play test purchases aren't revenue. Play's response has no per-charge amount,
         only the plan's recurring price, so a purchase with an offer (free trial or
         intro price) reports nothing rather than the full price.
+
+        `META_CAPI_REPORT_TEST_PURCHASES` is a temporary QA override to also report
+        test purchases; it must be unset before the real release.
         """
-        if purchase.get("testPurchase") is not None:
+        if purchase.get("testPurchase") is not None and not settings.META_CAPI_REPORT_TEST_PURCHASES:
             return None, "UZS"
         item = line_item or {}
         if (item.get("offerDetails") or {}).get("offerId"):
