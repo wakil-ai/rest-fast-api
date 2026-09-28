@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.44-260928 (2026-09-28)
+
+<!-- Release notes generated using configuration in .github/release.yml at v5.0.44-260928 -->
+
+## What's Changed
+### 💬 Other
+* feat(payments): add temporary flag to report test purchases to Meta by @saidazizkhon05 in https://github.com/wakil-ai/rest-fast-api/pull/215
+
+
+**Full Changelog**: https://github.com/wakil-ai/rest-fast-api/compare/v5.0.43-260927...v5.0.44-260928
+
 ## v5.0.43-260927 (2026-09-27)
 
 <!-- Release notes generated using configuration in .github/release.yml at v5.0.43-260927 -->
