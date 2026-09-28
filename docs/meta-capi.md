@@ -54,6 +54,14 @@ code/message/`fbtrace_id` only, never the raw response body.
 bump it), `META_CAPI_TEST_EVENT_CODE` (set only while QA-ing: server events don't show in Test Events
 without it; remove after).
 
+## Testing sandbox purchases (temporary)
+`META_CAPI_REPORT_TEST_PURCHASES=true` makes a Sandbox/TestFlight (App Store) or `testPurchase`
+(Play Store) purchase report to Meta as if it were a real one, for QA only — it does **not**
+change whether the purchase is granted; that logic is untouched. Use it together with
+`META_CAPI_TEST_EVENT_CODE` so the events show up in Meta's Test Events tab.
+**Unset both before the real production release.** If left on, every future App Store review's
+sandbox test purchase (Apple always tests via Sandbox) would be reported to Meta as revenue.
+
 ## Known limits
 - Refunds/revocations (`REFUND`, `REVOKE`) cancel access but are **not** reversed in Meta: CAPI has no
   supported way to undo a Purchase. Upgrades/crossgrades report the new transaction's price.

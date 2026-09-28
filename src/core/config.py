@@ -324,6 +324,9 @@ class Settings(BaseSettings):
     META_CAPI_TEST_EVENT_CODE: str | None = None  # set only while QA-ing in Test Events
     META_CAPI_TIMEOUT_SECONDS: float = 10.0
     META_APP_BUNDLE_ID: str = "ai.humblebee.wakil"
+    # TEMPORARY QA flag: report sandbox/test purchases to Meta too. Never affects whether the
+    # purchase is granted. Unset before the real release — see docs/meta-capi.md.
+    META_CAPI_REPORT_TEST_PURCHASES: bool = False
 
     model_config = ConfigDict(
         env_file=".env",
