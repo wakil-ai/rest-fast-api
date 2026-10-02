@@ -96,9 +96,13 @@ class ChatService:
     ) -> dict | None:
         """Verify user has sufficient credits and deduct them.
 
-        Returns refund_info (opaque to callers — pass it back to
-        RateLimitService.refund_credits if the request is cancelled before any
-        content is generated) or None when nothing was actually charged.
+        Returns refund_info — pass it back to RateLimitService.refund_credits
+        if the request is cancelled before any content is generated, or None
+        when nothing was actually charged. Its one other sanctioned use is
+        resolve_inference_tier() below: refund_info["kind"] already names the
+        bucket this charge came from, so the caller's free/paid tier comes
+        from this same mandatory check rather than a second subscription
+        lookup.
         """
         try:
             (
@@ -123,6 +127,22 @@ class ChatService:
         except Exception as e:
             logger.error(f"Error checking user credits: {e}")
             raise ChatGenerationException("Failed to verify user credits.")
+
+    #: refund_info["kind"] values that RateLimitService.check_and_decrement_credits
+    #: reports when a charge was actually funded by a paid entitlement (an
+    #: active monthly/pool subscription, or an active paid daily pass). Every
+    #: other kind -- signup bonus, the free/promo daily quota -- and a None
+    #: refund_info (an unlimited promo, which charges nothing) are free.
+    _PAID_CREDIT_KINDS = frozenset({"pool", "daily_pass"})
+
+    @classmethod
+    def resolve_inference_tier(cls, refund_info: dict | None) -> str:
+        """Free/paid tier for the inference request, from the credit check
+        that every chat request already performs -- no separate subscription
+        lookup. Always resolves to exactly "free" or "paid", never omitted.
+        """
+        kind = (refund_info or {}).get("kind")
+        return "paid" if kind in cls._PAID_CREDIT_KINDS else "free"
 
     @staticmethod
     def extract_assistant_config(assistant_name: str) -> tuple[int, str]:
@@ -388,6 +408,7 @@ class ChatService:
         response_style: str | None = None,
         explanation_tone: str | None = None,
         generation_id: str | None = None,
+        inference_tier: str,
     ) -> tuple[str, dict[str, Any]]:
         payload = await self.build_llm_inference_payload(
             query=query,
@@ -400,6 +421,7 @@ class ChatService:
             response_style=response_style,
             explanation_tone=explanation_tone,
             generation_id=generation_id,
+            inference_tier=inference_tier,
         )
         result = await get_llm_service_client().ask_chat(payload)
         meta = dict(result.get("metadata") or {})
@@ -451,6 +473,7 @@ class ChatService:
         response_style: str | None = None,
         explanation_tone: str | None = None,
         generation_id: str | None = None,
+        inference_tier: str,
     ) -> dict[str, Any]:
         user_uploaded_context = await self.collect_user_uploaded_context(
             query=query,
@@ -469,6 +492,9 @@ class ChatService:
             "instructions": self.build_ai_config_instructions(
                 response_style, explanation_tone
             ),
+            # Always explicit -- never omitted -- so rest-api-ai never has to
+            # guess which provider funded a request it cannot itself price.
+            "inference_tier": inference_tier,
         }
 
     async def collect_user_uploaded_context(
@@ -604,6 +630,7 @@ class ChatService:
         include_retrieval_metadata: bool = False,
         credit_cost: int = 0,
         refund_info: dict | None = None,
+        inference_tier: str,
     ) -> AsyncGenerator[Any, None]:
         yield {
             "type": "metadata",
@@ -623,6 +650,7 @@ class ChatService:
                 response_style=response_style,
                 explanation_tone=explanation_tone,
                 generation_id=message_id,
+                inference_tier=inference_tier,
             )
             if settings.LLM_STREAM_V2_ENABLED and include_retrieval_metadata:
                 payload["stream_protocol"] = 2
@@ -1005,6 +1033,7 @@ class ChatService:
                 assistant_type=assistant_name,
                 required_credits=credit_cost,
             )
+            inference_tier = self.resolve_inference_tier(refund_info)
 
             should_stream = (
                 settings.STREAM if request.stream is None else request.stream
@@ -1040,6 +1069,7 @@ class ChatService:
                         include_retrieval_metadata=request.include_retrieval_metadata,
                         credit_cost=credit_cost,
                         refund_info=refund_info,
+                        inference_tier=inference_tier,
                     )
                 )
 
@@ -1056,6 +1086,7 @@ class ChatService:
                     file_context=request.file_context,
                     response_style=request.response_style,
                     explanation_tone=request.explanation_tone,
+                    inference_tier=inference_tier,
                 )
             except Exception as error:
                 detail = _orchestration_exception_detail(error)
@@ -1131,6 +1162,7 @@ class ChatService:
                 assistant_type=assistant_name,
                 required_credits=credit_cost,
             )
+            inference_tier = self.resolve_inference_tier(refund_info)
 
             (
                 session_id,
@@ -1160,6 +1192,7 @@ class ChatService:
                     include_retrieval_metadata=request.include_retrieval_metadata,
                     credit_cost=credit_cost,
                     refund_info=refund_info,
+                    inference_tier=inference_tier,
                 )
             )
 

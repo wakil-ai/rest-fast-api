@@ -39,6 +39,7 @@ async def _run_stream(events: list[dict]) -> tuple[list, ChatService]:
                 started_at=0.0,
                 credit_cost=COST,
                 refund_info=REFUND_INFO,
+                inference_tier="free",
             )
         ]
     return out, service
