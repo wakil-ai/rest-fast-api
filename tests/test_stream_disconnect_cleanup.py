@@ -113,6 +113,7 @@ async def _disconnect_mid_stream(monkeypatch, *, cancel_hangs: bool):
                 started_at=0.0,
                 credit_cost=3,
                 refund_info={"kind": "daily_promo"},
+                inference_tier="free",
             )
         )
         scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"}}

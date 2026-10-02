@@ -51,6 +51,7 @@ async def run_stream(events, enabled=True, endpoint="/api/v1/chat/ask/stream", o
             assistant="main", started_at=0, credit_cost=3, refund_info={"kind": "test"},
             stream_endpoint=endpoint,
             include_retrieval_metadata=opt_in,
+            inference_tier="free",
         )]
     return out, service, captured
 
