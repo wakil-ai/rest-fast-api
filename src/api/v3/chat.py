@@ -20,6 +20,23 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 chat_service = get_chat_service()
 
 
+@router.get("/models", summary="Answer models the user may pick")
+async def list_chat_models():
+    """Default answer model and the selectable ones from the AI server.
+
+    `models` is empty unless the AI server's SELECTABLE_CHAT_MODELS lists some
+    (dev); clients show a model picker only when it is not empty.
+    """
+    from services.llm_service_client import get_llm_service_client
+
+    try:
+        data = await get_llm_service_client().chat_models()
+    except Exception as exc:  # an older AI server without the endpoint
+        logger.warning(f"[chat/models] AI server did not list models: {exc}")
+        return {"default": None, "models": []}
+    return {"default": data.get("default"), "models": list(data.get("models") or [])}
+
+
 @router.post("/ask", summary="Ask a legal question")
 async def ask_question(request: ChatRequest, raw_request: Request):
     """

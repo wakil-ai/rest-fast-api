@@ -170,6 +170,14 @@ class ChatRequest(BaseModel):
             "`project_id` on the message"
         ),
     )
+    chat_model: str | None = Field(
+        default=None,
+        max_length=128,
+        description=(
+            "Answer model for this turn, from GET /api/v3/chat/models. Ignored unless "
+            "the AI server allows it (dev only); otherwise the default model answers."
+        ),
+    )
 
 
 class ChatResponse(BaseModel):
@@ -264,6 +272,14 @@ class AgenticRAGRequest(BaseModel):
     file_context: str | None = Field(
         default=None,
         description="Optional inline text context for this turn",
+    )
+    chat_model: str | None = Field(
+        default=None,
+        max_length=128,
+        description=(
+            "Answer model for this turn, from GET /api/v3/chat/models. Ignored unless "
+            "the AI server allows it (dev only); otherwise the default model answers."
+        ),
     )
 
 
