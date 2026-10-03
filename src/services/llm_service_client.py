@@ -240,6 +240,9 @@ class LlmServiceClient:
     async def delete_vectors(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.post_json("/api/v1/vectors/delete", payload)
 
+    async def chat_models(self) -> dict[str, Any]:
+        return await self.request_json("GET", "/api/v1/chat/models")
+
     async def memory_get_all(self, user_id: str) -> dict[str, Any]:
         return await self.request_json("GET", f"/api/v1/memory/user/{user_id}/")
 

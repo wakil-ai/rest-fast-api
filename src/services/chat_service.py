@@ -382,6 +382,7 @@ class ChatService:
         file_ids: list[str] | None = None,
         project_id: str | None = None,
         file_context: str | None = None,
+        chat_model: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         payload = await self.build_llm_inference_payload(
             query=query,
@@ -391,6 +392,7 @@ class ChatService:
             file_ids=file_ids,
             project_id=project_id,
             file_context=file_context,
+            chat_model=chat_model,
         )
         result = await get_llm_service_client().ask_chat(payload)
         meta = dict(result.get("metadata") or {})
@@ -412,6 +414,7 @@ class ChatService:
         file_ids: list[str] | None = None,
         project_id: str | None = None,
         file_context: str | None = None,
+        chat_model: str | None = None,
     ) -> dict[str, Any]:
         user_uploaded_context = await self.collect_user_uploaded_context(
             query=query,
@@ -426,6 +429,8 @@ class ChatService:
             "assistant": assistant,
             "thread_id": f"{user_id}:{session_id}",
             "user_uploaded_context": user_uploaded_context or None,
+            # The AI server ignores it unless its SELECTABLE_CHAT_MODELS lists it.
+            **({"chat_model": chat_model} if chat_model else {}),
         }
 
     async def collect_user_uploaded_context(
@@ -533,6 +538,7 @@ class ChatService:
         is_dt_team_request: bool = False,
         project_id: str | None = None,
         file_context: str | None = None,
+        chat_model: str | None = None,
         stream_endpoint: str = "/api/v1/chat/ask/stream",
         # None keeps chat's unlimited stream. Delegation passes a real bound.
         timeout: float | None = None,
@@ -552,6 +558,7 @@ class ChatService:
                 file_ids=file_ids,
                 project_id=project_id,
                 file_context=file_context,
+                chat_model=chat_model,
             )
             answer_chunks: list[str] = []
             generation_meta: dict[str, Any] = {
@@ -858,6 +865,7 @@ class ChatService:
                         is_dt_team_request=is_dt,
                         project_id=resolved_project_id,
                         file_context=request.file_context,
+                    chat_model=request.chat_model,
                     )
                 )
 
@@ -872,6 +880,7 @@ class ChatService:
                     file_ids=request.file_ids,
                     project_id=resolved_project_id,
                     file_context=request.file_context,
+                    chat_model=request.chat_model,
                 )
             except Exception as error:
                 detail = _orchestration_exception_detail(error)
@@ -971,6 +980,7 @@ class ChatService:
                     started_at=started_at,
                     project_id=resolved_project_id,
                     file_context=request.file_context,
+                    chat_model=request.chat_model,
                     stream_endpoint="/api/v1/chat/agent/stream",
                 )
             )
