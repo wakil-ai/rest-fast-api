@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -16,15 +16,22 @@ class UserCreateRequest(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
-    field: str = Field(
+    field: Literal["username", "first_name", "last_name", "picture"] = Field(
         ..., description="Field to update (username, first_name, last_name, picture)"
     )
     value: str = Field(..., description="New value for the specified field")
 
 
 class UserPhoneUpdateRequest(BaseModel):
-    user_id: str = Field(..., description="User ID (stored as _id)")
-    phone_number: str = Field(..., description="User phone number")
+    user_id: str = Field(..., description="Must match the authenticated JWT subject")
+    phone_number: str = Field(..., description="Verified phone number")
+    verification_token: str = Field(..., min_length=1, max_length=128)
+
+    @field_validator("phone_number")
+    @classmethod
+    def _validate_phone(cls, value: str) -> str:
+        from models.otp import SendOTPRequest
+        return SendOTPRequest(phone_number=value).phone_number
 
 
 class UserResponse(BaseModel):

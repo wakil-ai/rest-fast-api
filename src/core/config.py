@@ -280,6 +280,19 @@ class Settings(BaseSettings):
     JWT_AUDIENCE: str = "wakilai-rest-api"
     AUTH_USER_STATUS_CACHE_TTL_SECONDS: int = Field(default=60, ge=1)
 
+    # Eskiz sends local SMS; Twilio Verify retains international SMS/call/WhatsApp.
+    ESKIZ_EMAIL: str | None = None
+    ESKIZ_PASSWORD: str | None = None
+    ESKIZ_SENDER_ID: str | None = None
+    ESKIZ_BASE_URL: str | None = None
+    ESKIZ_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=30)
+    OTP_HASH_SECRET: str | None = Field(default=None, min_length=16)
+    OTP_CODE_TTL_SECONDS: int = Field(default=300, ge=30)
+    OTP_CODE_LENGTH: int = Field(default=6, ge=6, le=10)
+    OTP_MAX_ATTEMPTS: int = Field(default=5, ge=1, le=10)
+    OTP_RESEND_COOLDOWN_SECONDS: int = Field(default=60, ge=60)
+    OTP_PROOF_TTL_SECONDS: int = Field(default=300, ge=30, le=600)
+
     # Twilio Verify (OTP)
     TWILIO_ACCOUNT_SID: str | None = None
     TWILIO_AUTH_TOKEN: str | None = None
