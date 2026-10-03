@@ -1,54 +1,30 @@
 from fastapi import APIRouter, Depends
 
 from core.dependencies import get_otp_service
-from models.otp import (
-    SendOTPRequest,
-    SendOTPResponse,
-    VerifyOTPRequest,
-    VerifyOTPResponse,
-)
+from models.otp import SendOTPRequest, SendOTPResponse, VerifyOTPRequest, VerifyOTPResponse
+from security.dependencies import get_current_user_id
 from services import OTPService
 
-router = APIRouter(prefix="/auth/otp", tags=["Auth for Login"])
+router = APIRouter(prefix='/auth/otp', tags=['Auth for Login'])
 
 
-@router.post("/send", response_model=SendOTPResponse)
+@router.post('/send', response_model=SendOTPResponse)
 async def send_otp_endpoint(
     request: SendOTPRequest,
+    user_id: str = Depends(get_current_user_id),
     otp_service: OTPService = Depends(get_otp_service),
 ) -> SendOTPResponse:
-    """Send a verification code to the given phone number via Twilio Verify.
-
-    Rate-limited per phone number (see OTP_SEND_LIMIT_PER_PHONE).
-    """
-    result = await otp_service.send_otp(
-        phone_number=request.phone_number,
-        channel=request.channel,
-    )
-    return SendOTPResponse(
-        success=True,
-        sid=result["sid"],
-        status=result["status"],
-        channel=result["channel"],
-    )
+    """Send a JWT-bound challenge; local SMS uses Eskiz, other channels Twilio."""
+    result = await otp_service.send_otp(phone_number=request.phone_number, channel=request.channel, locale=request.locale, user_id=user_id)
+    return SendOTPResponse(success=True, **result)
 
 
-@router.post("/verify", response_model=VerifyOTPResponse)
+@router.post('/verify', response_model=VerifyOTPResponse)
 async def verify_otp_endpoint(
     request: VerifyOTPRequest,
+    user_id: str = Depends(get_current_user_id),
     otp_service: OTPService = Depends(get_otp_service),
 ) -> VerifyOTPResponse:
-    """Verify an OTP code previously sent to the phone number.
-
-    Returns 400 if the code is invalid or expired, 429 if the phone
-    has exceeded the per-window verify cap.
-    """
-    result = await otp_service.verify_otp(
-        phone_number=request.phone_number,
-        code=request.code,
-    )
-    return VerifyOTPResponse(
-        success=True,
-        status=result["status"],
-        phone_number=request.phone_number,
-    )
+    """Approve a code and mint a short-lived, one-use phone persistence proof."""
+    result = await otp_service.verify_otp(phone_number=request.phone_number, code=request.code, user_id=user_id)
+    return VerifyOTPResponse(success=True, phone_number=request.phone_number, **result)

@@ -6,6 +6,7 @@ from core.config import settings
 from core.dependencies import (
     get_account_archive_service,
     get_chat_history_service,
+    get_otp_service,
     get_rate_limit_service,
     get_redis_service,
 )
@@ -20,6 +21,8 @@ from models.chat_history import (
 )
 from models.rate_limit import RateLimitResponse
 from security import invalidate_user_auth_cache, verify_super_admin_key
+from security.dependencies import get_current_user_id
+from core.exceptions import OTPVerificationFailedException
 from utils.user_management import handle_service_error, serialize_mongo_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -190,9 +193,17 @@ async def delete_account(user_id: str, request: AccountDeletionRequest | None = 
     "/phone-number", status_code=status.HTTP_200_OK, response_model=UserCreateResponse
 )
 @handle_service_error
-async def update_user_phone_number(request: UserPhoneUpdateRequest):
+async def update_user_phone_number(
+    request: UserPhoneUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    otp_service=Depends(get_otp_service),
+):
+    if request.user_id != user_id:
+        raise HTTPException(403, "Token subject does not match the requested user")
+    if not otp_service.consume_phone_proof(user_id, request.phone_number, request.verification_token):
+        raise OTPVerificationFailedException()
     user = await chat_history_service.update_user_phone_number(
-        user_id=request.user_id,
+        user_id=user_id,
         phone_number=request.phone_number,
     )
     if not user:

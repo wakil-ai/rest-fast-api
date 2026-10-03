@@ -23,6 +23,7 @@ class SendOTPRequest(BaseModel):
         default="sms",
         description="Delivery channel for the verification code.",
     )
+    locale: Literal["uz", "ru", "en"] = "uz"
 
     @field_validator("phone_number")
     @classmethod
@@ -36,10 +37,12 @@ class SendOTPRequest(BaseModel):
 
 
 class SendOTPResponse(BaseModel):
-    success: bool = Field(..., description="True when Twilio accepted the request.")
-    sid: str = Field(..., description="Twilio verification SID for this attempt.")
-    status: str = Field(..., description="Twilio status, typically 'pending'.")
-    channel: str = Field(..., description="Channel used to deliver the code.")
+    success: bool
+    request_id: str
+    status: Literal["pending"]
+    channel: Literal["sms", "call", "whatsapp"]
+    expires_in: int
+    resend_after: int
 
 
 class VerifyOTPRequest(BaseModel):
@@ -77,5 +80,6 @@ class VerifyOTPRequest(BaseModel):
 
 class VerifyOTPResponse(BaseModel):
     success: bool = Field(..., description="True when the code is approved.")
-    status: str = Field(..., description="Twilio check status (e.g. 'approved').")
+    status: Literal["approved"]
+    verification_token: str
     phone_number: str = Field(..., description="Phone number that was verified.")
